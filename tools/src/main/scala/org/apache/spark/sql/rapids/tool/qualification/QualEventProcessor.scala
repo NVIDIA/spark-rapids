@@ -64,10 +64,11 @@ class QualEventProcessor() extends EventProcessorBase {
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
       val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
-        new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0)
+        new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0, 0)
       })
       taskSum.executorRunTime += event.taskMetrics.executorRunTime
       taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
+      taskSum.totalTaskDuration += event.taskInfo.duration
     }
   }
 
