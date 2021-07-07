@@ -153,7 +153,7 @@ object AggregateUtils {
 case class GpuHashAggregateMetrics(
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    totalTime: GpuMetric,
+    numTasksFallBacked: GpuMetric,
     computeAggTime: GpuMetric,
     concatTime: GpuMetric,
     sortTime: GpuMetric,
@@ -255,7 +255,6 @@ class GpuHashAggregateIterator(
   private[this] var hasReductionOnlyBatch: Boolean = isReductionOnly
 
   override def hasNext: Boolean = {
-    // FIXME: totalTime accounting if it stays
     sortFallbackIter.map(_.hasNext).getOrElse {
       // reductions produce a result even if the input is empty
       hasReductionOnlyBatch || !aggregatedBatches.isEmpty || cbIter.hasNext
@@ -435,6 +434,7 @@ class GpuHashAggregateIterator(
   /** Build an iterator that uses a sort-based approach to merge aggregated batches together. */
   private def buildSortFallbackIterator(): Iterator[ColumnarBatch] = {
     logInfo("Falling back to sort-based aggregation with ${aggregatedBatches.size()} batches")
+    metrics.numTasksFallBacked += 1
     val aggregatedBatchIter = new Iterator[ColumnarBatch] {
       override def hasNext: Boolean = !aggregatedBatches.isEmpty
 
@@ -446,9 +446,8 @@ class GpuHashAggregateIterator(
     }
 
     if (isReductionOnly) {
-      // TODO: Should reduction-only aggregation ignore the target batch size and try to merge
-      //       batches up to the cudf limit instead?  In other words, risk a potential but not
-      //       guaranteed OOM while trying to make it work instead of assuming it cannot work.
+      // Normally this should never happen because `tryMergeAggregatedBatches` should have done
+      // a last-ditch effort to concatenate all batches together regardless of target limits.
       throw new IllegalStateException("Unable to fallback to sort-based aggregation " +
           "without grouping keys")
     }
@@ -530,47 +529,53 @@ class GpuHashAggregateIterator(
    *  Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
    */
   private def finalProjectBatch(batch: ColumnarBatch): ColumnarBatch = {
-    val finalBatch = if (boundExpressions.boundFinalProjections.isDefined) {
-      withResource(batch) { _ =>
-        val finalCvs = boundExpressions.boundFinalProjections.get.map { ref =>
+    val aggTime = metrics.computeAggTime
+    withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime)) { _ =>
+      val finalBatch = if (boundExpressions.boundFinalProjections.isDefined) {
+        withResource(batch) { _ =>
+          val finalCvs = boundExpressions.boundFinalProjections.get.map { ref =>
             // aggregatedCb is made up of ColumnVectors
             // and the final projections from the aggregates won't change that,
             // so we can assume they will be vectors after we eval
             ref.columnarEval(batch).asInstanceOf[GpuColumnVector]
           }
-        new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
+          new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
+        }
+      } else {
+        batch
       }
-    } else {
-      batch
-    }
 
-    // Perform the last project to get the correct shape that Spark expects. Note this may
-    // add things like literals that were not part of the aggregate into the batch.
-    val resultCvs = withResource(finalBatch) { _ =>
-      boundExpressions.boundResultReferences.safeMap { ref =>
-        // Result references can be virtually anything, we need to coerce
-        // them to be vectors since this is going into a ColumnarBatch
-        GpuExpressionsUtils.columnarEvalToColumn(ref, finalBatch)
+      // Perform the last project to get the correct shape that Spark expects. Note this may
+      // add things like literals that were not part of the aggregate into the batch.
+      val resultCvs = withResource(finalBatch) { _ =>
+        boundExpressions.boundResultReferences.safeMap { ref =>
+          // Result references can be virtually anything, we need to coerce
+          // them to be vectors since this is going into a ColumnarBatch
+          GpuExpressionsUtils.columnarEvalToColumn(ref, finalBatch)
+        }
       }
-    }
-    closeOnExcept(resultCvs) { _ =>
-      val rowCount = if (resultCvs.isEmpty) 0 else resultCvs.head.getRowCount.toInt
-      metrics.numOutputRows += rowCount
-      metrics.numOutputBatches += 1
-      new ColumnarBatch(resultCvs.toArray, rowCount)
+      closeOnExcept(resultCvs) { _ =>
+        val rowCount = if (resultCvs.isEmpty) 0 else resultCvs.head.getRowCount.toInt
+        metrics.numOutputRows += rowCount
+        metrics.numOutputBatches += 1
+        new ColumnarBatch(resultCvs.toArray, rowCount)
+      }
     }
   }
 
   /** Perform the initial projection on the input batch and extract the result columns */
   private def processIncomingBatch(batch: ColumnarBatch): Seq[GpuColumnVector] = {
-    boundExpressions.boundInputReferences.safeMap { ref =>
-      val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
-      if (childCv.dataType == ref.dataType) {
-        childCv
-      } else {
-        withResource(childCv) { childCv =>
-          val rapidsType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
-          GpuColumnVector.from(childCv.getBase.castTo(rapidsType), ref.dataType)
+    val aggTime = metrics.computeAggTime
+    withResource(new NvtxWithMetrics("prep agg batch", NvtxColor.CYAN, aggTime)) { _ =>
+      boundExpressions.boundInputReferences.safeMap { ref =>
+        val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
+        if (childCv.dataType == ref.dataType) {
+          childCv
+        } else {
+          withResource(childCv) { childCv =>
+            val rapidsType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
+            GpuColumnVector.from(childCv.getBase.castTo(rapidsType), ref.dataType)
+          }
         }
       }
     }
@@ -1005,7 +1010,7 @@ case class GpuHashAggregateExec(
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    NUM_TASKS_FALL_BACKED -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_FALL_BACKED),
     AGG_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_AGG_TIME),
     CONCAT_TIME-> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
@@ -1026,7 +1031,7 @@ case class GpuHashAggregateExec(
     val aggMetrics = GpuHashAggregateMetrics(
       numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS),
       numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES),
-      totalTime = gpuLongMetric(TOTAL_TIME),
+      numTasksFallBacked = gpuLongMetric(NUM_TASKS_FALL_BACKED),
       computeAggTime = gpuLongMetric(AGG_TIME),
       concatTime = gpuLongMetric(CONCAT_TIME),
       sortTime = gpuLongMetric(SORT_TIME),
