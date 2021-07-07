@@ -457,13 +457,13 @@ object GroupedAggregations extends Arm {
                 .minPeriods(1)
                 .orderByColumnIndex(orderByIndex)
 
-            if (preceding.isDefined) {
+            if (preceding.isEmpty) {
               windowOptionBuilder.unboundedPreceding()
             } else {
               windowOptionBuilder.preceding(preceding.get)
             }
 
-            if (following.isDefined) {
+            if (following.isEmpty) {
               windowOptionBuilder.unboundedFollowing()
             } else {
               windowOptionBuilder.following(following.get)
