@@ -166,6 +166,31 @@ case class AggregateModeInfo(
     hasFinalMode: Boolean,
     hasCompleteMode: Boolean)
 
+/**
+ * Iterator that takes another columnar batch iterator as input and emits new columnar batches that
+ * are aggregated based on the specified grouping and aggregation expressions. This iterator tries
+ * to perform a hash-based aggregation but is capable of falling back to a sort-based aggregation
+ * which can operate on data that is either larger than can be represented by a cudf column or
+ * larger than can fit in GPU memory.
+ *
+ * The iterator starts by pulling all batches from the input iterator, performing an initial
+ * projection and aggregation on each individual batch via `aggregateInputBatches()`. The resulting
+ * aggregated batches are cached in memory as spillable batches. Once all input batches have been
+ * aggregated, `tryMergeAggregatedBatches()` is called to attempt a merge of the aggregated batches
+ * into a single batch. If this is successful then the resulting batch can be returned, otherwise
+ * `buildSortFallbackIterator` is used to sort the aggregated batches by the grouping keys and
+ * performs a final merge aggregation pass on the sorted batches.
+ *
+ * @param cbIter iterator providing the nput columnar batches
+ * @param groupingExpressions expressions used for producing the grouping keys
+ * @param aggregateExpressions GPU aggregate expressions used to produce the aggregations
+ * @param aggregateAttributes attribute references to each aggregate expression
+ * @param resultExpressions output expression for the aggregation
+ * @param childOutput input attributes to identify the input columns from the input batches
+ * @param modeInfo identifies which aggregation modes are being used
+ * @param metrics metrics that will be updated during aggregation
+ * @param configuredTargetBatchSize user-specified value for the targeted input batch size
+ */
 class GpuHashAggregateIterator(
     cbIter: Iterator[ColumnarBatch],
     groupingExpressions: Seq[Expression],
@@ -188,6 +213,12 @@ class GpuHashAggregateIterator(
   //  2. boundMergeAgg: perform merges of incoming, and subsequent batches if required.
   //  3. boundFinalProjections: on merged batches, finalize aggregates
   //     (GpuAverage => CudfSum/CudfCount)
+  //  4. boundResultReferences: project the result expressions Spark expects in the output.
+  //
+  // Complete mode:
+  //  1. boundInputReferences: picks column from raw input
+  //  2. boundUpdateAgg: performs the partial half of the aggregates (GpuCount => CudfCount)
+  //  3. boundMergeAgg: (if needed) perform a merge of partial aggregates (CudfCount => CudfSum)
   //  4. boundResultReferences: project the result expressions Spark expects in the output.
   private case class BoundExpressionsModeAggregates(
       boundInputReferences: Seq[GpuExpression],
@@ -222,7 +253,7 @@ class GpuHashAggregateIterator(
       // aggregate and merge all pending inputs
       if (cbIter.hasNext) {
         aggregateInputBatches()
-        mergeAggregatedBatches()
+        tryMergeAggregatedBatches()
       }
 
       if (aggregatedBatches.size() > 1) {
@@ -288,7 +319,7 @@ class GpuHashAggregateIterator(
    * Attempt to merge adjacent batches in the aggregatedBatches queue until either there is only
    * one batch or merging adjacent batches would exceed the target batch size.
    */
-  private def mergeAggregatedBatches(): Unit = {
+  private def tryMergeAggregatedBatches(): Unit = {
     while (aggregatedBatches.size() > 1) {
       val concatTime = metrics.concatTime
       withResource(new NvtxWithMetrics("agg merge pass", NvtxColor.BLUE, concatTime)) { _ =>
@@ -326,14 +357,17 @@ class GpuHashAggregateIterator(
   private def mergePass(): Boolean = {
     val batchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch] = mutable.ArrayBuffer.empty
     var wasBatchMerged = false
+    // Current size in bytes of the batches targeted for the next concatenation
     var concatSize: Long = 0L
     var batchesLeftInPass = aggregatedBatches.size()
 
     while (batchesLeftInPass > 0) {
       closeOnExcept(batchesToConcat) { _ =>
         var isConcatSearchFinished = false
-        // Although tempting to allow the pass to "wrap around" and pick up batches previously
-        // merged in this pass, it's avoided to prevent changing the order of aggregated batches.
+        // Old batches are picked up at the front of the queue and freshly merged batches are
+        // appended to the back of the queue. Although tempting to allow the pass to "wrap around"
+        // and pick up batches freshly merged in this pass, it's avoided to prevent changing the
+        // order of aggregated batches.
         while (batchesLeftInPass > 0 && !isConcatSearchFinished) {
           val candidate = aggregatedBatches.getFirst
           val potentialSize = concatSize + candidate.deviceMemorySize
@@ -357,6 +391,9 @@ class GpuHashAggregateIterator(
         batchesToConcat.remove(0)
       }
 
+      // Add the merged batch to the end of the aggregated batch queue. Only a single pass over
+      // the batches is being performed due to the batch count check above, so the single-pass
+      // loop will terminate before picking up this new batch.
       aggregatedBatches.addLast(mergedBatch)
       batchesToConcat.clear()
       concatSize = 0
@@ -505,7 +542,7 @@ class GpuHashAggregateIterator(
     }
     closeOnExcept(resultCvs) { _ =>
       val rowCount = if (resultCvs.isEmpty) 0 else resultCvs.head.getRowCount.toInt
-      metrics.numOutputRows += resultCvs.head.getBase.getRowCount
+      metrics.numOutputRows += rowCount
       metrics.numOutputBatches += 1
       new ColumnarBatch(resultCvs.toArray, rowCount)
     }
