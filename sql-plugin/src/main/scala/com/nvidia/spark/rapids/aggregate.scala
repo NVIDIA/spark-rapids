@@ -163,8 +163,22 @@ case class GpuHashAggregateMetrics(
 case class AggregateModeInfo(
     uniqueModes: Seq[AggregateMode],
     hasPartialMode: Boolean,
+    hasPartialMerge: Boolean,
     hasFinalMode: Boolean,
     hasCompleteMode: Boolean)
+
+object AggregateModeInfo {
+  def apply(uniqueModes: Seq[AggregateMode]): AggregateModeInfo = {
+    val hasPartialMerge = uniqueModes.contains(PartialMerge)
+    AggregateModeInfo(
+      uniqueModes = uniqueModes,
+      hasPartialMode = hasPartialMerge || uniqueModes.contains(Partial),
+      hasPartialMerge = hasPartialMerge,
+      hasFinalMode = uniqueModes.contains(Final),
+      hasCompleteMode = uniqueModes.contains(Complete)
+    )
+  }
+}
 
 /**
  * Iterator that takes another columnar batch iterator as input and emits new columnar batches that
@@ -674,7 +688,7 @@ class GpuHashAggregateIterator(
     // - Partial, PartialMerge mode: we use the inputProjections or distinct update expressions
     //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final mode: we pick the columns in the order as handed to us.
-    val boundInputReferences = if (modeInfo.uniqueModes.contains(PartialMerge)) {
+    val boundInputReferences = if (modeInfo.hasPartialMerge) {
       GpuBindReferences.bindGpuReferences(inputBindExpressions, resultingBindAttributes)
     } else if (modeInfo.hasFinalMode) {
       GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
@@ -982,9 +996,6 @@ case class GpuHashAggregateExec(
     child: SparkPlan,
     configuredTargetBatchSize: Long) extends UnaryExecNode with GpuExec with Arm {
   private lazy val uniqueModes: Seq[AggregateMode] = aggregateExpressions.map(_.mode).distinct
-  private lazy val partialMode = uniqueModes.contains(Partial) || uniqueModes.contains(PartialMerge)
-  private lazy val finalMode = uniqueModes.contains(Final)
-  private lazy val completeMode = uniqueModes.contains(Complete)
 
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -1022,11 +1033,7 @@ case class GpuHashAggregateExec(
     val aggregateExprs = aggregateExpressions
     val aggregateAttrs = aggregateAttributes
     val resultExprs = resultExpressions
-    val modeInfo = AggregateModeInfo(
-      uniqueModes,
-      hasPartialMode = partialMode,
-      hasFinalMode = finalMode,
-      hasCompleteMode = completeMode)
+    val modeInfo = AggregateModeInfo(uniqueModes)
 
     val rdd = child.executeColumnar()
 
