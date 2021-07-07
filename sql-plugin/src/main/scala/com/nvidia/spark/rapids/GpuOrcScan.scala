@@ -846,20 +846,18 @@ private case class GpuOrcFileFilterHandler(
       OrcProto.Stream.Kind.ROW_INDEX)
 
     def getOrcPartitionReaderContext: OrcPartitionReaderContext = {
-      closeOnExcept(orcReader) { _ =>
-        val updatedReadSchema = checkSchemaCompatibility(orcReader.getSchema, readerOpts.getSchema,
-          readerOpts.getIsSchemaEvolutionCaseAware)
-        val evolution = new SchemaEvolution(orcReader.getSchema, readerOpts.getSchema, readerOpts)
-        val (sargApp, sargColumns) = getSearchApplier(evolution,
-          orcFileReaderOpts.getUseUTCTimestamp)
-        val splitStripes = orcReader.getStripes.asScala.filter(s =>
-          s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
-        val stripes = buildOutputStripes(splitStripes, evolution,
-          sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
-          orcReader.getWriterVersion)
-        OrcPartitionReaderContext(updatedReadSchema, evolution, dataReader, orcReader,
-          stripes.iterator.buffered, requestedMapping)
-      }
+      val updatedReadSchema = checkSchemaCompatibility(orcReader.getSchema, readerOpts.getSchema,
+        readerOpts.getIsSchemaEvolutionCaseAware)
+      val evolution = new SchemaEvolution(orcReader.getSchema, readerOpts.getSchema, readerOpts)
+      val (sargApp, sargColumns) = getSearchApplier(evolution,
+        orcFileReaderOpts.getUseUTCTimestamp)
+      val splitStripes = orcReader.getStripes.asScala.filter(s =>
+        s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
+      val stripes = buildOutputStripes(splitStripes, evolution,
+        sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
+        orcReader.getWriterVersion)
+      OrcPartitionReaderContext(updatedReadSchema, evolution, dataReader, orcReader,
+        stripes.iterator.buffered, requestedMapping)
     }
 
     /**
