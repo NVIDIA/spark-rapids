@@ -440,8 +440,8 @@ object GroupedAggregations extends Arm {
         // This gets to be a little more complicated
 
         // We only support a single column to order by right now, so just verify that.
-        assert(orderSpec.length == 1)
-        assert(orderPositions.length == orderSpec.length)
+        require(orderSpec.length == 1)
+        require(orderPositions.length == orderSpec.length)
         val orderExpr = orderSpec.head
 
         // We only support basic types for now too
@@ -457,13 +457,13 @@ object GroupedAggregations extends Arm {
                 .minPeriods(1)
                 .orderByColumnIndex(orderByIndex)
 
-            if (lower.isUnbounded) {
+            if (preceding.isDefined) {
               windowOptionBuilder.unboundedPreceding()
             } else {
               windowOptionBuilder.preceding(preceding.get)
             }
 
-            if (upper.isUnbounded) {
+            if (following.isDefined) {
               windowOptionBuilder.unboundedFollowing()
             } else {
               windowOptionBuilder.following(following.get)
@@ -806,14 +806,14 @@ class GpuRunningWindowIterator(
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
-
   import GpuRunningWindowIterator._
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
-  private var internalFixerIndexMap: Option[Map[Int, BatchedRunningWindowFixer]] = None
-  // This should only ever be cached in between calls to has next and next. This is just
+  // This should only ever be cached in between calls to `hasNext` and `next`. This is just
   // to let us filter out empty batches.
   private var cachedBatch: Option[ColumnarBatch] = None
   private var lastParts: Array[Scalar] = Array.empty
+  private var isClosed: Boolean = false
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
     lastParts.foreach(_.close())
@@ -821,31 +821,25 @@ class GpuRunningWindowIterator(
   }
 
   def close(): Unit = {
-    internalFixerIndexMap.foreach { m =>
-      m.values.foreach(_.close())
+    if (!isClosed) {
+      isClosed = true
+      fixerIndexMap.values.foreach(_.close())
+      saveLastParts(Array.empty)
     }
-    internalFixerIndexMap = None
-    saveLastParts(Array.empty)
   }
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
-  private def fixerIndexMap: Map[Int, BatchedRunningWindowFixer] = {
-    if (internalFixerIndexMap.isEmpty) {
-      val m = boundWindowOps.zipWithIndex.flatMap {
-        case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
-          func match {
-            case f: GpuBatchedRunningWindowFunction[_] =>
-              Some((index, f.newFixer()))
-            case GpuAggregateExpression(f: GpuBatchedRunningWindowFunction[_], _, _, _, _) =>
-              Some((index, f.newFixer()))
-            case _ => None
-          }
-        case _ => None
-      }.toMap
-      internalFixerIndexMap = Some(m)
-    }
-    internalFixerIndexMap.get
-  }
+  private lazy val fixerIndexMap: Map[Int, BatchedRunningWindowFixer] =
+    boundWindowOps.zipWithIndex.flatMap {
+      case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
+        func match {
+          case f: GpuBatchedRunningWindowFunction[_] =>
+            Some((index, f.newFixer()))
+          case GpuAggregateExpression(f: GpuBatchedRunningWindowFunction[_], _, _, _, _) =>
+            Some((index, f.newFixer()))
+          case _ => None
+        }
+      case _ => None
+    }.toMap
 
   private def fixUpAll(computedWindows: ColumnarBatch,
       fixers: Map[Int, BatchedRunningWindowFixer],
