@@ -41,7 +41,7 @@ object ToolUtils extends Logging {
     if (firstDec == 0 || totalDec == 0) {
       0.toDouble
     } else {
-      val res = (firstDec / totalDec) * 100
+      val res = (firstDec / totalDec)
       val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
       resScale.toDouble
     }

@@ -58,7 +58,7 @@ class PluginTypeChecker extends Logging {
     allSupportedReadSources.toMap
   }
 
-  def checkReadDataTypesSupported(format: String, schema: String): Double = {
+  def scoreReadDataTypes(format: String, schema: String, schemaIncomplete: Boolean): Double = {
     logWarning("data source is: " + format)
     val formatInLower = format.toLowerCase
     val score = if (allSupportedReadSources.contains(formatInLower)) {
@@ -80,11 +80,8 @@ class PluginTypeChecker extends Logging {
           val supString = allSupportedReadSources(formatInLower).getOrElse(cType, "")
           logWarning(s"type is : $typeRead -> $cType supported is: $supString")
           supString match {
-            case "S" =>
-              logWarning("supported")
-              1.0
+            case "S" => 1.0
             case "S*" =>
-              logWarning("s*")
               // decimals or timestamps
               // since don't know be conservative and
               if (typeRead.equals("decimal")) {
@@ -93,35 +90,34 @@ class PluginTypeChecker extends Logging {
                 // timestamps
                 0.5
               }
-            case "PS" =>
-              logWarning("ps")
-              0.5
+            case "PS" => 0.5
             case "PS*" =>
-              logWarning("ps*")
               // parquet - PS* (missing nested BINARY, ARRAY, MAP, UDT)
               0.5
-            case "NS" =>
-              logWarning("ns")
-              0.0
-            case "NA" =>
-              logWarning("na")
-              0.0
+            case "NS" => 0.0
+            case "NA" => 0.0
             case unknown =>
               logWarning(s"unknown type $unknown for type: $typeRead")
               0.0
           }
         } else {
-          logWarning(s"type $cType not supported")
+          // datatype not supported
           0.0
         }
       }
       if (scores.contains(0.0)) {
         0.0
       } else {
-        scores.sum / scores.size
+        if (schemaIncomplete) {
+          // we don't know for sure if the other types being read are supported
+          // add one more score of 0.5 in to bring it down a little
+          (scores.sum + 0.5) / (scores.size + 1)
+        } else {
+          scores.sum / scores.size
+        }
       }
     } else {
-      logWarning(s"data source ${formatInLower} is not supported!")
+      // format not supported
       0.0
     }
     score
