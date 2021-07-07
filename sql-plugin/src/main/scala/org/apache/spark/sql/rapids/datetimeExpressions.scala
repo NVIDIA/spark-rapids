@@ -645,12 +645,16 @@ object GpuToTimestamp extends Arm {
     val format = LEGACY_COMPATIBLE_FORMATS.find(_.format == sparkFormat)
       .getOrElse(throw new IllegalStateException(s"Unsupported format $sparkFormat"))
 
+    // optimization to apply only the necessary rules depending on whether we are
+    // parsing to a date or timestamp
     val regexReplaceRules = if (format.isTimestamp) {
       FIX_DATES ++ FIX_TIMESTAMPS
     } else {
       FIX_DATES
     }
 
+    // we support date formats using either `-` or `/` to separate year, month, and day and the
+    // regex rules are written with '-' so we need to replace '-' with '/' here as necessary
     val rulesWithSeparator = format.separator match {
       case '/' =>
         regexReplaceRules.map {
@@ -661,6 +665,7 @@ object GpuToTimestamp extends Arm {
         regexReplaceRules
     }
 
+    // apply each rule in turn to the data
     val fixedUp = rulesWithSeparator
       .foldLeft(rejectLeadingNewlineThenStrip(lhs))((cv, regexRule) => {
         withResource(cv) {
@@ -668,20 +673,12 @@ object GpuToTimestamp extends Arm {
         }
       })
 
-    if (format.isTimestamp) {
-      withResource(Scalar.fromNull(dtype)) { nullValue =>
-        withResource(fixedUp.matchesRe(format.validRegex)) { hasNoSeconds =>
-          withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
-            hasNoSeconds.ifElse(timestamp, nullValue)
-          }
-        }
-      }
-    } else {
-      withResource(Scalar.fromNull(dtype)) { nullValue =>
-        withResource(fixedUp.matchesRe(format.validRegex)) { isValidDate =>
-          withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
-            isValidDate.ifElse(timestamp, nullValue)
-          }
+    // check the final value against a regex to determine if it is valid or not, so we produce
+    // null values for any invalid inputs
+    withResource(Scalar.fromNull(dtype)) { nullValue =>
+      withResource(fixedUp.matchesRe(format.validRegex)) { isValidDate =>
+        withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
+          isValidDate.ifElse(timestamp, nullValue)
         }
       }
     }
