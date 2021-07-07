@@ -32,7 +32,8 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * reports.
  */
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
-    timeout: Option[Long], nThreads: Int, pluginTypeChecker: PluginTypeChecker) extends Logging {
+    timeout: Option[Long], nThreads: Int, pluginTypeChecker: PluginTypeChecker,
+    readScorePercent: Int) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
   // default is 24 hours
@@ -79,7 +80,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       hadoopConf: Configuration): Unit = {
     try {
       val startTime = System.currentTimeMillis()
-      val app = QualAppInfo.createApp(path, numRows, hadoopConf, pluginTypeChecker)
+      val app = QualAppInfo.createApp(path, numRows, hadoopConf, pluginTypeChecker,
+        readScorePercent)
       if (!app.isDefined) {
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
         None

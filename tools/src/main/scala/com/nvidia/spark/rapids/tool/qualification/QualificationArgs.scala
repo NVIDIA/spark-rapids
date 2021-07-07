@@ -48,16 +48,23 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Filter event logs whose filenames contain the input string")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
-      descr = "Number of output rows. Default is 1000.")
+      descr = "Number of output rows. Default is 1000.",
+      default = Some(1000))
   val numThreads: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of thread to use for parallel processing. The default is the " +
         "number of cores on host divided by 4.")
+  val readScorePercent: ScallopOption[Int] =
+    opt[Int](required = false,
+      descr = "The percent the read format and datatypes apply to the score. Default is " +
+        "20 percent.",
+      default = Some(20))
   val timeout: ScallopOption[Long] =
     opt[Long](required = false,
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +
         "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
-        "times out, it will report what it was able to process up until the timeout.")
+        "times out, it will report what it was able to process up until the timeout.",
+      default = Some(86400))
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)
@@ -65,6 +72,14 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   }
 
   validate(timeout) {
+    case timeout if (timeout > 3) => Right(Unit)
+    case _ => Left("Error, timeout must be greater than 3 seconds.")
+  }
+
+  validate(readScorePercent) {
+    case percent if (percent >= 0) && (percent <= 100) => Right(Unit)
+    case _ => Left("Error, timeout must be greater than 3 seconds.")
+  }) {
     case timeout if (timeout > 3) => Right(Unit)
     case _ => Left("Error, timeout must be greater than 3 seconds.")
   }

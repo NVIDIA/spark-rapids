@@ -33,7 +33,8 @@ class QualAppInfo(
     numOutputRows: Int,
     eventLogInfo: EventLogInfo,
     hadoopConf: Configuration,
-    pluginTypeChecker: PluginTypeChecker)
+    pluginTypeChecker: PluginTypeChecker,
+    readScorePercent: Int)
   extends AppBase(numOutputRows, eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
@@ -88,8 +89,23 @@ class QualAppInfo(
     ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
   }
 
-  private def calculateScore(sqlDataframeDur: Long, appDuration: Long): Double = {
-    ToolUtils.calculatePercent(sqlDataframeDur, appDuration)
+  /**
+   * The score starts out based on the over all time spent in SQL operations
+   * and then can only decrease from there based on if it has operations not
+   * supported by the plugin.
+   *
+   * @param sqlDataframeDur Time spent doing SQL dataframe operations.
+   * @param appDuration Application duration
+   * @param readFormatScore Score from read format and datatypes
+   * @return the final score
+   */
+  private def calculateScore(sqlDataframeDur: Long, appDuration: Long,
+      readFormatScore: Double): Double = {
+    val durationScore = ToolUtils.calculatePercent(sqlDataframeDur, appDuration)
+    val finalScore = (durationScore * readScorePercent) * readFormatScore
+    logWarning(s"final score is $finalScore, before dur: $durationScore and " +
+      s"$readScorePercent% and read: $readFormatScore")
+    finalScore
   }
 
   // if the sql contains a dataset, then duration for it is 0
@@ -151,7 +167,6 @@ class QualAppInfo(
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframDuration
-      val score = calculateScore(sqlDataframeDur, appDuration)
       val problems = getPotentialProblems
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
@@ -160,6 +175,7 @@ class QualAppInfo(
         pluginTypeChecker.checkReadDataTypesSupported(ds.format, ds.schema)
       }.sum
       val readFormatScore = ToolUtils.calculatePercent(readFormatSum, dataSourceInfo.size)
+      val score = calculateScore(sqlDataframeDur, appDuration, readFormatScore)
       logWarning("read formats scores: " + readFormatScore)
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
@@ -230,9 +246,10 @@ object QualAppInfo extends Logging {
       path: EventLogInfo,
       numRows: Int,
       hadoopConf: Configuration,
-      pluginTypeChecker: PluginTypeChecker): Option[QualAppInfo] = {
+      pluginTypeChecker: PluginTypeChecker,
+      readScorePercent: Int): Option[QualAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(numRows, path, hadoopConf, pluginTypeChecker)
+        val app = new QualAppInfo(numRows, path, hadoopConf, pluginTypeChecker, readScorePercent)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {
