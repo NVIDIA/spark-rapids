@@ -96,21 +96,20 @@ class QualAppInfo(
    *
    * @param sqlDataframeDur Time spent doing SQL dataframe operations.
    * @param appDuration Application duration
-   * @param readFormatScore Score from read format and datatypes as whole percent
    * @return the final score
    */
   private def calculateScore(sqlDataframeDur: Long, appDuration: Long,
-      readFormatScore: Double): Double = {
-    val durationScore = ToolUtils.calculateDurationPercent(sqlDataframeDur, appDuration) * 100
+      readScorePercent: Double): Double = {
+    val durationScore = ToolUtils.calculateDurationPercent(sqlDataframeDur, appDuration)
     // the readScorePercent is an integer representation of percent
-    val percentForReadScoreDecimal = readScorePercent / 100.0
-    val percentForRestOfScore = 1.0 - percentForReadScoreDecimal
+    val ratioForReadScore = readScorePercent / 100.0
+    val ratioForRestOfScore = 1.0 - ratioForReadScore
     // get the part of the duration that will apply to the read score
-    val partForReadScore = durationScore * percentForReadScoreDecimal
+    val partForReadScore = durationScore * ratioForReadScore
     // calculate the score for the read part based on the read format score
-    val readScore = ToolUtils.calculatePercentRounded(partForReadScore, readFormatScore)
+    val readScore = ToolUtils.calculatePercentRounded(partForReadScore, readScorePercent)
     // get the rest of the duration that doesn't apply to the read score
-    val scoreRestPart = ToolUtils.calculatePercentRounded(durationScore, percentForRestOfScore)
+    val scoreRestPart = ToolUtils.calculatePercentRounded(durationScore, ratioForRestOfScore)
     val finalScore = scoreRestPart + readScore
     logWarning(s"final score is $finalScore, before dur: $durationScore and " +
       s"$readScorePercent% and read: $readScorePercent")
@@ -145,7 +144,7 @@ class QualAppInfo(
     val totalRunTime = validSums.values.map { dur =>
       dur.executorRunTime
     }.sum
-    ToolUtils.calculateDurationPercent(totalCpuTime, totalRunTime) * 100
+    ToolUtils.calculateDurationPercent(totalCpuTime, totalRunTime)
   }
 
   case class SupportedTypesDS(format: String, direction: String,
@@ -178,11 +177,11 @@ class QualAppInfo(
   // those together and divide by the total number.  So if none of the data types
   // are supported, the score would be 0.0 and if all formats and datatypes are
   // supported the score would be 1.0.
-  private def calculateReadScore: Double = {
+  private def calculateReadScoreRatio: Double = {
     val readFormatSum = dataSourceInfo.map { ds =>
       pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema, ds.schemaIncomplete)
     }.sum
-    ToolUtils.calculateDurationPercent(readFormatSum, dataSourceInfo.size)
+    readFormatSum / dataSourceInfo.size
   }
 
   def aggregateStats(): Option[QualificationSummaryInfo] = {
@@ -193,15 +192,15 @@ class QualAppInfo(
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
-      val readFormatScore = calculateReadScore
-      val score = calculateScore(sqlDataframeDur, appDuration, readFormatScore)
-      logWarning("read formats scores: " + readFormatScore)
+      val readScoreRatio = calculateReadScoreRatio
+      val readScoreHumanPercent = ToolUtils.calculatePercentRounded(100, readScoreRatio)
+      val score = calculateScore(sqlDataframeDur, appDuration, readScorePercent)
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
         sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated,
-        sqlDurProblem, failedIds, readFormatScore, getAllReadFileFormats)
+        sqlDurProblem, failedIds, readScoreHumanPercent, getAllReadFileFormats)
     }
   }
 
