@@ -30,20 +30,33 @@ object ToolUtils extends Logging {
     df.showString(numRows, 0)
   }
 
-  def calculatePercent(first: Long, total: Long): Double = {
-    calculatePercent(first.toDouble, total)
+  def calculateDurationPercent(first: Long, total: Long): Double = {
+    calculateDurationPercent(first.toDouble, total)
   }
 
   // get percent to 2 decimal places
-  def calculatePercent(first: Double, total: Long): Double = {
+  def calculateDurationPercent(first: Double, total: Long): Double = {
     val firstDec = BigDecimal.decimal(first)
     val totalDec = BigDecimal.decimal(total)
     if (firstDec == 0 || totalDec == 0) {
       0.toDouble
     } else {
-      val res = (firstDec * 100) / totalDec
+      val res = (firstDec / totalDec) * 100
       val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
       resScale.toDouble
     }
   }
+
+  def calculatePercentRounded(value: Double, percent: Double): Double = {
+    val valueDec = BigDecimal.decimal(value)
+    val percentDec = BigDecimal.decimal(percent)
+    if (valueDec == 0 || percentDec == 0) {
+      0.toDouble
+    } else {
+      val res = valueDec * percentDec
+      val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
+      resScale.toDouble
+    }
+  }
+
 }

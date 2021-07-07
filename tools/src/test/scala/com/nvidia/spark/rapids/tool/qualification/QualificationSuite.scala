@@ -178,7 +178,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
 
-        val listenerCpuTimePercent = ToolUtils.calculatePercent(executorCpuTime, executorRunTime)
+        val listenerCpuTimePercent = ToolUtils.calculateDurationPercent(executorCpuTime, executorRunTime)
 
         // compare metrics from event log with metrics from listener
         assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
