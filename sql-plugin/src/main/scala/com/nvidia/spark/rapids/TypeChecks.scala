@@ -1634,20 +1634,47 @@ object SupportedOpsDocs {
 }
 
 object SupportedOpsForTools extends Logging {
+
   private def outputSupportIO() {
-    // write header
+    // won't handle what the user sets, but lets look at what we
+    // have for defaults because if configs are off it likely means
+    // something isn't completely compatible
+    val conf = new RapidsConf(Map.empty[String, String])
     val types = TypeEnum.values.toSeq
     val header = Seq("Format", "Direction") ++ types
     println(header.mkString(","))
     GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
       case (format, ioMap) =>
+        val formatEnabled = format.toString.toLowerCase match {
+          case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+          case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
+          case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
+          case _ =>
+            throw new IllegalArgumentException("Format is unknown we need to add it here!")
+        }
         val read = ioMap(ReadFileOp)
-        val write = ioMap(WriteFileOp)
         val readOps = types.map { t =>
-          // TODO - need to check if configs are on????
-          val res = read.support(t).text
-          logWarning(s"checking support for $t res is: $res")
-          res
+          val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
+            t.toString() match {
+              case "BOOLEAN" => conf.isCsvBoolReadEnabled
+              case "BYTE" => conf.isCsvByteReadEnabled
+              case "SHORT" => conf.isCsvShortReadEnabled
+              case "INT" => conf.isCsvIntReadEnabled
+              case "LONG" => conf.isCsvLongReadEnabled
+              case "FLOAT" => conf.isCsvFloatReadEnabled
+              case "DOUBLE" => conf.isCsvDoubleReadEnabled
+              case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
+              case "DATE" => conf.isCsvDateReadEnabled
+              case _ => true
+            }
+          } else {
+            true
+          }
+          if (!formatEnabled || !typeEnabled) {
+            "NS"
+          } else {
+            read.support(t).text
+          }
         }
         // only support reads for now
         println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
