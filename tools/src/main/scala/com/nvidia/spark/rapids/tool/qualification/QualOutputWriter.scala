@@ -63,12 +63,14 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     val appNameStr = stringIfempty(appSum.appName)
     val failedIds = stringIfempty(appSum.failedSQLIds)
     val readFileFormats = stringIfempty(appSum.readFileFormats)
+    val scoreRounded = f"${appSum.score}%1.2f"
+    val readFileScoreRounded = f"${appSum.readFileFormatScore}}%1.2f"
 
-    s"$appNameStr,$appIdStr,${appSum.score},$probStr,${appSum.sqlDataFrameDuration}," +
+    s"$appNameStr,$appIdStr,$scoreRounded,$probStr,${appSum.sqlDataFrameDuration}," +
       s"${appSum.sqlDataframeTaskDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readScorePercent},${appSum.readFileFormatScore},$readFileFormats"
+      s"${appSum.readScorePercent},$readFileScoreRounded,$readFileFormats"
   }
 
   def writeCSV(summaries: Seq[QualificationSummaryInfo]): Unit = {

@@ -101,10 +101,10 @@ class QualAppInfo(
     // get the part of the duration that will apply to the read score
     val partForReadScore = sqlDataframeTaskDuration * ratioForReadScore
     // calculate the score for the read part based on the read format score
-    val readScore = ToolUtils.calculatePercentRounded(partForReadScore, readScoreRatio)
+    val readScore = partForReadScore * readScoreRatio
     // get the rest of the duration that doesn't apply to the read score
-    val scoreRestPart = ToolUtils.calculatePercentRounded(sqlDataframeTaskDuration, ratioForRestOfScore)
-    val finalScore = ((scoreRestPart * 100) + (readScore * 100) / 100)
+    val scoreRestPart = sqlDataframeTaskDuration * ratioForRestOfScore
+    val finalScore = scoreRestPart + readScore
     logWarning(s"final score is $finalScore, before dur: $sqlDataframeTaskDuration and " +
       s"$scoreRestPart and read: $readScore")
     finalScore
@@ -199,7 +199,7 @@ class QualAppInfo(
       val sqlDurProblem = getSQLDurationProblematic
       val readScoreRatio = calculateReadScoreRatio
       val sqlDataframeTaskDuration = calculateTaskDataframeDuration
-      val readScoreHumanPercent = ToolUtils.calculatePercentRounded(100, readScoreRatio)
+      val readScoreHumanPercent = 100 * readScoreRatio
       val score = calculateScore(readScoreRatio, sqlDataframeTaskDuration)
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
