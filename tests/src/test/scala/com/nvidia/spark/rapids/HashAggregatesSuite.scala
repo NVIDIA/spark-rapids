@@ -136,14 +136,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
       gpuPlan match {
         case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>
-          assert(plan.children.head.isInstanceOf[GpuCoalesceBatches])
-          assert(plan.children.head.children.head.isInstanceOf[GpuHashAggregateExec])
+          assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
         case GpuColumnarToRowExec(plan, _) => // Codegen disabled
-          assert(plan.children.head.isInstanceOf[GpuCoalesceBatches])
-          assert(plan.children.head.children.head.isInstanceOf[GpuHashAggregateExec])
+          assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
