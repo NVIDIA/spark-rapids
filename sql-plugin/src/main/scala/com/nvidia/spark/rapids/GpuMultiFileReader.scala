@@ -308,6 +308,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
   private var isInitted = false
+  private var isFirstBatch = true
   private val tasks = new ConcurrentLinkedQueue[Future[HostMemoryBuffersWithMetaDataBase]]()
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
@@ -419,9 +420,15 @@ abstract class MultiFileCloudPartitionReaderBase(
       next()
     }
 
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
+
     batch.isDefined
   }
 
@@ -542,6 +549,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
+  private[this] var isFirstBatch = true
 
   private case class CurrentChunkMeta(
     isCorrectRebaseMode: Boolean,
@@ -677,9 +685,16 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         batch = readBatch()
       }
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
+
     batch.isDefined
   }
 

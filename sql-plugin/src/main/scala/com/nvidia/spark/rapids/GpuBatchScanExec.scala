@@ -386,6 +386,7 @@ class CSVPartitionReader(
     conf)
   private var isFirstChunkForIterator: Boolean = true
   private var isExhausted: Boolean = false
+  private var isFirstBatch: Boolean = true
   private var maxDeviceMemory: Long = 0
 
   metrics = execMetrics
@@ -540,9 +541,14 @@ class CSVPartitionReader(
     } else {
       readBatch()
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
     batch.isDefined
   }
 
