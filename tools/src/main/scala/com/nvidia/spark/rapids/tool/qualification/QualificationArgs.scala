@@ -78,10 +78,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
   validate(readScorePercent) {
     case percent if (percent >= 0) && (percent <= 100) => Right(Unit)
-    case _ => Left("Error, timeout must be greater than 3 seconds.")
-  }) {
-    case timeout if (timeout > 3) => Right(Unit)
-    case _ => Left("Error, timeout must be greater than 3 seconds.")
+    case _ => Left("Error, read score percent must be between 0 and 100.")
   }
 
   verify()

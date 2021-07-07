@@ -101,8 +101,14 @@ class QualAppInfo(
    */
   private def calculateScore(sqlDataframeDur: Long, appDuration: Long,
       readFormatScore: Double): Double = {
+
     val durationScore = ToolUtils.calculatePercent(sqlDataframeDur, appDuration)
-    val finalScore = (durationScore * readScorePercent) * readFormatScore
+
+    val readScore = (durationScore * (readScorePercent / 100.0)) * readFormatScore
+    logWarning(s"read score is: $readScore, $durationScore, $readScorePercent, ${(readScorePercent / 100.0)}, $readFormatScore")
+    val restScore = (durationScore * ((100.0 - readScorePercent) / 100.0))
+    logWarning(s"rest score is: $restScore, $durationScore, ${(100.0 - readScorePercent) / 100.0}")
+    val finalScore = restScore + readScore
     logWarning(s"final score is $finalScore, before dur: $durationScore and " +
       s"$readScorePercent% and read: $readFormatScore")
     finalScore
