@@ -245,22 +245,22 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   test("Regex: Fix single digit month") {
     testRegex(FIX_SINGLE_DIGIT_MONTH,
-      Seq("1-2-3", "1111-2-3", null),
-      Seq("1-02-3", "1111-02-3", null))
+      Seq("1-2-3", "1111-2-3", "2000-7-7\n9\t8568:\n", null),
+      Seq("1-02-3", "1111-02-3", "2000-07-7\n9\t8568:\n", null))
   }
 
   test("Regex: Fix single digit day followed by non digit char") {
     // single digit day followed by non digit
     testRegex(FIX_SINGLE_DIGIT_DAY_1,
-      Seq("1111-02-3 ", "1111-02-3:", null),
-      Seq("1111-02-03 ", "1111-02-03:", null))
+      Seq("1111-02-3 ", "1111-02-3:", "2000-03-192", "2000-07-7\n9\t8568:\n", null),
+      Seq("1111-02-03 ", "1111-02-03:", "2000-03-192", "2000-07-07\n9\t8568:\n", null))
   }
 
   test("Regex: Fix single digit day at end of string") {
     // single digit day at end of string
     testRegex(FIX_SINGLE_DIGIT_DAY_2,
-      Seq("1-02-3", "1111-02-3", "1111-02-03", null),
-      Seq("1-02-03", "1111-02-03", "1111-02-03", null))
+      Seq("1-02-3", "1111-02-3", "1111-02-03", "2000-03-192", null),
+      Seq("1-02-03", "1111-02-03", "1111-02-03", "2000-03-192", null))
   }
 
   test("Regex: Fix single digit hour 1") {
@@ -483,7 +483,12 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     "1999/12/31",
     "2001- 1-1",
     "2001-1- 1",
-    "2001- 1- 1") ++ singleDigits ++ singleDigits.map(_.replace('-', '/'))
+    "2001- 1- 1",
+    "2000-3-192",
+    // interesting test cases from fuzzing that original triggered differences between CPU and GPU
+    "2000-1- 099\n305\n 7-390--.0:-",
+    "2000-7-7\n9\t8568:\n",
+    "2000-\t5-2.7.44584.9935") ++ singleDigits ++ singleDigits.map(_.replace('-', '/'))
 
   private val dateValues = Seq(
     Date.valueOf("2020-07-24"),

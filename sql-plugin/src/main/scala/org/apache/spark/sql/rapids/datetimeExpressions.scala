@@ -476,17 +476,23 @@ object GpuToTimestamp extends Arm {
   // is possible that other formats may be supported but these are the only ones that we have
   // tests for.
   val LEGACY_COMPATIBLE_FORMATS = Seq(
-    LegacyParseFormat("yyyy-MM-dd", '-', isTimestamp = false),
-    LegacyParseFormat("yyyy/MM/dd", '/', isTimestamp = false),
-    LegacyParseFormat("dd-MM-yyyy", '-', isTimestamp = false),
-    LegacyParseFormat("dd/MM/yyyy", '/', isTimestamp = false),
-    LegacyParseFormat("yyyy-MM-dd HH:mm:ss", '-', isTimestamp = true),
-    LegacyParseFormat("yyyy/MM/dd HH:mm:ss", '/', isTimestamp = true)
+    LegacyParseFormat("yyyy-MM-dd", '-', isTimestamp = false,
+      "\\A\\d{4}-\\d{2}-\\d{2}(\\D|\\s|\\Z)"),
+    LegacyParseFormat("yyyy/MM/dd", '/', isTimestamp = false,
+      "\\A\\d{4}/\\d{2}/\\d{2}(\\D|\\s|\\Z)"),
+    LegacyParseFormat("dd-MM-yyyy", '-', isTimestamp = false,
+      "\\A\\d{2}-\\d{2}-\\d{4}(\\D|\\s|\\Z)"),
+    LegacyParseFormat("dd/MM/yyyy", '/', isTimestamp = false,
+      "\\A\\d{2}/\\d{2}/\\d{4}(\\D|\\s|\\Z)"),
+    LegacyParseFormat("yyyy-MM-dd HH:mm:ss", '-', isTimestamp = true,
+      "\\A\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(\\D|\\s|\\Z)"),
+    LegacyParseFormat("yyyy/MM/dd HH:mm:ss", '/', isTimestamp = true,
+      "\\A\\d{4}/\\d{2}/\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(\\D|\\s|\\Z)")
   )
 
   /** remove whitespace before month and day */
   val REMOVE_WHITESPACE_FROM_MONTH_DAY: RegexReplace =
-    RegexReplace("(\\A\\d+)-([ ]*)(\\d+)-([ ]*)(\\d+)", "\\1-\\3-\\5")
+    RegexReplace("(\\A\\d+)-([ \\t]*)(\\d+)-([ \\t]*)(\\d+)", "\\1-\\3-\\5")
 
   /** Regex rule to replace "yyyy-m-" with "yyyy-mm-" */
   val FIX_SINGLE_DIGIT_MONTH: RegexReplace =
@@ -494,7 +500,7 @@ object GpuToTimestamp extends Arm {
 
   /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
   val FIX_SINGLE_DIGIT_DAY_1: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2})-(\\d{1}\\D+)", "\\1-0\\2")
+    RegexReplace("(\\A\\d+-\\d{2})-(\\d{1}[\\D\\s]+)", "\\1-0\\2")
 
   /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
   val FIX_SINGLE_DIGIT_DAY_2: RegexReplace =
@@ -663,22 +669,21 @@ object GpuToTimestamp extends Arm {
       })
 
     if (format.isTimestamp) {
-      // special handling to ignore "yyyy-mm-dd hh:mm:" which Spark treats
-      // as null but cuDF supports
-      val timestampFormatNoSeconds = "\\A\\d+-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\Z"
-      val formatWithSeparator = format.separator match {
-        case '/' => timestampFormatNoSeconds.replace('-', '/')
-        case '-' => timestampFormatNoSeconds
-      }
       withResource(Scalar.fromNull(dtype)) { nullValue =>
-        withResource(fixedUp.matchesRe(formatWithSeparator)) { hasNoSeconds =>
+        withResource(fixedUp.matchesRe(format.validRegex)) { hasNoSeconds =>
           withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
-            hasNoSeconds.ifElse(nullValue, timestamp)
+            hasNoSeconds.ifElse(timestamp, nullValue)
           }
         }
       }
     } else {
-      asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)
+      withResource(Scalar.fromNull(dtype)) { nullValue =>
+        withResource(fixedUp.matchesRe(format.validRegex)) { isValidDate =>
+          withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
+            isValidDate.ifElse(timestamp, nullValue)
+          }
+        }
+      }
     }
   }
 
@@ -717,7 +722,8 @@ object GpuToTimestamp extends Arm {
 
 }
 
-case class LegacyParseFormat(format: String, separator: Char, isTimestamp: Boolean)
+case class LegacyParseFormat(format: String, separator: Char, isTimestamp: Boolean,
+    validRegex: String)
 
 case class RegexReplace(search: String, replace: String)
 
