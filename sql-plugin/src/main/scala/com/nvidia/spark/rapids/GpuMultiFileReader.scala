@@ -401,6 +401,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           if (getSizeOfHostBuffers(fileBufsAndMeta) == 0) {
             // if sizes are 0 means no rows and no data so skip to next file
             // file data was empty so submit another task if any were waiting
+            closeCurrentFileHostBuffers()
             addNextTaskIfNeeded()
             next()
           } else {
