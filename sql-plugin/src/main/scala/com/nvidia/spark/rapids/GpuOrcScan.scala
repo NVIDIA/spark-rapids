@@ -641,12 +641,16 @@ class GpuOrcPartitionReader(
       }
       isFirstBatch = false
     }
-    batch.isDefined
+    val ret = batch.isDefined
+    // After finishing reading, we should clean up ctx just in case leaking orc readers
+    if (!ret) {
+      cleanUpOrc(ctx)
+    }
+    ret
   }
 
   override def close(): Unit = {
     super.close()
-    cleanUpOrc(ctx)
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
