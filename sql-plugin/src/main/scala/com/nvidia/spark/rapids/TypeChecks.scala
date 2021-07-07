@@ -1671,7 +1671,8 @@ object SupportedOpsForTools extends Logging {
             true
           }
           if (!formatEnabled || !typeEnabled) {
-            "NS"
+            // indicate configured off by default
+            "CO"
           } else {
             read.support(t).text
           }

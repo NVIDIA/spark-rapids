@@ -96,6 +96,7 @@ class PluginTypeChecker extends Logging {
               0.5
             case "NS" => 0.0
             case "NA" => 0.0
+            case "CO" => 0.0
             case unknown =>
               logWarning(s"unknown type $unknown for type: $typeRead")
               0.0
@@ -110,8 +111,8 @@ class PluginTypeChecker extends Logging {
       } else {
         if (schemaIncomplete) {
           // we don't know for sure if the other types being read are supported
-          // add one more score of 0.5 in to bring it down a little
-          (scores.sum + 0.5) / (scores.size + 1)
+          // add one more score to bring it down
+          (scores.sum + 0.2) / (scores.size + 1)
         } else {
           scores.sum / scores.size
         }

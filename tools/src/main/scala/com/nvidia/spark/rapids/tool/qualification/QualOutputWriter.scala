@@ -32,12 +32,13 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
   private val appIdStr = "App ID"
   private val appDurStr = "App Duration"
   private val sqlDurStr = "SQL Dataframe Duration"
+  private val taskDurStr = "Task Dataframe Duration"
 
   private val headerCSV =
-    s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr," +
+    s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr" +
       s"$appDurStr,Executor CPU Time Percent,App Duration Estimated," +
-      "SQL Duration with Potential Problems,SQL Ids with Failures,ReadFileFormat Score," +
-      "ReadFileFormat\n"
+      "SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent," +
+      "ReadFileFormat Score,ReadFileFormat\n"
 
   // find sizes of largest appId and long fields, assume the long is not bigger then
   // the problemDurStr header
@@ -63,10 +64,11 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     val failedIds = stringIfempty(appSum.failedSQLIds)
     val readFileFormats = stringIfempty(appSum.readFileFormats)
 
-    s"$appNameStr,$appIdStr,${appSum.score},$probStr,${appSum.sqlDataFrameDuration}," +
+    s"$appNameStr,$appIdStr,${appSum.score},$probStr,${appSum.sqlDataframeTaskDuration}," +
+      s"${appSum.sqlDataFrameDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readFileFormatScore},$readFileFormats"
+      s"${appSum.readScorePercent},${appSum.readFileFormatScore},$readFileFormats"
   }
 
   def writeCSV(summaries: Seq[QualificationSummaryInfo]): Unit = {
@@ -100,6 +102,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     entireHeader.append(s"|%${appIdMaxSize}s|".format(appIdStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(appDurStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(sqlDurStr))
+    entireHeader.append(s"%${sizePadLongs}s|".format(taskDurStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(problemDurStr))
     entireHeader.append("\n")
     val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
@@ -110,14 +113,16 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     val finalSums = sums.take(numRows)
     finalSums.foreach { sumInfo =>
       val appId = sumInfo.appId
-      val appIdStr = s"%${appIdMaxSize}s".format(appId)
+      val appIdStrV = s"%${appIdMaxSize}s".format(appId)
       val appDur = sumInfo.appDuration.toString
-      val appDurStr = s"%${sizePadLongs}s".format(appDur)
+      val appDurStrV = s"%${sizePadLongs}s".format(appDur)
       val sqlDur = sumInfo.sqlDataFrameDuration.toString
-      val sqlDurStr = s"%${sizePadLongs}s".format(sqlDur)
+      val taskDur = sumInfo.sqlDataframeTaskDuration.toString
+      val sqlDurStrV = s"%${sizePadLongs}s".format(sqlDur)
+      val sqltaskDurV = s"%${sizePadLongs}s".format(taskDur)
       val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
-      val sqlProbDurStr = s"%${sizePadLongs}s".format(sqlProbDur)
-      val wStr = s"|$appIdStr|$appDurStr|$sqlDurStr|$sqlProbDurStr|"
+      val sqlProbDurStrV = s"%${sizePadLongs}s".format(sqlProbDur)
+      val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqltaskDurV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
     }
     writer.write(s"$sep\n")

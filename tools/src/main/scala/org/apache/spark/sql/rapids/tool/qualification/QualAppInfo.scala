@@ -90,28 +90,22 @@ class QualAppInfo(
   }
 
   /**
-   * The score starts out based on the over all time spent in SQL operations
-   * and then can only decrease from there based on if it has operations not
+   * The score starts out based on the over all task time spent in SQL dataframe
+   * operations and then can only decrease from there based on if it has operations not
    * supported by the plugin.
-   *
-   * @param sqlDataframeDur Time spent doing SQL dataframe operations.
-   * @param appDuration Application duration
-   * @return the final score
    */
-  private def calculateScore(sqlDataframeDur: Long, appDuration: Long,
-      readScoreRatio: Double): Double = {
-    val durationScore = ToolUtils.calculateDurationPercent(sqlDataframeDur, appDuration)
+  private def calculateScore(readScoreRatio: Double, sqlDataframeTaskDuration: Long): Double = {
     // the readScorePercent is an integer representation of percent
     val ratioForReadScore = readScorePercent / 100.0
     val ratioForRestOfScore = 1.0 - ratioForReadScore
     // get the part of the duration that will apply to the read score
-    val partForReadScore = durationScore * ratioForReadScore
+    val partForReadScore = sqlDataframeTaskDuration * ratioForReadScore
     // calculate the score for the read part based on the read format score
     val readScore = ToolUtils.calculatePercentRounded(partForReadScore, readScoreRatio)
     // get the rest of the duration that doesn't apply to the read score
-    val scoreRestPart = ToolUtils.calculatePercentRounded(durationScore, ratioForRestOfScore)
+    val scoreRestPart = ToolUtils.calculatePercentRounded(sqlDataframeTaskDuration, ratioForRestOfScore)
     val finalScore = scoreRestPart + readScore
-    logWarning(s"final score is $finalScore, before dur: $durationScore and " +
+    logWarning(s"final score is $finalScore, before dur: $sqlDataframeTaskDuration and " +
       s"$readScorePercent% and read: $readScorePercent")
     finalScore
   }
@@ -204,17 +198,16 @@ class QualAppInfo(
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
       val readScoreRatio = calculateReadScoreRatio
-      val totalTaskDuration = calculateTaskDataframeDuration
-      logWarning(s"sql: $sqlDataframeDur task: $totalTaskDuration app duration $appDuration " +
-        s"score ${totalTaskDuration *0.5}")
+      val sqlDataframeTaskDuration = calculateTaskDataframeDuration
       val readScoreHumanPercent = ToolUtils.calculatePercentRounded(100, readScoreRatio)
-      val score = calculateScore(sqlDataframeDur, appDuration, readScoreRatio)
+      val score = calculateScore(readScoreRatio, sqlDataframeTaskDuration)
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
-        sqlDataframeDur, appDuration, executorCpuTimePercent, endDurationEstimated,
-        sqlDurProblem, failedIds, readScoreHumanPercent, getAllReadFileFormats)
+        sqlDataframeDur, appDuration, sqlDataframeTaskDuration, executorCpuTimePercent,
+        endDurationEstimated, sqlDurProblem, failedIds, readScorePercent, readScoreHumanPercent,
+        getAllReadFileFormats)
     }
   }
 
@@ -267,10 +260,12 @@ case class QualificationSummaryInfo(
     potentialProblems: String,
     sqlDataFrameDuration: Long,
     appDuration: Long,
+    sqlDataframeTaskDuration: Long,
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long,
     failedSQLIds: String,
+    readScorePercent: Int,
     readFileFormatScore: Double,
     readFileFormats: String)
 
