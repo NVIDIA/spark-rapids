@@ -132,6 +132,18 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test spark2 eventlog") {
+    val eventLog = Array(s"$logDir/spark2-eventlog.zstd")
+    val apps = ToolTestUtils.processProfileApps(eventLog, sparkSession)
+    assert(apps.size == 1)
+    assert(apps.head.sparkVersion.equals("2.2.3"))
+    assert(apps.head.gpuMode.equals(false))
+    assert(apps.head.jobStart.size == 1)
+    assert(apps.head.jobStart.head.jobID.equals(0))
+    val stage0 = apps.head.stageSubmitted.filter(_.stageId == 0)
+    assert(stage0.head.numTasks.equals(6))
+  }
+
   test("malformed json eventlog") {
     val eventLog = s"$logDir/malformed_json_eventlog.zstd"
     TrampolineUtil.withTempDir { tempDir =>

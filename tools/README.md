@@ -13,7 +13,7 @@ GPU generated event logs.
 - Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
   runs a Spark application so needs the Spark runtime.
 - Java 8 or above
-- Complete Spark event log(s) from Spark 3.0 or above version.
+- Spark event log(s) from Spark 2.0 or above version.
   Support both rolled and compressed event logs with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes.
   Also support Databricks specific rolled and compressed(.gz) eventlogs.
   The tool does not support nested directories, event log files or event log directories should be
