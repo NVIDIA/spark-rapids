@@ -316,9 +316,8 @@ class GpuHashAggregateIterator(
         (processIncomingBatch(inputBatch), isLast)
       }
       withResource(childCvs) { _ =>
-        withResource(computeAggregate(childCvs, merge = false)) { aggregatedBatch =>
-          val batch = LazySpillableColumnarBatch(aggregatedBatch, metrics.spillCallback,
-            "aggbatch")
+        withResource(computeAggregate(childCvs, merge = false)) { aggBatch =>
+          val batch = LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
           // Avoid making batch spillable for the common case of the last and only batch
           if (!(isLastInputBatch && aggregatedBatches.isEmpty)) {
             batch.allowSpilling()
@@ -501,8 +500,8 @@ class GpuHashAggregateIterator(
 
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
-        withResource(keyBatchingIter.next()) { unmergedBatch =>
-          computeAggregate(GpuColumnVector.extractColumns(unmergedBatch), merge = true)
+        withResource(keyBatchingIter.next()) { batch =>
+          computeAggregate(GpuColumnVector.extractColumns(batch), merge = true, isSorted = true)
         }
       }
     }
@@ -733,11 +732,13 @@ class GpuHashAggregateIterator(
    * Compute the aggregations on the projected input columns.
    * @param toAggregateCvs column vectors representing the input batch to aggregate
    * @param merge true indicates a merge aggregation should be performed
+   * @param isSorted true indicates the data is already sorted by the grouping keys
    * @return aggregated batch
    */
   private def computeAggregate(
       toAggregateCvs: Seq[GpuColumnVector],
-      merge: Boolean): ColumnarBatch  = {
+      merge: Boolean,
+      isSorted: Boolean = false): ColumnarBatch  = {
     val aggModeCudfAggregates = boundExpressions.aggModeCudfAggregates
     val computeAggTime = metrics.computeAggTime
     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
@@ -757,8 +758,12 @@ class GpuHashAggregateIterator(
             aggregates.map(a => a.mergeAggregate.onColumn(a.getOrdinal(a.ref)))
           }
         }
+        val groupOptions = cudf.GroupByOptions.builder()
+            .withIgnoreNullKeys(false)
+            .withKeysSorted(isSorted)
+            .build()
         val result = withResource(new cudf.Table(toAggregateCvs.map(_.getBase): _*)) { tbl =>
-          tbl.groupBy(groupingExpressions.indices: _*).aggregate(cudfAggregates: _*)
+          tbl.groupBy(groupOptions, groupingExpressions.indices: _*).aggregate(cudfAggregates: _*)
         }
         withResource(result) { result =>
           // Turn aggregation into a ColumnarBatch for the result evaluation
