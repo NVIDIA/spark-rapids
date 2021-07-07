@@ -949,8 +949,6 @@ case class GpuHashAggregateExec(
   private lazy val finalMode = uniqueModes.contains(Final)
   private lazy val completeMode = uniqueModes.contains(Complete)
 
-  private lazy val targetInputBatchSize = computeTargetInputBatchSize()
-
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -959,8 +957,6 @@ case class GpuHashAggregateExec(
     CONCAT_TIME-> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
   ) ++ spillMetrics
-
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(TargetSize(targetInputBatchSize))
 
   override def verboseStringWithOperatorId(): String = {
     s"""
@@ -1012,20 +1008,6 @@ case class GpuHashAggregateExec(
   }
 
   protected def outputExpressions: Seq[NamedExpression] = resultExpressions
-
-  private def computeTargetInputBatchSize(): Long = {
-    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
-    val aggBufferAttributes = groupingAttributes ++
-        aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
-    val aggModeCudfAggregates =
-      AggregateUtils.computeAggModeCudfAggregates(aggregateExpressions, aggBufferAttributes)
-
-    val inputTypes = child.output.map(_.dataType)
-    val aggregates = aggModeCudfAggregates.flatMap(_._2)
-    val mergedTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
-    AggregateUtils.computeTargetBatchSize(configuredTargetBatchSize, inputTypes, mergedTypes,
-      groupingExpressions.isEmpty)
-  }
 
   //
   // This section is derived (copied in most cases) from HashAggregateExec
