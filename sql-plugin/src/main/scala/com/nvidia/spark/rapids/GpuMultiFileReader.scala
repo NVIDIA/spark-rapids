@@ -310,7 +310,8 @@ abstract class MultiFileCloudPartitionReaderBase(
   private var isInitted = false
   private val tasks = new ConcurrentLinkedQueue[Future[HostMemoryBuffersWithMetaDataBase]]()
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
-  private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
+  private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
+      .getOrElse(TrampolineUtil.newInputMetrics())
 
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set
@@ -384,8 +385,9 @@ abstract class MultiFileCloudPartitionReaderBase(
         if (getSizeOfHostBuffers(currentFileHostBuffers.get) == 0) {
           closeCurrentFileHostBuffers()
           next()
+        } else {
+          batch = readBatch(currentFileHostBuffers.get)
         }
-        batch = readBatch(currentFileHostBuffers.get)
       } else {
         if (filesToRead > 0 && !isDone) {
           val fileBufsAndMeta = tasks.poll.get()
