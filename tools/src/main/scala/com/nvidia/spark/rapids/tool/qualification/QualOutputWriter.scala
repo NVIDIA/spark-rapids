@@ -105,7 +105,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     entireHeader.append(s"%${sizePadLongs}s|".format(taskDurStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(problemDurStr))
     entireHeader.append("\n")
-    val sep = "=" * (appIdMaxSize + (sizePadLongs * 4) + 5)
+    val sep = "=" * (appIdMaxSize + (sizePadLongs * 4) + 6)
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")

@@ -106,7 +106,7 @@ class QualAppInfo(
     val scoreRestPart = ToolUtils.calculatePercentRounded(sqlDataframeTaskDuration, ratioForRestOfScore)
     val finalScore = scoreRestPart + readScore
     logWarning(s"final score is $finalScore, before dur: $sqlDataframeTaskDuration and " +
-      s"$readScorePercent% and read: $readScorePercent")
+      s"$scoreRestPart and read: $readScore")
     finalScore
   }
 
