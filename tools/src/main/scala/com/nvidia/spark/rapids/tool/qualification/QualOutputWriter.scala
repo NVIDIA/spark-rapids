@@ -79,7 +79,7 @@ class QualOutputWriter(outputDir: String, numRows: Int, reportReadSchema: Boolea
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
       s"${appSum.readScorePercent},$readFileScoreRounded"
     if (reportReadSchema) {
-      initRow + ", $readFileFormats"
+      initRow + s", $readFileFormats"
     } else {
       initRow
     }

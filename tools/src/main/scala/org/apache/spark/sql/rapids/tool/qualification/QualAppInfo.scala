@@ -185,7 +185,7 @@ class QualAppInfo(
   private def calculateReadScoreRatio: Double = {
     logWarning("data source info is: " + dataSourceInfo)
     val readFormatSum = dataSourceInfo.map { ds =>
-      pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema, ds.schemaIncomplete)
+      pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
     }.sum
     readFormatSum / dataSourceInfo.size
   }
