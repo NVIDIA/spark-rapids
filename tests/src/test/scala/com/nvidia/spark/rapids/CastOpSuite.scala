@@ -1007,6 +1007,7 @@ object CastOpSuite {
       Seq(
         "200", // year too few digits
         "20000", // year too many digits
+        "3330-7 39 49: 1",
         "1999\rGARBAGE",
         "1999-1\rGARBAGE",
         "1999-12\rGARBAGE",
