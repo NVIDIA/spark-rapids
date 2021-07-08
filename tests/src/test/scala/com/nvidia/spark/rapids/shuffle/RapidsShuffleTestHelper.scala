@@ -252,11 +252,6 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
   }
 }
 
-class DoNothingExecutor extends Executor {
-  override def execute(runnable: Runnable): Unit = {
-  }
-}
-
 class ImmediateExecutor extends Executor {
   override def execute(runnable: Runnable): Unit = {
     runnable.run()
