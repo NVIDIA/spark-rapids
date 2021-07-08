@@ -172,3 +172,12 @@ case class DataSourceCase(
     location: String,
     pushedFilters: String,
     schema: String)
+
+case class DataSourceCompareCase(
+    appIndex: Int,
+    appId: String,
+    sqlID: Long,
+    format: String,
+    location: String,
+    pushedFilters: String,
+    schema: String)

@@ -206,17 +206,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     }
     apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
-
-  case class DataSourceCompareCase(
-      appIndex: Int,
-      appId: String,
-      sqlID: Long,
-      format: String,
-      location: String,
-      pushedFilters: String,
-      schema: String)
-
-
+  
   def compareDataSourceInfo(sparkSession: SparkSession): Unit = {
     import sparkSession.implicits._
     val messageHeader = "\n\nCompare Data Source Information:\n"
