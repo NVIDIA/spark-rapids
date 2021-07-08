@@ -166,16 +166,7 @@ class QualAppInfo(
       s"${ds.format.toLowerCase()}[${ds.schema}]"
     }.mkString(":")
   }
-
-  /* private def getReadFileFormatTypes(ds: DataSourceCase): String = {
-    val retTypes = ds.schema.toLowerCase.split(",").toSet.mkString(":")
-    if (ds.schemaIncomplete) {
-      s"$retTypes:INCOMPLETE"
-    } else {
-      retTypes
-    }
-  } */
-
+  
   // For the read score we looks at all the read formats and datatypes for each
   // format and for each read give it a value 0.0 - 1.0 depending on whether
   // the format is supported and if the data types are supported. We then sum
