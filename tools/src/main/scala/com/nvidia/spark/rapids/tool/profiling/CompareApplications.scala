@@ -19,12 +19,11 @@ package com.nvidia.spark.rapids.tool.profiling
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.functions.asc
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
@@ -206,8 +205,8 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     }
     apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
-  
-  def compareDataSourceInfo(sparkSession: SparkSession): Unit = {
+
+  def compareDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
     import sparkSession.implicits._
     val messageHeader = "\n\nCompare Data Source Information:\n"
     val allAppsDs = apps.flatMap { app =>
@@ -217,7 +216,14 @@ class CompareApplications(apps: Seq[ApplicationInfo],
           ds.pushedFilters, ds.schema)
       }
     }
-    allAppsDs.toDF.sort(asc("appIndex"), asc("sqlID"), asc("location"))
+    val df = allAppsDs.toDF.sort(asc("appIndex"), asc("sqlID"), asc("location"))
+    if (allAppsDs.nonEmpty) {
+      fileWriter.foreach { writer =>
+        writer.write(ToolUtils.showString(df, numRows))
+      }
+    } else {
+      fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+    }
   }
 
   // Compare Rapids Properties which are set explicitly

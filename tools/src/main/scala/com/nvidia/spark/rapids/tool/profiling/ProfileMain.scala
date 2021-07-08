@@ -125,7 +125,7 @@ object ProfileMain extends Logging {
         textFileWriter.write("### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps, Some(textFileWriter))
         compare.compareAppInfo()
-        compare.compareDataSourceInfo(sparkSession)
+        compare.compareDataSourceInfo(sparkSession, numOutputRows)
         compare.compareExecutorInfo()
         compare.findMatchingStages()
         compare.compareJobInfo()
