@@ -228,7 +228,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val collect = new CollectInformation(apps, None)
       val df = collect.getDataSourceInfo(apps.head, sparkSession)
       val rows = df.collect()
-      assert(rows.size == 9)
+      assert(rows.size == 7)
       val allFormats = rows.map { r =>
         r.getString(r.schema.fieldIndex("format"))
       }.toSet
@@ -239,9 +239,11 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       }.toSet
       assert(allSchema.forall(_.nonEmpty))
       val schemaParquet = rows.filter { r =>
-        r.getInt(r.schema.fieldIndex("sqlID")) == 2
+        r.getLong(r.schema.fieldIndex("sqlID")) == 2
       }
-      assert(schemaParquet.contains("loan400"))
+      assert(schemaParquet.size == 1)
+      val parquetRow = schemaParquet.head
+      assert(parquetRow.getString(parquetRow.schema.fieldIndex("schema")).contains("loan400"))
     }
   }
 
