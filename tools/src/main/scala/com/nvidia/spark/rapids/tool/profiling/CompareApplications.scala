@@ -209,6 +209,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
   def compareDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
     import sparkSession.implicits._
     val messageHeader = "\n\nCompare Data Source Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
     val allAppsDs = apps.flatMap { app =>
       val dsInfo = app.dataSourceInfo
       dsInfo.map { ds =>
