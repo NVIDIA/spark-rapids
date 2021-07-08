@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -646,6 +646,15 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       }
     }
   }
+
+  /**
+   * Gets output attributes of current SparkPlanMeta, which is supposed to be called
+   * in the tag methods of ExecChecks.
+   *
+   * By default, it simply returns the output of wrapped plan. But for specific plans, they can
+   * take advantage of this method to apply custom transitions on the output of wrapped plan.
+   */
+  def outputAttributes: Seq[Attribute] = wrapped.output
 }
 
 /**
@@ -756,7 +765,20 @@ abstract class BaseExprMeta[INPUT <: Expression](
   override def canExprTreeBeReplaced: Boolean =
     canThisBeReplaced && super.canExprTreeBeReplaced
 
-  def dataType: DataType = expr.dataType
+  /**
+   * Gets the datatype of current BaseExprMeta, which is supposed to be called in the tag methods
+   * of expression-level type checks.
+   *
+   * By default, it simply returns the data type of wrapped expression. But for specific
+   * expressions, they can override this method to apply custom transitions on the data type.
+   */
+  def dataType: Option[DataType] = {
+    try {
+      Some(expr.dataType)
+    } catch {
+      case _: java.lang.UnsupportedOperationException => None
+    }
+  }
 
   lazy val context: ExpressionContext = expr match {
     case _: LambdaFunction => LambdaExprContext

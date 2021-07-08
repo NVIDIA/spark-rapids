@@ -317,7 +317,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
 
       case _: AttributeReference | _: GetStructField =>
         MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
-          expr.dataType, nullable = false, rowCount), conf.cpuReadMemorySpeed)
+          expr.dataType.get, nullable = false, rowCount), conf.cpuReadMemorySpeed)
 
       case _ =>
         expr.childExprs
@@ -326,7 +326,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
 
     // the output of evaluating the expression needs to be written out to rows
     val memoryWriteCost = MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
-      expr.dataType, nullable = false, rowCount), conf.cpuWriteMemorySpeed)
+      expr.dataType.get, nullable = false, rowCount), conf.cpuWriteMemorySpeed)
 
     // optional additional per-row overhead of evaluating the expression
     val exprEvalCost = rowCount *
@@ -376,7 +376,7 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
           .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
 
         memoryWriteCost += MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
-          expr.dataType, nullable = false, rowCount), conf.gpuWriteMemorySpeed)
+          expr.dataType.get, nullable = false, rowCount), conf.gpuWriteMemorySpeed)
     }
 
     // optional additional per-row overhead of evaluating the expression
