@@ -477,54 +477,54 @@ object GpuToTimestamp extends Arm {
   // tests for.
   val LEGACY_COMPATIBLE_FORMATS = Seq(
     LegacyParseFormat("yyyy-MM-dd", '-', isTimestamp = false,
-      "\\A\\d{4}-\\d{2}-\\d{2}(\\D|\\s|\\Z)"),
+      raw"\A\d{4}-\d{2}-\d{2}(\D|\s|\Z)"),
     LegacyParseFormat("yyyy/MM/dd", '/', isTimestamp = false,
-      "\\A\\d{4}/\\d{2}/\\d{2}(\\D|\\s|\\Z)"),
+      raw"\A\d{4}/\d{2}/\d{2}(\D|\s|\Z)"),
     LegacyParseFormat("dd-MM-yyyy", '-', isTimestamp = false,
-      "\\A\\d{2}-\\d{2}-\\d{4}(\\D|\\s|\\Z)"),
+      raw"\A\d{2}-\d{2}-\d{4}(\D|\s|\Z)"),
     LegacyParseFormat("dd/MM/yyyy", '/', isTimestamp = false,
-      "\\A\\d{2}/\\d{2}/\\d{4}(\\D|\\s|\\Z)"),
+      raw"\A\d{2}/\d{2}/\d{4}(\D|\s|\Z)"),
     LegacyParseFormat("yyyy-MM-dd HH:mm:ss", '-', isTimestamp = true,
-      "\\A\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(\\D|\\s|\\Z)"),
+      raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)"),
     LegacyParseFormat("yyyy/MM/dd HH:mm:ss", '/', isTimestamp = true,
-      "\\A\\d{4}/\\d{2}/\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}(\\D|\\s|\\Z)")
+      raw"\A\d{4}/\d{2}/\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)")
   )
 
   /** remove whitespace before month and day */
   val REMOVE_WHITESPACE_FROM_MONTH_DAY: RegexReplace =
-    RegexReplace("(\\A\\d+)-([ \\t]*)(\\d+)-([ \\t]*)(\\d+)", "\\1-\\3-\\5")
+    RegexReplace(raw"(\A\d+)-([ \t]*)(\d+)-([ \t]*)(\d+)", raw"\1-\3-\5")
 
   /** Regex rule to replace "yyyy-m-" with "yyyy-mm-" */
   val FIX_SINGLE_DIGIT_MONTH: RegexReplace =
-    RegexReplace("(\\A\\d+)-(\\d{1}-)", "\\1-0\\2")
+    RegexReplace(raw"(\A\d+)-(\d{1}-)", raw"\1-0\2")
 
   /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
   val FIX_SINGLE_DIGIT_DAY_1: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2})-(\\d{1}[\\D\\s]+)", "\\1-0\\2")
+    RegexReplace(raw"(\A\d+-\d{2})-(\d{1}[\D\s]+)", raw"\1-0\2")
 
   /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
   val FIX_SINGLE_DIGIT_DAY_2: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2})-(\\d{1})\\Z", "\\1-0\\2")
+    RegexReplace(raw"(\A\d+-\d{2})-(\d{1})\Z", raw"\1-0\2")
 
   /** Regex rule to replace "yyyy-mm-dd h-" with "yyyy-mm-dd hh-" */
   val FIX_SINGLE_DIGIT_HOUR_1: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2}-\\d{2}) (\\d{1}:)", "\\1 0\\2")
+    RegexReplace(raw"(\A\d+-\d{2}-\d{2}) (\d{1}:)", raw"\1 0\2")
 
   /** Regex rule to replace "yyyy-mm-ddTh-" with "yyyy-mm-ddThh-" */
   val FIX_SINGLE_DIGIT_HOUR_2: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2}-\\d{2})T(\\d{1}:)", "\\1T0\\2")
+    RegexReplace(raw"(\A\d+-\d{2}-\d{2})T(\d{1}:)", raw"\1T0\2")
 
   /** Regex rule to replace "yyyy-mm-dd[ T]hh-m-" with "yyyy-mm-dd[ T]hh-mm-" */
   val FIX_SINGLE_DIGIT_MINUTE: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2}-\\d{2}[ T]\\d{2}):(\\d{1}:)", "\\1:0\\2")
+    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}):(\d{1}:)", raw"\1:0\2")
 
   /** Regex rule to replace "yyyy-mm-dd[ T]hh-mm-s" with "yyyy-mm-dd[ T]hh-mm-ss" */
   val FIX_SINGLE_DIGIT_SECOND_1: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}):(\\d{1}\\D+)", "\\1:0\\2")
+    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1}\D+)", raw"\1:0\2")
 
   /** Regex rule to replace "yyyy-mm-dd[ T]hh-mm-s" with "yyyy-mm-dd[ T]hh-mm-ss" */
   val FIX_SINGLE_DIGIT_SECOND_2: RegexReplace =
-    RegexReplace("(\\A\\d+-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}):(\\d{1})\\Z", "\\1:0\\2")
+    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1})\Z", raw"\1:0\2")
 
   /** Convert dates to standard format */
   val FIX_DATES = Seq(
