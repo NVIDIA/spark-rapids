@@ -32,7 +32,7 @@ class QualOutputWriter(outputDir: String, numRows: Int, reportReadSchema: Boolea
   private val appIdStr = "App ID"
   private val appDurStr = "App Duration"
   private val sqlDurStr = "SQL Dataframe Duration"
-  private val taskDurStr = "Task Dataframe Duration"
+  private val taskDurStr = "SQL Dataframe Task Duration"
 
   private val headerCSV = {
     val initHeader = s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr," +
@@ -116,10 +116,9 @@ class QualOutputWriter(outputDir: String, numRows: Int, reportReadSchema: Boolea
     entireHeader.append(s"|%${appIdMaxSize}s|".format(appIdStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(appDurStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(sqlDurStr))
-    entireHeader.append(s"%${sizePadLongs}s|".format(taskDurStr))
     entireHeader.append(s"%${sizePadLongs}s|".format(problemDurStr))
     entireHeader.append("\n")
-    val sep = "=" * (appIdMaxSize + (sizePadLongs * 4) + 6)
+    val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
@@ -133,10 +132,9 @@ class QualOutputWriter(outputDir: String, numRows: Int, reportReadSchema: Boolea
       val sqlDur = sumInfo.sqlDataFrameDuration.toString
       val taskDur = sumInfo.sqlDataframeTaskDuration.toString
       val sqlDurStrV = s"%${sizePadLongs}s".format(sqlDur)
-      val sqltaskDurV = s"%${sizePadLongs}s".format(taskDur)
       val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
       val sqlProbDurStrV = s"%${sizePadLongs}s".format(sqlProbDur)
-      val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqltaskDurV|$sqlProbDurStrV|"
+      val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
     }
     writer.write(s"$sep\n")
