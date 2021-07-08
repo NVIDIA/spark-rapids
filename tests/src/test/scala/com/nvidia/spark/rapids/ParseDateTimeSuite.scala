@@ -26,7 +26,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuToTimestamp.{FIX_DATES, FIX_SINGLE_DIGIT_DAY_1, FIX_SINGLE_DIGIT_DAY_2, FIX_SINGLE_DIGIT_HOUR_1, FIX_SINGLE_DIGIT_HOUR_2, FIX_SINGLE_DIGIT_MINUTE, FIX_SINGLE_DIGIT_MONTH, FIX_SINGLE_DIGIT_SECOND_1, FIX_SINGLE_DIGIT_SECOND_2, FIX_TIMESTAMPS, REMOVE_WHITESPACE_FROM_MONTH_DAY}
+import org.apache.spark.sql.rapids.GpuToTimestamp.{FIX_DATES, FIX_SINGLE_DIGIT_DAY, FIX_SINGLE_DIGIT_HOUR_1, FIX_SINGLE_DIGIT_HOUR_2, FIX_SINGLE_DIGIT_MINUTE, FIX_SINGLE_DIGIT_MONTH, FIX_SINGLE_DIGIT_SECOND_1, FIX_SINGLE_DIGIT_SECOND_2, FIX_TIMESTAMPS, REMOVE_WHITESPACE_FROM_MONTH_DAY}
 import org.apache.spark.sql.rapids.RegexReplace
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
@@ -251,14 +251,14 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   test("Regex: Fix single digit day followed by non digit char") {
     // single digit day followed by non digit
-    testRegex(FIX_SINGLE_DIGIT_DAY_1,
+    testRegex(FIX_SINGLE_DIGIT_DAY,
       Seq("1111-02-3 ", "1111-02-3:", "2000-03-192", "2000-07-7\n9\t8568:\n", null),
       Seq("1111-02-03 ", "1111-02-03:", "2000-03-192", "2000-07-07\n9\t8568:\n", null))
   }
 
   test("Regex: Fix single digit day at end of string") {
     // single digit day at end of string
-    testRegex(FIX_SINGLE_DIGIT_DAY_2,
+    testRegex(FIX_SINGLE_DIGIT_DAY,
       Seq("1-02-3", "1111-02-3", "1111-02-03", "2000-03-192", null),
       Seq("1-02-03", "1111-02-03", "1111-02-03", "2000-03-192", null))
   }

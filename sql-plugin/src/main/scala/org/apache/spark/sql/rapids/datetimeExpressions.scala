@@ -499,30 +499,26 @@ object GpuToTimestamp extends Arm {
     RegexReplace(raw"(\A\d+)-(\d{1}-)", raw"\1-0\2")
 
   /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
-  val FIX_SINGLE_DIGIT_DAY_1: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2})-(\d{1}[\D\s]+)", raw"\1-0\2")
+  val FIX_SINGLE_DIGIT_DAY: RegexReplace =
+    RegexReplace(raw"(\A\d+-\d{2})-(\d{1})([\D\s]|\Z)", raw"\1-0\2\3")
 
-  /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
-  val FIX_SINGLE_DIGIT_DAY_2: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2})-(\d{1})\Z", raw"\1-0\2")
-
-  /** Regex rule to replace "yyyy-mm-dd h-" with "yyyy-mm-dd hh-" */
+  /** Regex rule to replace "yyyy-mm-dd h:" with "yyyy-mm-dd hh:" */
   val FIX_SINGLE_DIGIT_HOUR_1: RegexReplace =
     RegexReplace(raw"(\A\d+-\d{2}-\d{2}) (\d{1}:)", raw"\1 0\2")
 
-  /** Regex rule to replace "yyyy-mm-ddTh-" with "yyyy-mm-ddThh-" */
+  /** Regex rule to replace "yyyy-mm-ddTh:" with "yyyy-mm-ddThh:" */
   val FIX_SINGLE_DIGIT_HOUR_2: RegexReplace =
     RegexReplace(raw"(\A\d+-\d{2}-\d{2})T(\d{1}:)", raw"\1T0\2")
 
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh-m-" with "yyyy-mm-dd[ T]hh-mm-" */
+  /** Regex rule to replace "yyyy-mm-dd[ T]hh:m:" with "yyyy-mm-dd[ T]hh:mm:" */
   val FIX_SINGLE_DIGIT_MINUTE: RegexReplace =
     RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}):(\d{1}:)", raw"\1:0\2")
 
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh-mm-s" with "yyyy-mm-dd[ T]hh-mm-ss" */
+  /** Regex rule to replace "yyyy-mm-dd[ T]hh:mm:s" with "yyyy-mm-dd[ T]hh:mm:ss" */
   val FIX_SINGLE_DIGIT_SECOND_1: RegexReplace =
     RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1}\D+)", raw"\1:0\2")
 
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh-mm-s" with "yyyy-mm-dd[ T]hh-mm-ss" */
+  /** Regex rule to replace "yyyy-mm-dd[ T]hh:mm:s" with "yyyy-mm-dd[ T]hh:mm:ss" */
   val FIX_SINGLE_DIGIT_SECOND_2: RegexReplace =
     RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1})\Z", raw"\1:0\2")
 
@@ -530,8 +526,7 @@ object GpuToTimestamp extends Arm {
   val FIX_DATES = Seq(
     REMOVE_WHITESPACE_FROM_MONTH_DAY,
     FIX_SINGLE_DIGIT_MONTH,
-    FIX_SINGLE_DIGIT_DAY_1,
-    FIX_SINGLE_DIGIT_DAY_2)
+    FIX_SINGLE_DIGIT_DAY)
 
   /** Convert timestamps to standard format */
   val FIX_TIMESTAMPS = Seq(
