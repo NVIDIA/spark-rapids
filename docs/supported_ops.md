@@ -8013,7 +8013,7 @@ Accelerator support is described below.
 <td rowSpan="4">InitCap</td>
 <td rowSpan="4">`initcap`</td>
 <td rowSpan="4">Returns str with the first letter of each word in uppercase. All other letters are in lowercase</td>
-<td rowSpan="4">This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132 Spark also only sees the space character as a word deliminator, but this will capitalize any character after a non-alphabetic character.  The behavior will be aligned to match Spark in the future per https://github.com/NVIDIA/spark-rapids/issues/2786.</td>
+<td rowSpan="4">This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.</td>
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -10343,7 +10343,7 @@ Accelerator support is described below.
 <td rowSpan="4">Lower</td>
 <td rowSpan="4">`lower`, `lcase`</td>
 <td rowSpan="4">String lowercase operator</td>
-<td rowSpan="4">This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132</td>
+<td rowSpan="4">This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.</td>
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -17519,7 +17519,7 @@ Accelerator support is described below.
 <td rowSpan="4">Upper</td>
 <td rowSpan="4">`upper`, `ucase`</td>
 <td rowSpan="4">String uppercase operator</td>
-<td rowSpan="4">This is not 100% compatible with the Spark version because in some cases unicode characters change byte width when changing the case. The GPU string conversion does not support these characters. For a full list of unsupported characters see https://github.com/rapidsai/cudf/issues/3132</td>
+<td rowSpan="4">This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.</td>
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>

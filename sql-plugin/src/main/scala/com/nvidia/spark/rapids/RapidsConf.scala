@@ -777,6 +777,51 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  // This will be deleted when COALESCING is implemented for ORC
+  object OrcReaderType extends Enumeration {
+    val AUTO, MULTITHREADED, PERFILE = Value
+  }
+
+  val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
+    .doc("Sets the orc reader type. We support different types that are optimized for " +
+      "different environments. The original Spark style reader can be selected by setting this " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
+      "individually has high overhead, and using MULTITHREADED is recommended instead. " +
+      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
+      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
+      "environments also get better throughput when you have multiple readers in parallel. " +
+      "This reader uses multiple threads to read each file in parallel and each file is sent " +
+      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
+      "See spark.rapids.sql.format.orc.multiThreadedRead.numThreads and " +
+      "spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel to control " +
+      "the number of threads and amount of memory used. " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "be the MULTITHREADED when we think the file is " +
+      "in the cloud. See spark.rapids.cloudSchemes.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(OrcReaderType.values.map(_.toString))
+    .createWithDefault(OrcReaderType.AUTO.toString)
+
+  val ORC_MULTITHREAD_READ_NUM_THREADS =
+    conf("spark.rapids.sql.format.orc.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads, on the executor, to use for reading small " +
+        "orc files in parallel. This can not be changed at runtime after the executor has " +
+        "started. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.orc.reader.type.")
+      .integerConf
+      .createWithDefault(20)
+
+  val ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
+    conf("spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel")
+      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
+        "side before the file is sent to the GPU. This affects the amount of host memory used " +
+        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.orc.reader.type")
+      .integerConf
+      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
+      .createWithDefault(Integer.MAX_VALUE)
+
   val ENABLE_CSV = conf("spark.rapids.sql.format.csv.enabled")
     .doc("When set to false disables all csv input and output acceleration. " +
       "(only input is currently supported anyways)")
@@ -1514,6 +1559,19 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isOrcReadEnabled: Boolean = get(ENABLE_ORC_READ)
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
+
+  lazy val isOrcPerFileReadEnabled: Boolean =
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.PERFILE
+
+  lazy val isOrcAutoReaderEnabled: Boolean =
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.AUTO
+
+  lazy val isOrcMultiThreadReadEnabled: Boolean = isOrcAutoReaderEnabled ||
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.MULTITHREADED
+
+  lazy val orcMultiThreadReadNumThreads: Int = get(ORC_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 

@@ -94,6 +94,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
 
+  test("spark2 eventlog") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val log = s"$profileLogDir/spark2-eventlog.zstd"
+    runQualificationTest(Array(log), "spark2_expectation.csv")
+  }
+
   test("test udf event logs") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",

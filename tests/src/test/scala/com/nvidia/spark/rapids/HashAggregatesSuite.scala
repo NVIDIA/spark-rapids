@@ -29,7 +29,7 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, DataTypes}
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
-  private val floatAggConf: SparkConf = enableCsvConf()
+  private def floatAggConf: SparkConf = enableCsvConf()
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
       .set(RapidsConf.HAS_NANS.key, "false")
 
