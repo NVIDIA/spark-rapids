@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.RegexReplace
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -133,7 +134,7 @@ class CastExprMeta[INPUT <: CastBase](
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString)
 }
 
-object GpuCast {
+object GpuCast extends Arm {
 
   private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
 
@@ -158,6 +159,24 @@ object GpuCast {
     "required range"
 
   val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
+
+  /**
+   * Sanitization step for CAST string to date. Inserts a single zero before any
+   * single digit month or day.
+   */
+  def sanitizeStringToDate(input: ColumnVector): ColumnVector = {
+    val rules = Seq(
+      /// replace yyyy-m with yyyy-mm
+      RegexReplace("(\\A\\d{4})-(\\d{1})\\Z", "\\1-0\\2"),
+      /// replace yyyy-m- with yyyy-mm-
+      RegexReplace("(\\A\\d{4})-(\\d{1}-)", "\\1-0\\2"),
+      /// replace yyyy-mm-d with yyyy-mm-dd
+      RegexReplace("(\\A\\d{4}-\\d{2})-(\\d{1})([ T]|\\Z)", "\\1-0\\2\\3")
+    )
+    rules.foldLeft(input.incRefCount())((cv, rule) => withResource(cv) { _ =>
+      cv.stringReplaceWithBackrefs(rule.search, rule.replace)
+    })
+  }
 }
 
 /**
@@ -873,23 +892,23 @@ case class GpuCast(
     }
   }
 
+  /**
+   * Trims and parses a given UTF8 date string to a corresponding [[Int]] value.
+   * The return type is [[Option]] in order to distinguish between 0 and null. The following
+   * formats are allowed:
+   *
+   * `yyyy`
+   * `yyyy-[m]m`
+   * `yyyy-[m]m-[d]d`
+   * `yyyy-[m]m-[d]d `
+   * `yyyy-[m]m-[d]d *`
+   * `yyyy-[m]m-[d]dT*`
+   */
   private def castStringToDate(input: ColumnVector): ColumnVector = {
-
-    var sanitizedInput = input.incRefCount()
-
-    // replace partial months
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs("-([0-9])-", "-0\\1-")
-    }
-
-    // replace partial month or day at end of string
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs("-([0-9])([ T](:?[\\r\\n]|.)*)?\\Z", "-0\\1")
-    }
 
     val specialDates = DateUtils.specialDatesDays
 
-    withResource(sanitizedInput) { sanitizedInput =>
+    withResource(sanitizeStringToDate(input)) { sanitizedInput =>
 
       // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
       val converted = convertVarLenDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",

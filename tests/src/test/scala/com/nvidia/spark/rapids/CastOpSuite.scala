@@ -22,6 +22,7 @@ import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
 
+import ai.rapids.cudf.ColumnVector
 import scala.collection.JavaConverters._
 
 import org.apache.spark.SparkConf
@@ -692,6 +693,30 @@ class CastOpSuite extends GpuExpressionTestSuite {
       testCastToDecimal(DataTypes.StringType, scale = scale,
         customDataGenerator = Some(exponentsAsStrings),
         ansiEnabled = true)
+    }
+  }
+
+  test("CAST string to date - sanitize step") {
+    val testPairs = Seq(
+      ("2001-1", "2001-01"),
+      ("2001-01-1", "2001-01-01"),
+      ("2001-1-1", "2001-01-01"),
+      ("2001-01-1", "2001-01-01"),
+      ("2001-01-1 ", "2001-01-01 "),
+      ("2001-1-1 ", "2001-01-01 "),
+      ("2001-1-1 ZZZ", "2001-01-01 ZZZ"),
+      ("2001-1-1TZZZ", "2001-01-01TZZZ"),
+      ("3330-7 39 49: 1", "3330-7 39 49: 1"),
+      ("today", "today")
+    )
+    val inputs = testPairs.map(_._1)
+    val expected = testPairs.map(_._2)
+    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
+      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
+        withResource(GpuCast.sanitizeStringToDate(v)) { actual =>
+          CudfTestHelper.assertColumnsAreEqual(expected, actual)
+        }
+      }
     }
   }
 
