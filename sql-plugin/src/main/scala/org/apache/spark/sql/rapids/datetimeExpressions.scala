@@ -502,13 +502,9 @@ object GpuToTimestamp extends Arm {
   val FIX_SINGLE_DIGIT_DAY: RegexReplace =
     RegexReplace(raw"(\A\d+-\d{2})-(\d{1})([\D\s]|\Z)", raw"\1-0\2\3")
 
-  /** Regex rule to replace "yyyy-mm-dd h:" with "yyyy-mm-dd hh:" */
-  val FIX_SINGLE_DIGIT_HOUR_1: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2}) (\d{1}:)", raw"\1 0\2")
-
-  /** Regex rule to replace "yyyy-mm-ddTh:" with "yyyy-mm-ddThh:" */
-  val FIX_SINGLE_DIGIT_HOUR_2: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2})T(\d{1}:)", raw"\1T0\2")
+  /** Regex rule to replace "yyyy-mm-dd[ T]h:" with "yyyy-mm-dd hh:" */
+  val FIX_SINGLE_DIGIT_HOUR: RegexReplace =
+    RegexReplace(raw"(\A\d+-\d{2}-\d{2})[ T](\d{1}:)", raw"\1 0\2")
 
   /** Regex rule to replace "yyyy-mm-dd[ T]hh:m:" with "yyyy-mm-dd[ T]hh:mm:" */
   val FIX_SINGLE_DIGIT_MINUTE: RegexReplace =
@@ -526,8 +522,7 @@ object GpuToTimestamp extends Arm {
 
   /** Convert timestamps to standard format */
   val FIX_TIMESTAMPS = Seq(
-    FIX_SINGLE_DIGIT_HOUR_1,
-    FIX_SINGLE_DIGIT_HOUR_2,
+    FIX_SINGLE_DIGIT_HOUR,
     FIX_SINGLE_DIGIT_MINUTE,
     FIX_SINGLE_DIGIT_SECOND
   )

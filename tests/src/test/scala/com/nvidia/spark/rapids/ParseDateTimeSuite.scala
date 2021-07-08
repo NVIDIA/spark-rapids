@@ -26,7 +26,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuToTimestamp.{FIX_DATES, FIX_SINGLE_DIGIT_DAY, FIX_SINGLE_DIGIT_HOUR_1, FIX_SINGLE_DIGIT_HOUR_2, FIX_SINGLE_DIGIT_MINUTE, FIX_SINGLE_DIGIT_MONTH, FIX_SINGLE_DIGIT_SECOND, FIX_TIMESTAMPS, REMOVE_WHITESPACE_FROM_MONTH_DAY}
+import org.apache.spark.sql.rapids.GpuToTimestamp.{FIX_DATES, FIX_SINGLE_DIGIT_DAY, FIX_SINGLE_DIGIT_HOUR, FIX_SINGLE_DIGIT_MINUTE, FIX_SINGLE_DIGIT_MONTH, FIX_SINGLE_DIGIT_SECOND, FIX_TIMESTAMPS, REMOVE_WHITESPACE_FROM_MONTH_DAY}
 import org.apache.spark.sql.rapids.RegexReplace
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
@@ -265,16 +265,17 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   test("Regex: Fix single digit hour 1") {
     // single digit hour with space separating date and time
-    testRegex(FIX_SINGLE_DIGIT_HOUR_1,
+    testRegex(FIX_SINGLE_DIGIT_HOUR,
       Seq("2001-12-31 1:2:3", "2001-12-31 1:22:33", null),
       Seq("2001-12-31 01:2:3", "2001-12-31 01:22:33", null))
   }
 
   test("Regex: Fix single digit hour 2") {
     // single digit hour with 'T' separating date and time
-    testRegex(FIX_SINGLE_DIGIT_HOUR_2,
+    // note that the T gets replaced with whitespace in this case
+    testRegex(FIX_SINGLE_DIGIT_HOUR,
       Seq("2001-12-31T1:2:3", "2001-12-31T1:22:33", null),
-      Seq("2001-12-31T01:2:3", "2001-12-31T01:22:33", null))
+      Seq("2001-12-31 01:2:3", "2001-12-31 01:22:33", null))
   }
 
   test("Regex: Fix single digit minute") {
@@ -338,7 +339,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       ("1999-2-3:", "1999-02-03:"),
       ("1999-2-3", "1999-02-03"),
       ("1999-2-3 1:2:3.4", "1999-02-03 01:02:03.4"),
-      ("1999-2-3T1:2:3.4", "1999-02-03T01:02:03.4")
+      ("1999-2-3T1:2:3.4", "1999-02-03 01:02:03.4")
     )
     val values = testPairs.map(_._1)
     val expected = testPairs.map(_._2)
