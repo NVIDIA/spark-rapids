@@ -212,6 +212,39 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test read datasourcev1") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog-dsv1.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps, None)
+      val df = collect.getDataSourceInfo(apps.head, sparkSession)
+      val rows = df.collect()
+      assert(rows.size == 9)
+      val allFormats = rows.map { r =>
+        r.getString(r.schema.fieldIndex("format"))
+      }.toSet
+      val expectedFormats = Set("Text", "CSV", "Parquet", "ORC", "JSON")
+      assert(allFormats.equals(expectedFormats))
+      val allSchema = rows.map { r =>
+        r.getString(r.schema.fieldIndex("schema"))
+      }.toSet
+      assert(allSchema.forall(_.nonEmpty))
+      val schemaParquet = rows.filter { r =>
+        r.getInt(r.schema.fieldIndex("sqlID")) == 2
+      }
+      assert(schemaParquet.contains("loan400"))
+    }
+  }
+
   test("test printJobInfo") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =

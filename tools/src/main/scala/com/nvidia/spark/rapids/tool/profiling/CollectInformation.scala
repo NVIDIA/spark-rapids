@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
@@ -70,16 +70,21 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     apps.foreach { app =>
-      import sparkSession.implicits._
-      val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"))
-      val dfWithApp = df.withColumn("appIndex", lit(app.index.toString))
-        .select("appIndex", df.columns:_*)
+      val dfWithApp = getDataSourceInfo(app, sparkSession)
+      // don't check if dataframe empty because that runs a Spark job
       if (app.dataSourceInfo.nonEmpty) {
         fileWriter.foreach { writer =>
           writer.write(ToolUtils.showString(dfWithApp, numRows))
         }
       }
     }
+  }
+
+  def getDataSourceInfo(app: ApplicationInfo, sparkSession: SparkSession): DataFrame = {
+    import sparkSession.implicits._
+    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"))
+    df.withColumn("appIndex", lit(app.index.toString))
+      .select("appIndex", df.columns:_*)
   }
 
   // Print executor related information
