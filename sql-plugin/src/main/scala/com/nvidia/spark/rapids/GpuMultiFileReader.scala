@@ -486,10 +486,10 @@ abstract class MultiFileCloudPartitionReaderBase(
 trait DataBlockBase {
   // get the row number of this data block
   def getRowCount: Long
-  // uncompressed bytes
-  def getTotalUnCompressedByteSize: Long
-  // sum of all column size
-  def getFileBlockSize: Long
+  // the data read size
+  def getReadDataSize: Long
+  // the block size to be used to slice the whole HostMemoryBuffer
+  def getBlockSize: Long
 }
 
 /**
@@ -587,7 +587,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param schema               schema info
    * @return Long, the estimated output size
    */
-  def calculateEstimatedBlocksOutputSize(blocks: Seq[DataBlockBase], schema: SchemaBase): Long
+  def calculateEstimatedBlocksOutputSize(blocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+    schema: SchemaBase): Long
 
   /**
    * calculate the final block output size.
@@ -785,11 +786,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       }
       val tasks = new java.util.ArrayList[Future[(Seq[DataBlockBase], Long)]]()
 
-      val allBlocks = blocks.map(_._2)
-
       // First, estimate the output file size for the initial allocating.
       //   the estimated size should be >= size of HEAD + Blocks + FOOTER
-      val initTotalSize = calculateEstimatedBlocksOutputSize(allBlocks, clippedSchema)
+      val initTotalSize = calculateEstimatedBlocksOutputSize(filesAndBlocks, clippedSchema)
 
       val (buffer, bufferSize, footerOffset, outBlocks) =
         closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { hmb =>
@@ -798,7 +797,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[DataBlockBase]()
           filesAndBlocks.foreach { case (file, blocks) =>
-            val fileBlockSize = blocks.map(_.getFileBlockSize).sum
+            val fileBlockSize = blocks.map(_.getBlockSize).sum
             // use a single buffer and slice it up for different files if we need
             val outLocal = hmb.slice(offset, fileBlockSize)
             // Third, copy the blocks for each file in parallel using background threads
@@ -812,7 +811,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             allOutputBlocks ++= blocks
             TrampolineUtil.incBytesRead(inputMetrics, bytesRead)
           }
-
 
           // Fourth, calculate the final buffer size
           val finalBufferSize = calculateFinalBlocksOutputSize(offset, allOutputBlocks,
@@ -832,7 +830,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           logWarning(s"The original estimated size $initTotalSize is too small, " +
             s"reallocing and copying data to bigger buffer size: $bufferSize")
         }
-
         // Copy the old buffer to a new allocated bigger buffer and close the old buffer
         buf = withResource(buffer) { _ =>
           withResource(new HostMemoryInputStream(buffer, footerOffset)) { in =>
@@ -939,7 +936,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             val nextTuple = (nextBlock.filePath, nextBlock.dataBlock)
             currentChunk += nextTuple
             numRows += currentChunk.last._2.getRowCount
-            numChunkBytes += currentChunk.last._2.getTotalUnCompressedByteSize
+            numChunkBytes += currentChunk.last._2.getReadDataSize
             numBytes += estimatedBytes
             readNextBatch()
           }

@@ -16,16 +16,15 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{File, OutputStream}
-import java.net.{URI, URISyntaxException}
+import java.io.OutputStream
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.immutable.HashSet
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 import scala.math.max
 
@@ -745,8 +744,8 @@ private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase
 // Parquet BlockMetaData wrapper
 private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockBase {
   override def getRowCount: Long = dataBlock.getRowCount
-  override def getTotalUnCompressedByteSize: Long = dataBlock.getTotalByteSize
-  override def getFileBlockSize: Long = dataBlock.getColumns.asScala.map(_.getTotalSize).sum
+  override def getReadDataSize: Long = dataBlock.getTotalByteSize
+  override def getBlockSize: Long = dataBlock.getColumns.asScala.map(_.getTotalSize).sum
 }
 
 // contains meta about a single block in a file
@@ -853,9 +852,11 @@ class MultiFileParquetPartitionReader(
     false
   }
 
-  override def calculateEstimatedBlocksOutputSize(currentChunkedBlocks: Seq[DataBlockBase],
+  override def calculateEstimatedBlocksOutputSize(
+      filesAndBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
       schema: SchemaBase): Long = {
-    calculateParquetOutputSize(currentChunkedBlocks, schema, true)
+    val allBlocks = filesAndBlocks.flatMap(item => item._2).toSeq
+    calculateParquetOutputSize(allBlocks, schema, true)
   }
 
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
