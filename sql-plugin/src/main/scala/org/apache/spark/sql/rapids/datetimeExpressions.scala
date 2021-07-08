@@ -515,12 +515,8 @@ object GpuToTimestamp extends Arm {
     RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}):(\d{1}:)", raw"\1:0\2")
 
   /** Regex rule to replace "yyyy-mm-dd[ T]hh:mm:s" with "yyyy-mm-dd[ T]hh:mm:ss" */
-  val FIX_SINGLE_DIGIT_SECOND_1: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1}\D+)", raw"\1:0\2")
-
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh:mm:s" with "yyyy-mm-dd[ T]hh:mm:ss" */
-  val FIX_SINGLE_DIGIT_SECOND_2: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1})\Z", raw"\1:0\2")
+  val FIX_SINGLE_DIGIT_SECOND: RegexReplace =
+    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1})([\D\s]|\Z)", raw"\1:0\2\3")
 
   /** Convert dates to standard format */
   val FIX_DATES = Seq(
@@ -533,8 +529,7 @@ object GpuToTimestamp extends Arm {
     FIX_SINGLE_DIGIT_HOUR_1,
     FIX_SINGLE_DIGIT_HOUR_2,
     FIX_SINGLE_DIGIT_MINUTE,
-    FIX_SINGLE_DIGIT_SECOND_1,
-    FIX_SINGLE_DIGIT_SECOND_2
+    FIX_SINGLE_DIGIT_SECOND
   )
 
   def daysScalarSeconds(name: String): Scalar = {

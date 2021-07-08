@@ -26,7 +26,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuToTimestamp.{FIX_DATES, FIX_SINGLE_DIGIT_DAY, FIX_SINGLE_DIGIT_HOUR_1, FIX_SINGLE_DIGIT_HOUR_2, FIX_SINGLE_DIGIT_MINUTE, FIX_SINGLE_DIGIT_MONTH, FIX_SINGLE_DIGIT_SECOND_1, FIX_SINGLE_DIGIT_SECOND_2, FIX_TIMESTAMPS, REMOVE_WHITESPACE_FROM_MONTH_DAY}
+import org.apache.spark.sql.rapids.GpuToTimestamp.{FIX_DATES, FIX_SINGLE_DIGIT_DAY, FIX_SINGLE_DIGIT_HOUR_1, FIX_SINGLE_DIGIT_HOUR_2, FIX_SINGLE_DIGIT_MINUTE, FIX_SINGLE_DIGIT_MONTH, FIX_SINGLE_DIGIT_SECOND, FIX_TIMESTAMPS, REMOVE_WHITESPACE_FROM_MONTH_DAY}
 import org.apache.spark.sql.rapids.RegexReplace
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
@@ -264,36 +264,36 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
   test("Regex: Fix single digit hour 1") {
-    // single digit day at end of string
+    // single digit hour with space separating date and time
     testRegex(FIX_SINGLE_DIGIT_HOUR_1,
       Seq("2001-12-31 1:2:3", "2001-12-31 1:22:33", null),
       Seq("2001-12-31 01:2:3", "2001-12-31 01:22:33", null))
   }
 
   test("Regex: Fix single digit hour 2") {
-    // single digit day at end of string
+    // single digit hour with 'T' separating date and time
     testRegex(FIX_SINGLE_DIGIT_HOUR_2,
       Seq("2001-12-31T1:2:3", "2001-12-31T1:22:33", null),
       Seq("2001-12-31T01:2:3", "2001-12-31T01:22:33", null))
   }
 
   test("Regex: Fix single digit minute") {
-    // single digit day at end of string
+    // single digit minute at end of string
     testRegex(FIX_SINGLE_DIGIT_MINUTE,
       Seq("2001-12-31 01:2:3", "2001-12-31 01:22:33", null),
       Seq("2001-12-31 01:02:3", "2001-12-31 01:22:33", null))
   }
 
-  test("Regex: Fix single digit second 1") {
-    // single digit day at end of string
-    testRegex(FIX_SINGLE_DIGIT_SECOND_1,
-      Seq("2001-12-31 01:02:3:", "2001-12-31 01:22:33:", null),
-      Seq("2001-12-31 01:02:03:", "2001-12-31 01:22:33:", null))
+  test("Regex: Fix single digit second followed by non digit") {
+    // single digit second followed by non digit
+    testRegex(FIX_SINGLE_DIGIT_SECOND,
+      Seq("2001-12-31 01:02:3:", "2001-12-31 01:22:33:", "2001-12-31 01:02:3 ", null),
+      Seq("2001-12-31 01:02:03:", "2001-12-31 01:22:33:", "2001-12-31 01:02:03 ", null))
   }
 
-  test("Regex: Fix single digit second 2") {
+  test("Regex: Fix single digit second at end of string") {
     // single digit day at end of string
-    testRegex(FIX_SINGLE_DIGIT_SECOND_2,
+    testRegex(FIX_SINGLE_DIGIT_SECOND,
       Seq("2001-12-31 01:02:3", "2001-12-31 01:22:33", null),
       Seq("2001-12-31 01:02:03", "2001-12-31 01:22:33", null))
   }
