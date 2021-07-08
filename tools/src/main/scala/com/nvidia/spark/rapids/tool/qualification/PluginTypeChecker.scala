@@ -53,20 +53,20 @@ class PluginTypeChecker extends Logging {
           val dataTypesToSup = header.drop(2).zip(cols.drop(2)).toMap
           logWarning("datatypes to sup are: " + dataTypesToSup)
           val nsTypes = dataTypesToSup.filter { case (dt, sup) =>
-            sup.contains("NA") || sup.contains("NS") || sup.contains("CO")
+            sup.equals("NA") || sup.equals("NS") || sup.equals("CO")
           }.keys.toSeq
           val allNsTypes = nsTypes.flatMap { t =>
             getOtherTypes(t) :+ t
           }
           val psTypes = dataTypesToSup.filter { case (dt, sup) =>
-            sup.contains("PS") || sup.contains("PS*")
+            sup.equals("PS") || sup.equals("PS*")
           }.keys.toSeq
           val allPsTypes = psTypes.flatMap { t =>
             getOtherTypes(t) :+ t
           }
           val sPartTypes = dataTypesToSup.filter { case (dt, sup) =>
             // we care for decimal
-            sup.contains("S*")
+            sup.equals("S*")
           }.keys.toSeq
           val allsPartTypes = sPartTypes.flatMap { t =>
             getOtherTypes(t) :+ t
