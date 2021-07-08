@@ -17,9 +17,9 @@
 
 set -ex
 
-LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-$1}
-SPARK_CONF=$2
-BASE_SPARK_VER=${BASE_SPARK_VER:-$3}
+LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
+SPARK_CONF=${SPARK_CONF:-''}
+BASE_SPARK_VER=${BASE_SPARK_VER:-'3.0.1'}
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
