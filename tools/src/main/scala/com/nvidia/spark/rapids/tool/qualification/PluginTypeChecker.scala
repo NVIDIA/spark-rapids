@@ -55,20 +55,20 @@ class PluginTypeChecker extends Logging {
             sup.contains("NA") || sup.contains("NS") || sup.contains("CO")
           }.keys.toSeq
           val allNsTypes = nsTypes.flatMap { t =>
-            getOtherTypes(t) +: t
+            getOtherTypes(t) :+ t
           }
           val psTypes = dataTypesToSup.filter { case (dt, sup) =>
             sup.contains("PS") || sup.contains("PS*")
           }.keys.toSeq
           val allPsTypes = psTypes.flatMap { t =>
-            getOtherTypes(t) +: t
+            getOtherTypes(t) :+ t
           }
           val sPartTypes = dataTypesToSup.filter { case (dt, sup) =>
             // we care for decimal
             sup.contains("S*")
           }.keys.toSeq
           val allsPartTypes = sPartTypes.flatMap { t =>
-            getOtherTypes(t) +: t
+            getOtherTypes(t) :+ t
           }
           val allBySup = HashMap("NS" -> allNsTypes, "PS" -> allPsTypes, "S*" -> allsPartTypes)
           allSplit(format) = allBySup.toMap
