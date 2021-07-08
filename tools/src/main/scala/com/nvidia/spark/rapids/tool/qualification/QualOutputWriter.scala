@@ -64,7 +64,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     val failedIds = stringIfempty(appSum.failedSQLIds)
     val readFileFormats = stringIfempty(appSum.readFileFormats)
     val scoreRounded = f"${appSum.score}%1.2f"
-    val readFileScoreRounded = f"${appSum.readFileFormatScore}}%1.2f"
+    val readFileScoreRounded = f"${appSum.readFileFormatScore}%1.2f"
 
     s"$appNameStr,$appIdStr,$scoreRounded,$probStr,${appSum.sqlDataFrameDuration}," +
       s"${appSum.sqlDataframeTaskDuration}," +
