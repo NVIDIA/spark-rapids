@@ -97,7 +97,7 @@ class PluginTypeChecker extends Logging {
 
   // NOTE, UDT doesn't show up in the event log, when its written, it gets written as
   // other types since parquet/orc has to know about it
-  def scoreReadDataTypes(format: String, schema: String, schemaIncomplete: Boolean): Double = {
+  def scoreReadDataTypes(format: String, schema: String): Double = {
     logWarning("data source is: " + format + " all sploit is: " + allSplit)
     val formatInLower = format.toLowerCase
     val score = if (allSupportedReadSources.contains(formatInLower)) {
@@ -117,14 +117,14 @@ class PluginTypeChecker extends Logging {
           if (schema.contains("decimal")) {
             0.0
           } else {
-            0.5
+            1.0
           }
         } else {
           val hasPartSupported = typesBySup("PS").exists(schema.contains(_))
           logWarning(s"has part supported is: $hasPartSupported")
           if (hasPartSupported) {
             // TODO - is this to pesimistic?
-            0.5
+            0.75
           } else {
             // either supported or we don't know
             1.0
