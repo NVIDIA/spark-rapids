@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  */
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, pluginTypeChecker: PluginTypeChecker,
-    readScorePercent: Int) extends Logging {
+    readScorePercent: Int, reportReadSchema: Boolean) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
   // default is 24 hours
@@ -68,7 +68,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
 
     val allAppsSum = allApps.asScala.toSeq
     val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration))
-    val qWriter = new QualOutputWriter(outputDir, numRows)
+    val qWriter = new QualOutputWriter(outputDir, numRows, reportReadSchema)
     qWriter.writeCSV(sorted)
     qWriter.writeReport(sorted)
     sorted

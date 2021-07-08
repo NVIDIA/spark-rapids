@@ -22,7 +22,7 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
 // This class handles the output files for qualification.
 // It can write both a raw csv file and then a text summary report.
-class QualOutputWriter(outputDir: String, numRows: Int) {
+class QualOutputWriter(outputDir: String, numRows: Int, reportReadSchema: Boolean) {
 
   private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
   // a file extension will be added to this later
@@ -34,11 +34,17 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
   private val sqlDurStr = "SQL Dataframe Duration"
   private val taskDurStr = "Task Dataframe Duration"
 
-  private val headerCSV =
-    s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr," +
+  private val headerCSV = {
+    val initHeader = s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr," +
       s"$appDurStr,Executor CPU Time Percent,App Duration Estimated," +
       "SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent," +
-      "ReadFileFormat Score,ReadFileFormat\n"
+      "ReadFileFormat Score"
+    if (reportReadSchema) {
+      initHeader + ",Read Schema Info"
+    } else {
+      initHeader
+    }
+  }
 
   // find sizes of largest appId and long fields, assume the long is not bigger then
   // the problemDurStr header
@@ -50,7 +56,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
   }
 
   private def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
-    writer.write(headerCSV)
+    writer.write(headerCSV + "\n")
   }
 
   private def stringIfempty(str: String): String = {
@@ -62,15 +68,21 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
     val appIdStr = stringIfempty(appSum.appId)
     val appNameStr = stringIfempty(appSum.appName)
     val failedIds = stringIfempty(appSum.failedSQLIds)
-    val readFileFormats = stringIfempty(appSum.readFileFormats)
+    // since csv replace any commas with ; in the schema
+    val readFileFormats = stringIfempty(appSum.readFileFormats.replace(",", ";"))
     val scoreRounded = f"${appSum.score}%1.2f"
     val readFileScoreRounded = f"${appSum.readFileFormatScore}%1.2f"
 
-    s"$appNameStr,$appIdStr,$scoreRounded,$probStr,${appSum.sqlDataFrameDuration}," +
+    val initRow = s"$appNameStr,$appIdStr,$scoreRounded,$probStr,${appSum.sqlDataFrameDuration}," +
       s"${appSum.sqlDataframeTaskDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readScorePercent},$readFileScoreRounded" // ,$readFileFormats"
+      s"${appSum.readScorePercent},$readFileScoreRounded"
+    if (reportReadSchema) {
+      initRow + ", $readFileFormats"
+    } else {
+      initRow
+    }
   }
 
   def writeCSV(summaries: Seq[QualificationSummaryInfo]): Unit = {
