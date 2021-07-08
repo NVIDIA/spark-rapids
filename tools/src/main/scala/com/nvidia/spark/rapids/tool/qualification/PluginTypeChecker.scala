@@ -24,8 +24,8 @@ import org.apache.spark.internal.Logging
 class PluginTypeChecker extends Logging {
 
   // map of file format => Map[datatype => supported string]
-  val allSupportedReadSources = readSupportedTypesForPlugin
   val allSplit = new HashMap[String, Map[String, Seq[String]]]()
+  val allSupportedReadSources = readSupportedTypesForPlugin
 
   // file format should be like this:
   // Format,Direction,BOOLEAN,BYTE,SHORT,INT,LONG,FLOAT,DOUBLE,DATE,...
@@ -51,6 +51,7 @@ class PluginTypeChecker extends Logging {
         val direction = cols(1).toLowerCase()
         if (direction.equals("read")) {
           val dataTypesToSup = header.drop(2).zip(cols.drop(2)).toMap
+          logWarning("datatypes to sup are: " + dataTypesToSup)
           val nsTypes = dataTypesToSup.filter { case (dt, sup) =>
             sup.contains("NA") || sup.contains("NS") || sup.contains("CO")
           }.keys.toSeq
@@ -71,7 +72,7 @@ class PluginTypeChecker extends Logging {
             getOtherTypes(t) :+ t
           }
           val allBySup = HashMap("NS" -> allNsTypes, "PS" -> allPsTypes, "S*" -> allsPartTypes)
-          allSplit(format) = allBySup.toMap
+          allSplit.put(format, allBySup.toMap)
           allSupportedReadSources(format) = dataTypesToSup
         }
       }

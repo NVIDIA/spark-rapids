@@ -70,7 +70,7 @@ class QualOutputWriter(outputDir: String, numRows: Int) {
       s"${appSum.sqlDataframeTaskDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readScorePercent},$readFileScoreRounded,$readFileFormats"
+      s"${appSum.readScorePercent},$readFileScoreRounded" // ,$readFileFormats"
   }
 
   def writeCSV(summaries: Seq[QualificationSummaryInfo]): Unit = {
