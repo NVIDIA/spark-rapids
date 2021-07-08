@@ -141,15 +141,15 @@ abstract class AppBase(
     allMetaWithSchema.foreach { node =>
       val meta = node.metadata
       val readSchema = formatSchemaStr(meta.getOrElse("ReadSchema", ""))
-      val allTypes = AppBase.parseSchemaString(Some(readSchema)).values.toSet
-      val schemaStr = allTypes.mkString(",")
+      // val allTypes = AppBase.parseSchemaString(Some(readSchema)).values.toSet
+      // val schemaStr = allTypes.mkString(",")
 
       // TODO - qualification may just check right here instead of recording!
       dataSourceInfo += DataSourceCase(sqlID,
         meta.getOrElse("Format", "unknown"),
         meta.getOrElse("Location", "unknown"),
         meta.getOrElse("PushedFilters", "unknown"),
-        schemaStr,
+        readSchema,
         false
       )
     }
@@ -206,15 +206,14 @@ abstract class AppBase(
       } else {
         "unknown"
       }
-      val allTypes = AppBase.parseSchemaString(Some(schema)).values.toSet
-      val schemaStr = allTypes.mkString(",")
+      // val allTypes = AppBase.parseSchemaString(Some(schema)).values.toSet
+      // val schemaStr = allTypes.mkString(",")
 
-      // TODO - qualification may just check right here instead of recording!
       dataSourceInfo += DataSourceCase(sqlID,
         fileFormat,
         location,
         pushedFilters,
-        schemaStr,
+        schema,
         AppBase.schemaIncomplete(schema)
       )
     }
@@ -241,7 +240,25 @@ object AppBase extends Logging {
 
   def parseSchemaString(schemaOpt: Option[String]): Map[String, String] = {
     schemaOpt.map { schema =>
-      val keyValues = schema.split(",")
+      // struct<name:string,age:int,salary:double,array:array<int>>
+      // map<string,string>
+      // array<string>
+
+      // ReadSchema: struct<key:string,location:struct<lat:double,long:double>>
+      // ReadSchema: struct<name:struct<firstname:string,middlename:array<string>,lastname:string>,
+      // address:struct<current:struct<state:string,city:string>,previous:
+      // struct<state:map<string,string>,city:string>>>
+      val complextTypes = Seq("struct", "map")
+      val containsComplex = complextTypes.exists(schema.contains)
+
+      val keyValues = if (containsComplex) {
+        // can't just split on commas because struct can have commas in it
+
+        schema.split(",")
+      } else {
+        // just split on commas
+        schema.split(",")
+      }
       val validSchema = if (schemaIncomplete(keyValues.last)) {
         // the last schema element will be cutoff because it has the ...
         keyValues.dropRight(1)

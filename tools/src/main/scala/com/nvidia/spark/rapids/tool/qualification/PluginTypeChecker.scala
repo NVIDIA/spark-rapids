@@ -25,6 +25,7 @@ class PluginTypeChecker extends Logging {
 
   // map of file format => Map[datatype => supported string]
   val allSupportedReadSources = readSupportedTypesForPlugin
+  val allSplit = new HashMap[String, Map[String, Seq[String]]]()
 
   // file format should be like this:
   // Format,Direction,BOOLEAN,BYTE,SHORT,INT,LONG,FLOAT,DOUBLE,DATE,...
@@ -49,7 +50,29 @@ class PluginTypeChecker extends Logging {
         val format = cols(0).toLowerCase
         val direction = cols(1).toLowerCase()
         if (direction.equals("read")) {
-          allSupportedReadSources(format) = header.drop(2).zip(cols.drop(2)).toMap
+          val dataTypesToSup = header.drop(2).zip(cols.drop(2)).toMap
+          val nsTypes = dataTypesToSup.filter { case (dt, sup) =>
+            sup.contains("NA") || sup.contains("NS") || sup.contains("CO")
+          }.keys.toSeq
+          val allNsTypes = nsTypes.flatMap { t =>
+            getOtherTypes(t) +: t
+          }
+          val psTypes = dataTypesToSup.filter { case (dt, sup) =>
+            sup.contains("PS") || sup.contains("PS*")
+          }.keys.toSeq
+          val allPsTypes = psTypes.flatMap { t =>
+            getOtherTypes(t) +: t
+          }
+          val sPartTypes = dataTypesToSup.filter { case (dt, sup) =>
+            // we care for decimal
+            sup.contains("S*")
+          }.keys.toSeq
+          val allsPartTypes = sPartTypes.flatMap { t =>
+            getOtherTypes(t) +: t
+          }
+          val allBySup = HashMap("NS" -> allNsTypes, "PS" -> allPsTypes, "S*" -> allsPartTypes)
+          allSplit(format) = allBySup.toMap
+          allSupportedReadSources(format) = dataTypesToSup
         }
       }
     } finally {
@@ -58,64 +81,62 @@ class PluginTypeChecker extends Logging {
     allSupportedReadSources.toMap
   }
 
+  def getOtherTypes(typeRead: String): Seq[String] = {
+    typeRead match {
+      case "long" => Seq("bigint")
+      case "short" => Seq("smallint")
+      case "int" => Seq("integer")
+      case "byte" => Seq("tinyint")
+      case "float" => Seq("real")
+      case "decimal" => Seq("dec", "numeric")
+      case "calendar" => Seq("interval")
+      case other => Seq.empty[String]
+    }
+  }
+
+  // NOTE, UDT doesn't show up in the event log, when its written, it gets written as
+  // other types since parquet/orc has to know about it
   def scoreReadDataTypes(format: String, schema: String, schemaIncomplete: Boolean): Double = {
     logWarning("data source is: " + format)
     val formatInLower = format.toLowerCase
     val score = if (allSupportedReadSources.contains(formatInLower)) {
       logWarning(s"data source format ${formatInLower} is supported by plugin")
-      val readSchema = schema.split(",").map(_.toLowerCase)
-      val scores = readSchema.map { typeRead =>
-        // TODO - need to add array/map/etc
-        val cType = typeRead match {
-          case "bigint" => "long"
-          case "smallint" => "short"
-          case "integer" => "int"
-          case "tinyint" => "byte"
-          case "real" => "float"
-          case "dec" | "numeric" => "decimal"
-          case "interval" => "calendar"
-          case other => other
-        }
-        if (allSupportedReadSources(formatInLower).contains(cType)) {
-          val supString = allSupportedReadSources(formatInLower).getOrElse(cType, "")
-          logWarning(s"type is : $typeRead -> $cType supported is: $supString")
-          supString match {
-            case "S" => 1.0
-            case "S*" =>
-              // decimals or timestamps
-              // since don't know be conservative and
-              if (typeRead.equals("decimal")) {
-                0.0
-              } else {
-                // timestamps
-                0.5
-              }
-            case "PS" => 0.5
-            case "PS*" =>
-              // parquet - PS* (missing nested BINARY, ARRAY, MAP, UDT)
-              0.5
-            case "NS" => 0.0
-            case "NA" => 0.0
-            case "CO" => 0.0
-            case unknown =>
-              logWarning(s"unknown type $unknown for type: $typeRead")
-              0.0
-          }
-        } else {
-          // datatype not supported
-          0.0
-        }
-      }
-      if (scores.contains(0.0)) {
+      val typesBySup = allSplit(formatInLower)
+      val hasNotSupported = typesBySup("NS").exists(schema.contains(_))
+      logWarning(s"has not supported is: $hasNotSupported")
+      val formatScore = if (hasNotSupported) {
         0.0
       } else {
-        if (schemaIncomplete) {
-          // we don't know for sure if the other types being read are supported
-          // add one more score to bring it down
-          (scores.sum + 0.2) / (scores.size + 1)
+        val hasSupportedPart = typesBySup("S*").exists(schema.contains(_))
+        logWarning(s"has supported partial supported is: $hasSupportedPart")
+        if (hasSupportedPart) {
+          // timestamps or decimals, check for decimals specifically
+          // could look for decimal(4,2) precision but might have operators
+          // that make it worse so just assume worst case
+          if (schema.contains("decimal")) {
+            0.0
+          } else {
+            0.5
+          }
         } else {
-          scores.sum / scores.size
+          val hasPartSupported = typesBySup("PS").exists(schema.contains(_))
+          logWarning(s"has part supported is: $hasPartSupported")
+          if (hasPartSupported) {
+            // TODO - is this to pesimistic?
+            0.5
+          } else {
+            // either supported or we don't know
+            1.0
+          }
         }
+      }
+
+      if (formatScore == 0.0) {
+        0.0
+      } else {
+        // schema could be incomplete but just report what we were able to parse.
+        // Instead could mark some off but if the rest is fine we penalize for nothiner.
+        formatScore
       }
     } else {
       // format not supported

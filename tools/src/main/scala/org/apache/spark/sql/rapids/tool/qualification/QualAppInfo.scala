@@ -183,6 +183,7 @@ class QualAppInfo(
   // are supported, the score would be 0.0 and if all formats and datatypes are
   // supported the score would be 1.0.
   private def calculateReadScoreRatio: Double = {
+    logWarning("data source info is: " + dataSourceInfo)
     val readFormatSum = dataSourceInfo.map { ds =>
       pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema, ds.schemaIncomplete)
     }.sum
