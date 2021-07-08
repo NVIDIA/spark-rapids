@@ -46,9 +46,17 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
             read_func(std_input_path + '/' + name),
             conf=all_confs)
 
-orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))],
+    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+
+# Some array gens, but not all because of nesting
+orc_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens] + [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)]
+
+orc_gens_list = [orc_basic_gens,
+    orc_array_gens_sample,
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
 
