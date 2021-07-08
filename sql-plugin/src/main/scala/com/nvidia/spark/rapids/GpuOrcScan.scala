@@ -32,7 +32,7 @@ import scala.math.max
 import ai.rapids.cudf._
 import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableColumn
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -591,8 +591,7 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
 
   def cleanUpOrc(ctx: OrcPartitionReaderContext) = {
     if (ctx != null) {
-      if (ctx.orcReader != null) ctx.orcReader.close()
-      if (ctx.dataReader != null) ctx.dataReader.close()
+      Seq(ctx.orcReader, ctx.dataReader).safeClose()
     }
   }
 }
@@ -624,6 +623,7 @@ class GpuOrcPartitionReader(
     execMetrics : Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
   private[this] var isFirstBatch = true
+  private[this] var isOrcCleanedUp = false
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -641,16 +641,20 @@ class GpuOrcPartitionReader(
       }
       isFirstBatch = false
     }
-    val ret = batch.isDefined
-    // After finishing reading, we should clean up ctx just in case leaking orc readers
-    if (!ret) {
+
+    batch.map(_ => true).getOrElse {
+      // After finishing reading, we should clean up ctx early, just in case leaking orc readers
       cleanUpOrc(ctx)
+      isOrcCleanedUp = true
+      false
     }
-    ret
   }
 
   override def close(): Unit = {
     super.close()
+    if (!isOrcCleanedUp) {
+      cleanUpOrc(ctx)
+    }
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
