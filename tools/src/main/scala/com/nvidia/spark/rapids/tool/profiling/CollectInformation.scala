@@ -76,6 +76,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         fileWriter.foreach { writer =>
           writer.write(ToolUtils.showString(dfWithApp, numRows))
         }
+      } else {
+        fileWriter.foreach(_.write("No Data Source Information Found!\n"))
       }
     }
   }

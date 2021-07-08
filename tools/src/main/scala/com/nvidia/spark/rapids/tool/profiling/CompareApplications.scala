@@ -23,7 +23,8 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.functions.asc
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
@@ -204,6 +205,29 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       i += 1
     }
     apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
+  }
+
+  case class DataSourceCompareCase(
+      appIndex: Int,
+      appId: String,
+      sqlID: Long,
+      format: String,
+      location: String,
+      pushedFilters: String,
+      schema: String)
+
+
+  def compareDataSourceInfo(sparkSession: SparkSession): Unit = {
+    import sparkSession.implicits._
+    val messageHeader = "\n\nCompare Data Source Information:\n"
+    val allAppsDs = apps.flatMap { app =>
+      val dsInfo = app.dataSourceInfo
+      dsInfo.map { ds =>
+        DataSourceCompareCase(app.index, app.appId, ds.sqlID, ds.format, ds.location,
+          ds.pushedFilters, ds.schema)
+      }
+    }
+    allAppsDs.toDF.sort(asc("appIndex"), asc("sqlID"), asc("location"))
   }
 
   // Compare Rapids Properties which are set explicitly
