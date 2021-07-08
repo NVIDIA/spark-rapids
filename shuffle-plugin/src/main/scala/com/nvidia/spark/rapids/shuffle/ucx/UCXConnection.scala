@@ -159,7 +159,7 @@ class UCXClientConnection(peerExecutorId: Long, peerClientId: Long,
 
     // this header is unique, so we can send it with the request
     // expecting it to be echoed back in the response
-    val requestHeader = UCXConnection.composeRequestHeader(ucx.getExecutorId, tx.txId)
+    val requestHeader = UCXConnection.composeRequestHeader(ucx.localExecutorId, tx.txId)
 
     // This is the response active message handler, when the response shows up
     // we'll create a transaction, and set header/message and complete it.
@@ -439,16 +439,12 @@ object UCXConnection extends Logging {
   def unpackHandshake(buff: ByteBuffer): (Long, Seq[ByteBuffer]) = {
     val remoteExecutorId = buff.getLong
     val numRkeys = buff.getInt
-    val rkeys = (0 until numRkeys).map { i =>
+    val rkeys = (0 until numRkeys).map { _ =>
       val rkeySize = buff.getInt
       val rkeySlice = buff.slice()
       rkeySlice.limit(rkeySize)
-      val rkey = ByteBuffer
-        .allocateDirect(rkeySize)
-        .put(rkeySlice)
       buff.position(buff.position() + rkeySize)
-      rkey.rewind()
-      rkey
+      rkeySlice
     }
     (remoteExecutorId, rkeys)
   }

@@ -179,8 +179,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     // the transport will receive no pending requests (for buffers) for queuing
     verify(mockTransport, times(0)).queuePending(any())
-
-    newMocks()
   }
 
   test("successful buffer fetch") {
@@ -514,8 +512,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       // ensure we closed the BufferReceiveState => releasing the bounce buffers
       assert(bounceBuffer.isClosed)
     }
-
-    newMocks()
   }
 
   def makeRequest(
@@ -717,10 +713,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     client.doFetch(Seq(ShuffleBlockBatchId(1,2,3,4)), mockHandler)
     client.close()
 
-    // error not expected at the iterator
+    // error expected at the iterator
     verify(mockHandler, times(1)).transferError(any(), any())
-
-    newMocks()
   }
 
   test("on endpoint failure the iterator is not notified if it is done (unregistered)") {
@@ -737,7 +731,5 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     // error not expected at the iterator
     verify(mockHandler, times(0)).transferError(any(), any())
-
-    newMocks()
   }
 }

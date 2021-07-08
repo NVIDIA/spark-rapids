@@ -133,7 +133,7 @@ class RapidsShuffleTestHelper extends FunSuite
     mockTransport = mock[RapidsShuffleTransport]
     mockExecutor = new ImmediateExecutor
     mockCopyExecutor = new ImmediateExecutor
-    mockBssExecutor = new DoNothingExecutor
+    mockBssExecutor = mock[Executor]
     mockHandler = mock[RapidsShuffleFetchHandler]
     mockStorage = mock[RapidsDeviceMemoryStore]
     mockCatalog = mock[ShuffleReceivedBufferCatalog]

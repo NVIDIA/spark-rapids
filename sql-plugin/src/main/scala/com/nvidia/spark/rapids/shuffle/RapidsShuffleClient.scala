@@ -111,7 +111,6 @@ class RapidsShuffleClient(
     /**
      * When a metadata response is received, this event is issued to handle it.
      * @param tx the [[Transaction]] to be closed after consuming the response
-     * @param resp the response metadata buffer
      * @param shuffleRequests blocks to be requested
      * @param rapidsShuffleFetchHandler the handler (iterator) to callback to
      */

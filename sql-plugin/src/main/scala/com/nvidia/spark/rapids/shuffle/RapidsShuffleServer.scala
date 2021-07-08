@@ -393,7 +393,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                 case _ =>
                   // errored or cancelled
                   logError(s"Error while sending buffers $bufferTx.")
-                  bufferSendState.close()
+                  bssExec.synchronized {
+                    bufferSendState.close()
+                    bssExec.notifyAll()
+                  }
               }
             })
       }

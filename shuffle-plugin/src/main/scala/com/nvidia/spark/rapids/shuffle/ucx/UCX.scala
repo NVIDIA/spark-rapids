@@ -84,7 +84,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
   logInfo(s"UCX context created")
 
-  def getExecutorId: Long = executor.executorId.toLong
+  val localExecutorId: Long = executor.executorId.toLong
 
   // this object implements the transport-friendly interface for UCX
   private[this] val serverConnection = new UCXServerConnection(this, transport)
@@ -191,7 +191,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         }
       }
 
-      logWarning("Exiting UCX progress thread.")
+      logDebug("Exiting UCX progress thread.")
       Seq(endpointManager, worker, context).safeClose()
     })
   }
@@ -820,8 +820,16 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     // called from the progress thread
     private def handleConnectedPeerFromRequest(executorId: Long, newEp: UcpEndpoint,
         peerRkeys: Seq[ByteBuffer]): Unit = {
-      // if another endpoint won, we keep both open.
-      endpoints.putIfAbsent(executorId, newEp)
+      // if another endpoint won, we keep both open
+      val priorEp = endpoints.putIfAbsent(executorId, newEp)
+      if (priorEp != null) {
+        // if another endpoint won, open the peer rkeys, as it will be used
+        // for sends
+        logInfo(s"Unpacking for ${priorEp} also")
+        peerRkeys.foreach(priorEp.unpackRemoteKey)
+      }
+      // always try to unpack on the new endpoint
+      peerRkeys.foreach(newEp.unpackRemoteKey)
       reverseLookupEndpoints.put(newEp, executorId)
       logInfo(s"Established endpoint on ConnectionRequest for executor $executorId: $newEp")
     }
@@ -969,7 +977,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         UCXConnection.composeRequestAmId(RequestType.Control), ep.getNativeId)
 
       val handshakeMsg =
-        UCXConnection.packHandshake(getExecutorId, localRkeys)
+        UCXConnection.packHandshake(localExecutorId, localRkeys)
 
       onWorkerThreadAsync(() => {
         logDebug(s"Sending handshake: $ep, $requestAm, $handshakeMsg")
@@ -998,7 +1006,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     // called from progress thread - from ControlRequest handler
     private def sendControlResponse(ep: UcpEndpoint, requestAm: UCXActiveMessage): Unit = {
       // reply
-      val handshakeMsg = UCXConnection.packHandshake(getExecutorId, localRkeys)
+      val handshakeMsg = UCXConnection.packHandshake(localExecutorId, localRkeys)
       val responseAmId = UCXConnection.composeResponseAmId(RequestType.Control)
       val responseAm = UCXActiveMessage(responseAmId, requestAm.header)
       val address = TransportUtils.getAddress(handshakeMsg)

@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.{Arm, MetaUtils, RapidsBuffer, ShuffleMetadata}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.{any, anyLong}
-import org.mockito.Mockito.{verify, _}
+import org.mockito.Mockito._
 
 import org.apache.spark.storage.ShuffleBlockBatchId
 
