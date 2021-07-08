@@ -166,12 +166,10 @@ object GpuCast extends Arm {
    */
   def sanitizeStringToDate(input: ColumnVector): ColumnVector = {
     val rules = Seq(
-      /// replace yyyy-m with yyyy-mm
-      RegexReplace("(\\A\\d{4})-(\\d{1})\\Z", "\\1-0\\2"),
-      /// replace yyyy-m- with yyyy-mm-
-      RegexReplace("(\\A\\d{4})-(\\d{1}-)", "\\1-0\\2"),
-      /// replace yyyy-mm-d with yyyy-mm-dd
-      RegexReplace("(\\A\\d{4}-\\d{2})-(\\d{1})([ T]|\\Z)", "\\1-0\\2\\3")
+      // replace yyyy-m with yyyy-mm
+      RegexReplace(raw"(\A\d{4})-(\d{1})(-|\Z)", raw"\1-0\2\3"),
+      // replace yyyy-mm-d with yyyy-mm-dd
+      RegexReplace(raw"(\A\d{4}-\d{2})-(\d{1})([ T]|\Z)", raw"\1-0\2\3")
     )
     rules.foldLeft(input.incRefCount())((cv, rule) => withResource(cv) { _ =>
       cv.stringReplaceWithBackrefs(rule.search, rule.replace)
