@@ -36,7 +36,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   private val problemDurStr = "Problematic Duration"
   private val appIdStr = "App ID"
   private val appDurStr = "App Duration"
-  private val sqlDurStr = "SQL Duration"
+  private val sqlDurStr = "SQL DF Duration"
   private val taskDurStr = "SQL Dataframe Task Duration"
 
   private val headerCSV = {
