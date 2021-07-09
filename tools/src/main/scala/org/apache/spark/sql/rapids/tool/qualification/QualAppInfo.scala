@@ -33,7 +33,7 @@ class QualAppInfo(
     numOutputRows: Int,
     eventLogInfo: EventLogInfo,
     hadoopConf: Configuration,
-    pluginTypeChecker: PluginTypeChecker,
+    pluginTypeChecker: Option[PluginTypeChecker],
     readScorePercent: Int)
   extends AppBase(numOutputRows, eventLogInfo, hadoopConf) with Logging {
 
@@ -174,11 +174,12 @@ class QualAppInfo(
   // are supported, the score would be 0.0 and if all formats and datatypes are
   // supported the score would be 1.0.
   private def calculateReadScoreRatio: Double = {
-    logWarning("data source info is: " + dataSourceInfo)
-    val readFormatSum = dataSourceInfo.map { ds =>
-      pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
-    }.sum
-    readFormatSum / dataSourceInfo.size
+    pluginTypeChecker.map { checker =>
+      val readFormatSum = dataSourceInfo.map { ds =>
+        checker.scoreReadDataTypes(ds.format, ds.schema)
+      }.sum
+      readFormatSum / dataSourceInfo.size
+    }.getOrElse(1.0)
   }
 
   def aggregateStats(): Option[QualificationSummaryInfo] = {
@@ -266,7 +267,7 @@ object QualAppInfo extends Logging {
       path: EventLogInfo,
       numRows: Int,
       hadoopConf: Configuration,
-      pluginTypeChecker: PluginTypeChecker,
+      pluginTypeChecker: Option[PluginTypeChecker],
       readScorePercent: Int): Option[QualAppInfo] = {
     val app = try {
         val app = new QualAppInfo(numRows, path, hadoopConf, pluginTypeChecker, readScorePercent)

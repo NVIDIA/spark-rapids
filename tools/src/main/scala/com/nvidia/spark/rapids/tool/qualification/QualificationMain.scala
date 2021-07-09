@@ -58,7 +58,11 @@ object QualificationMain extends Logging {
     val hadoopConf = new Configuration()
 
     val pluginTypeChecker = try {
-      new PluginTypeChecker()
+      if (readScorePercent > 0 || reportReadSchema) {
+        Some(new PluginTypeChecker())
+      } else {
+        None
+      }
     } catch {
       case ie: IllegalStateException =>
         return (1, Seq[QualificationSummaryInfo]())
