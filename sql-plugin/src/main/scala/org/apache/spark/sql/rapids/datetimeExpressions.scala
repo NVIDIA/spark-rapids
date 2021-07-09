@@ -405,7 +405,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
               strfFormat = DateUtils.toStrf(sparkFormat,
                 expr.left.dataType == DataTypes.StringType)
               // format parsed ok but we have no 100% compatible formats in LEGACY mode
-              if (GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS.exists(_.format == sparkFormat)) {
+              if (GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS.contains(sparkFormat)) {
                 // LEGACY support has a number of issues that mean we cannot guarantee
                 // compatibility with CPU
                 // - we can only support 4 digit years but Spark supports a wider range
@@ -475,18 +475,18 @@ object GpuToTimestamp extends Arm {
   // We are compatible with Spark for these formats when the timeParserPolicy is LEGACY. It
   // is possible that other formats may be supported but these are the only ones that we have
   // tests for.
-  val LEGACY_COMPATIBLE_FORMATS = Seq(
-    LegacyParseFormat("yyyy-MM-dd", '-', isTimestamp = false,
+  val LEGACY_COMPATIBLE_FORMATS = Map(
+    "yyyy-MM-dd" -> LegacyParseFormat('-', isTimestamp = false,
       raw"\A\d{4}-\d{2}-\d{2}(\D|\s|\Z)"),
-    LegacyParseFormat("yyyy/MM/dd", '/', isTimestamp = false,
+    "yyyy/MM/dd" -> LegacyParseFormat('/', isTimestamp = false,
       raw"\A\d{4}/\d{2}/\d{2}(\D|\s|\Z)"),
-    LegacyParseFormat("dd-MM-yyyy", '-', isTimestamp = false,
+    "dd-MM-yyyy" -> LegacyParseFormat('-', isTimestamp = false,
       raw"\A\d{2}-\d{2}-\d{4}(\D|\s|\Z)"),
-    LegacyParseFormat("dd/MM/yyyy", '/', isTimestamp = false,
+    "dd/MM/yyyy" -> LegacyParseFormat('/', isTimestamp = false,
       raw"\A\d{2}/\d{2}/\d{4}(\D|\s|\Z)"),
-    LegacyParseFormat("yyyy-MM-dd HH:mm:ss", '-', isTimestamp = true,
+    "yyyy-MM-dd HH:mm:ss" -> LegacyParseFormat('-', isTimestamp = true,
       raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)"),
-    LegacyParseFormat("yyyy/MM/dd HH:mm:ss", '/', isTimestamp = true,
+    "yyyy/MM/dd HH:mm:ss" -> LegacyParseFormat('/', isTimestamp = true,
       raw"\A\d{4}/\d{2}/\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)")
   )
 
@@ -627,8 +627,8 @@ object GpuToTimestamp extends Arm {
       dtype: DType,
       asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
 
-    val format = LEGACY_COMPATIBLE_FORMATS.find(_.format == sparkFormat)
-      .getOrElse(throw new IllegalStateException(s"Unsupported format $sparkFormat"))
+    val format = LEGACY_COMPATIBLE_FORMATS.getOrElse(sparkFormat,
+      throw new IllegalStateException(s"Unsupported format $sparkFormat"))
 
     // optimization to apply only the necessary rules depending on whether we are
     // parsing to a date or timestamp
@@ -704,8 +704,7 @@ object GpuToTimestamp extends Arm {
 
 }
 
-case class LegacyParseFormat(format: String, separator: Char, isTimestamp: Boolean,
-    validRegex: String)
+case class LegacyParseFormat(separator: Char, isTimestamp: Boolean, validRegex: String)
 
 case class RegexReplace(search: String, replace: String)
 
