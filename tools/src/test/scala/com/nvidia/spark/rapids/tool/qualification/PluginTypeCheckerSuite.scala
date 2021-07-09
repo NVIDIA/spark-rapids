@@ -41,6 +41,22 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
     }
   }
 
+  test("invalid file") {
+    val checker = new PluginTypeChecker
+    TrampolineUtil.withTempDir { outpath =>
+      val testSchema = "loan_id:boolean,monthly_reporting_period:string,servicer:string"
+      val header = "Format,Direction,BOOLEAN".getBytes(StandardCharsets.UTF_8)
+      // text longer then header should throw
+      val supText = "parquet,read,NS,NS".getBytes(StandardCharsets.UTF_8)
+      val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testDS.txt")
+      Files.write(csvSupportedFile, header)
+      Files.write(csvSupportedFile, supText)
+      assertThrows[IllegalStateException] {
+        checker.setPluginDataSourceFile(csvSupportedFile.toString)
+      }
+    }
+  }
+
   test("read not CO datatype") {
     val checker = new PluginTypeChecker
     TrampolineUtil.withTempDir { outpath =>

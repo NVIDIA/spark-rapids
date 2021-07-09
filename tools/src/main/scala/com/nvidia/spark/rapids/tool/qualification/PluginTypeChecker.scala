@@ -21,6 +21,12 @@ import scala.io.{BufferedSource, Source}
 
 import org.apache.spark.internal.Logging
 
+/**
+ * This class is used to check what the RAPIDS Accelerator for Apache Spark
+ * supports for data formats and data types.
+ * By default it relies on a csv file included in the jar which is generated
+ * by the plugin which lists the formats and types supported.
+ */
 class PluginTypeChecker extends Logging {
 
   private val NS = "NS"
@@ -34,8 +40,7 @@ class PluginTypeChecker extends Logging {
   private val DEFAULT_DS_FILE = "supportedDataSource.csv"
 
   // map of file format => Map[support category => Seq[Datatypes for that category]]
-  // contains the details of formats to which ones have datatypes not supported,
-  // partially supported or S*
+  // contains the details of formats to which ones have datatypes not supported
   // var for testing puposes
   private var formatsToSupportedCategory = readSupportedTypesForPlugin
 
@@ -50,7 +55,7 @@ class PluginTypeChecker extends Logging {
     readSupportedTypesForPlugin(source)
   }
 
-    // file format should be like this:
+  // file format should be like this:
   // Format,Direction,BOOLEAN,BYTE,SHORT,INT,LONG,FLOAT,DOUBLE,DATE,...
   // CSV,read,S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
   private def readSupportedTypesForPlugin(
@@ -65,7 +70,6 @@ class PluginTypeChecker extends Logging {
       fileContents.tail.foreach { line =>
         val cols = line.split(",")
         if (header.size != cols.size) {
-          logError("something went wrong, header is not same size as cols")
           throw new IllegalStateException("supportedDataSource file appears corrupt," +
             " header length doesn't match rows length")
         }
