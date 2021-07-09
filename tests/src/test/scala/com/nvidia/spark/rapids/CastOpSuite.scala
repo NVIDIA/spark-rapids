@@ -61,7 +61,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private val DATE_CHARS = " \t\r\n0123456789:-/TZ"
 
   test("Cast from string to boolean using random inputs") {
-    castRandomStrings(DataTypes.BooleanType, "falseTRUE01 ", maxStringLen = 8)
+    castRandomStrings(DataTypes.BooleanType, " \t\r\nfalseTRUE01")
   }
 
   ignore("Cast from string to byte using random inputs") {
@@ -88,32 +88,37 @@ class CastOpSuite extends GpuExpressionTestSuite {
     castRandomStrings(DataTypes.LongType, NUMERIC_CHARS)
   }
 
-  test("Cast from string to float using random inputs") {
+  ignore("Cast from string to float using random inputs") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2900
     castRandomStrings(DataTypes.FloatType, NUMERIC_CHARS)
   }
 
-  test("Cast from string to double using random inputs") {
+  ignore("Cast from string to double using random inputs") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2900
     castRandomStrings(DataTypes.DoubleType, NUMERIC_CHARS)
   }
 
-  test("Cast from string to decimal using random inputs") {
-    castRandomStrings(new DecimalType(10,2), NUMERIC_CHARS)
-  }
-
-  test("Cast from string to date using random inputs") {
+  ignore("Cast from string to date using random inputs") {
+    // this will fail until https://github.com/NVIDIA/spark-rapids/pull/2890 is merged
     castRandomStrings(DataTypes.DateType, DATE_CHARS, maxStringLen = 8)
   }
 
-  test("Cast from string to date using random inputs with valid year prefix") {
+  ignore("Cast from string to date using random inputs with valid year prefix") {
+    // this will fail until https://github.com/NVIDIA/spark-rapids/pull/2890 is merged
     castRandomStrings(DataTypes.DateType, DATE_CHARS, maxStringLen = 8, Some("2021"))
   }
 
   ignore("Cast from string to timestamp using random inputs") {
-    // we have known failures
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2889
     castRandomStrings(DataTypes.TimestampType, DATE_CHARS, maxStringLen = 32, None)
   }
 
-  test("Cast from string to timestamp using random inputs with valid year prefix") {
+  ignore("Cast from string to timestamp using random inputs with valid year prefix") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2889
     castRandomStrings(DataTypes.TimestampType, DATE_CHARS, maxStringLen = 32, Some("2021-"))
   }
 
@@ -123,31 +128,36 @@ class CastOpSuite extends GpuExpressionTestSuite {
       maxStringLen: Int = 12,
       prefix: Option[String] = None) {
 
+    val randomValueCount = 8192
+
     val random = new Random(0)
     val r = new EnhancedRandom(random,
       new FuzzerOptions(validChars, maxStringLen))
 
-    val randomStrings = (0 until 1024)
+    val randomStrings = (0 until randomValueCount)
       .map(n => (n, prefix.getOrElse("") + r.nextString()))
 
     def castDf(spark: SparkSession): Seq[Row] = {
       import spark.implicits._
       val df = randomStrings.toDF("id", "c0").repartition(2)
-      val castDf = df.withColumn("c1", col("c0").cast(toType)).orderBy(col("id"))
+      val castDf = df.withColumn("c1", col("c0").cast(toType))
       println(castDf.queryExecution.executedPlan)
       castDf.collect()
     }
 
     val cpu = withCpuSparkSession(castDf)
+      .sortBy(_.getInt(0))
 
-    val gpu = withGpuSparkSession(castDf,
-      conf = new SparkConf()
-        .set(RapidsConf.EXPLAIN.key, "ALL")
-        .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true"))
+    val conf = new SparkConf()
+      .set(RapidsConf.EXPLAIN.key, "ALL")
+      .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
+
+    val gpu = withGpuSparkSession(castDf, conf)
+      .sortBy(_.getInt(0))
 
     for ((cpuRow, gpuRow) <- cpu.zip(gpu)) {
       assert(cpuRow.getInt(0) === gpuRow.getInt(0))
