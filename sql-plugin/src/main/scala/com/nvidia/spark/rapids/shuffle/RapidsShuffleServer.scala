@@ -359,33 +359,34 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               } else {
                 val transferResponse = bufferSendState.getTransferResponse()
 
-                val requestTx = bufferSendState.getRequestTransaction
+                withResource(bufferSendState.getRequestTransaction) { requestTx =>
 
-                logDebug(s"Handling transfer request ${requestTx} for " +
-                  s"${peerExecutorId} " +
-                  s"with ${buffersToSend}")
+                  logDebug(s"Handling transfer request ${requestTx} for " +
+                    s"${peerExecutorId} " +
+                    s"with ${buffersToSend}")
 
-                // send the transfer response
-                requestTx.respond(transferResponse.acquire(),
-                  transferResponseTx => {
-                    withResource(transferResponseTx) { _ =>
-                      withResource(transferResponse) { _ =>
-                        transferResponseTx.getStatus match {
-                          case TransactionStatus.Cancelled | TransactionStatus.Error =>
-                            logError(s"Error while handling TransferResponse: " +
-                              s"${transferResponseTx.getErrorMessage}")
-                          case _ =>
+                  // send the transfer response
+                  requestTx.respond(transferResponse.acquire(),
+                    transferResponseTx => {
+                      withResource(transferResponseTx) { _ =>
+                        withResource(transferResponse) { _ =>
+                          transferResponseTx.getStatus match {
+                            case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                              logError(s"Error while handling TransferResponse: " +
+                                s"${transferResponseTx.getErrorMessage}")
+                            case _ =>
+                          }
                         }
                       }
-                    }
-                  })
+                    })
 
-                // wake up the bssExec since bounce buffers became available
-                logDebug(s"Buffer send state ${buffersToSend} is done. Closing. " +
-                  s"Still pending: ${pendingTransfersQueue.size}.")
-                bssExec.synchronized {
-                  bufferSendState.close()
-                  bssExec.notifyAll()
+                  // wake up the bssExec since bounce buffers became available
+                  logDebug(s"Buffer send state ${buffersToSend} is done. Closing. " +
+                    s"Still pending: ${pendingTransfersQueue.size}.")
+                  bssExec.synchronized {
+                    bufferSendState.close()
+                    bssExec.notifyAll()
+                  }
                 }
               }
             })
