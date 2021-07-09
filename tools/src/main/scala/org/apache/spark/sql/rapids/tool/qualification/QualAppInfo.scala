@@ -183,14 +183,16 @@ class QualAppInfo(
       val readScoreRatio = calculateReadScoreRatio
       val sqlDataframeTaskDuration = calculateTaskDataframeDuration
       val readScoreHumanPercent = 100 * readScoreRatio
+      val readScoreHumanPercentRounded = f"${readScoreHumanPercent}%1.2f".toDouble
       val score = calculateScore(readScoreRatio, sqlDataframeTaskDuration)
+      val scoreRounded = f"${score}%1.2f".toDouble
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
-      new QualificationSummaryInfo(info.appName, appId, score, problems,
+      new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
-        endDurationEstimated, sqlDurProblem, failedIds, readScorePercent, readScoreHumanPercent,
-        getAllReadFileFormats)
+        endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
+        readScoreHumanPercentRounded, getAllReadFileFormats)
     }
   }
 
