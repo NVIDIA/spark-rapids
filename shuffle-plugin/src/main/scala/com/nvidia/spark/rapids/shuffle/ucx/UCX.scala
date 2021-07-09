@@ -825,7 +825,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       if (priorEp != null) {
         // if another endpoint won, open the peer rkeys, as it will be used
         // for sends
-        logInfo(s"Unpacking for ${priorEp} also")
         peerRkeys.foreach(priorEp.unpackRemoteKey)
       }
       // always try to unpack on the new endpoint
@@ -1034,7 +1033,9 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
     override def close(): Unit = synchronized {
       reverseLookupEndpoints.forEach((ep, _) => ep.close())
-      endpoints.values().forEach(_.close())
+      // all endpoints in `endpoints` are in `reverseLookupEndpoints`
+      endpoints.clear()
+      reverseLookupEndpoints.clear()
     }
   }
 
