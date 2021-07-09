@@ -31,7 +31,7 @@ object ToolUtils extends Logging {
   }
 
   // given to duration values, calculate a human readable percent
-  // rounded to 2 decimal places.  ie 39.12%
+  // rounded to 2 decimal places. ie 39.12%
   def calculateDurationPercent(first: Long, total: Long): Double = {
     val firstDec = BigDecimal.decimal(first)
     val totalDec = BigDecimal.decimal(total)

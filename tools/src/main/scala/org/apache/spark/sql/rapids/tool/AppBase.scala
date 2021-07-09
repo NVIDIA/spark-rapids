@@ -121,14 +121,14 @@ abstract class AppBase(
 
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
-    val keep = if (planInfo.metadata.contains("ReadSchema")) {
+    if (planInfo.metadata.contains("ReadSchema")) {
       childRes :+ planInfo
     } else {
       childRes
     }
-    keep
   }
 
+  // strip off the struct<> part that Spark adds to the ReadSchema
   private def formatSchemaStr(schema: String): String = {
     schema.stripPrefix("struct<").stripSuffix(">")
   }
@@ -150,7 +150,8 @@ abstract class AppBase(
     }
   }
 
-  // This will find scans for DataSource V2
+  // This will find scans for DataSource V2, if the schema is very large it
+  // will likely be incomplete and have ... at the end.
   protected def checkGraphNodeForBatchScan(sqlID: Long, node: SparkPlanGraphNode): Unit = {
     if (node.name.equals("BatchScan")) {
       val schemaTag = "ReadSchema: "

@@ -199,6 +199,35 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("test datasource read format included") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog-dsv1.zstd")
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--report-read-schema")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.csv"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toSeq
+        // 1 for header, 1 for values
+        assert(lines.size == 2)
+        assert(lines.head.contains("Read Schema Info"))
+        assert(lines(1).contains("loan399"))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
   test("skip malformed json eventlog") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val badEventLog = s"$profileLogDir/malformed_json_eventlog.zstd"
