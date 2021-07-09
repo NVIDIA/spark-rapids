@@ -1653,6 +1653,7 @@ object SupportedOpsForTools extends Logging {
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }
         val read = ioMap(ReadFileOp)
+        // we have lots of configs for various operations, just try to get the main ones
         val readOps = types.map { t =>
           val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
             t.toString() match {
@@ -1665,10 +1666,14 @@ object SupportedOpsForTools extends Logging {
               case "DOUBLE" => conf.isCsvDoubleReadEnabled
               case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
               case "DATE" => conf.isCsvDateReadEnabled
+              case "DECIMAL" => conf.decimalTypeEnabled
               case _ => true
             }
           } else {
-            true
+            t.toString() match {
+              case "DECIMAL" => conf.decimalTypeEnabled
+              case _ => true
+            }
           }
           if (!formatEnabled || !typeEnabled) {
             // indicate configured off by default
