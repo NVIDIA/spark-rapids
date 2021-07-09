@@ -33,7 +33,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  private val problemDurStr = "SQL Duration For Problematic"
+  private val problemDurStr = "Duration of Problematic"
   private val appIdStr = "App ID"
   private val appDurStr = "App Duration"
   private val sqlDurStr = "SQL Dataframe Duration"
@@ -54,7 +54,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   // find sizes of largest appId and long fields, assume the long is not bigger then
   // the problemDurStr header
   private def getTextSpacing(sums: Seq[QualificationSummaryInfo]): (Int, Int)= {
-    val sizePadLongs = problemDurStr.size
+    val sizePadLongs = Array(appIdStr, appDurStr, sqlDurStr, problemDurStr).map(_.size).max
     val sizes = sums.map(_.appId.size)
     val appIdMaxSize = if (sizes.size > 0) sizes.max else appIdStr.size
     (appIdMaxSize, sizePadLongs)
@@ -90,7 +90,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   }
 
   def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
-    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv")
+    val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv", "CSV")
     try {
       writeCSVHeader(csvFileWriter)
       sums.foreach { appSum =>
@@ -103,7 +103,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
 
   // write the text summary report
   def writeReport(summaries: Seq[QualificationSummaryInfo], numOutputRows: Int) : Unit = {
-    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log")
+    val textFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.log",
+      "Summary report")
     try {
       writeTextSummary(textFileWriter, summaries, numOutputRows)
     } finally {
@@ -112,7 +113,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   }
 
   private def writeTextSummary(writer: ToolTextFileWriter,
-      sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
+      sums: Seq[QualificationSummaryInfo], numOutputRows: Int,
+      writeToStdout: Boolean = true): Unit = {
     val (appIdMaxSize, sizePadLongs) = getTextSpacing(sums)
     val entireHeader = new StringBuffer
 
@@ -126,9 +128,11 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
     // write to stdout as well
-    println(s"$sep\n")
-    println(entireHeader.toString)
-    println(s"$sep\n")
+    if (writeToStdout) {
+      println(s"$sep\n")
+      println(entireHeader.toString)
+      println(s"$sep\n")
+    }
 
     val finalSums = sums.take(numOutputRows)
     finalSums.foreach { sumInfo =>
@@ -143,9 +147,9 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
       val sqlProbDurStrV = s"%${sizePadLongs}s".format(sqlProbDur)
       val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
-      println(wStr + "\n")
+      if (writeToStdout) println(wStr + "\n")
     }
     writer.write(s"$sep\n")
-    println(s"$sep\n")
+    if (writeToStdout) println(s"$sep\n")
   }
 }

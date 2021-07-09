@@ -131,7 +131,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printSQLPlans(outputDirectory: String): Unit = {
     for (app <- apps) {
       val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"planDescriptions-${app.appId}")
+        s"planDescriptions-${app.appId}", "SQL Plan")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
           planFileWriter.write("\n=============================\n")
