@@ -64,19 +64,27 @@ class CastOpSuite extends GpuExpressionTestSuite {
     castRandomStrings(DataTypes.BooleanType, "falseTRUE01 ", maxStringLen = 8)
   }
 
-  test("Cast from string to byte using random inputs") {
+  ignore("Cast from string to byte using random inputs") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2899
     castRandomStrings(DataTypes.ByteType, NUMERIC_CHARS)
   }
 
-  test("Cast from string to short using random inputs") {
+  ignore("Cast from string to short using random inputs") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2899
     castRandomStrings(DataTypes.ShortType, NUMERIC_CHARS)
   }
 
-  test("Cast from string to int using random inputs") {
+  ignore("Cast from string to int using random inputs") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2899
     castRandomStrings(DataTypes.IntegerType, NUMERIC_CHARS)
   }
 
-  test("Cast from string to long using random inputs") {
+  ignore("Cast from string to long using random inputs") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2899
     castRandomStrings(DataTypes.LongType, NUMERIC_CHARS)
   }
 
