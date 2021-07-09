@@ -19,15 +19,13 @@ package com.nvidia.spark.rapids.tool.qualification
 import scala.collection.mutable.HashMap
 import scala.io.{BufferedSource, Source}
 
-import org.apache.spark.internal.Logging
-
 /**
  * This class is used to check what the RAPIDS Accelerator for Apache Spark
  * supports for data formats and data types.
  * By default it relies on a csv file included in the jar which is generated
  * by the plugin which lists the formats and types supported.
  */
-class PluginTypeChecker extends Logging {
+class PluginTypeChecker {
 
   private val NS = "NS"
   private val PS = "PS"
@@ -81,7 +79,6 @@ class PluginTypeChecker extends Logging {
         val direction = cols(1).toLowerCase()
         if (direction.equals("read")) {
           val dataTypesToSup = header.drop(2).zip(cols.drop(2)).toMap
-          logWarning("datatypes to sup are: " + dataTypesToSup)
           val nsTypes = dataTypesToSup.filter { case (_, sup) =>
             sup.equals(NA) || sup.equals(NS) || sup.equals(CO)
           }.keys.toSeq.map(_.toLowerCase)
@@ -116,7 +113,6 @@ class PluginTypeChecker extends Logging {
   // other types since parquet/orc has to know about it
   def scoreReadDataTypes(format: String, schema: String): Double = {
     val schemaLower = schema.toLowerCase
-    logWarning("data source is: " + format + " all sploit is: " + formatsToSupportedCategory)
     val formatInLower = format.toLowerCase
     val typesBySup = formatsToSupportedCategory.get(formatInLower)
     val score = typesBySup match {
@@ -125,10 +121,10 @@ class PluginTypeChecker extends Logging {
         if (dtSupMap(NS).exists(t => schemaLower.contains(t.toLowerCase()))) {
           0.0
         } else {
-          // started out giving different weights based on partial support and so forth
+          // Started out giving different weights based on partial support and so forth
           // but decided to be optimistic and not penalize if we don't know, perhaps
           // make it smarter later.
-          // schema could also be incomplete, but similarly don't penalize since we don't
+          // Schema could also be incomplete, but similarly don't penalize since we don't
           // know.
           1.0
         }
@@ -136,7 +132,6 @@ class PluginTypeChecker extends Logging {
         // assume we don't support that format
         0.0
     }
-    logWarning(s"read score is $score")
     score
   }
 }

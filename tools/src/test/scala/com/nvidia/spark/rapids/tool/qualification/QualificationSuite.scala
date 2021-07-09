@@ -265,6 +265,18 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
   }
 
+  test("test read datasource v1") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog-dsv1.zstd")
+    runQualificationTest(logFiles, "read_dsv1_expectation.csv")
+  }
+
+  test("test read datasource v2") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog-dsv2.zstd")
+    runQualificationTest(logFiles, "read_dsv2_expectation.csv")
+  }
+
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener

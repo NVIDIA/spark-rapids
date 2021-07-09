@@ -21,7 +21,6 @@ import java.time.ZoneId
 
 import ai.rapids.cudf.DType
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, CaseWhen, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
@@ -1633,12 +1632,11 @@ object SupportedOpsDocs {
   }
 }
 
-object SupportedOpsForTools extends Logging {
+object SupportedOpsForTools {
 
   private def outputSupportIO() {
-    // won't handle what the user sets, but lets look at what we
-    // have for defaults because if configs are off it likely means
-    // something isn't completely compatible
+    // Look at what we have for defaults for some configs because if the configs are off
+    // it likely means something isn't completely compatible.
     val conf = new RapidsConf(Map.empty[String, String])
     val types = TypeEnum.values.toSeq
     val header = Seq("Format", "Direction") ++ types

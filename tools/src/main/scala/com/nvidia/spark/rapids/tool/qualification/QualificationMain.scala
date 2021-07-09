@@ -65,6 +65,7 @@ object QualificationMain extends Logging {
       }
     } catch {
       case ie: IllegalStateException =>
+        logError("Error creating the plugin type checker!", ie)
         return (1, Seq[QualificationSummaryInfo]())
     }
 

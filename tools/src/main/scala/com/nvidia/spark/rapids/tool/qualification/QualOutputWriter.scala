@@ -73,7 +73,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
     val appIdStr = stringIfempty(appSum.appId)
     val appNameStr = stringIfempty(appSum.appName)
     val failedIds = stringIfempty(appSum.failedSQLIds)
-    // since csv replace any commas with ; in the schema
+    // since csv, replace any commas with ; in the schema
     val readFileFormats = stringIfempty(appSum.readFileFormats.replace(",", ";"))
     val scoreRounded = f"${appSum.score}%1.2f"
     val readFileScoreRounded = f"${appSum.readFileFormatScore}%1.2f"

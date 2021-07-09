@@ -66,7 +66,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       default = Some(20))
   val reportReadSchema: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Whether to output the Read formats and datatypes to the CSV file. This can " +
+      descr = "Whether to output the read formats and datatypes to the CSV file. This can " +
         "be very long. Default is false.",
       default = Some(false))
   val timeout: ScallopOption[Long] =
