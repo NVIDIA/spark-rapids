@@ -115,12 +115,15 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
     val appIdMaxSize = getAppidSize(sums)
     val entireHeader = new StringBuffer
 
+    val appDurStrSize = appDurStr.size
+    val sqlDurStrSize = sqlDurStr.size
+    val problemStrSize = problemDurStr.size
     entireHeader.append(s"|%${appIdMaxSize}s|".format(appIdStr))
-    entireHeader.append(s"%${appDurStr.size}s|".format(appDurStr))
-    entireHeader.append(s"%${sqlDurStr.size}s|".format(sqlDurStr))
-    entireHeader.append(s"%${problemDurStr.size}s|".format(problemDurStr))
+    entireHeader.append(s"%${appDurStrSize}s|".format(appDurStr))
+    entireHeader.append(s"%${sqlDurStrSize}s|".format(sqlDurStr))
+    entireHeader.append(s"%${problemStrSize}s|".format(problemDurStr))
     entireHeader.append("\n")
-    val sep = "=" * (appIdMaxSize + (appDurStr.size + sqlDurStr.size + problemDurStr.size) + 5)
+    val sep = "=" * (appIdMaxSize + (appDurStrSize + sqlDurStrSize + problemStrSize) + 5)
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
@@ -136,12 +139,12 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
       val appId = sumInfo.appId
       val appIdStrV = s"%${appIdMaxSize}s".format(appId)
       val appDur = sumInfo.appDuration.toString
-      val appDurStrV = s"%${appDurStr}s".format(appDur)
+      val appDurStrV = s"%${appDurStrSize}s".format(appDur)
       val sqlDur = sumInfo.sqlDataFrameDuration.toString
       val taskDur = sumInfo.sqlDataframeTaskDuration.toString
-      val sqlDurStrV = s"%${sqlDurStr}s".format(sqlDur)
+      val sqlDurStrV = s"%${sqlDurStrSize}s".format(sqlDur)
       val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
-      val sqlProbDurStrV = s"%${problemDurStr}s".format(sqlProbDur)
+      val sqlProbDurStrV = s"%${problemStrSize}s".format(sqlProbDur)
       val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
       if (writeToStdout) print(wStr + "\n")
