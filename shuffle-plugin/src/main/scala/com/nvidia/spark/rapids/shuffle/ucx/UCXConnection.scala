@@ -462,7 +462,8 @@ object UCXConnection extends Logging {
    * @return ByteBuffer containing the handshake message
    */
   def packHandshake(localExecutorId: Long, rkeys: Seq[ByteBuffer]): ByteBuffer = {
-    val size = 8 + 4 + (4 * rkeys.size) + rkeys.map(_.capacity).sum
+    val size = java.lang.Long.BYTES + java.lang.Integer.BYTES +
+      (java.lang.Integer.BYTES * rkeys.size) + rkeys.map(_.capacity).sum
     val hsBuff = ByteBuffer.allocateDirect(size)
     hsBuff.putLong(localExecutorId)
     // pack the rkeys
@@ -474,5 +475,4 @@ object UCXConnection extends Logging {
     hsBuff.flip()
     hsBuff
   }
-
 }

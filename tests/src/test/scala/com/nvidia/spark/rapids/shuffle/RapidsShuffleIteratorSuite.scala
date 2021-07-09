@@ -130,8 +130,6 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
     assertResult(0)(testMetricsUpdater.totalRemoteBytesRead)
     assertResult(0)(testMetricsUpdater.totalRowsFetched)
-
-    newMocks()
   }
 
   test("a timeout while waiting for batches raises a fetch failure") {
@@ -164,8 +162,6 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
     assertResult(0)(testMetricsUpdater.totalRemoteBytesRead)
     assertResult(0)(testMetricsUpdater.totalRowsFetched)
-
-    newMocks()
   }
 
   test("a new good batch is queued") {
@@ -205,7 +201,5 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     assertResult(1)(testMetricsUpdater.totalRemoteBlocksFetched)
     assertResult(mockBuffer.size)(testMetricsUpdater.totalRemoteBytesRead)
     assertResult(10)(testMetricsUpdater.totalRowsFetched)
-
-    newMocks()
   }
 }

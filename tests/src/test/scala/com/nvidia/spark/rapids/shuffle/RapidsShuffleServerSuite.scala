@@ -125,7 +125,6 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
     }
     assert(bb.deviceBounceBuffer.isClosed)
     assert(transferRequest.isClosed)
-    newMocks()
   }
 
   test("sending tables that require two bounce buffer lengths") {
