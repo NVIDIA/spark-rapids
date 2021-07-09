@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -115,6 +115,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   private var mustBeReplacedReasons: Option[mutable.Set[String]] = None
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
+  private var typeConversionReasons: Option[mutable.Set[String]] = None
   protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
   protected var cannotRunOnGpuBecauseOfCost: Boolean = false
 
@@ -187,6 +188,15 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     shouldBeRemovedReasons.get.add(because)
 
   /**
+   * Call this method to record information about type conversions via DataTypeMeta.
+   */
+  final def addConvertedDataType(name: String, typeMeta: DataTypeMeta): Unit = {
+    val reason = s"Converted DataType of $name from ${typeMeta.wrapped.get} to " +
+        s"${typeMeta.dataType.get}, because ${typeMeta.reasonForConversion}"
+    typeConversionReasons.get.add(reason)
+  }
+
+  /**
    * Returns true if this node should be removed.
    */
   final def shouldThisBeRemoved: Boolean = shouldBeRemovedReasons.exists(_.nonEmpty)
@@ -243,6 +253,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     mustBeReplacedReasons = Some(mutable.Set[String]())
     shouldBeRemovedReasons = Some(mutable.Set[String]())
     cannotReplaceAnyOfPlanReasons = Some(mutable.Set[String]())
+    typeConversionReasons = Some(mutable.Set[String]())
   }
 
   /**
@@ -312,6 +323,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       s" but is going to be removed because $reasons"
   }
 
+  private def typeConversionInfo: String = typeConversionReasons match {
+    case None => ""
+    case Some(v) if v.isEmpty => ""
+    case Some(v) =>
+      " The data type of following expressions will be converted in GPU runtime:\n" +
+          v mkString "; "
+  }
+
   /**
    * When converting this to a string should we include the string representation of what this
    * wraps too?  This is off by default.
@@ -369,6 +388,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       strBuilder.append(willWorkOnGpuInfo).
         append(willBeRemovedInfo).
         append("\n")
+
+      typeConversionInfo match {
+        case info if info.isEmpty =>
+        case info => strBuilder.append(info).append("\n")
+      }
     }
     printChildren(strBuilder, depth, all)
   }
@@ -652,9 +676,30 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * in the tag methods of ExecChecks.
    *
    * By default, it simply returns the output of wrapped plan. But for specific plans, they can
-   * take advantage of this method to apply custom transitions on the output of wrapped plan.
+   * override outputTypeMetas to apply custom conversions on the output of wrapped plan.
    */
-  def outputAttributes: Seq[Attribute] = wrapped.output
+  def outputAttributes: Seq[Attribute] = outputTypeMetas match {
+    case Some(typeMetas) =>
+      if (typeMetas.length != wrapped.output.length) {
+        throw new IllegalArgumentException(
+          "The length of outputTypeMetas doesn't match to the length of plan's output")
+      }
+      wrapped.output.zip(typeMetas).map {
+        case (ar, meta) if meta.typeConverted =>
+          addConvertedDataType(ar.name, meta)
+          AttributeReference(ar.name, meta.dataType.get, ar.nullable, ar.metadata)(
+            ar.exprId, ar.qualifier)
+        case (ar, _) =>
+          ar
+      }
+    case None =>
+      wrapped.output
+  }
+
+  /**
+   * Overrides this method to implement custom conversions for specific plans.
+   */
+  protected def outputTypeMetas: Option[Seq[DataTypeMeta]] = None
 }
 
 /**
@@ -742,6 +787,50 @@ object ExpressionContext {
 }
 
 /**
+ * The metadata around `DataType`, which records the original data type, the desired data type for
+ * GPU overrides, and the reason of potential conversion. The metadata is to ensure TypeChecks
+ * tagging the actual data types for GPU runtime, since data types of GPU overrides may slightly
+ * differ from original CPU counterparts.
+ */
+class DataTypeMeta(
+    val wrapped: Option[DataType],
+    desired: Option[DataType] = None,
+    reason: Option[String] = None) {
+
+  lazy val dataType: Option[DataType] = desired match {
+    case Some(dt) => Some(dt)
+    case None => wrapped
+  }
+
+  // typeConverted will only be true if there exists DataType in wrapped expression
+  lazy val typeConverted: Boolean = {
+    dataType.nonEmpty && wrapped.nonEmpty && dataType.get != wrapped.get
+  }
+
+  /**
+   * Returns the reason for conversion if exists
+   */
+  def reasonForConversion: String = {
+    val reasonMsg = (if (typeConverted) reason else None).getOrElse("")
+    s"Converted ${wrapped.get} to ${dataType.get}, because $reasonMsg"
+  }
+}
+
+object DataTypeMeta {
+  /**
+   * create DataTypeMeta from Expression
+   */
+  def apply(expr: Expression): DataTypeMeta = {
+    val wrapped = try {
+      Some(expr.dataType)
+    } catch {
+      case _: java.lang.UnsupportedOperationException => None
+    }
+    new DataTypeMeta(wrapped)
+  }
+}
+
+/**
  * Base class for metadata around `Expression`.
  */
 abstract class BaseExprMeta[INPUT <: Expression](
@@ -766,19 +855,13 @@ abstract class BaseExprMeta[INPUT <: Expression](
     canThisBeReplaced && super.canExprTreeBeReplaced
 
   /**
-   * Gets the datatype of current BaseExprMeta, which is supposed to be called in the tag methods
-   * of expression-level type checks.
+   * Gets the DataTypeMeta of current BaseExprMeta, which is supposed to be called in the
+   * tag methods of expression-level type checks.
    *
    * By default, it simply returns the data type of wrapped expression. But for specific
    * expressions, they can override this method to apply custom transitions on the data type.
    */
-  def dataType: Option[DataType] = {
-    try {
-      Some(expr.dataType)
-    } catch {
-      case _: java.lang.UnsupportedOperationException => None
-    }
-  }
+  def typeMeta: DataTypeMeta = DataTypeMeta(wrapped.asInstanceOf[Expression])
 
   lazy val context: ExpressionContext = expr match {
     case _: LambdaFunction => LambdaExprContext

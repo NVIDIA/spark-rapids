@@ -317,7 +317,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
 
       case _: AttributeReference | _: GetStructField =>
         MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
-          expr.dataType.get, nullable = false, rowCount), conf.cpuReadMemorySpeed)
+          expr.typeMeta.dataType, nullable = false, rowCount), conf.cpuReadMemorySpeed)
 
       case _ =>
         expr.childExprs
@@ -326,7 +326,7 @@ class CpuCostModel(conf: RapidsConf) extends CostModel {
 
     // the output of evaluating the expression needs to be written out to rows
     val memoryWriteCost = MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
-      expr.dataType.get, nullable = false, rowCount), conf.cpuWriteMemorySpeed)
+      expr.typeMeta.dataType, nullable = false, rowCount), conf.cpuWriteMemorySpeed)
 
     // optional additional per-row overhead of evaluating the expression
     val exprEvalCost = rowCount *
@@ -376,7 +376,7 @@ class GpuCostModel(conf: RapidsConf) extends CostModel {
           .map(e => exprCost(e.asInstanceOf[BaseExprMeta[Expression]], rowCount)).sum
 
         memoryWriteCost += MemoryCostHelper.calculateCost(MemoryCostHelper.estimateGpuMemory(
-          expr.dataType.get, nullable = false, rowCount), conf.gpuWriteMemorySpeed)
+          expr.typeMeta.dataType, nullable = false, rowCount), conf.gpuWriteMemorySpeed)
     }
 
     // optional additional per-row overhead of evaluating the expression
@@ -419,12 +419,17 @@ object MemoryCostHelper {
     GpuBatchUtils.estimateGpuMemory(schema, safeRowCount)
   }
 
-  def estimateGpuMemory(dataType: DataType, nullable: Boolean, rowCount: Double): Long = {
-    // cardinality estimates tend to grow to very large numbers with nested joins so
-    // we apply a maximum to the row count that we use when estimating data sizes in
-    // order to avoid integer overflow
-    val safeRowCount = rowCount.min(Int.MaxValue).toLong
-    GpuBatchUtils.estimateGpuMemory(dataType, nullable, safeRowCount)
+  def estimateGpuMemory(dataType: Option[DataType], nullable: Boolean, rowCount: Double): Long = {
+    dataType match {
+      case Some(dt) =>
+        // cardinality estimates tend to grow to very large numbers with nested joins so
+        // we apply a maximum to the row count that we use when estimating data sizes in
+        // order to avoid integer overflow
+        val safeRowCount = rowCount.min(Int.MaxValue).toLong
+        GpuBatchUtils.estimateGpuMemory(dt, nullable, safeRowCount)
+      case None =>
+        throw new UnsupportedOperationException("Data type is None")
+    }
   }
 }
 

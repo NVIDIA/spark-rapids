@@ -219,11 +219,10 @@ final class TypeSig private(
    * @param exprMeta the meta of expression to check against.
    * @param name     the name of the expression (typically a parameter name)
    */
-  def tagExprParam(meta: RapidsMeta[_, _, _],
-      exprMeta: BaseExprMeta[_],
-      name: String): Unit = {
+  def tagExprParam(meta: RapidsMeta[_, _, _], exprMeta: BaseExprMeta[_], name: String): Unit = {
+    val typeMeta = exprMeta.typeMeta
     // This is for a parameter so skip it if there is no data type for the expression
-    exprMeta.dataType.foreach { dt =>
+    typeMeta.dataType.foreach { dt =>
       val expr = exprMeta.wrapped.asInstanceOf[Expression]
       val allowDecimal = meta.conf.decimalTypeEnabled
       if (!isSupportedByPlugin(dt, allowDecimal)) {
@@ -231,6 +230,9 @@ final class TypeSig private(
             s"produces an unsupported type $dt")
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
         meta.willNotWorkOnGpu(s"$name only supports $dt if it is a literal value")
+      }
+      if (typeMeta.typeConverted) {
+        meta.addConvertedDataType(expr.prettyName, typeMeta)
       }
     }
   }
@@ -548,11 +550,14 @@ case class ContextChecks(
   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
     val meta = rapidsMeta.asInstanceOf[BaseExprMeta[_]]
     val expr = meta.wrapped.asInstanceOf[Expression]
-    meta.dataType match {
+    meta.typeMeta.dataType match {
       case Some(dt: DataType) =>
         if (!outputCheck.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
           meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
-              s"produces an unsupported type ${dt}")
+              s"produces an unsupported type $dt")
+        }
+        if (meta.typeMeta.typeConverted) {
+          meta.addConvertedDataType(expr.prettyName, meta.typeMeta)
         }
       case None =>
         if (!meta.ignoreUnsetDataTypes) {
@@ -864,7 +869,7 @@ object CreateNamedStructCheck extends ExprChecks {
           nameSig.tagExprParam(meta, nameMeta, "name")
           nameSig.tagExprParam(meta, valueMeta, "value")
       }
-      val dt = exprMeta.dataType.get
+      val dt = exprMeta.typeMeta.dataType.get
       if (!resultSig.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
         meta.willNotWorkOnGpu(s"unsupported data type in output: $dt")
       }

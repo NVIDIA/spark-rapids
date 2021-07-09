@@ -1576,7 +1576,7 @@ object GpuOverrides {
           // types were and cannot recover it. As such for now we are going to do what Spark does,
           // but we have to recompute/recheck the temporary precision to be sure it will fit
           // on the GPU.
-          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType.get)
+          val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
@@ -1708,7 +1708,7 @@ object GpuOverrides {
       CaseWhenCheck,
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (dataType.get.isInstanceOf[ArrayType]) {
+          if (typeMeta.dataType.exists(_.isInstanceOf[ArrayType])) {
             // We don't support literal arrays yet
             if (a.elseValue.map(isLit).getOrElse(false)) {
               willNotWorkOnGpu("literal arrays are not currently supported")
@@ -1787,7 +1787,7 @@ object GpuOverrides {
           // effectively calculating an extra digit of precision. Because cudf does not support this
           // right now we actually increase the scale (and corresponding precision) to get an extra
           // decimal place so we can round it in GpuCheckOverflow
-          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType.get)
+          val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val outputType = GpuDivideUtil.decimalDataType(l, r)
