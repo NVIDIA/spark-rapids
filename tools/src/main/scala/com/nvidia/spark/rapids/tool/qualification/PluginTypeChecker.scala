@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import scala.collection.mutable.HashMap
-import scala.io.Source
+import scala.io.{BufferedSource, Source}
 
 import org.apache.spark.internal.Logging
 
@@ -32,9 +32,6 @@ class PluginTypeChecker extends Logging {
   private val NA = "NA"
 
   private val DEFAULT_DS_FILE = "supportedDataSource.csv"
-  // var for testing purposes
-  private var dsFile = DEFAULT_DS_FILE
-
 
   // map of file format => Map[support category => Seq[Datatypes for that category]]
   // contains the details of formats to which ones have datatypes not supported,
@@ -44,17 +41,22 @@ class PluginTypeChecker extends Logging {
 
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
-    dsFile = filePath
-    formatsToSupportedCategory = readSupportedTypesForPlugin
+    val source = Source.fromFile(filePath)
+    formatsToSupportedCategory = readSupportedTypesForPlugin(source)
   }
 
-  // file format should be like this:
+  private def readSupportedTypesForPlugin: Map[String, Map[String, Seq[String]]] = {
+    val source = Source.fromResource(DEFAULT_DS_FILE)
+    readSupportedTypesForPlugin(source)
+  }
+
+    // file format should be like this:
   // Format,Direction,BOOLEAN,BYTE,SHORT,INT,LONG,FLOAT,DOUBLE,DATE,...
   // CSV,read,S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
-  private def readSupportedTypesForPlugin: Map[String, Map[String, Seq[String]]] = {
+  private def readSupportedTypesForPlugin(
+      source: BufferedSource): Map[String, Map[String, Seq[String]]] = {
     // get the types the Rapids Plugin supports
     val allSupportedReadSources = HashMap.empty[String, Map[String, Seq[String]]]
-    val source = Source.fromResource(dsFile)
     try {
       val fileContents = source.getLines().toSeq
       // first line is header
