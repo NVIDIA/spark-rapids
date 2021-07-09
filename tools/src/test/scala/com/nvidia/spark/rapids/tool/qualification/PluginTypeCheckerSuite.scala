@@ -26,7 +26,7 @@ import org.apache.spark.sql.TrampolineUtil
 
 class PluginTypeCheckerSuite extends FunSuite with Logging {
 
-  test("read not supported") {
+  test("read not supported datatype") {
     val checker = new PluginTypeChecker
     TrampolineUtil.withTempDir { outpath =>
       val testSchema = "loan_id:boolean,monthly_reporting_period:string,servicer:string"
@@ -36,7 +36,23 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
       Files.write(csvSupportedFile, header)
       Files.write(csvSupportedFile, supText)
       checker.setPluginDataSourceFile(csvSupportedFile.toString)
-      checker.scoreReadDataTypes("parquet", testSchema)
+      val score = checker.scoreReadDataTypes("parquet", testSchema)
+      assert(score == 0.0)
+    }
+  }
+
+  test("read not CO datatype") {
+    val checker = new PluginTypeChecker
+    TrampolineUtil.withTempDir { outpath =>
+      val testSchema = "loan_id:bigint,monthly_reporting_period:string,servicer:string"
+      val header = "Format,Direction,int".getBytes(StandardCharsets.UTF_8)
+      val supText = "parquet,read,CO".getBytes(StandardCharsets.UTF_8)
+      val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testDS.txt")
+      Files.write(csvSupportedFile, header)
+      Files.write(csvSupportedFile, supText)
+      checker.setPluginDataSourceFile(csvSupportedFile.toString)
+      val score = checker.scoreReadDataTypes("parquet", testSchema)
+      assert(score == 0.0)
     }
   }
 
