@@ -199,9 +199,8 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
       throw new IllegalStateException(s"${other.getClass} is not a supported window function")
   }
 
-  lazy val optimizedRunningWindow: Option[GpuRunningWindowFunction] = {
-    if (System.getProperty("TEST_RUNNING", "true").toBoolean &&
-        normalizedFrameSpec.frameType == RowFrame &&
+  private[this] lazy val optimizedRunningWindow: Option[GpuRunningWindowFunction] = {
+    if (normalizedFrameSpec.frameType == RowFrame &&
         GpuWindowExec.isRunningWindow(windowSpec) &&
         wrappedWindowFunc.isInstanceOf[GpuRunningWindowFunction]) {
       val runningWin = wrappedWindowFunc.asInstanceOf[GpuRunningWindowFunction]

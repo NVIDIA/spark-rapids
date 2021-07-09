@@ -303,7 +303,7 @@ def test_window_running_no_part(b_gen, batch_size):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
-# Test that we can so a running window sum on floats and doubles.  This becomes problematic because we do the agg in parallel
+# Test that we can do a running window sum on floats and doubles.  This becomes problematic because we do the agg in parallel
 # which means that the result can switch back and forth from Inf to not Inf depending on the order of aggregations.
 # We test this by limiting the range of the values in the sum to never hit Inf, and by using abs so we don't have
 # positive and negative values that interfere with each other.
@@ -361,7 +361,7 @@ def test_window_running(b_gen, c_gen, batch_size):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
-# Test that we can so a running window sum on floats and doubles and decimal. This becomes problematic because we do the agg in parallel
+# Test that we can do a running window sum on floats and doubles and decimal. This becomes problematic because we do the agg in parallel
 # which means that the result can switch back and forth from Inf to not Inf depending on the order of aggregations.
 # We test this by limiting the range of the values in the sum to never hit Inf, and by using abs so we don't have
 # positive and negative values that interfere with each other.

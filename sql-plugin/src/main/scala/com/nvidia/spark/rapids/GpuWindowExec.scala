@@ -764,11 +764,9 @@ class GroupedAggregations extends Arm {
         func.groupByScan(inputCb)
     }.toSeq
 
-    // Part by is always ascending with nulls first
+    // Part by is always ascending with nulls first, which is the default for group by options too
     val sortedGroupingOpts = GroupByOptions.builder()
         .withKeysSorted(true)
-        .withKeysDescending(Array.fill(partByPositions.length)(false): _*)
-        .withKeysNullSmallest(Array.fill(partByPositions.length)(true): _*)
         .build()
 
     val scanned = withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
@@ -846,7 +844,7 @@ class GroupedAggregations extends Arm {
 
 /**
  * Calculates the results of window operations. It assumes that any batching of the data
- * or fixups after the fact to get the right answer is done out side of this.
+ * or fixups after the fact to get the right answer is done outside of this.
  */
 trait BasicWindowCalc extends Arm {
   val boundWindowOps: Seq[GpuExpression]

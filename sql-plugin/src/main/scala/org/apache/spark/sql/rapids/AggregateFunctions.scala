@@ -337,7 +337,7 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
 
   override def isScanSupported: Boolean  = child.dataType match {
     // String type does not work because of https://github.com/rapidsai/cudf/issues/8684
-    case StringType | TimestampType | DateType => false
+    case TimestampType | DateType => false
     case _ => true
   }
 
@@ -395,7 +395,7 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
 
   override def isScanSupported: Boolean = child.dataType match {
     // String type does not work because of https://github.com/rapidsai/cudf/issues/8684
-    case StringType | TimestampType | DateType => false
+    case TimestampType | DateType => false
     case _ => true
   }
 }
