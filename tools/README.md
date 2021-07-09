@@ -101,11 +101,12 @@ rapids-4-spark-tools_2.12-<version>.jar \
 The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications. The tool works by processing the CPU generated event logs from Spark.
 
-Currently it does this by looking at the amount of time spent in tasks of SQL Dataframe operations.
-The more total task time doing SQL Dataframe operations the higher the score is and the more likely the plugin
-will be able to help accelerate that application. The tool also looks for read data formats and types that the
-plugin doesn't support and if it finds any not supported it will take away from the score (based on the total task
- time in SQL Dataframe operations).
+This tool is intended to give the users a starting point and does not guarantee the applications it scores highest
+will actually be accelerated the most. Currently it works by looking at the amount of time spent in tasks of SQL
+Dataframe operations. The more total task time doing SQL Dataframe operations the higher the score is and the more
+likely the plugin will be able to help accelerate that application. The tool also looks for read data formats and types
+that the plugin doesn't support and if it finds any not supported it will take away from the score (based on the
+total task time in SQL Dataframe operations).
 
 Each application(event log) could have multiple SQL queries. If a SQL's plan has Dataset API inside such as keyword
  `$Lambda` or `.apply`, that SQL query is categorized as a DataSet SQL query, otherwise it is a Dataframe SQL query.
