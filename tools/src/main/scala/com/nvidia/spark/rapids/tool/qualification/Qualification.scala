@@ -32,7 +32,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * reports.
  */
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
-    timeout: Option[Long], nThreads: Int, pluginTypeChecker: PluginTypeChecker,
+    timeout: Option[Long], nThreads: Int, order: String, pluginTypeChecker: PluginTypeChecker,
     readScorePercent: Int, reportReadSchema: Boolean) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
@@ -66,12 +66,24 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       threadPool.shutdownNow()
     }
 
+    // sort order and limit only applies to the report summary text file,
+    // the csv file we write the entire data in descending order
     val allAppsSum = allApps.asScala.toSeq
-    val sorted = allAppsSum.sortBy(sum => (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration))
-    val qWriter = new QualOutputWriter(outputDir, numRows, reportReadSchema)
-    qWriter.writeCSV(sorted)
-    qWriter.writeReport(sorted)
-    sorted
+    val sortedDesc = allAppsSum.sortBy(sum => {
+        (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration)
+    })
+    val qWriter = new QualOutputWriter(outputDir, reportReadSchema)
+    qWriter.writeCSV(sortedDesc)
+
+    val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
+      allAppsSum.sortBy(sum => {
+        (sum.score, sum.sqlDataFrameDuration, sum.appDuration)
+      })
+    } else {
+      sortedDesc
+    }
+    qWriter.writeReport(sortedForReport, numRows)
+    sortedDesc
   }
 
   private def qualifyApp(
