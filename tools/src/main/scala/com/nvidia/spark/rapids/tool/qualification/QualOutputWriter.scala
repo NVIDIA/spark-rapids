@@ -125,6 +125,10 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
+    // write to stdout as well
+    println(s"$sep\n")
+    println(entireHeader.toString)
+    println(s"$sep\n")
 
     val finalSums = sums.take(numOutputRows)
     finalSums.foreach { sumInfo =>
@@ -139,7 +143,9 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
       val sqlProbDurStrV = s"%${sizePadLongs}s".format(sqlProbDur)
       val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
+      println(wStr + "\n")
     }
     writer.write(s"$sep\n")
+    println(s"$sep\n")
   }
 }
