@@ -175,10 +175,15 @@ class QualAppInfo(
   // supported the score would be 1.0.
   private def calculateReadScoreRatio: Double = {
     pluginTypeChecker.map { checker =>
-      val readFormatSum = dataSourceInfo.map { ds =>
-        checker.scoreReadDataTypes(ds.format, ds.schema)
-      }.sum
-      readFormatSum / dataSourceInfo.size
+      if (dataSourceInfo.size == 0) {
+        1.0
+      } else {
+        val readFormatSum = dataSourceInfo.map { ds =>
+          checker.scoreReadDataTypes(ds.format, ds.schema)
+        }.sum
+        logWarning("read format sum is: " + readFormatSum + " size: " + dataSourceInfo.size)
+        readFormatSum / dataSourceInfo.size
+      }
     }.getOrElse(1.0)
   }
 
@@ -198,7 +203,7 @@ class QualAppInfo(
         v.size > 0
       }.keys.mkString(",")
       new QualificationSummaryInfo(info.appName, appId, score, problems,
-        sqlDataframeDur, appDuration, sqlDataframeTaskDuration, executorCpuTimePercent,
+        sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent, readScoreHumanPercent,
         getAllReadFileFormats)
     }
@@ -252,8 +257,8 @@ case class QualificationSummaryInfo(
     score: Double,
     potentialProblems: String,
     sqlDataFrameDuration: Long,
-    appDuration: Long,
     sqlDataframeTaskDuration: Long,
+    appDuration: Long,
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
     sqlDurationForProblematic: Long,

@@ -49,16 +49,19 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   val schema = new StructType()
-    .add("appName", StringType, true)
-    .add("appID", StringType, true)
-    .add("dfRankTotal", DoubleType, true)
-    .add("potentialProblems", StringType, true)
-    .add("dfDurationFinal", LongType, true)
-    .add("appDuration", LongType, true)
-    .add("executorCPURatio", DoubleType, true)
-    .add("appEndDurationEstimated", BooleanType, true)
-    .add("sqlDurationForProblematic", LongType, true)
-    .add("failedSQLIds", StringType, true)
+    .add("App Name", StringType, true)
+    .add("App ID", StringType, true)
+    .add("Score", DoubleType, true)
+    .add("Potential Problems", StringType, true)
+    .add("SQL Dataframe Duration", LongType, true)
+    .add("SQL Dataframe Task Duration", LongType, true)
+    .add("App Duration", LongType, true)
+    .add("Executor CPU Time Percent", DoubleType, true)
+    .add("App Duration Estimated", BooleanType, true)
+    .add("SQL Duration with Potential Problems", LongType, true)
+    .add("SQL Ids with Failures", StringType, true)
+    .add("Read Score Percent", IntegerType, true)
+    .add("ReadFileFormat Score", DoubleType, true)
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -78,7 +81,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(exit == 0)
       val spark2 = sparkSession
       import spark2.implicits._
-      val dfTmp = appSum.toDF
+      val dfTmp = appSum.toDF.drop("readFileFormats")
       val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
       if (shouldReturnEmpty) {
         assert(appSum.head.sqlDataFrameDuration == 0.0)
