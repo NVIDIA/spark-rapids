@@ -367,7 +367,16 @@ private case class OrcPartitionReaderContext(
     dataReader: DataReader,
     orcReader: Reader,
     blockIterator: BufferedIterator[OrcOutputStripe],
-    requestedMapping: Option[Array[Int]])
+    requestedMapping: Option[Array[Int]]) {
+  private var isClosed = false
+
+  def cleanUp = {
+    if (!isClosed) {
+      Seq(orcReader, dataReader).safeClose()
+      isClosed =  true
+    }
+  }
+}
 
 /**
  * A base ORC partition reader which compose of some common methods
@@ -591,7 +600,7 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
 
   def cleanUpOrc(ctx: OrcPartitionReaderContext) = {
     if (ctx != null) {
-      Seq(ctx.orcReader, ctx.dataReader).safeClose()
+      ctx.cleanUp
     }
   }
 }
@@ -623,7 +632,6 @@ class GpuOrcPartitionReader(
     execMetrics : Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
   private[this] var isFirstBatch = true
-  private[this] var isOrcCleanedUp = false
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -645,16 +653,13 @@ class GpuOrcPartitionReader(
     batch.map(_ => true).getOrElse {
       // After finishing reading, we should clean up ctx early, just in case leaking orc readers
       cleanUpOrc(ctx)
-      isOrcCleanedUp = true
       false
     }
   }
 
   override def close(): Unit = {
     super.close()
-    if (!isOrcCleanedUp) {
-      cleanUpOrc(ctx)
-    }
+    cleanUpOrc(ctx)
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
