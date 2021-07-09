@@ -57,11 +57,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     for (from <- supportedTypes; to <- supportedTypes) yield (from, to)
   }
 
-  private val NUMERIC_CHARS = "infINF \t\r\n0123456789.+-eE"
-  private val DATE_CHARS = " \t\r\n0123456789:.-/TZ"
+  private val NUMERIC_CHARS = "inf \t\r\n0123456789.+-eE"
+  private val DATE_CHARS = " \t\r\n0123456789:-/TZ"
 
   test("Cast from string to boolean using random inputs") {
-    castRandomStrings(DataTypes.BooleanType, "falseTRUE01 ")
+    castRandomStrings(DataTypes.BooleanType, "falseTRUE01 ", maxStringLen = 8)
   }
 
   test("Cast from string to byte using random inputs") {
@@ -93,31 +93,40 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Cast from string to date using random inputs") {
-    // We only fully support 4-digit years on the GPU
-    castRandomStrings(DataTypes.DateType, DATE_CHARS, Some("2021-"))
+    castRandomStrings(DataTypes.DateType, DATE_CHARS, maxStringLen = 8)
+  }
+
+  test("Cast from string to date using random inputs with valid year prefix") {
+    castRandomStrings(DataTypes.DateType, DATE_CHARS, maxStringLen = 8, Some("2021"))
+  }
+
+  ignore("Cast from string to timestamp using random inputs") {
+    // we have known failures
+    castRandomStrings(DataTypes.TimestampType, DATE_CHARS, maxStringLen = 32, None)
   }
 
   test("Cast from string to timestamp using random inputs with valid year prefix") {
-    // We only fully support 4-digit years on the GPU
-    castRandomStrings(DataTypes.TimestampType, DATE_CHARS, Some("2021-"))
+    castRandomStrings(DataTypes.TimestampType, DATE_CHARS, maxStringLen = 32, Some("2021-"))
   }
 
   private def castRandomStrings(
       toType: DataType,
       validChars: String,
+      maxStringLen: Int = 12,
       prefix: Option[String] = None) {
 
     val random = new Random(0)
     val r = new EnhancedRandom(random,
-      new FuzzerOptions(validChars, maxStringLen = 12))
+      new FuzzerOptions(validChars, maxStringLen))
 
-    val randomStrings = (0 until 8192)
-      .map(_ => prefix.getOrElse("") + r.nextString())
+    val randomStrings = (0 until 1024)
+      .map(n => (n, prefix.getOrElse("") + r.nextString()))
 
     def castDf(spark: SparkSession): Seq[Row] = {
       import spark.implicits._
-      val df = randomStrings.toDF("c0")
-      val castDf = df.withColumn("c1", col("c0").cast(toType))
+      val df = randomStrings.toDF("id", "c0").repartition(2)
+      val castDf = df.withColumn("c1", col("c0").cast(toType)).orderBy(col("id"))
+      println(castDf.queryExecution.executedPlan)
       castDf.collect()
     }
 
@@ -125,6 +134,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
     val gpu = withGpuSparkSession(castDf,
       conf = new SparkConf()
+        .set(RapidsConf.EXPLAIN.key, "ALL")
         .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
@@ -132,11 +142,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true"))
 
     for ((cpuRow, gpuRow) <- cpu.zip(gpu)) {
-      assert(cpuRow.getString(0) === gpuRow.getString(0))
-      val cpuValue = cpuRow.get(1)
-      val gpuValue = gpuRow.get(1)
+      assert(cpuRow.getInt(0) === gpuRow.getInt(0))
+      assert(cpuRow.getString(1) === gpuRow.getString(1))
+      val cpuValue = cpuRow.get(2)
+      val gpuValue = gpuRow.get(2)
       if (!compare(cpuValue, gpuValue)) {
-        fail(s"Mismatch casting string ${cpuRow.getString(0)} " +
+        fail(s"Mismatch casting string [${cpuRow.getString(1)}] " +
           s"to $toType. CPU: $cpuValue; GPU: $gpuValue")
       }
     }
