@@ -129,9 +129,9 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
     writer.write(s"$sep\n")
     // write to stdout as well
     if (writeToStdout) {
-      println(s"$sep\n")
-      println(entireHeader.toString)
-      println(s"$sep\n")
+      print(s"$sep\n")
+      print(entireHeader.toString)
+      print(s"$sep\n")
     }
 
     val finalSums = sums.take(numOutputRows)
@@ -147,9 +147,9 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
       val sqlProbDurStrV = s"%${sizePadLongs}s".format(sqlProbDur)
       val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
-      if (writeToStdout) println(wStr + "\n")
+      if (writeToStdout) print(wStr + "\n")
     }
     writer.write(s"$sep\n")
-    if (writeToStdout) println(s"$sep\n")
+    if (writeToStdout) print(s"$sep\n")
   }
 }
