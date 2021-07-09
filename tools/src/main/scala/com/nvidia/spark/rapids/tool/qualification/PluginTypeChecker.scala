@@ -40,11 +40,12 @@ class PluginTypeChecker extends Logging {
   // contains the details of formats to which ones have datatypes not supported,
   // partially supported or S*
   // var for testing puposes
-  private val formatsToSupportedCategory = readSupportedTypesForPlugin
+  private var formatsToSupportedCategory = readSupportedTypesForPlugin
 
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
     dsFile = filePath
+    formatsToSupportedCategory = readSupportedTypesForPlugin
   }
 
   // file format should be like this:
