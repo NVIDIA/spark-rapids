@@ -104,30 +104,25 @@ class QualAppInfo(
     val readScore = partForReadScore * readScoreRatio
     // get the rest of the duration that doesn't apply to the read score
     val scoreRestPart = sqlDataframeTaskDuration * ratioForRestOfScore
-    val finalScore = scoreRestPart + readScore
-    logWarning(s"final score is $finalScore, before dur: $sqlDataframeTaskDuration and " +
-      s"$scoreRestPart and read: $readScore")
-    finalScore
+    scoreRestPart + readScore
   }
 
-  // if the sql contains a dataset, then duration for it is 0
-  // for the sql dataframe duration
+  // if the SQL contains a dataset, then duration for it is 0
+  // for the SQL dataframe duration
   private def calculateSqlDataframeDuration: Long = {
     sqlDurationTime.filterNot { case (sqlID, dur) =>
         sqlIDToDataSetCase.contains(sqlID) || dur == -1
     }.values.sum
   }
 
+  // The total task time for all tasks that ran during SQL dataframe
+  // operations.  if the SQL contains a dataset, it isn't counted.
   private def calculateTaskDataframeDuration: Long = {
     val validSums = sqlIDToTaskEndSum.filterNot { case (sqlID, _) =>
       sqlIDToDataSetCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
-    val totalTaskTime = validSums.values.map { dur =>
-      dur.totalTaskDuration
-    }.sum
-    totalTaskTime
+    validSums.values.map(dur => dur.totalTaskDuration).sum
   }
-
 
   private def getPotentialProblems: String = {
     problematicSQL.map(_.reason).toSet.mkString(",")
@@ -152,17 +147,8 @@ class QualAppInfo(
     ToolUtils.calculateDurationPercent(totalCpuTime, totalRunTime)
   }
 
-  case class SupportedTypesDS(format: String, direction: String,
-      arraySup: String, binarySup: String,
-      booleanSup: String, byteSup: String, calSup: String, dateSup: String,
-      decimalSup: String, doubleSup: String,
-      floatSup: String, intSup: String, longSup: String,
-      mapSup: String, nullSup: String, shortSup: String,
-      stringSup: String, structSup: String, timestampSup: String, udtSup:String)
-
   private def getAllReadFileFormats: String = {
     dataSourceInfo.map { ds =>
-      // val typesStr = getReadFileFormatTypes(ds)
       s"${ds.format.toLowerCase()}[${ds.schema}]"
     }.mkString(":")
   }
@@ -181,7 +167,6 @@ class QualAppInfo(
         val readFormatSum = dataSourceInfo.map { ds =>
           checker.scoreReadDataTypes(ds.format, ds.schema)
         }.sum
-        logWarning("read format sum is: " + readFormatSum + " size: " + dataSourceInfo.size)
         readFormatSum / dataSourceInfo.size
       }
     }.getOrElse(1.0)

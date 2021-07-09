@@ -20,12 +20,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.{immutable, mutable, Map}
 import scala.collection.mutable.ArrayBuffer
-import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
-import org.apache.hadoop.fs.{FileSystem, Path}
-import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
@@ -1016,7 +1013,6 @@ class ApplicationInfo(
 }
 
 object ApplicationInfo extends Logging {
-
   def createApps(
       allPaths: Seq[EventLogInfo],
       numRows: Int,
