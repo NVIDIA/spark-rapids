@@ -129,34 +129,38 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     verify(mockHandler, times(numBatches)).batchReceived(any())
   }
 
-  test("errored/cancelled metadata fetch") {
-    Seq(TransactionStatus.Error, TransactionStatus.Cancelled).foreach { status =>
-      when(mockTransaction.getStatus).thenReturn(status)
-      when(mockTransaction.getErrorMessage).thenReturn(Some("Error/cancel occurred"))
+  private def doTestErrorOrCancelledMetadataFetch(status: TransactionStatus.Value): Unit = {
+    when(mockTransaction.getStatus).thenReturn(status)
+    when(mockTransaction.getErrorMessage).thenReturn(Some("Error/cancel occurred"))
 
-      val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
-      val contigBuffSize = 100000
-      val (_, response) = RapidsShuffleTestHelper.mockMetaResponse(
-        mockTransaction, contigBuffSize, 3)
+    val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
+    val contigBuffSize = 100000
+    val (_, response) = RapidsShuffleTestHelper.mockMetaResponse(
+      mockTransaction, contigBuffSize, 3)
 
-      client.doFetch(shuffleRequests.map(_._1), mockHandler)
+    client.doFetch(shuffleRequests.map(_._1), mockHandler)
 
-      assertResult(1)(mockConnection.requests)
+    assertResult(1)(mockConnection.requests)
 
-      // upon an errored response, the start handler will not be called
-      verify(mockHandler, times(0)).start(any())
+    // upon an errored response, the start handler will not be called
+    verify(mockHandler, times(0)).start(any())
 
-      // but the error handler will
-      verify(mockHandler, times(1)).transferError(anyString(), isNull())
+    // but the error handler will
+    verify(mockHandler, times(1)).transferError(anyString(), isNull())
 
-      // the transport will receive no pending requests (for buffers) for queuing
-      verify(mockTransport, times(0)).queuePending(any())
+    // the transport will receive no pending requests (for buffers) for queuing
+    verify(mockTransport, times(0)).queuePending(any())
 
-      // this is not called since a message implies success
-      verify(mockTransaction, times(0)).releaseMessage()
+    // this is not called since a message implies success
+    verify(mockTransaction, times(0)).releaseMessage()
+  }
 
-      newMocks()
-    }
+  test("errored metadata fetch is handled") {
+    doTestErrorOrCancelledMetadataFetch(TransactionStatus.Error)
+  }
+
+  test("cancelled metadata fetch is handled") {
+    doTestErrorOrCancelledMetadataFetch(TransactionStatus.Cancelled)
   }
 
   test("exception in metadata fetch escalates to handler"){
@@ -436,45 +440,49 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("errored/cancelled buffer fetch") {
-    Seq(TransactionStatus.Error, TransactionStatus.Cancelled).foreach { status =>
-      when(mockTransaction.getStatus).thenReturn(status)
-      when(mockTransaction.getErrorMessage).thenReturn(Some("Error/cancel occurred"))
+  private def doTestErrorOrCancelledBufferFetch(status: TransactionStatus.Value): Unit = {
+    when(mockTransaction.getStatus).thenReturn(status)
+    when(mockTransaction.getErrorMessage).thenReturn(Some("Error/cancel occurred"))
 
-      val numRows = 100000
-      val tableMeta =
-        RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
+    val numRows = 100000
+    val tableMeta =
+      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
 
-      // error condition, so it doesn't matter much what we set here, only the first
-      // receive will happen
-      val sizePerBuffer = numRows * 4 / 10
-      closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
-        val brs = prepareBufferReceiveState(tableMeta, bounceBuffer)
+    // error condition, so it doesn't matter much what we set here, only the first
+    // receive will happen
+    val sizePerBuffer = numRows * 4 / 10
+    closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
+      val brs = prepareBufferReceiveState(tableMeta, bounceBuffer)
 
-        assert(brs.hasNext)
+      assert(brs.hasNext)
 
-        // Kick off receives
-        client.doIssueBufferReceives(brs)
+      // Kick off receives
+      client.doIssueBufferReceives(brs)
 
-        // Errored transaction. Therefore we should not be done
-        assert(brs.hasNext)
+      // Errored transaction. Therefore we should not be done
+      assert(brs.hasNext)
 
-        // We should have called `transferError` in the `RapidsShuffleFetchHandler` and not
-        // pass a throwable, since this was a transport-level exception we caught
-        verify(mockHandler, times(1)).transferError(any(), isNull())
+      // We should have called `transferError` in the `RapidsShuffleFetchHandler` and not
+      // pass a throwable, since this was a transport-level exception we caught
+      verify(mockHandler, times(1)).transferError(any(), isNull())
 
-        // there was 1 receive, and the chain stopped because it wasn't successful
-        verify(mockConnection, times(1)).receive(any[AddressLengthTag](), any())
+      // there was 1 receive, and the chain stopped because it wasn't successful
+      verify(mockConnection, times(1)).receive(any[AddressLengthTag](), any())
 
-        // we would have issued 1 request to issue a `TransferRequest` for the server to start
-        verify(mockConnection, times(1)).request(any(), any(), any())
+      // we would have issued 1 request to issue a `TransferRequest` for the server to start
+      verify(mockConnection, times(1)).request(any(), any(), any())
 
-        // ensure we closed the BufferReceiveState => releasing the bounce buffers
-        assert(bounceBuffer.isClosed)
-      }
-
-      newMocks()
+      // ensure we closed the BufferReceiveState => releasing the bounce buffers
+      assert(bounceBuffer.isClosed)
     }
+  }
+
+  test("errored buffer fetch is handled") {
+    doTestErrorOrCancelledBufferFetch(TransactionStatus.Error)
+  }
+
+  test("cancelled buffer fetch is handled") {
+    doTestErrorOrCancelledBufferFetch(TransactionStatus.Cancelled)
   }
 
   test("exception in buffer fetch escalates to handler") {

@@ -50,43 +50,47 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
         .update(any(), any(), any(), any())
   }
 
-  test("a transport error/cancellation raises a fetch failure") {
-    Seq(TransactionStatus.Error, TransactionStatus.Cancelled).foreach { status =>
-      when(mockTransaction.getStatus).thenReturn(status)
+  private def doTestErrorOrCancelledRaisesFetchFailure(status: TransactionStatus.Value): Unit = {
+    when(mockTransaction.getStatus).thenReturn(status)
 
-      val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
+    val blocksByAddress = RapidsShuffleTestHelper.getBlocksByAddress
 
-      val cl = spy(new RapidsShuffleIterator(
-        RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
-        mockConf,
-        mockTransport,
-        blocksByAddress,
-        testMetricsUpdater,
-        Array.empty,
-        mockCatalog,
-        123))
+    val cl = spy(new RapidsShuffleIterator(
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "1"),
+      mockConf,
+      mockTransport,
+      blocksByAddress,
+      testMetricsUpdater,
+      Array.empty,
+      mockCatalog,
+      123))
 
-      val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
-      when(mockTransport.makeClient(any(), any())).thenReturn(client)
-      doNothing().when(client).doFetch(any(), ac.capture())
-      cl.start()
+    val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
+    when(mockTransport.makeClient(any(), any())).thenReturn(client)
+    doNothing().when(client).doFetch(any(), ac.capture())
+    cl.start()
 
-      val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
-      handler.transferError("Test", null)
+    val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
+    handler.transferError("Test", null)
 
-      assert(cl.hasNext)
-      assertThrows[RapidsShuffleFetchFailedException](cl.next())
+    assert(cl.hasNext)
+    assertThrows[RapidsShuffleFetchFailedException](cl.next())
 
-      verify(mockTransport, times(1)).cancelPending(handler)
+    verify(mockTransport, times(1)).cancelPending(handler)
 
-      verify(testMetricsUpdater, times(1))
-          .update(any(), any(), any(), any())
-      assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
-      assertResult(0)(testMetricsUpdater.totalRemoteBytesRead)
-      assertResult(0)(testMetricsUpdater.totalRowsFetched)
+    verify(testMetricsUpdater, times(1))
+      .update(any(), any(), any(), any())
+    assertResult(0)(testMetricsUpdater.totalRemoteBlocksFetched)
+    assertResult(0)(testMetricsUpdater.totalRemoteBytesRead)
+    assertResult(0)(testMetricsUpdater.totalRowsFetched)
+  }
 
-      newMocks()
-    }
+  test("a transport error raises a fetch failure") {
+    doTestErrorOrCancelledRaisesFetchFailure(TransactionStatus.Error)
+  }
+
+  test("a transport cancel raises a fetch failure") {
+    doTestErrorOrCancelledRaisesFetchFailure(TransactionStatus.Cancelled)
   }
 
   test("a transport exception raises a fetch failure with the cause exception") {
