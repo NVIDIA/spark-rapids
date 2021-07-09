@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, NullPolicy, RollingAggregation}
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, NullPolicy, ReplacePolicy, ReplacePolicyWithColumn, RollingAggregation}
 import ai.rapids.cudf.Aggregation.{CollectListAggregation, CollectSetAggregation, CountAggregation, MaxAggregation, MeanAggregation, MinAggregation, SumAggregation}
 import com.nvidia.spark.rapids._
 
@@ -47,8 +47,6 @@ trait GpuAggregateFunction extends GpuExpression with GpuUnevaluable {
    * proper rewriting of distinct aggregate functions.
    */
   def defaultResult: Option[GpuLiteral] = None
-
-  // TODO: Do we need toAggregateExpression methods?
 
   def sql(isDistinct: Boolean): String = {
     val distinct = if (isDistinct) "DISTINCT " else ""
@@ -287,8 +285,10 @@ class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
   override val offset: Int = -1
 }
 
-case class GpuMin(child: Expression) extends GpuAggregateFunction with
-    GpuBatchedRunningWindowFunction[MinAggregation] {
+case class GpuMin(child: Expression) extends GpuAggregateFunction
+    with GpuBatchedRunningWindowWithFixer
+    with GpuAggregateWindowFunction[MinAggregation]
+    with GpuRunningWindowFunction {
   private lazy val cudfMin = AttributeReference("min", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
@@ -307,18 +307,46 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction with
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForOrderingExpr(child.dataType, "function gpu min")
 
-  // WINDOW FUNCTION
+  // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MinAggregation] =
     Aggregation.min().onColumn(inputs.head._2)
 
+  // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min")
+
+  override lazy val groupByScanInputProjection: Seq[Expression] = inputProjection
+
+  override def groupByScanAggregation(
+      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MinAggregation] =
+    windowAggregation(inputs)
+
+  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] =
+    Some(ReplacePolicy.PRECEDING.onColumn(index))
+
+  override def isGroupByScanSupported: Boolean = child.dataType match {
+    case StringType | TimestampType | DateType => false
+    case _ => true
+  }
+
+  override lazy val scanInputProjection: Expression = inputProjection.head
+  override def scanAggregation: MinAggregation = Aggregation.min()
+  override val scanReplaceNulls: Option[ReplacePolicy] = Some(ReplacePolicy.PRECEDING)
+
+  override def isScanSupported: Boolean  = child.dataType match {
+    // String type does not work because of https://github.com/rapidsai/cudf/issues/8684
+    case StringType | TimestampType | DateType => false
+    case _ => true
+  }
+
 }
 
 case class GpuMax(child: Expression) extends GpuAggregateFunction
-    with GpuBatchedRunningWindowFunction[MaxAggregation] {
+    with GpuBatchedRunningWindowWithFixer
+    with GpuAggregateWindowFunction[MaxAggregation]
+    with GpuRunningWindowFunction {
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
@@ -337,19 +365,46 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForOrderingExpr(child.dataType, "function gpu max")
 
-  // WINDOW FUNCTION
+  // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MaxAggregation] =
     Aggregation.max().onColumn(inputs.head._2)
 
+  // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max")
+
+  override lazy val groupByScanInputProjection: Seq[Expression] = inputProjection
+
+  override def groupByScanAggregation(
+      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MaxAggregation] =
+    windowAggregation(inputs)
+
+  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] =
+    Some(ReplacePolicy.PRECEDING.onColumn(index))
+
+  override def isGroupByScanSupported: Boolean = child.dataType match {
+    case StringType | TimestampType | DateType => false
+    case _ => true
+  }
+
+  override lazy val scanInputProjection: Expression = inputProjection.head
+  override def scanAggregation: MaxAggregation = Aggregation.max()
+  override val scanReplaceNulls: Option[ReplacePolicy] = Some(ReplacePolicy.PRECEDING)
+
+  override def isScanSupported: Boolean = child.dataType match {
+    // String type does not work because of https://github.com/rapidsai/cudf/issues/8684
+    case StringType | TimestampType | DateType => false
+    case _ => true
+  }
 }
 
 case class GpuSum(child: Expression, resultType: DataType)
   extends GpuAggregateFunction with ImplicitCastInputTypes
-      with GpuAggregateWindowFunction[SumAggregation] {
+      with GpuBatchedRunningWindowWithFixer
+      with GpuAggregateWindowFunction[SumAggregation]
+      with GpuRunningWindowFunction {
 
   private lazy val cudfSum = AttributeReference("sum", resultType)()
 
@@ -370,11 +425,25 @@ case class GpuSum(child: Expression, resultType: DataType)
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForNumericExpr(child.dataType, "function gpu sum")
 
-  // WINDOW FUNCTION
+  // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[SumAggregation] =
     Aggregation.sum().onColumn(inputs.head._2)
+
+  // RUNNING WINDOW
+  override def newFixer(): BatchedRunningWindowFixer =
+    new SumBinaryFixer()
+
+  override def groupByScanInputProjection: Seq[Expression] = inputProjection
+  override def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_] =
+    Aggregation.sum().onColumn(inputs.head._2)
+  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] =
+    Some(ReplacePolicy.PRECEDING.onColumn(index))
+
+  override def scanInputProjection: Expression = child
+  override def scanAggregation: Aggregation = Aggregation.sum()
+  override def scanReplaceNulls: Option[ReplacePolicy] = Some(ReplacePolicy.PRECEDING)
 }
 
 /*
@@ -469,7 +538,9 @@ case class GpuPivotFirst(
 }
 
 case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
-    with GpuBatchedRunningWindowFunction[CountAggregation] {
+    with GpuBatchedRunningWindowWithFixer
+    with GpuAggregateWindowFunction[CountAggregation]
+    with GpuRunningWindowFunction {
   // counts are Long
   private lazy val cudfCount = AttributeReference("count", LongType)()
 
@@ -486,7 +557,7 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
   override def nullable: Boolean = false
   override def dataType: DataType = LongType
 
-  // WINDOW FUNCTION
+  // GENERAL WINDOW FUNCTION
   // countDistinct is not supported for window functions in spark right now.
   // we could support it by doing an `Aggregation.nunique(false)`
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
@@ -494,8 +565,35 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
       inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[CountAggregation] =
     Aggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
 
+  // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "count")
+
+  // Scan and group by scan do not support COUNT with nulls excluded.
+  // one of them does not even support count at all, so we are going to SUM
+  // ones and zeros based off of the validity
+  override def groupByScanInputProjection: Seq[Expression] = Seq(scanInputProjection)
+
+  override def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_] = {
+    Aggregation.sum().onColumn(inputs.head._2)
+  }
+
+  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] = None
+
+  override def scanInputProjection: Expression = {
+    // There can be only one child according to requirements for count right now
+    require(children.length == 1)
+    val child = children.head
+    if (child.nullable) {
+      GpuIf(GpuIsNull(child), GpuLiteral(0, IntegerType), GpuLiteral(1, IntegerType))
+    } else {
+      GpuLiteral(1, IntegerType)
+    }
+  }
+
+  override def scanAggregation: Aggregation = Aggregation.sum()
+
+  override val scanReplaceNulls: Option[ReplacePolicy] = None
 }
 
 case class GpuAverage(child: Expression) extends GpuAggregateFunction

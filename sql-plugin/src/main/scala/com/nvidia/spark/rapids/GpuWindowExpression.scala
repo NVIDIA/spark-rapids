@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 
 import scala.language.{existentials, implicitConversions}
 
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, RollingAggregation, Scalar}
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, ReplacePolicy, ReplacePolicyWithColumn, RollingAggregation, Scalar}
 import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 
@@ -43,6 +43,7 @@ class GpuWindowExpressionMeta(
     case literal: Literal =>
       literal.dataType match {
         case IntegerType =>
+          literal.value.asInstanceOf[Int]
           literal.value.asInstanceOf[Int]
         case t =>
           willNotWorkOnGpu(s"unsupported window boundary type $t")
@@ -196,6 +197,43 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     }
     case other =>
       throw new IllegalStateException(s"${other.getClass} is not a supported window function")
+  }
+
+  lazy val optimizedRunningWindow: Option[GpuRunningWindowFunction] = {
+    if (System.getProperty("TEST_RUNNING", "true").toBoolean &&
+        normalizedFrameSpec.frameType == RowFrame &&
+        GpuWindowExec.isRunningWindow(windowSpec) &&
+        wrappedWindowFunc.isInstanceOf[GpuRunningWindowFunction]) {
+      val runningWin = wrappedWindowFunc.asInstanceOf[GpuRunningWindowFunction]
+      val isSupported = if (windowSpec.partitionSpec.isEmpty) {
+        runningWin.isScanSupported
+      } else {
+        runningWin.isGroupByScanSupported
+      }
+      if (isSupported) {
+        Some(runningWin)
+      } else {
+        None
+      }
+    } else {
+      None
+    }
+  }
+
+  lazy val isOptimizedRunningWindow: Boolean = optimizedRunningWindow.isDefined
+
+  lazy val initialProjections: Seq[Expression] = {
+    val running = optimizedRunningWindow
+    if (running.isDefined) {
+      val r = running.get
+      if (windowSpec.partitionSpec.isEmpty) {
+        Seq(r.scanInputProjection)
+      } else {
+        r.groupByScanInputProjection
+      }
+    } else {
+      wrappedWindowFunc.windowInputProjection
+    }
   }
 }
 
@@ -596,6 +634,18 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
   def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[T]
 }
 
+trait GpuRunningWindowFunction extends GpuWindowFunction {
+  def groupByScanInputProjection: Seq[Expression]
+  def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_]
+  def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn]
+  def isGroupByScanSupported = true
+
+  def scanInputProjection: Expression
+  def scanAggregation: Aggregation
+  def scanReplaceNulls: Option[ReplacePolicy]
+  def isScanSupported = true
+}
+
 /**
  * Provides a way to process running window operations without needing to buffer and split the
  * batches on partition by boundaries. When this happens part of a partition by key set may
@@ -673,12 +723,9 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
  * For many operations a running window (unbounded preceding to current row) can
  * process the data without dividing the data up into batches that contain all of the data
  * for a given group by key set. Instead we store a small amount of state from a previous result
- * and use it to fix the final result. This is a memory optimization. Any
- * GpuAggregateWindowFunction can still work for running window queries. This just reduces the
- * maximum amount of memory needed to process them.
+ * and use it to fix the final result. This is a memory optimization.
  */
-trait GpuBatchedRunningWindowFunction[T <: Aggregation with RollingAggregation[T]]
-    extends GpuAggregateWindowFunction[T] {
+trait GpuBatchedRunningWindowWithFixer {
 
   /**
    * Get a new class that can be used to fix up batched RunningWindowOperations.
@@ -728,11 +775,104 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
   override def close(): Unit = previousResult.foreach(_.close())
 }
 
-case class GpuRowNumber() extends GpuBatchedRunningWindowFunction[RowNumberAggregation] {
+/**
+ * This class fixes up batched running windows for sum. Sum is a lot like other binary op
+ * fixers, but it has to special case nulls and that is not super generic.  In the future we
+ * might be able to make this more generic but we need to see what the use case really is.
+ */
+class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
+  private val name = "sum"
+  private val binOp = BinaryOp.ADD
+  private var previousResult: Option[Scalar] = None
+
+  override def updateState(finalOutputColumn: GpuColumnVector): Unit = {
+    logDebug(s"$name: updateState from $previousResult to...")
+    previousResult.foreach(_.close)
+    previousResult =
+      Some(finalOutputColumn.getBase.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
+    logDebug(s"$name: ... $previousResult")
+  }
+
+  private def makeZeroScalar(dt: DataType): Scalar = dt match {
+    case ByteType => Scalar.fromByte(0.toByte)
+    case ShortType => Scalar.fromShort(0.toShort)
+    case IntegerType => Scalar.fromInt(0)
+    case LongType => Scalar.fromLong(0)
+    case FloatType => Scalar.fromFloat(0.0f)
+    case DoubleType => Scalar.fromDouble(0.0)
+    case dec: DecimalType =>
+      if (dec.precision <= DType.DECIMAL32_MAX_PRECISION) {
+        Scalar.fromDecimal(-dec.scale, 0)
+      } else {
+        Scalar.fromDecimal(-dec.scale, 0L)
+      }
+    case other =>
+      throw new IllegalArgumentException(s"Making a zero scalar for $other is not supported")
+  }
+
+  override def fixUp(samePartitionMask: Either[GpuColumnVector, Boolean],
+      windowedColumnOutput: GpuColumnVector): GpuColumnVector = {
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    (previousResult, samePartitionMask) match {
+      case (None, _) => windowedColumnOutput.incRefCount()
+      case (Some(prev), scala.util.Right(mask)) =>
+        if (mask) {
+          // ADD is not null safe, so we have to replace NULL with 0 if and only if prev is also
+          // not null
+          val base = windowedColumnOutput.getBase
+          if (prev.isValid) {
+            val nullsReplaced = withResource(base.isNull) { nulls =>
+              withResource(makeZeroScalar(windowedColumnOutput.dataType())) { zero =>
+                nulls.ifElse(zero, base)
+              }
+            }
+            withResource(nullsReplaced) { nullsReplaced =>
+              GpuColumnVector.from(nullsReplaced.binaryOp(binOp, prev, prev.getType),
+                windowedColumnOutput.dataType())
+            }
+          } else {
+            // prev is NULL but NULL + something == NULL which we don't want
+            windowedColumnOutput.incRefCount()
+          }
+        } else {
+          // The mask is all false so do nothing
+          windowedColumnOutput.incRefCount()
+        }
+      case (Some(prev), scala.util.Left(mask)) =>
+        val base = windowedColumnOutput.getBase
+        if (prev.isValid) {
+          val nullsReplaced = withResource(base.isNull) { nulls =>
+            withResource(nulls.and(mask.getBase)) { shouldReplace =>
+              withResource(makeZeroScalar(windowedColumnOutput.dataType())) { zero =>
+                shouldReplace.ifElse(zero, base)
+              }
+            }
+          }
+          withResource(nullsReplaced) { nullsReplaced =>
+            withResource(nullsReplaced.binaryOp(binOp, prev, prev.getType)) { updated =>
+              GpuColumnVector.from(mask.getBase.ifElse(updated, base),
+                windowedColumnOutput.dataType())
+            }
+          }
+        } else {
+          // prev is NULL but NULL + something == NULL which we don't want
+          windowedColumnOutput.incRefCount()
+        }
+    }
+  }
+
+  override def close(): Unit = previousResult.foreach(_.close())
+}
+
+case class GpuRowNumber() extends GpuAggregateWindowFunction[RowNumberAggregation]
+    with GpuBatchedRunningWindowWithFixer
+    with GpuRunningWindowFunction {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
   override def children: Seq[Expression] = Nil
+
+  // GENERAL WINDOW FUNCTION
 
   override val windowInputProjection: Seq[Expression] = Nil
 
@@ -742,8 +882,24 @@ case class GpuRowNumber() extends GpuBatchedRunningWindowFunction[RowNumberAggre
     Aggregation.rowNumber().onColumn(0)
   }
 
+  // RUNNING WINDOW
+
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number")
+
+  // For group by scans cudf does not support ROW_NUMBER so we will do a SUM
+  // on a column of 1s. We could do a COUNT_ALL too, but it would not be as consistent
+  // with the non group by scan
+  override val groupByScanInputProjection: Seq[Expression] = Seq(GpuLiteral(1, IntegerType))
+  override def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_] =
+    Aggregation.sum().onColumn(inputs.head._2)
+  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] = None
+
+  // For regular scans cudf does not support ROW_NUMBER, nor does it support COUNT_ALL
+  // so we will do a SUM on a column of 1s
+  override val scanInputProjection: Expression = groupByScanInputProjection.head
+  override def scanAggregation: Aggregation = Aggregation.sum()
+  override val scanReplaceNulls: Option[ReplacePolicy] = None
 }
 
 abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
