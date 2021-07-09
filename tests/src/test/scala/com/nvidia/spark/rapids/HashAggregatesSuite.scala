@@ -73,7 +73,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   def firstDf(spark: SparkSession): DataFrame = {
-    val options = FuzzerOptions(asciiStringsOnly = true, numbersAsStrings = false,
+    val options = FuzzerOptions(validStringChars = FuzzerOptions.ALPHABET_CHARS,
         maxStringLen = 4)
     val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, DataTypes.IntegerType))
     FuzzerUtils.generateDataFrame(spark, schema, 100, options, seed = 0)
@@ -857,7 +857,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private def randomDF(dataType: DataType)(spark: SparkSession) : DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, dataType))
     FuzzerUtils.generateDataFrame(spark, schema, rowCount = 1000,
-      options = FuzzerOptions(numbersAsStrings = false, asciiStringsOnly = true,
+      options = FuzzerOptions(validStringChars = FuzzerOptions.ALPHABET_CHARS,
           maxStringLen = 2))
   }
 

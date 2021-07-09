@@ -38,10 +38,7 @@ object FuzzerUtils {
   /**
    * Default options when generating random data.
    */
-  private val DEFAULT_OPTIONS = FuzzerOptions(
-    numbersAsStrings = true,
-    asciiStringsOnly = false,
-    maxStringLen = 64)
+  private val DEFAULT_OPTIONS = FuzzerOptions()
 
   /**
    * Create a schema with the specified data types.
@@ -331,20 +328,6 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
     }
   }
 
-  def nextString(): String = {
-    if (options.numbersAsStrings) {
-      r.nextInt(5) match {
-        case 0 => String.valueOf(r.nextInt())
-        case 1 => String.valueOf(r.nextLong())
-        case 2 => String.valueOf(r.nextFloat())
-        case 3 => String.valueOf(r.nextDouble())
-        case 4 => generateString()
-      }
-    } else {
-      generateString()
-    }
-  }
-
   def nextDate(): Date = {
     val futureDate = 6321706291000L // Upper limit Sunday, April 29, 2170 9:31:31 PM
     new Date((futureDate * r.nextDouble()).toLong);
@@ -355,22 +338,26 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
     new Timestamp((futureDate * r.nextDouble()).toLong)
   }
 
-  private def generateString(): String = {
-    if (options.asciiStringsOnly) {
-      val b = new StringBuilder()
-      for (_ <- 0 until options.maxStringLen) {
-        b.append(ASCII_CHARS.charAt(r.nextInt(ASCII_CHARS.length)))
-      }
-      b.toString
-    } else {
-      r.nextString(r.nextInt(options.maxStringLen))
+  def nextString(): String = {
+    val b = new StringBuilder(options.maxStringLen)
+    for (_ <- 0 until options.maxStringLen) {
+      b.append(options.validStringChars.charAt(r.nextInt(options.validStringChars.length)))
     }
+    b.toString
   }
 
-  private val ASCII_CHARS = "abcdefghijklmnopqrstuvwxyz"
+}
+
+object FuzzerOptions {
+  val ALPHABET_CHARS: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  val NUMERIC_CHARS: String = "0123456789"
+  val ALPHANUMERIC_CHARS: String = ALPHABET_CHARS + NUMERIC_CHARS
+  val WHITESPACE_CHARS: String = " \t\r\n"
+  val SPECIAL_CHARS: String =
+    "!@#$%^&*()-+=/?,.<>\\|[]{}~;:`\"'"
+  val ALL_CHARS: String = ALPHABET_CHARS + NUMERIC_CHARS + SPECIAL_CHARS + WHITESPACE_CHARS
 }
 
 case class FuzzerOptions(
-    numbersAsStrings: Boolean = true,
-    asciiStringsOnly: Boolean = false,
+    validStringChars: String = FuzzerOptions.ALL_CHARS,
     maxStringLen: Int = 64)
