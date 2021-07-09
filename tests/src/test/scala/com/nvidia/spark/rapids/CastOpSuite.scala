@@ -24,6 +24,7 @@ import java.util.TimeZone
 
 import ai.rapids.cudf.ColumnVector
 import scala.collection.JavaConverters._
+import scala.util.Random
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -54,6 +55,91 @@ class CastOpSuite extends GpuExpressionTestSuite {
   /** Produces a matrix of all possible casts. */
   protected def typeMatrix: Seq[(DataType, DataType)] = {
     for (from <- supportedTypes; to <- supportedTypes) yield (from, to)
+  }
+
+  private val NUMERIC_CHARS = "infINF \t\r\n0123456789.+-eE"
+  private val DATE_CHARS = " \t\r\n0123456789:.-/TZ"
+
+  test("Cast from string to boolean using random inputs") {
+    castRandomStrings(DataTypes.BooleanType, "falseTRUE01 ")
+  }
+
+  test("Cast from string to byte using random inputs") {
+    castRandomStrings(DataTypes.ByteType, NUMERIC_CHARS)
+  }
+
+  test("Cast from string to short using random inputs") {
+    castRandomStrings(DataTypes.ShortType, NUMERIC_CHARS)
+  }
+
+  test("Cast from string to int using random inputs") {
+    castRandomStrings(DataTypes.IntegerType, NUMERIC_CHARS)
+  }
+
+  test("Cast from string to long using random inputs") {
+    castRandomStrings(DataTypes.LongType, NUMERIC_CHARS)
+  }
+
+  test("Cast from string to float using random inputs") {
+    castRandomStrings(DataTypes.FloatType, NUMERIC_CHARS)
+  }
+
+  test("Cast from string to double using random inputs") {
+    castRandomStrings(DataTypes.DoubleType, NUMERIC_CHARS)
+  }
+
+  test("Cast from string to decimal using random inputs") {
+    castRandomStrings(new DecimalType(10,2), NUMERIC_CHARS)
+  }
+
+  test("Cast from string to date using random inputs") {
+    // We only fully support 4-digit years on the GPU
+    castRandomStrings(DataTypes.DateType, DATE_CHARS, Some("2021-"))
+  }
+
+  test("Cast from string to timestamp using random inputs with valid year prefix") {
+    // We only fully support 4-digit years on the GPU
+    castRandomStrings(DataTypes.TimestampType, DATE_CHARS, Some("2021-"))
+  }
+
+  private def castRandomStrings(
+      toType: DataType,
+      validChars: String,
+      prefix: Option[String] = None) {
+
+    val random = new Random(0)
+    val r = new EnhancedRandom(random,
+      new FuzzerOptions(validChars, maxStringLen = 12))
+
+    val randomStrings = (0 until 8192)
+      .map(_ => prefix.getOrElse("") + r.nextString())
+
+    def castDf(spark: SparkSession): Seq[Row] = {
+      import spark.implicits._
+      val df = randomStrings.toDF("c0")
+      val castDf = df.withColumn("c1", col("c0").cast(toType))
+      castDf.collect()
+    }
+
+    val cpu = withCpuSparkSession(castDf)
+
+    val gpu = withGpuSparkSession(castDf,
+      conf = new SparkConf()
+        .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+        .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true"))
+
+    for ((cpuRow, gpuRow) <- cpu.zip(gpu)) {
+      assert(cpuRow.getString(0) === gpuRow.getString(0))
+      val cpuValue = cpuRow.get(1)
+      val gpuValue = gpuRow.get(1)
+      if (!compare(cpuValue, gpuValue)) {
+        fail(s"Mismatch casting string ${cpuRow.getString(0)} " +
+          s"to $toType. CPU: $cpuValue; GPU: $gpuValue")
+      }
+    }
   }
 
   test("Test all supported casts with in-range values") {
