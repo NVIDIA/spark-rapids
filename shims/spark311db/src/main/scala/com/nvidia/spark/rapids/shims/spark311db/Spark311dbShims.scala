@@ -85,7 +85,7 @@ class Spark311dbShims extends Spark311Shims {
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    Seq(
+    super.getExecs ++ Seq(
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -168,24 +168,6 @@ class Spark311dbShims extends Spark311Shims {
               wrapped.tableIdentifier)(conf)
           }
         }),
-      GpuOverrides.exec[InMemoryTableScanExec](
-        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
-          TypeSig.all),
-        (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
-              willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
-            }
-          }
-
-          /**
-           * Convert InMemoryTableScanExec to a GPU enabled version.
-           */
-          override def convertToGpu(): GpuExec = {
-            GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
-          }
-        }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
@@ -248,7 +230,7 @@ class Spark311dbShims extends Spark311Shims {
         " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
         (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {
