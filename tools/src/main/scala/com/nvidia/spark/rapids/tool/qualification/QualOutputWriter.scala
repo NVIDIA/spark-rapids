@@ -33,10 +33,10 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  private val problemDurStr = "Duration of Problematic"
+  private val problemDurStr = "Problematic Duration"
   private val appIdStr = "App ID"
   private val appDurStr = "App Duration"
-  private val sqlDurStr = "SQL Dataframe Duration"
+  private val sqlDurStr = "SQL Duration"
   private val taskDurStr = "SQL Dataframe Task Duration"
 
   private val headerCSV = {
@@ -51,13 +51,10 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
     }
   }
 
-  // find sizes of largest appId and long fields, assume the long is not bigger then
-  // the problemDurStr header
-  private def getTextSpacing(sums: Seq[QualificationSummaryInfo]): (Int, Int)= {
-    val sizePadLongs = Array(appIdStr, appDurStr, sqlDurStr, problemDurStr).map(_.size).max
+  private def getAppidSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
     val appIdMaxSize = if (sizes.size > 0) sizes.max else appIdStr.size
-    (appIdMaxSize, sizePadLongs)
+    appIdMaxSize
   }
 
   private def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
@@ -115,15 +112,15 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   private def writeTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo], numOutputRows: Int,
       writeToStdout: Boolean = true): Unit = {
-    val (appIdMaxSize, sizePadLongs) = getTextSpacing(sums)
+    val appIdMaxSize = getAppidSize(sums)
     val entireHeader = new StringBuffer
 
     entireHeader.append(s"|%${appIdMaxSize}s|".format(appIdStr))
-    entireHeader.append(s"%${sizePadLongs}s|".format(appDurStr))
-    entireHeader.append(s"%${sizePadLongs}s|".format(sqlDurStr))
-    entireHeader.append(s"%${sizePadLongs}s|".format(problemDurStr))
+    entireHeader.append(s"%${appDurStr.size}s|".format(appDurStr))
+    entireHeader.append(s"%${sqlDurStr.size}s|".format(sqlDurStr))
+    entireHeader.append(s"%${problemDurStr.size}s|".format(problemDurStr))
     entireHeader.append("\n")
-    val sep = "=" * (appIdMaxSize + (sizePadLongs * 3) + 5)
+    val sep = "=" * (appIdMaxSize + (appDurStr.size + sqlDurStr.size + problemDurStr.size) + 5)
     writer.write(s"$sep\n")
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
@@ -139,12 +136,12 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
       val appId = sumInfo.appId
       val appIdStrV = s"%${appIdMaxSize}s".format(appId)
       val appDur = sumInfo.appDuration.toString
-      val appDurStrV = s"%${sizePadLongs}s".format(appDur)
+      val appDurStrV = s"%${appDurStr}s".format(appDur)
       val sqlDur = sumInfo.sqlDataFrameDuration.toString
       val taskDur = sumInfo.sqlDataframeTaskDuration.toString
-      val sqlDurStrV = s"%${sizePadLongs}s".format(sqlDur)
+      val sqlDurStrV = s"%${sqlDurStr}s".format(sqlDur)
       val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
-      val sqlProbDurStrV = s"%${sizePadLongs}s".format(sqlProbDur)
+      val sqlProbDurStrV = s"%${problemDurStr}s".format(sqlProbDur)
       val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
       if (writeToStdout) print(wStr + "\n")
