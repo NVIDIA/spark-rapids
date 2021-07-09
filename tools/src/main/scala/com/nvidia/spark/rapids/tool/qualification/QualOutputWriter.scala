@@ -26,8 +26,9 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
  *
  * @param outputDir The directory to output the files to
  * @param reportReacSchema Whether to include the read data source schema in csv output
+ * @param printStdout Indicates if the summary report should be printed to stdout as well
  */
-class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
+class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout: Boolean) {
 
   private val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
   // a file extension will be added to this later
@@ -110,8 +111,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
   }
 
   private def writeTextSummary(writer: ToolTextFileWriter,
-      sums: Seq[QualificationSummaryInfo], numOutputRows: Int,
-      writeToStdout: Boolean = true): Unit = {
+      sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
     val appIdMaxSize = getAppidSize(sums)
     val entireHeader = new StringBuffer
 
@@ -128,7 +128,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
     writer.write(entireHeader.toString)
     writer.write(s"$sep\n")
     // write to stdout as well
-    if (writeToStdout) {
+    if (printStdout) {
       print(s"$sep\n")
       print(entireHeader.toString)
       print(s"$sep\n")
@@ -147,9 +147,9 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean) {
       val sqlProbDurStrV = s"%${problemStrSize}s".format(sqlProbDur)
       val wStr = s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
       writer.write(wStr + "\n")
-      if (writeToStdout) print(wStr + "\n")
+      if (printStdout) print(wStr + "\n")
     }
     writer.write(s"$sep\n")
-    if (writeToStdout) print(s"$sep\n")
+    if (printStdout) print(s"$sep\n")
   }
 }
