@@ -64,6 +64,10 @@ class PluginTypeChecker extends Logging {
     val allSupportedReadSources = HashMap.empty[String, Map[String, Seq[String]]]
     try {
       val fileContents = source.getLines().toSeq
+      if (fileContents.size < 2) {
+        throw new IllegalStateException("supportedDataSource file appears corrupt," +
+          " must have at least the header and one line")
+      }
       // first line is header
       val header = fileContents.head.split(",").map(_.toLowerCase)
       // the rest of the rows are file formats with type supported info
