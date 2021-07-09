@@ -364,17 +364,16 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                   s"$peerExecutorId with $buffersToSend")
 
                 // send the transfer response
-                requestTx.respond(transferResponse.acquire(),
-                  withResource(_) { transferResponseTx =>
-                    withResource(transferResponse) { _ =>
-                      transferResponseTx.getStatus match {
-                        case TransactionStatus.Cancelled | TransactionStatus.Error =>
-                          logError(s"Error while handling TransferResponse: " +
-                            s"${transferResponseTx.getErrorMessage}")
-                        case _ =>
-                      }
+                requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
+                  withResource(transferResponse) { _ =>
+                    responseTx.getStatus match {
+                      case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                        logError(s"Error while handling TransferResponse: " +
+                          s"${responseTx.getErrorMessage}")
+                      case _ =>
                     }
-                  })
+                  }
+                })
 
                 // wake up the bssExec since bounce buffers became available
                 logDebug(s"Buffer send state $buffersToSend is done. Closing. " +
