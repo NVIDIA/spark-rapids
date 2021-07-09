@@ -459,8 +459,13 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
       new RefCountedDirectByteBuffer(ByteBuffer.allocateDirect(bufferSize.toInt), Option(this))
     } else {
       buff.clear()
-      // reset endianness to BIG_ENDIAN, as it could have changed depending on the consumer
-      // flatbuffers
+      // Reset endianness to BIG_ENDIAN, as it could have changed depending on the consumer
+      // (i.e. flat buffers force byte order to be LITTLE_ENDIAN, but pool consumers could be
+      //  things like handshake messages that don't use flat buffers).
+      // Since this is a pool of ByteBuffer, and it can be used by different consumers,
+      // the choice of BIG_ENDIAN as default follows the JVM's default byte order for
+      // newly created ByteBuffer objects:
+      // https://docs.oracle.com/javase/8/docs/api/java/nio/ByteBuffer.html#order--
       buff.order(ByteOrder.BIG_ENDIAN)
       new RefCountedDirectByteBuffer(buff, Option(this))
     }
