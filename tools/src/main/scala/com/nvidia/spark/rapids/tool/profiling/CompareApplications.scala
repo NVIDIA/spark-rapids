@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids.tool.profiling
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.functions.asc

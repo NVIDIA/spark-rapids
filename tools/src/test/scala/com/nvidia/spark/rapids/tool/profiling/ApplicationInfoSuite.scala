@@ -282,7 +282,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val parquetRow = schemaParquet.head
       // schema is truncated in v2
       assert(!parquetRow.getString(parquetRow.schema.fieldIndex("schema")).contains("loan400"))
-      assert(!parquetRow.getString(parquetRow.schema.fieldIndex("schema")).contains("..."))
+      assert(parquetRow.getString(parquetRow.schema.fieldIndex("schema")).contains("..."))
       assert(parquetRow.getString(parquetRow.schema.fieldIndex("location"))
         .contains("lotscolumnsout"))
     }

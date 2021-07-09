@@ -48,7 +48,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Filter event logs whose filenames contain the input string")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
-      descr = "Number of output rows in the summary report. Default is 1000.")
+      descr = "Number of output rows in the summary report. Default is 1000.",
       default = Some(1000))
   val order: ScallopOption[String] =
     opt[String](required = false,
