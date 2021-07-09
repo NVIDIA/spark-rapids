@@ -433,9 +433,8 @@ object GpuOverrides {
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
   val CASE_MODIFICATION_INCOMPAT =
-    "in some cases unicode characters change byte width when changing the case. The GPU string " +
-    "conversion does not support these characters. For a full list of unsupported characters " +
-    "see https://github.com/rapidsai/cudf/issues/3132"
+    "the Unicode version used by cuDF and the JVM may differ, resulting in some " +
+    "corner-case characters not changing case correctly."
   val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
   private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r",
@@ -1250,10 +1249,7 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
-      }).incompat(CASE_MODIFICATION_INCOMPAT + " Spark also only sees the space character as " +
-      "a word deliminator, but this will capitalize any character after a non-alphabetic " + 
-      "character.  The behavior will be aligned to match Spark in the future per " +
-      "https://github.com/NVIDIA/spark-rapids/issues/2786."),
+      }).incompat(CASE_MODIFICATION_INCOMPAT),
     expr[Log](
       "Natural log",
       ExprChecks.mathUnary,

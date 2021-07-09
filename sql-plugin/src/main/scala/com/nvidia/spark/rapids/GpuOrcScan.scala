@@ -606,12 +606,8 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
  *
  * @param conf Hadoop configuration
  * @param partFile file split to read
- * @param orcFileReaderOpts file reader options
- * @param orcReader ORC reader instance
- * @param readerOpts reader options
- * @param dataReader ORC data reader instance
+ * @param ctx     the context to provide some necessary information
  * @param readDataSchema Spark schema of what will be read from the file
- * @param requestedMapping map of read schema field index to data schema index if no column names
  * @param debugDumpPrefix path prefix for dumping the memory file or null
  * @param maxReadBatchSizeRows maximum number of rows to read in a batch
  * @param maxReadBatchSizeBytes maximum number of bytes to read in a batch
@@ -627,6 +623,7 @@ class GpuOrcPartitionReader(
     maxReadBatchSizeBytes: Long,
     execMetrics : Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
+  private[this] var isFirstBatch = true
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -636,9 +633,14 @@ class GpuOrcPartitionReader(
     } else {
       metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
     batch.isDefined
   }
 

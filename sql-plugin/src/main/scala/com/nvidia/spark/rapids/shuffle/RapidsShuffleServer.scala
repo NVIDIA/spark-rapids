@@ -343,7 +343,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
       bssBuffers.foreach {
         case (bufferSendState, buffersToSend) =>
-          val peerExecutorId = bufferSendState.getRequestTransaction.peerExecutorId()
+          val peerExecutorId = bufferSendState.peerExecutorId
           serverConnection.send(peerExecutorId, buffersToSend, bufferTx =>
             withResource(bufferTx) { _ =>
               bufferTx.getStatus match {
@@ -362,10 +362,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                     val transferResponse = bufferSendState.getTransferResponse()
 
                     val requestTx = bufferSendState.getRequestTransaction
-
-                    logDebug(s"Handling transfer request ${requestTx} for " +
-                      s"${peerExecutorId} " +
-                      s"with ${buffersToSend}")
+                    logDebug(s"Handling transfer request $requestTx for executor " +
+                      s"$peerExecutorId with $buffersToSend")
 
                     // send the transfer response
                     requestTx.respond(transferResponse.acquire(),
@@ -397,7 +395,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                     bufferSendState.close()
                     bssExec.notifyAll()
                   }
-              }
+                }
             })
       }
     }

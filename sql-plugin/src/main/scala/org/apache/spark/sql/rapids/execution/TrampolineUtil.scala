@@ -83,6 +83,9 @@ object TrampolineUtil {
 
   def asNullable(dt: DataType): DataType = dt.asNullable
 
+  /** Return a new InputMetrics instance */
+  def newInputMetrics(): InputMetrics = new InputMetrics()
+
   /**
    * Increment the task's memory bytes spilled metric. If the current thread does not
    * correspond to a Spark task then this call does nothing.

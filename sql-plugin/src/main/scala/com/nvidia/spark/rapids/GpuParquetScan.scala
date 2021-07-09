@@ -25,12 +25,11 @@ import java.util.concurrent._
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
-import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
+import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.DType.DTypeEnum
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
@@ -1216,6 +1215,7 @@ class ParquetPartitionReader(
   with ParquetPartitionReaderBase {
 
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
+  private var isFirstBatch = true
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -1228,9 +1228,14 @@ class ParquetPartitionReader(
         batch = readBatch()
       }
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
     batch.isDefined
   }
 
