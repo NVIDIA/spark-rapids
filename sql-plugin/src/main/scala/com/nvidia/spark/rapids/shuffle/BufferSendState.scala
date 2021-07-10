@@ -62,6 +62,8 @@ class BufferSendState(
     override def size: Long = tableSize
   }
 
+  val peerExecutorId: Long = transaction.peerExecutorId()
+
   private[this] var isClosed = false
 
   private[this] val (bufferMetas: Array[BufferMeta], blocksToSend: Seq[SendBlock]) = {
@@ -124,9 +126,12 @@ class BufferSendState(
     if (isClosed){
       throw new IllegalStateException("ALREADY CLOSED!")
     }
-    isClosed = true
-    freeBounceBuffers()
-    releaseAcquiredToCatalog()
+    // close transaction
+    withResource(transaction) { _ =>
+      isClosed = true
+      freeBounceBuffers()
+      releaseAcquiredToCatalog()
+    }
   }
 
   case class RangeBuffer(

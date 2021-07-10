@@ -16,11 +16,8 @@
 
 package com.nvidia.spark.rapids.shuffle.ucx
 
-import java.io.{InputStream, OutputStream}
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-
-import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.shuffle._
@@ -38,8 +35,10 @@ import org.apache.spark.internal.Logging
  * It adds the `AddressLengthTag` instance as we use that to track the message and
  * for debugging.
  */
+case class UCXError(ucsStatus: Int, errorMsg: String)
+
 private[ucx] abstract class UCXTagCallback {
-  def onError(alt: AddressLengthTag, ucsStatus: Int, errorMsg: String): Unit
+  def onError(alt: AddressLengthTag, error: UCXError): Unit
   def onMessageStarted(ucxMessage: UcpRequest): Unit
   def onSuccess(alt: AddressLengthTag): Unit
   def onCancel(alt: AddressLengthTag): Unit
@@ -50,7 +49,7 @@ private[ucx] abstract class UCXTagCallback {
  * The `UCXActiveMessage` object encapsulates an activeMessageId and a header.
  */
 private[ucx] abstract class UCXAmCallback {
-  def onError(am: UCXActiveMessage, ucsStatus: Int, errorMsg: String): Unit
+  def onError(am: UCXActiveMessage, error: UCXError): Unit
   def onMessageStarted(receiveAm: UcpRequest): Unit
   def onSuccess(am: UCXActiveMessage, buff: RefCountedDirectByteBuffer): Unit
   def onCancel(am: UCXActiveMessage): Unit
@@ -63,7 +62,7 @@ private[ucx] abstract class UCXAmCallback {
 class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
   extends UCXConnection(ucx) with ServerConnection with Logging {
   override def startManagementPort(host: String): Int = {
-    ucx.startManagementPort(host)
+    ucx.startListener(host)
   }
 
   override def send(sendPeerExecutorId: Long, buffer: AddressLengthTag,
@@ -80,8 +79,7 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
       tx.start(UCXTransactionType.Request, 1, cb)
 
       override def onSuccess(am: UCXActiveMessage, buff: RefCountedDirectByteBuffer): Unit = {
-        logDebug(s"At requestHandler for ${requestType} and am: " +
-          s"$am")
+        logDebug(s"At requestHandler for $requestType and active message $am")
         tx.completeWithSuccess(requestType, Option(am.header), Option(buff))
       }
 
@@ -89,8 +87,8 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
         transport.getDirectByteBuffer(size)
       }
 
-      override def onError(am: UCXActiveMessage, ucsStatus: Int, errorMsg: String): Unit = {
-        tx.completeWithError(errorMsg)
+      override def onError(am: UCXActiveMessage, error: UCXError): Unit = {
+        tx.completeWithError(error.errorMsg)
       }
 
       override def onCancel(am: UCXActiveMessage): Unit = {
@@ -135,7 +133,7 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
   }
 }
 
-class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
+class UCXClientConnection(peerExecutorId: Long, peerClientId: Long,
     ucx: UCX, transport: UCXShuffleTransport)
   extends UCXConnection(peerExecutorId, ucx)
   with ClientConnection {
@@ -161,7 +159,7 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
 
     // this header is unique, so we can send it with the request
     // expecting it to be echoed back in the response
-    val requestHeader = UCXConnection.composeRequestHeader(ucx.getExecutorId.toLong, tx.txId)
+    val requestHeader = UCXConnection.composeRequestHeader(ucx.localExecutorId, tx.txId)
 
     // This is the response active message handler, when the response shows up
     // we'll create a transaction, and set header/message and complete it.
@@ -174,8 +172,8 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
         tx.completeWithSuccess(requestType, Option(am.header), Option(buff))
       }
 
-      override def onError(am: UCXActiveMessage, ucsStatus: Int, errorMsg: String): Unit = {
-        tx.completeWithError(errorMsg)
+      override def onError(am: UCXActiveMessage, error: UCXError): Unit = {
+        tx.completeWithError(error.errorMsg)
       }
 
       override def onMessageStarted(receiveAm: UcpRequest): Unit = {
@@ -190,8 +188,9 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
     // Register the active message response handler. Note that the `requestHeader`
     // is expected to come back with the response, and is used to find the
     // correct callback (this is an implementation detail in UCX.scala)
-    ucx.registerResponseHandler(
-      UCXConnection.composeResponseAmId(requestType), requestHeader, amCallback)
+    val responseAm = UCXActiveMessage(
+      UCXConnection.composeResponseAmId(requestType), requestHeader)
+    ucx.registerResponseHandler(responseAm, amCallback)
 
     // kick-off the request
     val requestAm = UCXActiveMessage(
@@ -205,6 +204,10 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
       new UcxCallback {
         override def onError(ucsStatus: Int, errorMsg: String): Unit = {
           tx.completeWithError(errorMsg)
+
+          // we cleanup the response active message handler, since the request errored
+          // and we don't expect a response from the peer
+          ucx.unregisterResponseHandler(responseAm)
         }
         // we don't handle `onSuccess` here, because we want the response
         // to complete that
@@ -212,10 +215,9 @@ class UCXClientConnection(peerExecutorId: Int, peerClientId: Long,
 
     tx
   }
-
 }
 
-class UCXConnection(peerExecutorId: Int, val ucx: UCX) extends Connection with Logging {
+class UCXConnection(peerExecutorId: Long, val ucx: UCX) extends Connection with Logging {
   // alternate constructor for a server connection (-1 because it is not to a peer)
   def this(ucx: UCX) = this(-1, ucx)
 
@@ -240,14 +242,13 @@ class UCXConnection(peerExecutorId: Int, val ucx: UCX) extends Connection with L
 
     val numMessages = if (header != null) buffers.size + 1 else buffers.size
 
-
     tx.start(UCXTransactionType.Send, numMessages, cb)
 
     val ucxCallback = new UCXTagCallback {
-      override def onError(alt: AddressLengthTag, ucsStatus: Int, errorMsg: String): Unit = {
+      override def onError(alt: AddressLengthTag, error: UCXError): Unit = {
         tx.handleTagError(alt.tag)
-        logError(s"Error sending: $errorMsg, tx: $tx")
-        tx.completeWithError(errorMsg)
+        logError(s"Error sending: $error, tx: $tx")
+        tx.completeWithError(error.errorMsg)
       }
 
       override def onSuccess(alt: AddressLengthTag): Unit = {
@@ -291,10 +292,11 @@ class UCXConnection(peerExecutorId: Int, val ucx: UCX) extends Connection with L
     tx.registerForReceive(alt)
     tx.start(UCXTransactionType.Receive, 1, cb)
     val ucxCallback = new UCXTagCallback {
-      override def onError(alt: AddressLengthTag, ucsStatus: Int, errorMsg: String): Unit = {
-        logError(s"Got an error... for tag: ${TransportUtils.toHex(alt.tag)}, tx $tx")
+      override def onError(alt: AddressLengthTag, error: UCXError): Unit = {
+        logError(s"Got an error for " +
+          s"tag: ${TransportUtils.toHex(alt.tag)}, tx $tx")
         tx.handleTagError(alt.tag)
-        tx.completeWithError(errorMsg)
+        tx.completeWithError(error.errorMsg)
       }
 
       override def onSuccess(alt: AddressLengthTag): Unit = {
@@ -424,105 +426,46 @@ object UCXConnection extends Logging {
   def extractExecutorId(header: Long): Long = {
     (header >> 32) & lowerBitsMask
   }
-  //
-  // Handshake message code. This, I expect, could be folded into the [[BlockManagerId]],
-  // but I have not tried this. If we did, it would eliminate the extra TCP connection
-  // in this class.
-  //
-  private def readBytesFromStream(direct: Boolean,
-    is: InputStream, lengthToRead: Int): ByteBuffer = {
-    var bytesRead = 0
-    var read = 0
-    val buff = new Array[Byte](lengthToRead)
-    while (read >= 0 && bytesRead < lengthToRead) {
-      logTrace(s"Reading ${lengthToRead}. Currently at ${bytesRead}")
-      read = is.read(buff, bytesRead, lengthToRead - bytesRead)
-      if (read > 0) {
-        bytesRead = bytesRead + read
-      }
-    }
-
-    if (bytesRead < lengthToRead) {
-      throw new IllegalStateException("Read less bytes than expected!")
-    }
-
-    val byteBuffer = ByteBuffer.wrap(buff)
-
-    if (direct) {
-      // a direct buffer does not allow .array() (not implemented).
-      // therefore we received in the JVM heap, and now we copy to the native heap
-      // using a .put on that native buffer
-      val directCopy = ByteBuffer.allocateDirect(lengthToRead)
-      TransportUtils.copyBuffer(byteBuffer, directCopy, lengthToRead)
-      directCopy.rewind() // reset position
-      directCopy
-    } else {
-      byteBuffer
-    }
-  }
 
   /**
-   * Given a java `InputStream`, obtain the peer's `WorkerAddress` and executor id,
-   * returning them as a pair.
-   *
-   * @param is management port input stream
-   * @return a tuple of worker address, the peer executor id, and rkeys
-   */
-  def readHandshakeHeader(is: InputStream): (WorkerAddress, Int, Rkeys)  = {
-    val maxLen = 1024 * 1024
-
-    // get the length from the stream, it's the first thing sent.
-    val workerAddressLength = readBytesFromStream(false, is, 4).getInt()
-
-    require(workerAddressLength <= maxLen,
-      s"Received an abnormally large (>$maxLen Bytes) WorkerAddress " +
-        s"(${workerAddressLength} Bytes), dropping.")
-
-    val workerAddress = readBytesFromStream(true, is, workerAddressLength)
-
-    // get the remote executor Id, that's the last part of the handshake
-    val executorId = readBytesFromStream(false, is, 4).getInt()
-
-    // get the number of rkeys expected next
-    val numRkeys = readBytesFromStream(false, is, 4).getInt()
-
-    val rkeys = new ArrayBuffer[ByteBuffer](numRkeys)
-    (0 until numRkeys).foreach { _ =>
-      val size = readBytesFromStream(false, is, 4).getInt()
-      rkeys.append(readBytesFromStream(true, is, size))
-    }
-
-    (WorkerAddress(workerAddress), executorId, Rkeys(rkeys))
-  }
-
-  /**
-   * Writes a header that is exchanged in the management port. The header contains:
-   *  - UCP Worker address length (4 bytes)
-   *  - UCP Worker address (variable length)
-   *  - Local executor id (4 bytes)
+   * Reads a message that is exchanged at connection time. Its contents are:
+   *  - Local executor id (8 bytes)
    *  - Local rkeys count (4 bytes)
    *  - Per rkey: rkey length (4 bytes) + rkey payload (variable)
    *
-   * @param os OutputStream to write to
-   * @param workerAddress byte buffer that holds the local UCX worker address
+   * @param buff Host ByteBuffer with message
+   * @return (executorId, sequence of peer rkeys)
+   */
+  def unpackHandshake(buff: ByteBuffer): (Long, Seq[ByteBuffer]) = {
+    val remoteExecutorId = buff.getLong
+    val numRkeys = buff.getInt
+    val rkeys = (0 until numRkeys).map { _ =>
+      val rkeySize = buff.getInt
+      val rkeySlice = buff.slice()
+      rkeySlice.limit(rkeySize)
+      buff.position(buff.position() + rkeySize)
+      rkeySlice
+    }
+    (remoteExecutorId, rkeys)
+  }
+
+  /**
+   * Writes a handshake  message that is exchanged at connection time.
+   *
+   * The message contains:
+   *  - Local executor id (8 bytes)
+   *  - Local rkeys count (4 bytes)
+   *  - Per rkey: rkey length (4 bytes) + rkey payload (variable)
+   *
    * @param localExecutorId The local executorId
    * @param rkeys The local rkeys to send to the peer
+   * @return ByteBuffer containing the handshake message
    */
-  def writeHandshakeHeader(os: OutputStream,
-                           workerAddress: ByteBuffer,
-                           localExecutorId: Int,
-                           rkeys: Seq[ByteBuffer]): Unit = {
-    val headerSize = 4 + workerAddress.remaining() + 4 +
-        4 + (4 * rkeys.size) + (rkeys.map(_.capacity).sum)
-    val hsBuff = ByteBuffer.allocate(headerSize)
-
-    // pack the worker address
-    hsBuff.putInt(workerAddress.capacity)
-    hsBuff.put(workerAddress)
-
-    // send the executor id
-    hsBuff.putInt(localExecutorId)
-
+  def packHandshake(localExecutorId: Long, rkeys: Seq[ByteBuffer]): ByteBuffer = {
+    val size = java.lang.Long.BYTES + java.lang.Integer.BYTES +
+      (java.lang.Integer.BYTES * rkeys.size) + rkeys.map(_.capacity).sum
+    val hsBuff = ByteBuffer.allocateDirect(size)
+    hsBuff.putLong(localExecutorId)
     // pack the rkeys
     hsBuff.putInt(rkeys.size)
     rkeys.foreach { rkey =>
@@ -530,7 +473,6 @@ object UCXConnection extends Logging {
       hsBuff.put(rkey)
     }
     hsBuff.flip()
-    os.write(hsBuff.array)
-    os.flush()
+    hsBuff
   }
 }
