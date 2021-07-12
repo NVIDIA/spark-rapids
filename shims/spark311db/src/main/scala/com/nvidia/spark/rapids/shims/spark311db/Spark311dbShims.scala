@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql.rapids.shims.spark311.GpuInMemoryTableScanExec
 import org.apache.spark.sql.rapids.shims.spark311db._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
