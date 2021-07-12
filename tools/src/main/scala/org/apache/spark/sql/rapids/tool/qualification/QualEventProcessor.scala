@@ -137,15 +137,17 @@ class QualEventProcessor() extends EventProcessorBase {
     logDebug("Processing event: " + event.getClass)
     app.lastJobEndTime = Some(event.time)
     if (event.jobResult != JobSucceeded) {
-      val sqlID = app.jobIdToSqlID(event.jobId)
-      logWarning(s"job failed: ${event.jobId}")
-      // zero out the cpu and run times since failed
-      app.sqlIDToTaskEndSum.get(sqlID).foreach { sum =>
-        sum.executorRunTime = 0
-        sum.executorCPUTime = 0
+      val sqlID = app.jobIdToSqlID.get(event.jobId) match {
+        case Some(id) =>
+          // zero out the cpu and run times since failed
+          app.sqlIDToTaskEndSum.get(sqlID).foreach { sum =>
+            sum.executorRunTime = 0
+            sum.executorCPUTime = 0
+          }
+          val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[Int])
+          failedJobs += event.jobId
+        case None =>
       }
-      val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[Int])
-      failedJobs += event.jobId
     }
   }
 
