@@ -106,10 +106,16 @@ abstract class AppBase(
     }
   }
 
+  // Decimal support on the GPU is limited to less than 18 digits and decimals
+  // are configured off by default for now.
+  private val decimalKeyWords = Map(".*promote_precision\\(.*" -> "DECIMAL",
+    ".*decimal\\([0-9]+,[0-9]+\\).*" -> "DECIMAL",
+    ".*DecimalType\\([0-9]+,[0-9]+\\).*" -> "DECIMAL")
+
+  private val UDFKeywords = Map(".*UDF.*" -> "UDF")
+
   protected def findPotentialIssues(desc: String): Option[String] =  {
-    val potentialIssuesRegexs = Map(".*UDF.*" -> "UDF",
-      ".*promote_precision(.*" -> "DECIMAL",
-      ".*decimal\\([0-9]+,[0-9]+\\).*" -> "DECIMAL")
+    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords
     val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
     if (issues.values.nonEmpty) {
       Some(issues.values.toSet.mkString(","))
