@@ -884,7 +884,7 @@ class ApplicationInfo(
        |and s.accumulatorId=t.accumulatorId
        |and s.sqlID=p.sqlID and s.accumulatorId=p.accumulatorId
        |)
-       |select sqlID, nodeID, nodeName,
+       |select $index as appIndex, sqlID, nodeID, nodeName,
        |accumulatorId, name, max(value) as max_value, metricType
        |from allaccums
        |group by sqlID, nodeID, nodeName, accumulatorId, name, metricType
@@ -920,14 +920,14 @@ class ApplicationInfo(
   }
 
   def getblockManagersRemoved: String = {
-    s"""select executorID, time
+    s"""select $index as appIndex, executorID, time
        |from blockManagersRemovedDF_$index
        |order by cast(executorID as long)
        |""".stripMargin
   }
 
   def getExecutorsRemoved: String = {
-    s"""select executorID, time,
+    s"""select $index as appIndex, executorID, time,
        |substr(reason, 1, 100) reason_first100char
        |from executorsRemovedDF_$index
        |order by cast(executorID as long)
