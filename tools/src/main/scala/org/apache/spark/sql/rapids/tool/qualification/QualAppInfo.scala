@@ -60,7 +60,7 @@ class QualAppInfo(
   // SQL containing any Dataset operation
   val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
 
-  val notSupportFormatAndTypes: ArrayBuffer[String] = ArrayBuffer[String]()
+  val notSupportFormatAndTypes: HashSet[String] = HashSet[String]()
 
   private lazy val eventProcessor =  new QualEventProcessor()
 
@@ -167,11 +167,8 @@ class QualAppInfo(
         1.0
       } else {
         val readFormatSum = dataSourceInfo.map { ds =>
-          val (readScore, nsTypes) = checker.scoreReadDataTypes(ds.format, ds.schema)
-          if (nsTypes.nonEmpty) {
-            val formatWithType = s"${ds.format}[${nsTypes.mkString(":")}]"
-            notSupportFormatAndTypes += formatWithType
-          }
+          val (readScore, nsString) = checker.scoreReadDataTypes(ds.format, ds.schema)
+          notSupportFormatAndTypes += nsString
           readScore
         }.sum
         readFormatSum / dataSourceInfo.size
