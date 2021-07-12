@@ -105,8 +105,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     castRandomStrings(DataTypes.DoubleType, NUMERIC_CHARS)
   }
 
-  ignore("Cast from string to date using random inputs") {
-    // this will fail until https://github.com/NVIDIA/spark-rapids/pull/2890 is merged
+  test("Cast from string to date using random inputs") {
     castRandomStrings(DataTypes.DateType, DATE_CHARS, maxStringLen = 8)
   }
 
