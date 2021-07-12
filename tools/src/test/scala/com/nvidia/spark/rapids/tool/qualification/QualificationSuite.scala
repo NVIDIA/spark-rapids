@@ -307,6 +307,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "read_dsv2_expectation.csv")
   }
 
+  test("test dsv1 complex and decimal") {
+    val logFiles = Array(s"$logDir/complex_dec_eventlog.zstd")
+    runQualificationTest(logFiles, "complex_dec_expectation.csv")
+  }
+
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener
