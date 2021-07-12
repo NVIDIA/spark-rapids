@@ -72,6 +72,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   ignore("Cast from string to boolean using hand-picked values") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2902
     testCastStringTo(DataTypes.BooleanType, Seq("\n\nN", "False", "FALSE", "false", "FaLsE",
       "f", "F", "True", "TRUE", "true", "tRuE", "t", "T", "Y", "y", "10", "01", "0", "1"))
   }
@@ -116,8 +118,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.DateType, generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8))
   }
 
-  ignore("Cast from string to date using random inputs with valid year prefix") {
-    // this will fail until https://github.com/NVIDIA/spark-rapids/pull/2890 is merged
+  test("Cast from string to date using random inputs with valid year prefix") {
     testCastStringTo(DataTypes.DateType,
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
