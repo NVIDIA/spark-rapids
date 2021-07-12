@@ -46,7 +46,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       "SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent," +
       "Read File Format Score,Unsupported Read File Formats and Types"
     if (reportReadSchema) {
-      initHeader + ",Read Schema Info"
+      initHeader + ",Read Schema"
     } else {
       initHeader
     }
@@ -74,13 +74,15 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     // since csv, replace any commas with ; in the schema
     val readFileFormats = stringIfempty(appSum.readFileFormats.replace(",", ";"))
     val readFileScoreRounded = f"${appSum.readFileFormatScore}%1.2f"
+    val readFormatNS = stringIfempty(appSum.readFileFormatAndTypesNotSupported)
+
 
     val initRow = s"$appNameStr,$appIdStr,${appSum.score},$probStr," +
       s"${appSum.sqlDataFrameDuration},${appSum.sqlDataframeTaskDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
       s"${appSum.readScorePercent},${appSum.readFileFormatScore}," +
-      s"${appSum.readFileFormatAndTypesNotSupported}"
+      s"${readFormatNS}"
     if (reportReadSchema) {
       initRow + s", $readFileFormats"
     } else {
