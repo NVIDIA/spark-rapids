@@ -35,7 +35,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
       val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testDS.txt")
       Files.write(csvSupportedFile, supText)
       checker.setPluginDataSourceFile(csvSupportedFile.toString)
-      val score = checker.scoreReadDataTypes("parquet", testSchema)
+      val (score, nsTypes) = checker.scoreReadDataTypes("parquet", testSchema)
       assert(score == 0.0)
     }
   }
@@ -64,7 +64,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
       val csvSupportedFile = Paths.get(outpath.getAbsolutePath, "testDS.txt")
       Files.write(csvSupportedFile, supText)
       checker.setPluginDataSourceFile(csvSupportedFile.toString)
-      val score = checker.scoreReadDataTypes("parquet", testSchema)
+      val (score, nsTypes) = checker.scoreReadDataTypes("parquet", testSchema)
       assert(score == 0.0)
     }
   }
@@ -72,7 +72,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
   test("unknown file format") {
     val checker = new PluginTypeChecker
     val testSchema = "loan_id:bigint,monthly_reporting_period:string,servicer:string"
-    val score = checker.scoreReadDataTypes("invalidFormat", testSchema)
+    val (score, nsTypes) = checker.scoreReadDataTypes("invalidFormat", testSchema)
     assert(score == 0.0)
   }
 
@@ -81,7 +81,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
     // right now we only look for unsupported types so an unknown one
     // comes back 1.0
     val testSchema = "loan_id:invalidDT"
-    val score = checker.scoreReadDataTypes("parquet", testSchema)
+    val (score, nsTypes) = checker.scoreReadDataTypes("parquet", testSchema)
     assert(score == 1.0)
   }
 
@@ -89,7 +89,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
     // expect string and bigint parquet to be always supported
     val checker = new PluginTypeChecker
     val testSchema = "loan_id:bigint,monthly_reporting_period:string,servicer:string"
-    val score = checker.scoreReadDataTypes("parquet", testSchema)
+    val (score, nsTypes) = checker.scoreReadDataTypes("parquet", testSchema)
     assert(score == 1.0)
   }
 }

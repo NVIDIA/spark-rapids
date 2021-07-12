@@ -111,7 +111,7 @@ class PluginTypeChecker {
   // don't support.
   // NOTE, UDT doesn't show up in the event log, when its written, it gets written as
   // other types since parquet/orc has to know about it
-  def scoreReadDataTypes(format: String, schema: String): (Double, Seq[String] = {
+  def scoreReadDataTypes(format: String, schema: String): (Double, Seq[String]) = {
     val schemaLower = schema.toLowerCase
     val formatInLower = format.toLowerCase
     val typesBySup = formatsToSupportedCategory.get(formatInLower)
