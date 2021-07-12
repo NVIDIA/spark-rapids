@@ -140,11 +140,11 @@ class QualEventProcessor() extends EventProcessorBase {
       val sqlID = app.jobIdToSqlID.get(event.jobId) match {
         case Some(id) =>
           // zero out the cpu and run times since failed
-          app.sqlIDToTaskEndSum.get(sqlID).foreach { sum =>
+          app.sqlIDToTaskEndSum.get(id).foreach { sum =>
             sum.executorRunTime = 0
             sum.executorCPUTime = 0
           }
-          val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[Int])
+          val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(id, ArrayBuffer.empty[Int])
           failedJobs += event.jobId
         case None =>
       }
