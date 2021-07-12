@@ -43,15 +43,22 @@ object MetaUtils extends Arm {
    * @param ct the contiguous table whose metadata will be encoded in the message
    * @return heap-based flatbuffer message
    */
-  def buildTableMeta(tableId: Int, ct: ContiguousTable): TableMeta = {
+  def buildTableMeta(tableId: Int, ct: ContiguousTable): TableMeta =
+    buildTableMeta(
+      tableId,
+      ct.getBuffer.getLength,
+      ct.getMetadataDirectBuffer,
+      ct.getRowCount)
+
+  def buildTableMeta(tableId: Int, bufferSize: Long,
+                     packedMeta: ByteBuffer, rowCount: Long): TableMeta = {
     val fbb = new FlatBufferBuilder(1024)
-    val bufferSize = ct.getBuffer.getLength
     BufferMeta.startBufferMeta(fbb)
     BufferMeta.addId(fbb, tableId)
     BufferMeta.addSize(fbb, bufferSize)
     BufferMeta.addUncompressedSize(fbb, bufferSize)
     val bufferMetaOffset = Some(BufferMeta.endBufferMeta(fbb))
-    buildTableMeta(fbb, bufferMetaOffset, ct.getMetadataDirectBuffer, ct.getRowCount)
+    buildTableMeta(fbb, bufferMetaOffset, packedMeta, rowCount)
   }
 
   /**
@@ -322,14 +329,14 @@ object ShuffleMetadata extends Logging{
     fbb.dataBuffer()
   }
 
-  def buildTransferRequest(toIssue: Seq[(TableMeta, Long)]): ByteBuffer = {
+  def buildTransferRequest(toIssue: Seq[(Int, Long)]): ByteBuffer = {
     val fbb = ShuffleMetadata.getBuilder
     val requestIds = new ArrayBuffer[Int](toIssue.size)
-    toIssue.foreach { case (tableMeta, tag) =>
+    toIssue.foreach { case (bufferId, tag) =>
       requestIds.append(
         ShuffleMetadata.buildBufferTransferRequest(
           fbb,
-          tableMeta.bufferMeta().id(),
+          bufferId,
           tag))
     }
     val requestVec = TransferRequest.createRequestsVector(fbb, requestIds.toArray)

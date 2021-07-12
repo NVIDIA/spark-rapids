@@ -55,10 +55,11 @@ class RapidsShuffleTestHelper extends FunSuite
     with MockitoSugar
     with Arm {
   var mockTransaction: Transaction = _
-  var mockConnection: MockConnection = _
+  var mockConnection: MockClientConnection = _
   var mockTransport: RapidsShuffleTransport = _
   var mockExecutor: Executor = _
   var mockCopyExecutor: Executor = _
+  var mockBssExecutor: Executor = _
   var mockHandler: RapidsShuffleFetchHandler = _
   var mockStorage: RapidsDeviceMemoryStore = _
   var mockCatalog: ShuffleReceivedBufferCatalog = _
@@ -128,10 +129,11 @@ class RapidsShuffleTestHelper extends FunSuite
   def newMocks(): Unit = {
     mockTransaction = mock[Transaction]
     when(mockTransaction.getStats).thenReturn(mock[TransactionStats])
-    mockConnection = spy(new MockConnection(mockTransaction))
+    mockConnection = spy(new MockClientConnection(mockTransaction))
     mockTransport = mock[RapidsShuffleTransport]
     mockExecutor = new ImmediateExecutor
     mockCopyExecutor = new ImmediateExecutor
+    mockBssExecutor = mock[Executor]
     mockHandler = mock[RapidsShuffleFetchHandler]
     mockStorage = mock[RapidsDeviceMemoryStore]
     mockCatalog = mock[ShuffleReceivedBufferCatalog]
@@ -203,7 +205,7 @@ object RapidsShuffleTestHelper extends MockitoSugar with Arm {
   def prepareMetaTransferRequest(numTables: Int, numRows: Long): RefCountedDirectByteBuffer =
     withMockContiguousTable(numRows) { ct =>
       val tableMetaTags = (0 until numTables).map { t =>
-        (buildMockTableMeta(t, ct), t.toLong)
+        (t, t.toLong)
       }
       val trBuffer = ShuffleMetadata.buildTransferRequest(tableMetaTags)
       val refCountedRes = new RefCountedDirectByteBuffer(trBuffer)
@@ -256,7 +258,7 @@ class ImmediateExecutor extends Executor {
   }
 }
 
-class MockConnection(mockTransaction: Transaction) extends ClientConnection {
+class MockClientConnection(mockTransaction: Transaction) extends ClientConnection {
   var requests: Int = 0
   val receiveLengths = new ArrayBuffer[Long]
 
