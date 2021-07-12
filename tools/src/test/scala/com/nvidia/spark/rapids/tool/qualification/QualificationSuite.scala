@@ -202,7 +202,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test datasource read format included") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val logFiles = Array(s"$profileLogDir/eventlog-dsv1.zstd")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
     var appSum: Seq[QualificationSummaryInfo] = Seq()
     TrampolineUtil.withTempDir { outpath =>
       val allArgs = Array(
@@ -297,13 +297,13 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test read datasource v1") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val logFiles = Array(s"$profileLogDir/eventlog-dsv1.zstd")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
     runQualificationTest(logFiles, "read_dsv1_expectation.csv")
   }
 
   test("test read datasource v2") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val logFiles = Array(s"$profileLogDir/eventlog-dsv2.zstd")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv2.zstd")
     runQualificationTest(logFiles, "read_dsv2_expectation.csv")
   }
 

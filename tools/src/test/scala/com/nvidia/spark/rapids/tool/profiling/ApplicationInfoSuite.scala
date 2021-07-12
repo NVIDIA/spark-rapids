@@ -215,7 +215,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test read datasourcev1") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog-dsv1.zstd"))
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog_dsv1.zstd"))
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
@@ -252,7 +252,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   test("test read datasourcev2") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog-dsv2.zstd"))
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog_dsv2.zstd"))
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
