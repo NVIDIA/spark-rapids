@@ -64,9 +64,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
   ignore("Cast from string to boolean using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2902
-    testCastStringTo(DataTypes.BooleanType, generateRandomStrings(BOOL_CHARS, maxStringLen = 1))
-    testCastStringTo(DataTypes.BooleanType, generateRandomStrings(BOOL_CHARS, maxStringLen = 3))
-    testCastStringTo(DataTypes.BooleanType, generateRandomStrings(BOOL_CHARS))
+    testCastStringTo(DataTypes.BooleanType,
+      generateRandomStrings(Some(BOOL_CHARS), maxStringLen = 1))
+    testCastStringTo(DataTypes.BooleanType,
+      generateRandomStrings(Some(BOOL_CHARS), maxStringLen = 3))
+    testCastStringTo(DataTypes.BooleanType, generateRandomStrings(Some(BOOL_CHARS)))
   }
 
   ignore("Cast from string to boolean using hand-picked values") {
@@ -77,72 +79,72 @@ class CastOpSuite extends GpuExpressionTestSuite {
   ignore("Cast from string to byte using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2899
-    testCastStringTo(DataTypes.ByteType, generateRandomStrings(NUMERIC_CHARS))
+    testCastStringTo(DataTypes.ByteType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
   ignore("Cast from string to short using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2899
-    testCastStringTo(DataTypes.ShortType, generateRandomStrings(NUMERIC_CHARS))
+    testCastStringTo(DataTypes.ShortType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
   ignore("Cast from string to int using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2899
-    testCastStringTo(DataTypes.IntegerType, generateRandomStrings(NUMERIC_CHARS))
+    testCastStringTo(DataTypes.IntegerType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
   ignore("Cast from string to long using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2899
-    testCastStringTo(DataTypes.LongType, generateRandomStrings(NUMERIC_CHARS))
+    testCastStringTo(DataTypes.LongType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
   ignore("Cast from string to float using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2900
-    testCastStringTo(DataTypes.FloatType, generateRandomStrings(NUMERIC_CHARS))
+    testCastStringTo(DataTypes.FloatType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
   ignore("Cast from string to double using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2900
-    testCastStringTo(DataTypes.DoubleType, generateRandomStrings(NUMERIC_CHARS))
+    testCastStringTo(DataTypes.DoubleType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
   test("Cast from string to date using random inputs") {
-    testCastStringTo(DataTypes.DateType, generateRandomStrings(DATE_CHARS, maxStringLen = 8))
+    testCastStringTo(DataTypes.DateType, generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8))
   }
 
   ignore("Cast from string to date using random inputs with valid year prefix") {
     // this will fail until https://github.com/NVIDIA/spark-rapids/pull/2890 is merged
     testCastStringTo(DataTypes.DateType,
-      generateRandomStrings(DATE_CHARS, maxStringLen = 8, Some("2021")))
+      generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
 
   ignore("Cast from string to timestamp using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2889
     testCastStringTo(DataTypes.TimestampType,
-      generateRandomStrings(DATE_CHARS, maxStringLen = 32, None))
+      generateRandomStrings(Some(DATE_CHARS), maxStringLen = 32, None))
   }
 
   ignore("Cast from string to timestamp using random inputs with valid year prefix") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2889
     testCastStringTo(DataTypes.TimestampType,
-      generateRandomStrings(DATE_CHARS, maxStringLen = 32, Some("2021-")))
+      generateRandomStrings(Some(DATE_CHARS), maxStringLen = 32, Some("2021-")))
   }
 
   private def generateRandomStrings(
-      validChars: String,
+      validChars: Option[String],
       maxStringLen: Int = 12,
       prefix: Option[String] = None): Seq[String] = {
     val randomValueCount = 8192
 
     val random = new Random(0)
     val r = new EnhancedRandom(random,
-      new FuzzerOptions(validChars, maxStringLen))
+      FuzzerOptions(validChars, maxStringLen))
 
     (0 until randomValueCount)
       .map(_ => prefix.getOrElse("") + r.nextString())
@@ -154,7 +156,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       import spark.implicits._
       val df = strings.zipWithIndex.toDF("c0", "id").repartition(2)
       val castDf = df.withColumn("c1", col("c0").cast(toType))
-      println(castDf.queryExecution.executedPlan)
       castDf.collect()
     }
 

@@ -339,25 +339,25 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
   }
 
   def nextString(): String = {
-    val b = new StringBuilder(options.maxStringLen)
-    for (_ <- 0 until options.maxStringLen) {
-      b.append(options.validStringChars.charAt(r.nextInt(options.validStringChars.length)))
+    val length = r.nextInt(options.maxStringLen)
+    options.validStringChars match {
+      case Some(ch) => nextString(ch, length)
+      case _ =>
+        // delegate to Scala's Random.nextString
+        r.nextString(length)
+    }
+  }
+
+  def nextString(validStringChars: String, maxStringLen: Int): String = {
+    val b = new StringBuilder(maxStringLen)
+    for (_ <- 0 until maxStringLen) {
+      b.append(validStringChars.charAt(r.nextInt(validStringChars.length)))
     }
     b.toString
   }
 
 }
 
-object FuzzerOptions {
-  val ALPHABET_CHARS: String = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  val NUMERIC_CHARS: String = "0123456789"
-  val ALPHANUMERIC_CHARS: String = ALPHABET_CHARS + NUMERIC_CHARS
-  val WHITESPACE_CHARS: String = " \t\r\n"
-  val SPECIAL_CHARS: String =
-    "!@#$%^&*()-+=/?,.<>\\|[]{}~;:`\"'"
-  val ALL_CHARS: String = ALPHABET_CHARS + NUMERIC_CHARS + SPECIAL_CHARS + WHITESPACE_CHARS
-}
-
 case class FuzzerOptions(
-    validStringChars: String = FuzzerOptions.ALL_CHARS,
+    validStringChars: Option[String] = None,
     maxStringLen: Int = 64)
