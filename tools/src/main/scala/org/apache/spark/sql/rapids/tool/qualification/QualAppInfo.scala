@@ -168,7 +168,9 @@ class QualAppInfo(
       } else {
         val readFormatSum = dataSourceInfo.map { ds =>
           val (readScore, nsString) = checker.scoreReadDataTypes(ds.format, ds.schema)
-          notSupportFormatAndTypes += nsString
+          if (nsString.nonEmpty) {
+            notSupportFormatAndTypes += nsString
+          }
           readScore
         }.sum
         readFormatSum / dataSourceInfo.size

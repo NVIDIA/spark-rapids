@@ -120,7 +120,12 @@ class PluginTypeChecker {
         // check if any of the not supported types are in the schema
         val nsFiltered = dtSupMap(NS).filter(t => schemaLower.contains(t.toLowerCase()))
         if (nsFiltered.nonEmpty) {
-          val typeString = nsFiltered.toSet.mkString(":")
+          val deDuped = if (nsFiltered.contains("dec") && nsFiltered.contains("decimal")) {
+            nsFiltered.filterNot(_.equals("dec"))
+          } else {
+            nsFiltered
+          }
+          val typeString = deDuped.toSet.mkString(":").replace(",", ":")
           val nsString = s"$format[$typeString]"
           (0.0, nsString)
         } else {

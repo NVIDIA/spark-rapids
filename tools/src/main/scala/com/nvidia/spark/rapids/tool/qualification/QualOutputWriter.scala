@@ -84,7 +84,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       s"${appSum.readScorePercent},${appSum.readFileFormatScore}," +
       s"${readFormatNS}"
     if (reportReadSchema) {
-      initRow + s", $readFileFormats"
+      initRow + s",$readFileFormats"
     } else {
       initRow
     }
