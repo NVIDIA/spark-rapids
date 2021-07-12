@@ -44,7 +44,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     val initHeader = s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr," +
       s"$appDurStr,Executor CPU Time Percent,App Duration Estimated," +
       "SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent," +
-      "ReadFileFormat Score"
+      "Read File Format Score,Unsupported Read File Formats and Types"
     if (reportReadSchema) {
       initHeader + ",Read Schema Info"
     } else {
@@ -79,7 +79,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       s"${appSum.sqlDataFrameDuration},${appSum.sqlDataframeTaskDuration}," +
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readScorePercent},${appSum.readFileFormatScore}"
+      s"${appSum.readScorePercent},${appSum.readFileFormatScore}," +
+      s"${appSum.readFileFormatAndTypesNotSupported}"
     if (reportReadSchema) {
       initRow + s", $readFileFormats"
     } else {

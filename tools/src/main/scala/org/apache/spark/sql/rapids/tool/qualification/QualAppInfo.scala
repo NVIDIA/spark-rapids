@@ -60,6 +60,8 @@ class QualAppInfo(
   // SQL containing any Dataset operation
   val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
 
+  val notSupportFormatAndTypes: ArrayBuffer[String] = ArrayBuffer[String]()
+
   private lazy val eventProcessor =  new QualEventProcessor()
 
   processEvents()
@@ -159,13 +161,16 @@ class QualAppInfo(
   // those together and divide by the total number.  So if none of the data types
   // are supported, the score would be 0.0 and if all formats and datatypes are
   // supported the score would be 1.0.
-  private def calculateReadScoreRatio: Double = {
+  private def calculateReadScoreRatio(): Double = {
     pluginTypeChecker.map { checker =>
       if (dataSourceInfo.size == 0) {
         1.0
       } else {
         val readFormatSum = dataSourceInfo.map { ds =>
-          checker.scoreReadDataTypes(ds.format, ds.schema)
+          val (readScore, nsTypes) = checker.scoreReadDataTypes(ds.format, ds.schema)
+          val formatWithType = s"${ds.format}[${nsTypes.mkString(":")}]"
+          notSupportFormatAndTypes += formatWithType
+          readScore
         }.sum
         readFormatSum / dataSourceInfo.size
       }
@@ -192,7 +197,8 @@ class QualAppInfo(
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
-        readScoreHumanPercentRounded, getAllReadFileFormats)
+        readScoreHumanPercentRounded, notSupportFormatAndTypes.mkString(";"),
+        getAllReadFileFormats)
     }
   }
 
@@ -252,6 +258,7 @@ case class QualificationSummaryInfo(
     failedSQLIds: String,
     readScorePercent: Int,
     readFileFormatScore: Double,
+    readFileFormatAndTypesNotSupported: String,
     readFileFormats: String)
 
 object QualAppInfo extends Logging {
