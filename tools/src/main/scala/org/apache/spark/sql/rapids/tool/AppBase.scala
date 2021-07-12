@@ -114,13 +114,9 @@ abstract class AppBase(
 
   private val UDFKeywords = Map(".*UDF.*" -> "UDF")
 
-  protected def findPotentialIssues(desc: String): Option[String] =  {
+  protected def findPotentialIssues(desc: String): Set[String] =  {
     val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords
     val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
-    if (issues.values.nonEmpty) {
-      Some(issues.values.toSet.mkString(","))
-    } else {
-      None
-    }
+    issues.values.toSet
   }
 }
