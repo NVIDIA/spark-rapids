@@ -60,7 +60,7 @@ class QualAppInfo(
   // SQL containing any Dataset operation
   val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
 
-  val notSupportFormatAndTypes: HashSet[String] = HashSet[String]()
+  val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
 
   private lazy val eventProcessor =  new QualEventProcessor()
 
@@ -167,9 +167,10 @@ class QualAppInfo(
         1.0
       } else {
         val readFormatSum = dataSourceInfo.map { ds =>
-          val (readScore, nsString) = checker.scoreReadDataTypes(ds.format, ds.schema)
-          if (nsString.nonEmpty) {
-            notSupportFormatAndTypes += nsString
+          val (readScore, nsTypes) = checker.scoreReadDataTypes(ds.format, ds.schema)
+          if (nsTypes.nonEmpty) {
+            val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
+            notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
           }
           readScore
         }.sum
@@ -195,10 +196,15 @@ class QualAppInfo(
       val failedIds = sqlIDtoJobFailures.filter { case (_, v) =>
         v.size > 0
       }.keys.mkString(",")
+      val notSupportFormatAndTypesString = notSupportFormatAndTypes.map { case(format, types) =>
+        val typeString = types.mkString(":").replace(",", ":")
+        s"${format}[$typeString]"
+      }.mkString(";")
+
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
-        readScoreHumanPercentRounded, notSupportFormatAndTypes.mkString(";"),
+        readScoreHumanPercentRounded, notSupportFormatAndTypesString,
         getAllReadFileFormats)
     }
   }

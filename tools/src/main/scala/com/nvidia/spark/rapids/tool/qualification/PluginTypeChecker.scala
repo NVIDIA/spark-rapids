@@ -111,7 +111,7 @@ class PluginTypeChecker {
   // don't support.
   // NOTE, UDT doesn't show up in the event log, when its written, it gets written as
   // other types since parquet/orc has to know about it
-  def scoreReadDataTypes(format: String, schema: String): (Double, String) = {
+  def scoreReadDataTypes(format: String, schema: String): (Double, Set[String]) = {
     val schemaLower = schema.toLowerCase
     val formatInLower = format.toLowerCase
     val typesBySup = formatsToSupportedCategory.get(formatInLower)
@@ -125,20 +125,18 @@ class PluginTypeChecker {
           } else {
             nsFiltered
           }
-          val typeString = deDuped.toSet.mkString(":").replace(",", ":")
-          val nsString = s"$format[$typeString]"
-          (0.0, nsString)
+          (0.0, deDuped.toSet)
         } else {
           // Started out giving different weights based on partial support and so forth
           // but decided to be optimistic and not penalize if we don't know, perhaps
           // make it smarter later.
           // Schema could also be incomplete, but similarly don't penalize since we don't
           // know.
-          (1.0, "")
+          (1.0, Set.empty)
         }
       case None =>
         // assume we don't support that format
-        (0.0, s"$format[*]")
+        (0.0, Set("*"))
     }
     score
   }
