@@ -500,7 +500,10 @@ class GpuHashAggregateIterator(
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
         withResource(keyBatchingIter.next()) { batch =>
-          computeAggregate(GpuColumnVector.extractColumns(batch), merge = true, isSorted = true)
+          // TODO: Normally we would want to hint to cudf that the data is already sorted on the
+          // grouping keys here, but this doesn't always produce the expected result due to a bug.
+          // See https://github.com/rapidsai/cudf/issues/8717 for details.
+          computeAggregate(GpuColumnVector.extractColumns(batch), merge = true, isSorted = false)
         }
       }
     }
