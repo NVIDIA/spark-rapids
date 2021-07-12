@@ -37,6 +37,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
       checker.setPluginDataSourceFile(csvSupportedFile.toString)
       val (score, nsTypes) = checker.scoreReadDataTypes("parquet", testSchema)
       assert(score == 0.0)
+      assert(nsTypes.contains("boolean"))
     }
   }
 
@@ -74,6 +75,7 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
     val testSchema = "loan_id:bigint,monthly_reporting_period:string,servicer:string"
     val (score, nsTypes) = checker.scoreReadDataTypes("invalidFormat", testSchema)
     assert(score == 0.0)
+    assert(nsTypes.contains("invalidFormat"))
   }
 
   test("unknown datatype ok") {
