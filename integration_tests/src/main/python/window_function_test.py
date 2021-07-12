@@ -125,7 +125,12 @@ running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[
         string_gen, byte_gen, timestamp_gen, DecimalGen(precision=18, scale=1)]
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
-        boolean_gen, timestamp_gen, DecimalGen(precision=18, scale=3)]
+        boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
+        StructGen(children=[
+            ['child_int', IntegerGen()],
+            ['child_time', DateGen()],
+            ['child_string', StringGen()]
+        ])]
 
 
 all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen, 
@@ -323,6 +328,7 @@ def test_window_running(b_gen, c_gen, batch_size):
         validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
         conf = conf)
 
+
 @ignore_order
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
@@ -341,23 +347,73 @@ def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
 
     # Ordering needs to include c because with nulls and especially on booleans
     # it is possible to get a different ordering when it is ambiguous.
-    baseWindowSpec = Window.partitionBy('a').orderBy('b', 'c')
-    inclusiveWindowSpec = baseWindowSpec.rowsBetween(-10, 100)
+    base_window_spec = Window.partitionBy('a').orderBy('b', 'c')
+    inclusive_window_spec = base_window_spec.rowsBetween(-10, 100)
 
-    defaultVal = gen_scalar_value(c_gen, force_no_nulls=False)
+    def do_it(spark):
+        df = gen_df(spark, data_gen, length=2048) \
+            .withColumn('inc_count_1', f.count('*').over(inclusive_window_spec)) \
+            .withColumn('inc_count_c', f.count('c').over(inclusive_window_spec)) \
+            .withColumn('lead_5_c', f.lead('c', 5).over(base_window_spec)) \
+            .withColumn('lag_1_c', f.lag('c', 1).over(base_window_spec)) \
+            .withColumn('row_num', f.row_number().over(base_window_spec))
+
+        if isinstance(c_gen, StructGen):
+            """
+            The MIN()/MAX() aggregations amount to a RANGE query. These are not
+            currently supported on STRUCT columns.
+            Also, LEAD()/LAG() defaults cannot currently be specified for STRUCT
+            columns. `[ 10, 3.14159, "foobar" ]` isn't recognized as a valid STRUCT scalar.
+            """
+            return df.withColumn('lead_def_c', f.lead('c', 2, None).over(base_window_spec)) \
+                     .withColumn('lag_def_c', f.lag('c', 4, None).over(base_window_spec))
+        else:
+            default_val = gen_scalar_value(c_gen, force_no_nulls=False)
+            return df.withColumn('inc_max_c', f.max('c').over(inclusive_window_spec)) \
+                     .withColumn('inc_min_c', f.min('c').over(inclusive_window_spec)) \
+                     .withColumn('lead_def_c', f.lead('c', 2, default_val).over(base_window_spec)) \
+                     .withColumn('lag_def_c', f.lag('c', 4, default_val).over(base_window_spec))
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+
+
+struct_with_arrays = StructGen(children=[
+                       ['child_int', int_gen],
+                       ['child_time', date_gen],
+                       ['child_string', string_gen],
+                       ['child_array', ArrayGen(int_gen, max_length=10)]])
+
+lead_lag_struct_with_arrays_gen = [struct_with_arrays,
+                                   ArrayGen(struct_with_arrays, max_length=10),
+                                   StructGen(children=[['child_struct', struct_with_arrays]])]
+
+
+@ignore_order(local=True)
+@approximate_float
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('struct_gen', lead_lag_struct_with_arrays_gen, ids=idfn)
+@pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
+def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen, batch_size):
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.rapids.sql.hasNans': False}
+    data_gen = [
+        ('a', RepeatSeqGen(a_b_gen, length=20)),
+        ('b', IntegerGen(nullable=False, special_cases=[])),
+        ('c', struct_gen)]
+    # By default for many operations a range of unbounded to unbounded is used
+    # This will not work until https://github.com/NVIDIA/spark-rapids/issues/216
+    # is fixed.
+
+    # Ordering needs to include c because with nulls and especially on booleans
+    # it is possible to get a different ordering when it is ambiguous.
+    base_window_spec = Window.partitionBy('a').orderBy('b')
 
     def do_it(spark):
         return gen_df(spark, data_gen, length=2048) \
-                .withColumn('inc_count_1', f.count('*').over(inclusiveWindowSpec)) \
-                .withColumn('inc_count_c', f.count('c').over(inclusiveWindowSpec)) \
-                .withColumn('inc_max_c', f.max('c').over(inclusiveWindowSpec)) \
-                .withColumn('inc_min_c', f.min('c').over(inclusiveWindowSpec)) \
-                .withColumn('lead_5_c', f.lead('c', 5).over(baseWindowSpec)) \
-                .withColumn('lead_def_c', f.lead('c', 2, defaultVal).over(baseWindowSpec)) \
-                .withColumn('lag_1_c', f.lag('c', 1).over(baseWindowSpec)) \
-                .withColumn('lag_def_c', f.lag('c', 4, defaultVal).over(baseWindowSpec)) \
-                .withColumn('row_num', f.row_number().over(baseWindowSpec))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = conf)
+            .withColumn('lead_5_c', f.lead('c', 5).over(base_window_spec)) \
+            .withColumn('lag_1_c', f.lag('c', 1).over(base_window_spec))
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
 lead_lag_array_data_gens =\
@@ -365,6 +421,7 @@ lead_lag_array_data_gens =\
     [ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in lead_lag_data_gens] + \
     [ArrayGen(ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10), max_length=10) \
         for sub_gen in lead_lag_data_gens]
+
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
