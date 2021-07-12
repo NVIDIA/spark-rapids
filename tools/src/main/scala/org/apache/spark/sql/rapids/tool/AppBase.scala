@@ -109,6 +109,8 @@ abstract class AppBase(
   protected def findPotentialIssues(desc: String): Option[String] =  {
     desc match {
       case u if u.matches(".*UDF.*") => Some("UDF")
+      case d if d.matches(".*promote_precision(.*") => Some("DECIMAL")
+      case dp if dp.matches(".*decimal([0-38],[0-38]).*") => Some("DECIMAL")
       case _ => None
     }
   }
