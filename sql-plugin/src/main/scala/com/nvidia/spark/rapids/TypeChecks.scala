@@ -79,9 +79,7 @@ class PartiallySupported(
     val missingNestedTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     val needsLitWarning: Boolean = false,
     val note: Option[String] = None) extends SupportLevel {
-  override def htmlTag: String = s"<td><em>$text</em></td>"
-
-  override def text: String = {
+  override def htmlTag: String = {
     val typeStr = if (missingNestedTypes.isEmpty) {
       None
     } else {
@@ -93,12 +91,18 @@ class PartiallySupported(
       None
     }
     val extraInfo = (note.toSeq ++ litOnly.toSeq ++ typeStr.toSeq).mkString("; ")
-    val supText = if (asterisks) {
+    val allText = s"$text ($extraInfo)"
+    s"<td><em>$allText</em></td>"
+  }
+
+  // don't include the extra info in the supported text field for now
+  // as the qualification tool doesn't use it
+  override def text: String = {
+    if (asterisks) {
       "PS*"
     } else {
       "PS"
     }
-    s"$supText ($extraInfo)"
   }
 }
 
