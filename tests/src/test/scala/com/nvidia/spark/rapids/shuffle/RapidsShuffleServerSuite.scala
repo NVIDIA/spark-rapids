@@ -209,11 +209,13 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
       when(mockTransaction.getStatus)
         .thenReturn(TransactionStatus.Success)
         .thenReturn(TransactionStatus.Error)
-      when(mockTransaction.releaseMessage()).thenReturn(new RefCountedDirectByteBuffer(tr))
+      when(mockTransaction.releaseMessage()).thenReturn(
+        new MetadataTransportBuffer(new RefCountedDirectByteBuffer(tr)))
 
       val mockServerConnection = mock[ServerConnection]
       val ac = ArgumentCaptor.forClass(classOf[TransactionCallback])
-      when(mockServerConnection.send(any(), any(), ac.capture())).thenReturn(mockTransaction)
+      when(mockServerConnection.send(
+        any(), any(), any(), any[ByteBuffer](), ac.capture())).thenReturn(mockTransaction)
 
       val mockRequestHandler = mock[RapidsShuffleRequestHandler]
       val rapidsBuffer = mock[RapidsBuffer]
