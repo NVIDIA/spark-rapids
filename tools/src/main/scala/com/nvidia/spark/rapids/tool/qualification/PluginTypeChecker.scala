@@ -132,7 +132,7 @@ class PluginTypeChecker {
           // make it smarter later.
           // Schema could also be incomplete, but similarly don't penalize since we don't
           // know.
-          (1.0, Set.empty)
+          (1.0, Set.empty[String])
         }
       case None =>
         // assume we don't support that format
