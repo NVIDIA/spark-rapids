@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Assertions.{assertArrayEquals, assertEquals}
  * Convenience methods for testing cuDF calls directly. This code is largely copied
  * from the cuDF Java test suite.
  */
-object CudfTestHelper {
+object CudfTestHelper extends Arm {
 
   /**
    * Checks and asserts that passed in columns match
@@ -61,20 +61,16 @@ object CudfTestHelper {
   }
 
   def assertPartialColumnsAreEqual(
-                                    expected: ColumnView,
-                                    rowOffset: Long,
-                                    length: Long,
-                                    cv: ColumnView,
-                                    colName: String,
-                                    enableNullCheck: Boolean): Unit = {
-    try {
-      val hostExpected = expected.copyToHost
-      val hostcv = cv.copyToHost
-      try assertPartialColumnsAreEqual(hostExpected, rowOffset, length,
-        hostcv, colName, enableNullCheck)
-      finally {
-        if (hostExpected != null) hostExpected.close()
-        if (hostcv != null) hostcv.close()
+      expected: ColumnView,
+      rowOffset: Long,
+      length: Long,
+      cv: ColumnView,
+      colName: String,
+      enableNullCheck: Boolean): Unit = {
+    withResource(expected.copyToHost) { hostExpected =>
+      withResource(cv.copyToHost) { hostcv =>
+        assertPartialColumnsAreEqual(hostExpected, rowOffset, length,
+          hostcv, colName, enableNullCheck)
       }
     }
   }
