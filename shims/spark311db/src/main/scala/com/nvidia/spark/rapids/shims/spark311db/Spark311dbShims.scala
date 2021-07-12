@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.spark311db
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, Spark311Shims}
+import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.rapids.shims.spark311.GpuInMemoryTableScanExec
