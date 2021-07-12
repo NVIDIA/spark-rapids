@@ -93,11 +93,12 @@ class PartiallySupported(
       None
     }
     val extraInfo = (note.toSeq ++ litOnly.toSeq ++ typeStr.toSeq).mkString("; ")
-    if (asterisks) {
+    val supText = if (asterisks) {
       "PS*"
     } else {
       "PS"
-    } +  s" ($extraInfo)"
+    }
+    s"$supText ($extraInfo)"
   }
 }
 
