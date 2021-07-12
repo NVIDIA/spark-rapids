@@ -107,11 +107,14 @@ abstract class AppBase(
   }
 
   protected def findPotentialIssues(desc: String): Option[String] =  {
-    desc match {
-      case u if u.matches(".*UDF.*") => Some("UDF")
-      case d if d.matches(".*promote_precision(.*") => Some("DECIMAL")
-      case dp if dp.matches(".*decimal([0-38],[0-38]).*") => Some("DECIMAL")
-      case _ => None
+    val potentialIssuesRegexs = Map(".*UDF.*" -> "UDF",
+      ".*promote_precision(.*" -> "DECIMAL",
+      ".*decimal\\([0-9]+,[0-9]+\\).*" -> "DECIMAL")
+    val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
+    if (issues.values.nonEmpty) {
+      Some(issues.values.toSet.mkString(","))
+    } else {
+      None
     }
   }
 }
