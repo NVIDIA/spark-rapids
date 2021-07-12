@@ -221,7 +221,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val lines = inputSource.getLines.toSeq
         // 1 for header, 1 for values
         assert(lines.size == 2)
-        assert(lines.head.contains("Read Schema Info"))
+        assert(lines.head.contains("Read Schema"))
         assert(lines(1).contains("loan399"))
       } finally {
         inputSource.close()
