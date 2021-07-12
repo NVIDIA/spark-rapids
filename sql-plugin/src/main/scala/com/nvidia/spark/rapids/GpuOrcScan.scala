@@ -370,7 +370,7 @@ private case class OrcPartitionReaderContext(
     requestedMapping: Option[Array[Int]]) {
   private var isClosed = false
 
-  def cleanUp = {
+  def cleanUp() = {
     if (!isClosed) {
       Seq(orcReader, dataReader).safeClose()
       isClosed =  true
@@ -600,7 +600,7 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
 
   def cleanUpOrc(ctx: OrcPartitionReaderContext) = {
     if (ctx != null) {
-      ctx.cleanUp
+      ctx.cleanUp()
     }
   }
 }
