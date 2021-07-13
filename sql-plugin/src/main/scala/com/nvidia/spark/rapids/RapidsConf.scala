@@ -928,6 +928,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val _2GB: Long = 2L * 1024 * 1024 * 1024
+  val APPROX_PAR_META_DATA: Int = 10 * 1024 * 1024 // we are estimating 10MB
+  val TEST_CACHE_BATCH_SIZE = conf("spark.rapids.sql.test.batchsize")
+      .doc("The size of the batch allowed per cached batch")
+      .internal()
+      .longConf
+      .createWithDefault(_2GB - APPROX_PAR_META_DATA)
+
   val TEST_ALLOWED_NONGPU = conf("spark.rapids.sql.test.allowedNonGpu")
     .doc("Comma separate string of exec or expression class names that are allowed " +
       "to not be GPU accelerated for testing.")
@@ -1421,6 +1429,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentGpuTasks: Int = get(CONCURRENT_GPU_TASKS)
 
   lazy val isTestEnabled: Boolean = get(TEST_CONF)
+
+  lazy val bytesAllowedPerBatch: Long = get(TEST_CACHE_BATCH_SIZE)
 
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 

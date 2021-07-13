@@ -279,3 +279,25 @@ def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
 
     # NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
     assert_equal(reg_result, cached_result)
+
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@ignore_order
+def test_cache_count(data_gen, with_x_session, enable_vectorized_conf):
+    def with_cache(cached):
+        def helper(spark):
+            df = unary_op_df(spark, data_gen)
+            if cached:
+                df.cache().count()
+            return df.count()
+        return helper
+
+    conf = enable_vectorized_conf.copy()
+    conf.update(allow_negative_scale_of_decimal_conf)
+    conf.update({"spark.rapids.sql.test.batchsize": "100"})
+    reg_result = with_x_session(with_cache(False), conf)
+    cached_result = with_x_session(with_cache(True), conf)
+
+    assert_equal(reg_result, cached_result)
+
