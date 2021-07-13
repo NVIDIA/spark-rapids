@@ -489,7 +489,11 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
               }
             }
           }
-        },  UcpConstants.UCP_AM_FLAG_PERSISTENT_DATA |
+        },
+        // PERSISTENT_DATA allows the `amData` data structure to be valid after the callback returns
+        // WHOLE_MSG ensures a single callback is invoked from UCX when the whole message
+        //   arrives
+        UcpConstants.UCP_AM_FLAG_PERSISTENT_DATA |
           UcpConstants.UCP_AM_FLAG_WHOLE_MSG)
     })
   }
