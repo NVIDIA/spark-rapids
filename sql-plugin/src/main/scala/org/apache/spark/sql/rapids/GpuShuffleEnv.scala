@@ -88,7 +88,8 @@ object GpuShuffleEnv extends Logging {
     managerOpt: Option[RapidsShuffleInternalManagerBase] = None): Unit = {
     if (managerOpt.isDefined) {
       val manager = managerOpt.get
-      assert(manager.getClass.getCanonicalName == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
+      assert(manager.getClass.getCanonicalName == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS,
+        s"${manager.getClass.getCanonicalName} != ${GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS}")
       logInfo("RapidsShuffleManager is initialized")
     }
     mgr = managerOpt
