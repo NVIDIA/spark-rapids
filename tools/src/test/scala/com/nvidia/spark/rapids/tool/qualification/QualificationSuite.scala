@@ -28,6 +28,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
@@ -278,6 +279,31 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val logFiles = Array(s"$logDir/decimal_udf_diff_sql_eventlog.zstd")
     runQualificationTest(logFiles, "decimal_udf_diff_sql_expectation.csv")
   }
+
+  test("test decimal generate udf same") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+        val plusOne = udf((x: Int) => x + 1)
+      }
+
+    }
+  }
+  2485 val df = spark.read.parquet("../readtypetestfiles/mapcomplex.parquet")
+  2486 df.collect()
+  2487 val df4 = df3.withColumn("udfcol", random.asNondeterministic())
+  2488 val df4 = df3.withColumn("udfcol", col(random.asNondeterministic()))
+  2489 val df4 = df3.withColumn("udfcol", random.asNondeterministic() * $"value")
+  2490 val plusOne = udf((x: Int) => x + 1)
+  2491 spark.udf.register("plusOne", plusOne)
+  2492 val df4 = df3.withColumn("udfcol", plusOne($"value"))
+  2493 df4.printSchema()
+  2494 df4.collect()
+  2495 :h?
+    2496 val plusOne = udf((x: Int) => x + 1)
+  2497 val df = spark.read.parquet("../readtypetestfiles/smalldec.parquet")
+  2498 val df3 = df.withColumn("mult", $"value" * $"value")
+  2499 val df4 = df3.withColumn("udfcol", plusOne($"value"))
+  2500 df4.collect()
 
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
