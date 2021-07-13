@@ -207,7 +207,8 @@ object GpuCast extends Arm {
               if (anyDot.getBoolean) {
                 // Special handling for strings that have no numeric value before the dot, such
                 // as ".", ".1" and "-.2" because extractsRe returns null for the capture group
-                // for these values
+                // for these values and it also returns null for invalid inputs so we need this
+                // explicit check
                 withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
                   withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.([0-9]*)?$")) { table =>
                     withResource(Scalar.fromString("0")) { zero =>
@@ -733,21 +734,20 @@ case class GpuCast(
       ansiEnabled: Boolean,
       dType: DType): ColumnVector = {
 
-    // allow leading whitespace but replace strings with null if they contain any other whitespace
-    val stripped = GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)
-
-    withResource(stripped.isInteger(dType)) { isInt =>
-      if (ansiEnabled) {
-        withResource(isInt.all()) { allInts =>
-          if (!allInts.getBoolean) {
-            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+    withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
+      withResource(sanitized.isInteger(dType)) { isInt =>
+        if (ansiEnabled) {
+          withResource(isInt.all()) { allInts =>
+            if (!allInts.getBoolean) {
+              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
           }
-        }
-        stripped.castTo(dType)
-      } else {
-        withResource(stripped.castTo(dType)) { parsedInt =>
-          withResource(GpuScalar.from(null, dataType)) { nullVal =>
-            isInt.ifElse(parsedInt, nullVal)
+          sanitized.castTo(dType)
+        } else {
+          withResource(sanitized.castTo(dType)) { parsedInt =>
+            withResource(GpuScalar.from(null, dataType)) { nullVal =>
+              isInt.ifElse(parsedInt, nullVal)
+            }
           }
         }
       }
