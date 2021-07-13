@@ -510,6 +510,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
   override def close(): Unit = {
     logInfo("UCX transport closing")
+    ucx.shuttingDown()
     exec.shutdown()
     bssExecutor.shutdown()
     clientExecutor.shutdown()
@@ -535,5 +536,16 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
 
     ucx.close()
     freeBounceBufferPools()
+  }
+
+  /**
+   * Removes state in the transport associated with `conn`
+   * @param conn a connection to a remote executor
+   */
+  def shutdownConnection(conn: ClientConnection): Unit = {
+    val client = clients.remove(conn.getPeerExecutorId)
+    if (client != null) {
+      client.close()
+    }
   }
 }

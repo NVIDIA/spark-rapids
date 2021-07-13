@@ -815,7 +815,9 @@ object CaseWhenCheck extends ExprChecks {
  * This is specific to WidowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {
-  val check: TypeSig = TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL
+  val check: TypeSig =
+    TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+      TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL)
   val sparkSig: TypeSig = TypeSig.all
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
