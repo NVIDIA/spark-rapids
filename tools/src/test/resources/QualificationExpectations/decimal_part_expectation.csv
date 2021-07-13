@@ -1,0 +1,2 @@
+App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures
+Spark shell,local-1626189209260,1.24,DECIMAL,1314,106033,57.21,false,1023,""
