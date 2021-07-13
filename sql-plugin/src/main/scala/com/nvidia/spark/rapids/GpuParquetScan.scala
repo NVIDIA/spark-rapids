@@ -935,18 +935,6 @@ class MultiFileParquetPartitionReader(
     }
     (buffer, finalSize)
   }
-
-  private def reallocHostBufferAndCopy(
-      in: HostMemoryInputStream,
-      newSizeEstimate: Long): HostMemoryBuffer = {
-    // realloc memory and copy
-    closeOnExcept(HostMemoryBuffer.allocate(newSizeEstimate)) { newhmb =>
-      withResource(new HostMemoryOutputStream(newhmb)) { out =>
-        IOUtils.copy(in, out)
-      }
-      newhmb
-    }
-  }
 }
 
 /**
