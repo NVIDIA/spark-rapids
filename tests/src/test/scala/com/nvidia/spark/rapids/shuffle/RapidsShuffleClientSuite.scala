@@ -444,39 +444,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
     doTestErrorOrCancelledBufferFetch(TransactionStatus.Cancelled)
   }
 
-  test("exception in buffer fetch escalates to handler") {
-    when(mockTransaction.getStatus)
-      .thenReturn(TransactionStatus.Success) // TransferRequest succeded
-      .thenThrow(new RuntimeException("test exception")) // Buffer receive fails
-
-    val numRows = 100000
-    val tableMeta =
-      RapidsShuffleTestHelper.prepareMetaTransferResponse(mockTransaction, numRows)
-
-    // error condition, so it doesn't matter much what we set here, only the first
-    // receive will happen
-    val sizePerBuffer = numRows * 4 / 10
-    closeOnExcept(getBounceBuffer(sizePerBuffer)) { bounceBuffer =>
-      val brs = prepareBufferReceiveState(tableMeta, bounceBuffer)
-
-      assert(brs.hasMoreBlocks)
-
-      // Kick off receives
-      client.doIssueBufferReceives(brs)
-
-      // Errored transaction. Therefore we should not be done
-      assert(brs.hasMoreBlocks)
-
-      // We should have called `transferError` in the `RapidsShuffleFetchHandler`
-      verify(mockHandler, times(10)).transferError(any(), any[RuntimeException]())
-
-      // we would have issued 1 request to issue a `TransferRequest` for the server to start
-      verify(mockConnection, times(1)).request(any(), any(), any())
-
-      // ensure we closed the BufferReceiveState => releasing the bounce buffers
-      assert(bounceBuffer.isClosed)
-    }
-  }
 
   def makeRequest(numRows: Long): (PendingTransferRequest, HostMemoryBuffer, TableMeta) = {
     val ptr = mock[PendingTransferRequest]
