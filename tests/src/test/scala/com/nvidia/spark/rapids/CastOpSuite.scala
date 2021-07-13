@@ -61,9 +61,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private val NUMERIC_CHARS = "inf \t\r\n0123456789.+-eE"
   private val DATE_CHARS = " \t\r\n0123456789:-/TZ"
 
-  ignore("Cast from string to boolean using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2902
+  test("Cast from string to boolean using random inputs") {
     testCastStringTo(DataTypes.BooleanType,
       generateRandomStrings(Some(BOOL_CHARS), maxStringLen = 1))
     testCastStringTo(DataTypes.BooleanType,
@@ -71,9 +69,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.BooleanType, generateRandomStrings(Some(BOOL_CHARS)))
   }
 
-  ignore("Cast from string to boolean using hand-picked values") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2902
+  test("Cast from string to boolean using hand-picked values") {
     testCastStringTo(DataTypes.BooleanType, Seq("\n\nN", "False", "FALSE", "false", "FaLsE",
       "f", "F", "True", "TRUE", "true", "tRuE", "t", "T", "Y", "y", "10", "01", "0", "1"))
   }
