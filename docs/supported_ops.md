@@ -495,6 +495,29 @@ Accelerator supports are described below.
 <th>UDT</th>
 </tr>
 <tr>
+<td>ObjectHashAggregateExec</td>
+<td>The backend for hash based aggregations</td>
+<td>None</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><em>PS (Marking BINARY as plugin-supported is only to adapt the BINARY aggregation buffers of TypedImperativeAggregate.)</em></td>
+<td><b>NS</b></td>
+<td><em>PS* (not allowed for grouping expressions; missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (not allowed for grouping expressions; missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (not allowed for grouping expressions; missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
 <td>SortAggregateExec</td>
 <td>The backend for sort based aggregations</td>
 <td>None</td>
@@ -602,11 +625,11 @@ Accelerator supports are described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
+<td><em>PS (Marking BINARY as plugin-supported is only to adapt the BINARY aggregation buffers of TypedImperativeAggregate.)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true; missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><em>PS* (Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true; missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
-<td><em>PS* (Round-robin partitioning is not supported for nested structs if spark.sql.execution.sortBeforeRepartition is true; missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
+<td><em>PS* (Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true; missing nested CALENDAR, MAP, UDT)</em></td>
+<td><em>PS* (Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true; missing nested CALENDAR, MAP, UDT)</em></td>
+<td><em>PS* (Round-robin partitioning is not supported for nested structs if spark.sql.execution.sortBeforeRepartition is true; missing nested CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -817,29 +840,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>WindowInPandasExec</td>
-<td>The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled. For now it only supports row based window frame.</td>
-<td>This is disabled by default because it only supports row based frame for now</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
 <th>Executor</th>
 <th>Description</th>
 <th>Notes</th>
@@ -861,6 +861,29 @@ Accelerator supports are described below.
 <th>MAP</th>
 <th>STRUCT</th>
 <th>UDT</th>
+</tr>
+<tr>
+<td>WindowInPandasExec</td>
+<td>The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled. For now it only supports row based window frame.</td>
+<td>This is disabled by default because it only supports row based frame for now</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td>WindowExec</td>
@@ -2243,11 +2266,11 @@ Accelerator support is described below.
 <td>S</td>
 <td>S*</td>
 <td>S</td>
+<td>S</td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
-<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
-<td><em>PS* (missing nested BINARY, CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested CALENDAR, UDT)</em></td>
+<td><em>PS* (missing nested CALENDAR, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18305,51 +18328,8 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="6">CollectList</td>
 <td rowSpan="6">`collect_list`</td>
-<td rowSpan="6">Collect a list of non-unique elements, only supported in rolling window in current.</td>
+<td rowSpan="6">Collect a list of non-unique elements, NOT yet supported in reduction.</td>
 <td rowSpan="6">None</td>
-<td rowSpan="2">aggregation</td>
-<td>input</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
 <td rowSpan="2">reduction</td>
 <td>input</td>
 <td><b>NS</b></td>
@@ -18393,6 +18373,49 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="2">aggregation</td>
+<td>input</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested NULL, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">window</td>
 <td>input</td>
 <td>S</td>
@@ -18430,7 +18453,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (missing nested NULL, CALENDAR, ARRAY, MAP, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -18438,51 +18461,8 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="6">CollectSet</td>
 <td rowSpan="6">`collect_set`</td>
-<td rowSpan="6">Collect a set of unique elements, only supported in rolling window in current.</td>
+<td rowSpan="6">Collect a set of unique elements, NOT yet supported in reduction.</td>
 <td rowSpan="6">None</td>
-<td rowSpan="2">aggregation</td>
-<td>input</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
 <td rowSpan="2">reduction</td>
 <td>input</td>
 <td><b>NS</b></td>
@@ -18526,6 +18506,49 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="2">aggregation</td>
+<td>input</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S*</td>
+<td>S</td>
+<td>S*</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS* (missing nested NULL, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">window</td>
 <td>input</td>
 <td>S</td>
@@ -18563,7 +18586,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested NULL, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20751,11 +20774,11 @@ as `a` don't show up in the table. They are controlled by the rules for
 <td>S</td>
 <td>S*</td>
 <td>S</td>
+<td><em>PS (Marking BINARY as plugin-supported is only to adapt the BINARY aggregation buffers of TypedImperativeAggregate.)</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (missing nested CALENDAR, ARRAY, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
