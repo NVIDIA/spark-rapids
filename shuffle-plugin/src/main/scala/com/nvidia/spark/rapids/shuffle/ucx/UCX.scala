@@ -498,10 +498,19 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     })
   }
 
-  def sendActiveMessage(endpointId: Long, am: UCXActiveMessage,
+  /**
+   * Send a message `am` to an executor given by `executorId`
+   * with a cudf `MemoryBuffer` payload. The payload can be a GPU buffer.
+   *
+   * @param executorId long representing the peer executor
+   * @param am active message (id, tag) for this message
+   * @param data a cudf `MemoryBuffer`
+   * @param cb callback to handle the active message state
+   */
+  def sendActiveMessage(executorId: Long, am: UCXActiveMessage,
       data: MemoryBuffer, cb: UcxCallback): Unit = {
     sendActiveMessage(
-      endpointId,
+      executorId,
       am,
       data.getAddress,
       data.getLength,
@@ -509,10 +518,19 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       isGpu = data.isInstanceOf[BaseDeviceMemoryBuffer])
   }
 
-  def sendActiveMessage(endpointId: Long, am: UCXActiveMessage,
+  /**
+   * Send an active message `am` to an executor given by `executorId`
+   * with a direct `ByteBuffer` payload.
+   *
+   * @param executorId long representing the peer executor
+   * @param am active message (id, tag) for this message
+   * @param data a direct `ByteBuffer`
+   * @param cb callback to handle the active message state
+   */
+  def sendActiveMessage(executorId: Long, am: UCXActiveMessage,
       data: ByteBuffer, cb: UcxCallback): Unit = {
     sendActiveMessage(
-      endpointId,
+      executorId,
       am,
       TransportUtils.getAddress(data),
       data.remaining(),
@@ -520,19 +538,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       isGpu = false)
   }
 
-  /**
-   * Send an active message `am` to an executor given by `executorId`.
-   *
-   * The user must provide `dataAddress` and `dataSize` (which are strictly for host
-   * memory buffers), and a callback.
-   *
-   * @param executorId long representing the peer executor
-   * @param am active message (id, tag) for this message
-   * @param dataAddress native host pointer for the data to send
-   * @param dataSize size of the buffer pointed at by `dataAddress`
-   * @param cb callback to handle the active message state
-   */
-  def sendActiveMessage(executorId: Long, am: UCXActiveMessage,
+  private def sendActiveMessage(executorId: Long, am: UCXActiveMessage,
       dataAddress: Long, dataSize: Long, cb: UcxCallback, isGpu: Boolean): Unit = {
     onWorkerThreadAsync(() => {
       val endpoint = endpointManager.getEndpointByExecutorId(executorId)
