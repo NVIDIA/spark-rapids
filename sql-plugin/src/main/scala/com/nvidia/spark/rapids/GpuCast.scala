@@ -181,15 +181,16 @@ object GpuCast extends Arm {
     // have been stripped of leading and trailing whitespace
     val sanitized = withResource(GpuScalar.from(null, DataTypes.StringType)) { nullVal =>
       withResource(input.containsRe("\\s")) { hasWhitespace =>
-        if (ansiEnabled) {
-          withResource(hasWhitespace.any()) { any =>
-            if (any.getBoolean) {
+        withResource(hasWhitespace.any()) { any =>
+          if (any.getBoolean) {
+            if (ansiEnabled) {
               throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            } else {
+              hasWhitespace.ifElse(nullVal, input)
             }
+          } else {
+            input.incRefCount()
           }
-          input.incRefCount()
-        } else {
-          hasWhitespace.ifElse(nullVal, input)
         }
       }
     }
