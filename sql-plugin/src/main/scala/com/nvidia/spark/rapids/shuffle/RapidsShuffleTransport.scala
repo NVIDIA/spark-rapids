@@ -138,6 +138,11 @@ trait ClientConnection {
   def request(messageType: MessageType.Value, request: ByteBuffer,
     cb: TransactionCallback): Transaction
 
+  /**
+   * Register interest in messages of `messageType`.
+   *
+   * @note Currently `MessageType.Buffer` is the only supported message type.
+   */
   def registerReceiveHandler(messageType: MessageType.Value): Unit
 
   /**
