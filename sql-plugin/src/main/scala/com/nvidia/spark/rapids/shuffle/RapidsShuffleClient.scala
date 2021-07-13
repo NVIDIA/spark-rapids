@@ -272,44 +272,45 @@ class RapidsShuffleClient(
         }
     }
   }
-/**
+
+  /**
    * Sends the [[com.nvidia.spark.rapids.format.TransferRequest]] metadata message, to ask the
    * server to get started.
    * @param toIssue sequence of [[PendingTransferRequest]] we want included in the server
    *                transfers
    */
-private[this] def sendTransferRequest(id: Long, toIssue: BufferReceiveState): Unit = {
-  val requestsToIssue = toIssue.getRequests
-  logDebug(s"Sending a transfer request for ${TransportUtils.toHex(toIssue.id)}")
+  private[this] def sendTransferRequest(id: Long, toIssue: BufferReceiveState): Unit = {
+    val requestsToIssue = toIssue.getRequests
+    logDebug(s"Sending a transfer request for ${TransportUtils.toHex(toIssue.id)}")
 
-  val transferReq = new RefCountedDirectByteBuffer(
-    ShuffleMetadata.buildTransferRequest(id, requestsToIssue.map { i =>
-      i.tableMeta.bufferMeta().id()
-    }))
+    val transferReq = new RefCountedDirectByteBuffer(
+      ShuffleMetadata.buildTransferRequest(id, requestsToIssue.map { i =>
+        i.tableMeta.bufferMeta().id()
+      }))
 
-  connection.request(MessageType.TransferRequest, transferReq.acquire(), withResource(_) { tx =>
-    tx.getStatus match {
-      case TransactionStatus.Success =>
-        withResource(tx.releaseMessage()) { mtb =>
-          withResource(transferReq) { _ =>
-            // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
-            val transferResponse = ShuffleMetadata.getTransferResponse(mtb.getBuffer())
-            (0 until transferResponse.responsesLength()).foreach(r => {
-              val response = transferResponse.responses(r)
-              if (response.state() != TransferState.STARTED) {
-                // we could either re-issue the request, cancelling and releasing memory
-                // or we could re-issue, and leave the old receive waiting
-                // for now, leaving the old receive waiting.
-                throw new IllegalStateException("NOT IMPLEMENTED")
-              }
-            })
-          }
+    connection.request(MessageType.TransferRequest, transferReq.acquire(), withResource(_) { tx =>
+      withResource(transferReq) { _ =>
+        tx.getStatus match {
+          case TransactionStatus.Success =>
+            withResource(tx.releaseMessage()) { mtb =>
+              // make sure all bufferTxs are still valid (e.g. resp says that they have STARTED)
+              val transferResponse = ShuffleMetadata.getTransferResponse(mtb.getBuffer())
+              (0 until transferResponse.responsesLength()).foreach(r => {
+                val response = transferResponse.responses(r)
+                if (response.state() != TransferState.STARTED) {
+                  // we could either re-issue the request, cancelling and releasing memory
+                  // or we could re-issue, and leave the old receive waiting
+                  // for now, leaving the old receive waiting.
+                  throw new IllegalStateException("NOT IMPLEMENTED")
+                }
+              })
+            }
+          case _ =>
+            toIssue.errorOccurred(tx.getErrorMessage.getOrElse("TransferRequest failed"))
         }
-      case _ =>
-        toIssue.errorOccurred(tx.getErrorMessage.getOrElse("TransferRequest failed"))
-    }
-  })
-}
+      }
+    })
+  }
 
   /**
    * Feed into the throttle thread in the transport [[PendingTransferRequest]], to be

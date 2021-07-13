@@ -368,8 +368,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                     })
 
                     // wake up the bssExec since bounce buffers became available
-                    logDebug(s"Buffer send state $buffersToSend is done. Closing. " +
-                      s"Still pending: ${pendingTransfersQueue.size}.")
+                    logDebug(s"Buffer send state " +
+                      s"${TransportUtils.toHex(bufferSendState.getPeerBufferReceiveHeader)} " +
+                      s"is done, closing. Still pending: ${pendingTransfersQueue.size}.")
                     bssExec.synchronized {
                       bufferSendState.close()
                       bssExec.notifyAll()

@@ -23,8 +23,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{Arm, GpuDeviceManager, RapidsConf}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -32,7 +31,6 @@ import com.nvidia.spark.rapids.shuffle.{ClientConnection, MemoryRegistrationCall
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
 import org.openucx.jucx.ucs.UcsConstants
-
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
@@ -502,7 +500,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       data.getAddress,
       data.getLength,
       cb,
-      isGpu = data.isInstanceOf[DeviceMemoryBuffer])
+      isGpu = data.isInstanceOf[BaseDeviceMemoryBuffer])
   }
 
   def sendActiveMessage(endpointId: Long, am: UCXActiveMessage,
