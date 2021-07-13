@@ -52,7 +52,7 @@ class QualAppInfo(
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
 
-  val problematicSQL: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
+  val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
 
   // SQL containing any Dataset operation
   val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
@@ -99,7 +99,7 @@ class QualAppInfo(
   }
 
   private def probNotDataset: HashMap[Long, Set[String]] = {
-    problematicSQL.filterNot { case (sqlID, _) => sqlIDToDataSetCase.contains(sqlID) }
+    sqlIDtoProblematic.filterNot { case (sqlID, _) => sqlIDToDataSetCase.contains(sqlID) }
   }
 
   private def getPotentialProblems: String = {
@@ -152,8 +152,8 @@ class QualAppInfo(
       }
       val issues = findPotentialIssues(node.desc)
       if (issues.nonEmpty) {
-        val existingIssues = problematicSQL.getOrElse(sqlID, Set.empty[String])
-        problematicSQL(sqlID) = existingIssues ++ issues
+        val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
+        sqlIDtoProblematic(sqlID) = existingIssues ++ issues
       }
     }
   }

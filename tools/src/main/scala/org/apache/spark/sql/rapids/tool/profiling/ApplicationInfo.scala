@@ -948,52 +948,6 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  def qualificationDurationNoMetricsSQL: String = {
-    s"""select
-       |first(appName) as `App Name`,
-       |'$appId' as `App ID`,
-       |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Score,
-       |concat_ws(",", collect_set(problematic)) as `Potential Problems`,
-       |sum(sqlQualDuration) as `SQL Dataframe Duration`,
-       |first(app.duration) as `App Duration`,
-       |first(app.endDurationEstimated) as `App Duration Estimated`
-       |from sqlDF_$index sq, appdf_$index app
-       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
-       |""".stripMargin
-  }
-
-  // only include jobs that are marked as succeeded
-  def qualificationDurationSQL: String = {
-    s"""select
-       |$index as appIndex,
-       |'$appId' as appID,
-       |app.appName,
-       |sq.sqlID, sq.description,
-       |sq.sqlQualDuration as dfDuration,
-       |app.duration as appDuration,
-       |app.endDurationEstimated as appEndDurationEstimated,
-       |problematic as potentialProblems,
-       |m.executorCPUTime,
-       |m.executorRunTime
-       |from sqlDF_$index sq, appdf_$index app
-       |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
-       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
-       |""".stripMargin
-  }
-
-  def qualificationDurationSumSQL: String = {
-    s"""select first(appName) as `App Name`,
-       |'$appId' as `App ID`,
-       |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
-       |concat_ws(",", collect_set(potentialProblems)) as `Potential Problems`,
-       |sum(dfDuration) as `SQL Dataframe Duration`,
-       |first(appDuration) as `App Duration`,
-       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`,
-       |first(appEndDurationEstimated) as `App Duration Estimated`
-       |from (${qualificationDurationSQL.stripLineEnd})
-       |""".stripMargin
-  }
-
   def profilingDurationSQL: String = {
     s"""select
        |$index as appIndex,
