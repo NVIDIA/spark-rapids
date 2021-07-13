@@ -655,21 +655,25 @@ case class GpuCast(
 
     // determine which values are valid bool strings
     withResource(ColumnVector.fromStrings(boolStrings: _*)) { boolStrings =>
-      withResource(input.contains(boolStrings)) { validBools =>
-        // in ansi mode, fail if any values are not valid bool strings
-        if (ansiEnabled) {
-          withResource(validBools.all()) { isAllBool =>
-            if (!isAllBool.getBoolean) {
-              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+      withResource(input.strip()) { stripped =>
+        withResource(stripped.lower()) { lower =>
+          withResource(lower.contains(boolStrings)) { validBools =>
+            // in ansi mode, fail if any values are not valid bool strings
+            if (ansiEnabled) {
+              withResource(validBools.all()) { isAllBool =>
+                if (!isAllBool.getBoolean) {
+                  throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+                }
+              }
             }
-          }
-        }
-        // replace non-boolean values with null
-        withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-          withResource(validBools.ifElse(input, nullString)) { sanitizedInput =>
-            // return true, false, or null, as appropriate
-            withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
-              sanitizedInput.contains(cvTrue)
+            // replace non-boolean values with null
+            withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+              withResource(validBools.ifElse(lower, nullString)) { sanitizedInput =>
+                // return true, false, or null, as appropriate
+                withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
+                  sanitizedInput.contains(cvTrue)
+                }
+              }
             }
           }
         }
