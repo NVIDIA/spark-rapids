@@ -175,6 +175,57 @@ object GpuCast extends Arm {
       cv.stringReplaceWithBackrefs(rule.search, rule.replace)
     })
   }
+
+  def sanitizeStringToIntegralType(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
+    // Convert any strings containing whitespace to null values. The input is assumed to already
+    // have been stripped of leading and trailing whitespace
+    val sanitized = withResource(GpuScalar.from(null, DataTypes.StringType)) { nullVal =>
+      withResource(input.containsRe("\\s")) { hasWhitespace =>
+        if (ansiEnabled) {
+          withResource(hasWhitespace.any()) { any =>
+            if (any.getBoolean) {
+              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
+          }
+          input.incRefCount()
+        } else {
+          hasWhitespace.ifElse(nullVal, input)
+        }
+      }
+    }
+
+    // truncate strings that represent decimals, so that we just look at the string before the dot
+    if (ansiEnabled) {
+      // ansi mode does not support casting decimal strings to integers
+      sanitized
+    } else {
+      withResource(sanitized) { _ =>
+        withResource(Scalar.fromString(".")) { dot =>
+          withResource(sanitized.stringContains(dot)) { hasDot =>
+            // only do the decimal sanitization if any strings do contain dot
+            withResource(hasDot.any(DType.BOOL8)) { anyDot =>
+              if (anyDot.getBoolean) {
+                // Special handling for strings that have no numeric value before the dot, such
+                // as ".", ".1" and "-.2" because extractsRe returns null for the capture group
+                // for these values
+                withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
+                  withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.([0-9]*)?$")) { table =>
+                    withResource(Scalar.fromString("0")) { zero =>
+                      withResource(startsWithDot.ifElse(zero, table.getColumn(0).incRefCount())) {
+                        decimal => hasDot.ifElse(decimal, sanitized)
+                      }
+                    }
+                  }
+                }
+              } else {
+                sanitized.incRefCount()
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -681,47 +732,22 @@ case class GpuCast(
       input: ColumnVector,
       ansiEnabled: Boolean,
       dType: DType): ColumnVector = {
-    val cleaned = if (!ansiEnabled) {
-      // TODO would be great to get rid of this regex, but the overflow checks don't work
-      //  on the more lenient pattern.
-      // To avoid doing the expensive regex all the time, we will first check to see if we need
-      // to do it. The only time we do need to do it is when we have a '.' in any of the strings.
-      val data = input.getData
-      val hasDot = if (data != null) {
-        withResource(
-          ColumnView.fromDeviceBuffer(data, 0, DType.INT8, data.getLength.toInt)) { childData =>
-          withResource(GpuScalar.from('.'.toByte, ByteType)) { dot =>
-            childData.contains(dot)
-          }
-        }
-      } else {
-        false
-      }
 
-      if (hasDot) {
-        withResource(input.extractRe("^([+\\-]?[0-9]+)(?:\\.[0-9]*)?$")) { table =>
-          table.getColumn(0).incRefCount()
-        }
-      } else {
-        input.incRefCount()
-      }
-    } else {
-      input.incRefCount()
-    }
-    withResource(cleaned) { cleaned =>
-      withResource(cleaned.isInteger(dType)) { isInt =>
-        if (ansiEnabled) {
-          withResource(isInt.all()) { allInts =>
-            if (!allInts.getBoolean) {
-              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
+    // allow leading whitespace but replace strings with null if they contain any other whitespace
+    val stripped = GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)
+
+    withResource(stripped.isInteger(dType)) { isInt =>
+      if (ansiEnabled) {
+        withResource(isInt.all()) { allInts =>
+          if (!allInts.getBoolean) {
+            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
           }
-          cleaned.castTo(dType)
-        } else {
-          withResource(cleaned.castTo(dType)) { parsedInt =>
-            withResource(GpuScalar.from(null, dataType)) { nullVal =>
-              isInt.ifElse(parsedInt, nullVal)
-            }
+        }
+        stripped.castTo(dType)
+      } else {
+        withResource(stripped.castTo(dType)) { parsedInt =>
+          withResource(GpuScalar.from(null, dataType)) { nullVal =>
+            isInt.ifElse(parsedInt, nullVal)
           }
         }
       }

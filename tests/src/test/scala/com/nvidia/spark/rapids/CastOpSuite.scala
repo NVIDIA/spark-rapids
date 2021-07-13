@@ -78,27 +78,24 @@ class CastOpSuite extends GpuExpressionTestSuite {
       "f", "F", "True", "TRUE", "true", "tRuE", "t", "T", "Y", "y", "10", "01", "0", "1"))
   }
 
-  ignore("Cast from string to byte using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2899
+  test("Cast from string to byte using random inputs") {
     testCastStringTo(DataTypes.ByteType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to short using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2899
+  test("Cast from string to short using random inputs") {
     testCastStringTo(DataTypes.ShortType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to int using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2899
+  test("Cast from string to int using random inputs") {
     testCastStringTo(DataTypes.IntegerType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to long using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2899
+  test("Cast from string to int using hand-picked values") {
+    testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
+      ".", "+1.2", "\n123\n456\n"))
+  }
+
+  test("Cast from string to long using random inputs") {
     testCastStringTo(DataTypes.LongType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
@@ -828,6 +825,28 @@ class CastOpSuite extends GpuExpressionTestSuite {
       testCastToDecimal(DataTypes.StringType, scale = scale,
         customDataGenerator = Some(exponentsAsStrings),
         ansiEnabled = true)
+    }
+  }
+
+  test("CAST string to integer - sanitize step") {
+    val testPairs: Seq[(String, String)] = Seq(
+      ("123", "123"),
+      (".", "0"),
+      (".2", "0"),
+      ("-.2", "0"),
+      ("0.123", "0"),
+      ("321.123", "321"),
+      ("0.123\r123", null),
+      (".\r123", null)
+    )
+    val inputs = testPairs.map(_._1)
+    val expected = testPairs.map(_._2)
+    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
+      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
+        withResource(GpuCast.sanitizeStringToIntegralType(v, ansiEnabled = false)) { actual =>
+          CudfTestHelper.assertColumnsAreEqual(expected, actual)
+        }
+      }
     }
   }
 
