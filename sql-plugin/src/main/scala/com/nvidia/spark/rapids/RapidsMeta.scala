@@ -803,9 +803,7 @@ class DataTypeMeta(
   }
 
   // typeConverted will only be true if there exists DataType in wrapped expression
-  lazy val typeConverted: Boolean = {
-    dataType.nonEmpty && wrapped.nonEmpty && dataType.get != wrapped.get
-  }
+  lazy val typeConverted: Boolean = dataType.nonEmpty && dataType != wrapped
 
   /**
    * Returns the reason for conversion if exists

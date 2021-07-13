@@ -774,7 +774,7 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
   }
   lazy val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
 
   override def tagExprForGpu(): Unit = {
     expr match {

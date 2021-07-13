@@ -226,13 +226,13 @@ final class TypeSig private(
       val expr = exprMeta.wrapped.asInstanceOf[Expression]
       val allowDecimal = meta.conf.decimalTypeEnabled
       if (!isSupportedByPlugin(dt, allowDecimal)) {
-        meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
+        meta.willNotWorkOnGpu(s"$name expression ${expr.getClass.getSimpleName} $expr " +
             s"produces an unsupported type $dt")
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
         meta.willNotWorkOnGpu(s"$name only supports $dt if it is a literal value")
       }
       if (typeMeta.typeConverted) {
-        meta.addConvertedDataType(expr.prettyName, typeMeta)
+        meta.addConvertedDataType(expr.getClass.getSimpleName, typeMeta)
       }
     }
   }
@@ -869,11 +869,12 @@ object CreateNamedStructCheck extends ExprChecks {
       exprMeta.childExprs.grouped(2).foreach {
         case Seq(nameMeta, valueMeta) =>
           nameSig.tagExprParam(meta, nameMeta, "name")
-          nameSig.tagExprParam(meta, valueMeta, "value")
+          valueSig.tagExprParam(meta, valueMeta, "value")
       }
-      val dt = exprMeta.typeMeta.dataType.get
-      if (!resultSig.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
-        meta.willNotWorkOnGpu(s"unsupported data type in output: $dt")
+      exprMeta.typeMeta.dataType.foreach { dt =>
+        if (!resultSig.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
+          meta.willNotWorkOnGpu(s"unsupported data type in output: $dt")
+        }
       }
     }
   }
