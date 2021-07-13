@@ -207,7 +207,7 @@ object GpuCast extends Arm {
             withResource(hasDot.any(DType.BOOL8)) { anyDot =>
               if (anyDot.getBoolean) {
                 // Special handling for strings that have no numeric value before the dot, such
-                // as ".", ".1" and "-.2" because extractsRe returns null for the capture group
+                // as "." and ".1" because extractsRe returns null for the capture group
                 // for these values and it also returns null for invalid inputs so we need this
                 // explicit check
                 withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
