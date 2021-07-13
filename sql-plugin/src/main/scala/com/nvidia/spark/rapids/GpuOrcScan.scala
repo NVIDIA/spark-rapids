@@ -36,7 +36,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
-import org.apache.orc.{DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
+import org.apache.orc.{CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, PhysicalWriter, Reader, StripeInformation, TypeDescription}
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
@@ -191,11 +191,13 @@ case class GpuOrcMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedStripes = ArrayBuffer[OrcSingleStripeMeta]()
     files.map { file =>
-      val (orcPartitionReaderContext, path) = filterHandler.filterStripes(file, dataSchema,
+      // TODO, Do we need to check if every file has the same CompressionKind and schema and
+      // The requestedMapping?
+      val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
         readDataSchema, partitionSchema)
       clippedStripes ++= orcPartitionReaderContext.blockIterator.map(block =>
         OrcSingleStripeMeta(
-          path,
+          orcPartitionReaderContext.filePath,
           OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
           file.partitionValues,
           OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
@@ -240,7 +242,7 @@ case class GpuOrcPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
 
-    val (ctx, _) = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
+    val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
       partitionSchema)
     if (ctx == null) {
       new EmptyPartitionReader[ColumnarBatch]
@@ -249,102 +251,6 @@ case class GpuOrcPartitionReaderFactory(
         readDataSchema, debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics))
       ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema)
     }
-  }
-}
-
-// Collection of methods primarily from OrcUtils copied here to avoid shims
-object GpuOrcPartitionReaderFactory {
-  /**
-   * @return Returns the combination of requested column ids from the given ORC file and
-   *         boolean flag to find if the pruneCols is allowed or not. Requested Column id can be
-   *         -1, which means the requested column doesn't exist in the ORC file. Returns None
-   *         if the given ORC file is empty.
-   */
-  def requestedColumnIds(
-      isCaseSensitive: Boolean,
-      dataSchema: StructType,
-      requiredSchema: StructType,
-      reader: Reader): Option[(Array[Int], Boolean)] = {
-    val orcFieldNames = reader.getSchema.getFieldNames.asScala
-    if (orcFieldNames.isEmpty) {
-      // SPARK-8501: Some old empty ORC files always have an empty schema stored in their footer.
-      None
-    } else {
-      if (orcFieldNames.forall(_.startsWith("_col"))) {
-        // This is a ORC file written by Hive, no field names in the physical schema, assume the
-        // physical schema maps to the data scheme by index.
-        assert(orcFieldNames.length <= dataSchema.length, "The given data schema " +
-            s"${dataSchema.catalogString} has less fields than the actual ORC physical schema, " +
-            "no idea which columns were dropped, fail to read.")
-        // for ORC file written by Hive, no field names
-        // in the physical schema, there is a need to send the
-        // entire dataSchema instead of required schema.
-        // So pruneCols is not done in this case
-        Some((requiredSchema.fieldNames.map { name =>
-          val index = dataSchema.fieldIndex(name)
-          if (index < orcFieldNames.length) {
-            index
-          } else {
-            -1
-          }
-        }, false))
-      } else {
-        if (isCaseSensitive) {
-          Some((requiredSchema.fieldNames.zipWithIndex.map { case (name, idx) =>
-            if (orcFieldNames.indexWhere(caseSensitiveResolution(_, name)) != -1) {
-              idx
-            } else {
-              -1
-            }
-          }, true))
-        } else {
-          // Do case-insensitive resolution only if in case-insensitive mode
-          val caseInsensitiveOrcFieldMap = orcFieldNames.groupBy(_.toLowerCase(Locale.ROOT))
-          Some((requiredSchema.fieldNames.zipWithIndex.map { case (requiredFieldName, idx) =>
-            caseInsensitiveOrcFieldMap
-              .get(requiredFieldName.toLowerCase(Locale.ROOT))
-              .map { matchedOrcFields =>
-                if (matchedOrcFields.size > 1) {
-                  // Need to fail if there is ambiguity, i.e. more than one field is matched.
-                  val matchedOrcFieldsString = matchedOrcFields.mkString("[", ", ", "]")
-                  reader.close()
-                  throw new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """
-                      + s"$matchedOrcFieldsString in case-insensitive mode")
-                } else {
-                  idx
-                }
-              }.getOrElse(-1)
-          }, true))
-        }
-      }
-    }
-  }
-
-  /**
-   * Returns the result schema to read from ORC file. In addition, It sets
-   * the schema string to 'orc.mapred.input.schema' so ORC reader can use later.
-   *
-   * @param canPruneCols Flag to decide whether pruned cols schema is send to resultSchema
-   *                     or to send the entire dataSchema to resultSchema.
-   * @param dataSchema   Schema of the orc files.
-   * @param readDataSchema Result data schema created after pruning cols.
-   * @param partitionSchema Schema of partitions.
-   * @param conf Hadoop Configuration.
-   * @return Returns the result schema as string.
-   */
-  def orcResultSchemaString(
-      canPruneCols: Boolean,
-      dataSchema: StructType,
-      readDataSchema: StructType,
-      partitionSchema: StructType,
-      conf: Configuration): String = {
-    val resultSchemaString = if (canPruneCols) {
-      OrcUtils.orcTypeDescriptionString(readDataSchema)
-    } else {
-      OrcUtils.orcTypeDescriptionString(StructType(dataSchema.fields ++ partitionSchema.fields))
-    }
-    OrcConf.MAPRED_INPUT_SCHEMA.setString(conf, resultSchemaString)
-    resultSchemaString
   }
 }
 
@@ -372,19 +278,20 @@ case class OrcOutputStripe(
  * @param blockIterator An iterator over the ORC output stripes
  */
 case class OrcPartitionReaderContext(
+    filePath: Path,
+    conf: Configuration,
+    fileSchema: TypeDescription,
     updatedReadSchema: TypeDescription,
     evolution: SchemaEvolution,
-    dataReader: DataReader,
-    orcReader: Reader,
+    fileTail: OrcProto.FileTail,
+    compressionSize: Int,
+    compressionKind: CompressionKind,
+    readerOpts: Reader.Options,
     blockIterator: BufferedIterator[OrcOutputStripe],
     requestedMapping: Option[Array[Int]]) {
   private var isClosed = false
 
   def cleanUp() = {
-    if (!isClosed) {
-      Seq(orcReader, dataReader).safeClose()
-      isClosed =  true
-    }
   }
 }
 
@@ -394,14 +301,17 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
       ctx: OrcPartitionReaderContext,
       out: WritableByteChannel,
       inputDataRanges: DiskRangeList): Unit = {
-    val bufferChunks = ctx.dataReader.readFileData(inputDataRanges, 0, false)
-    var current = bufferChunks
-    while (current != null) {
-      out.write(current.getData)
-      if (ctx.dataReader.isTrackingDiskRanges && current.isInstanceOf[BufferChunk]) {
-        ctx.dataReader.releaseBuffer(current.asInstanceOf[BufferChunk].getChunk)
+
+    withResource(OrcTools.buildDataReader(ctx)) { dataReader =>
+      val bufferChunks = dataReader.readFileData(inputDataRanges, 0, false)
+      var current = bufferChunks
+      while (current != null) {
+        out.write(current.getData)
+        if (dataReader.isTrackingDiskRanges && current.isInstanceOf[BufferChunk]) {
+          dataReader.releaseBuffer(current.asInstanceOf[BufferChunk].getChunk)
+        }
+        current = current.next
       }
-      current = current.next
     }
   }
 
@@ -409,7 +319,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
   protected def buildReaderSchema(ctx: OrcPartitionReaderContext): TypeDescription = {
     if (ctx.requestedMapping.isDefined) {
       // filter top-level schema based on requested mapping
-      val orcSchema = ctx.orcReader.getSchema
+      val orcSchema = ctx.fileSchema
       val orcSchemaNames = orcSchema.getFieldNames
       val orcSchemaChildren = orcSchema.getChildren
       val readerSchema = TypeDescription.createStruct()
@@ -426,8 +336,6 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
 
   protected def cleanUpOrc(ctx: OrcPartitionReaderContext) = {
     if (ctx != null) {
-      if (ctx.orcReader != null) ctx.orcReader.close()
-      if (ctx.dataReader != null) ctx.dataReader.close()
     }
   }
 }
@@ -525,8 +433,8 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging with Arm wi
     }
 
     // the original file's footer and postscript should be worst-case
-    size += ctx.orcReader.getFileTail.getPostscript.getFooterLength
-    size += ctx.orcReader.getFileTail.getPostscriptLength
+    size += ctx.fileTail.getPostscript.getFooterLength
+    size += ctx.fileTail.getPostscriptLength
 
     // and finally the single-byte postscript length at the end of the file
     size += 1
@@ -583,7 +491,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging with Arm wi
       val postScriptStartOffset = rawOut.getPos
 
       // write the postscript (uncompressed)
-      val postscript = OrcProto.PostScript.newBuilder(ctx.orcReader.getFileTail.getPostscript)
+      val postscript = OrcProto.PostScript.newBuilder(ctx.fileTail.getPostscript)
         .setFooterLength(postScriptStartOffset - footerStartOffset)
         .setMetadataLength(0)
         .build()
@@ -642,16 +550,11 @@ class GpuOrcPartitionReader(
       isFirstBatch = false
     }
 
-    batch.map(_ => true).getOrElse {
-      // After finishing reading, we should clean up ctx early, just in case leaking orc readers
-      cleanUpOrc(ctx)
-      false
-    }
+    batch.isDefined
   }
 
   override def close(): Unit = {
     super.close()
-    cleanUpOrc(ctx)
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
@@ -734,6 +637,47 @@ object OrcMultiFileThreadPoolFactory {
   }
 }
 
+private object OrcTools extends Arm {
+
+  def buildDataReader(ctx: OrcPartitionReaderContext): DataReader = {
+    val fs = ctx.filePath.getFileSystem(ctx.conf)
+    buildDataReader(ctx.compressionSize, ctx.compressionKind, ctx.fileSchema, ctx.readerOpts,
+      ctx.filePath, fs, ctx.conf)
+  }
+
+  def buildDataReader(
+      compressionSize: Int,
+      compressionKind: CompressionKind,
+      fileSchema: TypeDescription,
+      readerOpts: Reader.Options,
+      filePath: Path,
+      fs: FileSystem,
+      conf: Configuration): DataReader = {
+    if (readerOpts.getDataReader != null) {
+      readerOpts.getDataReader
+    } else {
+      val zeroCopy: Boolean = if (readerOpts.getUseZeroCopy != null) {
+        readerOpts.getUseZeroCopy
+      } else {
+        OrcConf.USE_ZEROCOPY.getBoolean(conf)
+      }
+      val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
+      val file = filePath.getFileSystem(conf).open(filePath)
+      //noinspection ScalaDeprecation
+      RecordReaderUtils.createDefaultDataReader(DataReaderProperties.builder()
+        .withBufferSize(compressionSize)
+        .withCompression(compressionKind)
+        .withFileSystem(fs)
+        .withPath(filePath)
+        .withFile(file) // explicitly specify the FSDataInputStream
+        .withTypeCount(org.apache.orc.OrcUtils.getOrcTypes(fileSchema).size)
+        .withZeroCopy(zeroCopy)
+        .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
+        .build())
+    }
+  }
+
+}
 /**
  * A tool to filter stripes
  *
@@ -752,7 +696,7 @@ private case class GpuOrcFileFilterHandler(
       partFile: PartitionedFile,
       dataSchema: StructType,
       readDataSchema: StructType,
-      partitionSchema: StructType): (OrcPartitionReaderContext, Path) = {
+      partitionSchema: StructType): OrcPartitionReaderContext = {
 
     val conf = broadcastedConf.value.value
     OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
@@ -761,9 +705,9 @@ private case class GpuOrcFileFilterHandler(
     val fs = filePath.getFileSystem(conf)
     val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
 
-    closeOnExcept(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
-      val resultedColPruneInfo = GpuOrcPartitionReaderFactory.requestedColumnIds(
-        isCaseSensitive, dataSchema, readDataSchema, orcReader)
+    withResource(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
+      val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
+        readDataSchema, orcReader)
       if (resultedColPruneInfo.isEmpty) {
         orcReader.close()
         // Be careful when the OrcPartitionReaderContext is null, we should change
@@ -771,8 +715,7 @@ private case class GpuOrcFileFilterHandler(
         null
       } else {
         val (requestedColIds, canPruneCols) = resultedColPruneInfo.get
-        GpuOrcPartitionReaderFactory.orcResultSchemaString(canPruneCols, dataSchema, readDataSchema,
-          partitionSchema, conf)
+        orcResultSchemaString(canPruneCols, dataSchema, readDataSchema, partitionSchema, conf)
         assert(requestedColIds.length == readDataSchema.length,
           "[BUG] requested column IDs do not match required schema")
         // Only need to filter ORC's schema evolution if it cannot prune directly
@@ -783,11 +726,13 @@ private case class GpuOrcFileFilterHandler(
         }
         val fullSchema = StructType(dataSchema ++ partitionSchema)
         val readerOpts = buildOrcReaderOpts(conf, orcReader, partFile, fullSchema)
-        val dataReader = buildDataReader(orcReader, readerOpts, filePath, fs, conf)
 
-        val ctx = new GpuOrcPartitionReaderUtils(conf, partFile, orcFileReaderOpts, orcReader,
-          readerOpts, dataReader, requestedMapping).getOrcPartitionReaderContext
-        (ctx, filePath)
+        withResource(OrcTools.buildDataReader(orcReader.getCompressionSize,
+          orcReader.getCompressionKind, orcReader.getSchema, readerOpts, filePath, fs, conf)) {
+          dataReader =>
+            new GpuOrcPartitionReaderUtils(filePath, conf, partFile, orcFileReaderOpts, orcReader,
+              readerOpts, dataReader, requestedMapping).getOrcPartitionReaderContext
+        }
       }
     }
   }
@@ -806,38 +751,105 @@ private case class GpuOrcFileFilterHandler(
     readerOpts
   }
 
-  private def buildDataReader(
-      orcReader: Reader,
-      readerOpts: Reader.Options,
-      filePath: Path,
-      fs: FileSystem,
-      conf: Configuration): DataReader = {
-    if (readerOpts.getDataReader != null) {
-      readerOpts.getDataReader
+
+  /**
+   * @return Returns the combination of requested column ids from the given ORC file and
+   *         boolean flag to find if the pruneCols is allowed or not. Requested Column id can be
+   *         -1, which means the requested column doesn't exist in the ORC file. Returns None
+   *         if the given ORC file is empty.
+   */
+  def requestedColumnIds(
+      isCaseSensitive: Boolean,
+      dataSchema: StructType,
+      requiredSchema: StructType,
+      reader: Reader): Option[(Array[Int], Boolean)] = {
+    val orcFieldNames = reader.getSchema.getFieldNames.asScala
+    if (orcFieldNames.isEmpty) {
+      // SPARK-8501: Some old empty ORC files always have an empty schema stored in their footer.
+      None
     } else {
-      val zeroCopy: Boolean = if (readerOpts.getUseZeroCopy != null) {
-        readerOpts.getUseZeroCopy
+      if (orcFieldNames.forall(_.startsWith("_col"))) {
+        // This is a ORC file written by Hive, no field names in the physical schema, assume the
+        // physical schema maps to the data scheme by index.
+        assert(orcFieldNames.length <= dataSchema.length, "The given data schema " +
+          s"${dataSchema.catalogString} has less fields than the actual ORC physical schema, " +
+          "no idea which columns were dropped, fail to read.")
+        // for ORC file written by Hive, no field names
+        // in the physical schema, there is a need to send the
+        // entire dataSchema instead of required schema.
+        // So pruneCols is not done in this case
+        Some((requiredSchema.fieldNames.map { name =>
+          val index = dataSchema.fieldIndex(name)
+          if (index < orcFieldNames.length) {
+            index
+          } else {
+            -1
+          }
+        }, false))
       } else {
-        OrcConf.USE_ZEROCOPY.getBoolean(conf)
+        if (isCaseSensitive) {
+          Some((requiredSchema.fieldNames.zipWithIndex.map { case (name, idx) =>
+            if (orcFieldNames.indexWhere(caseSensitiveResolution(_, name)) != -1) {
+              idx
+            } else {
+              -1
+            }
+          }, true))
+        } else {
+          // Do case-insensitive resolution only if in case-insensitive mode
+          val caseInsensitiveOrcFieldMap = orcFieldNames.groupBy(_.toLowerCase(Locale.ROOT))
+          Some((requiredSchema.fieldNames.zipWithIndex.map { case (requiredFieldName, idx) =>
+            caseInsensitiveOrcFieldMap
+              .get(requiredFieldName.toLowerCase(Locale.ROOT))
+              .map { matchedOrcFields =>
+                if (matchedOrcFields.size > 1) {
+                  // Need to fail if there is ambiguity, i.e. more than one field is matched.
+                  val matchedOrcFieldsString = matchedOrcFields.mkString("[", ", ", "]")
+                  reader.close()
+                  throw new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """
+                    + s"$matchedOrcFieldsString in case-insensitive mode")
+                } else {
+                  idx
+                }
+              }.getOrElse(-1)
+          }, true))
+        }
       }
-      val maxDiskRangeChunkLimit = OrcConf.ORC_MAX_DISK_RANGE_CHUNK_LIMIT.getInt(conf)
-      //noinspection ScalaDeprecation
-      RecordReaderUtils.createDefaultDataReader(DataReaderProperties.builder()
-        .withBufferSize(orcReader.getCompressionSize)
-        .withCompression(orcReader.getCompressionKind)
-        .withFileSystem(fs)
-        .withPath(filePath)
-        .withTypeCount(org.apache.orc.OrcUtils.getOrcTypes(orcReader.getSchema).size)
-        .withZeroCopy(zeroCopy)
-        .withMaxDiskRangeChunkLimit(maxDiskRangeChunkLimit)
-        .build())
     }
+  }
+
+  /**
+   * Returns the result schema to read from ORC file. In addition, It sets
+   * the schema string to 'orc.mapred.input.schema' so ORC reader can use later.
+   *
+   * @param canPruneCols Flag to decide whether pruned cols schema is send to resultSchema
+   *                     or to send the entire dataSchema to resultSchema.
+   * @param dataSchema   Schema of the orc files.
+   * @param readDataSchema Result data schema created after pruning cols.
+   * @param partitionSchema Schema of partitions.
+   * @param conf Hadoop Configuration.
+   * @return Returns the result schema as string.
+   */
+  def orcResultSchemaString(
+      canPruneCols: Boolean,
+      dataSchema: StructType,
+      readDataSchema: StructType,
+      partitionSchema: StructType,
+      conf: Configuration): String = {
+    val resultSchemaString = if (canPruneCols) {
+      OrcUtils.orcTypeDescriptionString(readDataSchema)
+    } else {
+      OrcUtils.orcTypeDescriptionString(StructType(dataSchema.fields ++ partitionSchema.fields))
+    }
+    OrcConf.MAPRED_INPUT_SCHEMA.setString(conf, resultSchemaString)
+    resultSchemaString
   }
 
   /**
    * An utility to get OrcPartitionReaderContext which contains some necessary information
    */
   private class GpuOrcPartitionReaderUtils(
+      filePath: Path,
       conf: Configuration,
       partFile: PartitionedFile,
       orcFileReaderOpts: OrcFile.ReaderOptions,
@@ -862,8 +874,9 @@ private case class GpuOrcFileFilterHandler(
       val stripes = buildOutputStripes(splitStripes, evolution,
         sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
         orcReader.getWriterVersion)
-      OrcPartitionReaderContext(updatedReadSchema, evolution, dataReader, orcReader,
-        stripes.iterator.buffered, requestedMapping)
+      OrcPartitionReaderContext(filePath, conf, orcReader.getSchema, updatedReadSchema, evolution,
+        orcReader.getFileTail, orcReader.getCompressionSize, orcReader.getCompressionKind,
+        readerOpts, stripes.iterator.buffered, requestedMapping)
     }
 
     /**
@@ -1153,7 +1166,7 @@ class MultiFileCloudOrcPartitionReader(
       val startingBytesRead = fileSystemBytesRead()
 
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
-      val (ctx, _) = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
+      val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
         partitionSchema)
       try {
         if (ctx == null || ctx.blockIterator.isEmpty) {
@@ -1197,8 +1210,6 @@ class MultiFileCloudOrcPartitionReader(
         case e: Throwable =>
           hostBuffers.foreach(_._1.safeClose())
           throw e
-      } finally {
-        cleanUpOrc(ctx)
       }
     }
   }
@@ -1341,11 +1352,11 @@ trait OrcCodecWritingHelper extends Arm {
         override def suppress(): Unit = throw new UnsupportedOperationException(
           "suppress should not be called")
       }
-      val codec = OrcCodecPool.getCodec(ctx.orcReader.getCompressionKind)
+      val codec = OrcCodecPool.getCodec(ctx.compressionKind)
       try {
         // buffer size must be greater than zero or writes hang (ORC-381)
-        val orcBufferSize = if (ctx.orcReader.getCompressionSize > 0) {
-          ctx.orcReader.getCompressionSize
+        val orcBufferSize = if (ctx.compressionSize > 0) {
+          ctx.compressionSize
         } else {
           // note that this buffer is just for writing meta-data
           OrcConf.BUFFER_SIZE.getDefaultValue.asInstanceOf[Int]
@@ -1356,7 +1367,7 @@ trait OrcCodecWritingHelper extends Arm {
           block(outChannel, protoWriter, codecStream)
         }
       } finally {
-        OrcCodecPool.returnCodec(ctx.orcReader.getCompressionKind, codec)
+        OrcCodecPool.returnCodec(ctx.compressionKind, codec)
       }
     }
   }
@@ -1545,7 +1556,7 @@ class MultiFileOrcPartitionReader(
         // the ctx is the same for all stripes
         val ctx = stripes(0).ctx
         // the original file's footer should be worst-case
-        size += ctx.orcReader.getFileTail.getPostscript.getFooterLength
+        size += ctx.fileTail.getPostscript.getFooterLength
     }
     // the size of Postscript must be less than 256 bytes.
     size += 256
@@ -1728,7 +1739,7 @@ class MultiFileOrcPartitionReader(
             val footerLength = rawOut.getPos
 
             // write the postscript (uncompressed)
-            val postscript = OrcProto.PostScript.newBuilder(ctx.orcReader.getFileTail.getPostscript)
+            val postscript = OrcProto.PostScript.newBuilder(ctx.fileTail.getPostscript)
               .setFooterLength(footerLength)
               .setMetadataLength(0)
               .build()
