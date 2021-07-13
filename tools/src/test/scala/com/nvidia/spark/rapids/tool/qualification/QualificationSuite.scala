@@ -262,9 +262,21 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
   }
 
+  // this event log has both decimal and non-decimal so comes out partial
+  // it has both reading decimal, multiplication and join on decimal
   test("test decimal problematic") {
     val logFiles = Array(s"$logDir/decimal_part_eventlog.zstd")
     runQualificationTest(logFiles, "decimal_part_expectation.csv")
+  }
+
+  test("test decimal udf same sql problematic") {
+    val logFiles = Array(s"$logDir/decimal_udf_same_sql_eventlog.zstd")
+    runQualificationTest(logFiles, "decimal_udf_same_sql_expectation.csv")
+  }
+
+  test("test decimal udf diff sql problematic") {
+    val logFiles = Array(s"$logDir/decimal_udf_diff_sql_eventlog.zstd")
+    runQualificationTest(logFiles, "decimal_udf_diff_sql_expectation.csv")
   }
 
   test("sql metric agg") {

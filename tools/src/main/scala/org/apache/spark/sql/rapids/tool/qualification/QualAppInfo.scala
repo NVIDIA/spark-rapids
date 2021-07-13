@@ -103,7 +103,7 @@ class QualAppInfo(
   }
 
   private def getPotentialProblems: String = {
-    probNotDataset.values.flatten.toSet.mkString(",")
+    probNotDataset.values.flatten.toSet.mkString(":")
   }
 
   private def getSQLDurationProblematic: Long = {
