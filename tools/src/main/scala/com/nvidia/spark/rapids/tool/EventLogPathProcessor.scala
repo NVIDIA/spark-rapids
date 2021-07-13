@@ -19,16 +19,17 @@ package com.nvidia.spark.rapids.tool
 import java.io.FileNotFoundException
 import java.time.LocalDateTime
 import java.util.zip.ZipOutputStream
-
 import scala.collection.mutable.LinkedHashMap
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
-
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.rapids.tool.AppFilter
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
+import org.rogach.scallop.ScallopOption
+
+import scala.collection.mutable
 
 sealed trait EventLogInfo {
   def eventLog: Path
@@ -183,6 +184,67 @@ object EventLogPathProcessor extends Logging {
       matched.take(numberofEventLogs)
     }.getOrElse(matchedLogs)
 
+    filteredLogs.keys.toSeq
+  }
+
+  def qualProcessAllPaths(
+      numOutputRows: Int,
+      filterArgs: mutable.Map[String, ScallopOption[String]],
+      eventLogsPaths: List[String],
+      hadoopConf: Configuration): Seq[EventLogInfo] = {
+
+    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, hadoopConf)).toMap
+
+    logDebug("Paths after stringToPath: " + logsWithTimestamp)
+    // Filter the event logs to be processed based on the criteria. If it is not provided in the
+    // command line, then return all the event logs processed above.
+    val matchedLogs = filterArgs("matchEventLogs").map { strMatch =>
+      logsWithTimestamp.filterKeys(_.eventLog.getName.contains(strMatch))
+    }.getOrElse(logsWithTimestamp)
+
+    val filterNLogs = filterArgs("filterCriteria").toOption
+    var filteredLogs = filterNLogs.map { filter =>
+      val filteredInfo = filterNLogs.get.split("-")
+      val numberofEventLogs = filteredInfo(0).toInt
+      val criteria = filteredInfo(1)
+      val matched = if (criteria.equals("newest")) {
+        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 > _._2): _*)
+      } else if (criteria.equals("oldest")) {
+        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
+      } else {
+        logError("Criteria should be either newest or oldest")
+        Map.empty[EventLogInfo, Long]
+      }
+      matched.take(numberofEventLogs)
+    }.getOrElse(matchedLogs)
+
+    println("PRINTING KEYS")
+    println(filterArgs.keys.toSeq)
+
+    if (filterArgs.keys.exists(_=="applicationName") &&
+        filterArgs("applicationName").toOption != None) {
+      println("Application name exists")
+        val finalevents = filteredLogs.map { x =>
+        val temp = new AppFilter(numOutputRows, x._1, hadoopConf)
+        temp.processEvents()
+        (temp.appInfo, x)
+      }
+      println(s"length of finalEvents ${finalevents.size}")
+      println(s"finalEvents is ${finalevents}")
+      val applicationN = filterArgs("applicationName")
+
+      // THIS SEEMS TO BE INCORRECT
+      val test:scala.collection.Map[EventLogInfo, Long] = finalevents.map { x =>
+          x._1.get.appName match {
+            case a if a.equals(applicationN) => x._2
+            //case _ =>
+          }
+      }
+      println("FINAL ANSWER IS: ")
+      println(test)
+    } else {
+      println("Nothing exists")
+    }
     filteredLogs.keys.toSeq
   }
 

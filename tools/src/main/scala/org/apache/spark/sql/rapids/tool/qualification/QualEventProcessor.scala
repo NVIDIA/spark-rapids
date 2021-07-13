@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
-import org.apache.spark.sql.rapids.tool.{EventProcessorBase, ToolUtils}
+import org.apache.spark.sql.rapids.tool.{AppFilter, EventProcessorBase, ToolUtils}
 
 class QualEventProcessor() extends EventProcessorBase {
 
@@ -55,6 +55,22 @@ class QualEventProcessor() extends EventProcessorBase {
     )
     app.appInfo = Some(thisAppInfo)
     app.appId = event.appId.getOrElse("")
+  }
+
+  override def doSparkListenerApplicationStart(
+      app: AppFilter,
+      event: SparkListenerApplicationStart): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val thisAppInfo = QualApplicationInfo(
+      event.appName,
+      event.appId,
+      event.time,
+      event.sparkUser,
+      None,
+      None,
+      endDurationEstimated = false
+    )
+    app.appInfo = Some(thisAppInfo)
   }
 
   override def doSparkListenerTaskEnd(
