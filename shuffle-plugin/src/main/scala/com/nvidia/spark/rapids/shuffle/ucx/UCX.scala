@@ -489,7 +489,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
               }
             }
           }
-        })
+        },  UcpConstants.UCP_AM_FLAG_PERSISTENT_DATA |
+          UcpConstants.UCP_AM_FLAG_WHOLE_MSG)
     })
   }
 

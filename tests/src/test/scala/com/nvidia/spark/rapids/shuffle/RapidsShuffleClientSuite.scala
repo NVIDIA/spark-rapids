@@ -132,8 +132,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
     val contigBuffSize = 100000
-    val (_, response) = RapidsShuffleTestHelper.mockMetaResponse(
-      mockTransaction, contigBuffSize, 3)
 
     client.doFetch(shuffleRequests.map(_._1), mockHandler)
 
@@ -150,8 +148,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     // this is not called since a message implies success
     verify(mockTransaction, times(0)).releaseMessage()
-
-    assert(response.dbb.isClosed)
   }
 
   test("errored metadata fetch is handled") {
@@ -165,9 +161,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
   test("exception in metadata fetch escalates to handler"){
     when(mockTransaction.getStatus).thenThrow(new RuntimeException("test exception"))
     val shuffleRequests = RapidsShuffleTestHelper.getShuffleBlocks
-    val contigBuffSize = 100000
-    var (_, response) = RapidsShuffleTestHelper.mockMetaResponse(
-      mockTransaction, contigBuffSize, 3)
 
     client.doFetch(shuffleRequests.map(_._1), mockHandler)
 
@@ -182,8 +175,6 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
 
     // the transport will receive no pending requests (for buffers) for queuing
     verify(mockTransport, times(0)).queuePending(any())
-
-    assert(response.dbb.isClosed)
   }
 
   test("successful buffer fetch") {

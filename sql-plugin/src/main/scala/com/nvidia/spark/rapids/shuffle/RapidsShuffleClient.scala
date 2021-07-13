@@ -202,34 +202,39 @@ class RapidsShuffleClient(
       tx: Transaction,
       shuffleRequests: Seq[ShuffleBlockBatchId],
       handler: RapidsShuffleFetchHandler): Unit = {
-    withResource(tx) { _ =>
-      tx.getStatus match {
-        case TransactionStatus.Success =>
-          withResource(tx.releaseMessage()) { resp =>
-            withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
-              try {
-                // start the receives
-                val metadataResponse =
-                  ShuffleMetadata.getMetadataResponse(resp.getBuffer())
+    try {
+      withResource(tx) { _ =>
+        tx.getStatus match {
+          case TransactionStatus.Success =>
+            withResource(tx.releaseMessage()) { resp =>
+              withResource(new NvtxRange("Client.handleMeta", NvtxColor.CYAN)) { _ =>
+                try {
+                  // start the receives
+                  val metadataResponse =
+                    ShuffleMetadata.getMetadataResponse(resp.getBuffer())
 
-                logDebug(s"Received from ${tx} response: \n:" +
-                  s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
+                  logDebug(s"Received from ${tx} response: \n:" +
+                    s"${ShuffleMetadata.printResponse("received response", metadataResponse)}")
 
-                // signal to the handler how many batches are expected
-                handler.start(metadataResponse.tableMetasLength())
+                  // signal to the handler how many batches are expected
+                  handler.start(metadataResponse.tableMetasLength())
 
-                // queue up the receives
-                queueTransferRequests(metadataResponse, handler)
-              } catch {
-                case t: Throwable =>
-                  handler.transferError("Error occurred while handling metadata", t)
+                  // queue up the receives
+                  queueTransferRequests(metadataResponse, handler)
+                } catch {
+                  case t: Throwable =>
+                    handler.transferError("Error occurred while handling metadata", t)
+                }
               }
             }
-          }
-        case _ =>
-          handler.transferError(
-            tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request $tx"))
+          case _ =>
+            handler.transferError(
+              tx.getErrorMessage.getOrElse(s"Unsuccessful metadata request $tx"))
+        }
       }
+    } catch {
+      case t: Throwable =>
+        handler.transferError(s"Exception while handling metadata response $tx", t)
     }
   }
 

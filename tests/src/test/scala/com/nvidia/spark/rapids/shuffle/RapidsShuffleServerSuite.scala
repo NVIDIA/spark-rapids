@@ -215,7 +215,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
       val mockServerConnection = mock[ServerConnection]
       val ac = ArgumentCaptor.forClass(classOf[TransactionCallback])
       when(mockServerConnection.send(
-        any(), any(), any(), any[ByteBuffer](), ac.capture())).thenReturn(mockTransaction)
+        any(), any(), any(), any[MemoryBuffer](), ac.capture())).thenReturn(mockTransaction)
 
       val mockRequestHandler = mock[RapidsShuffleRequestHandler]
       val rapidsBuffer = mock[RapidsBuffer]
