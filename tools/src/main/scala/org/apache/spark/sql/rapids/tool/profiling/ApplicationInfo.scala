@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.{immutable, mutable, Map}
 import scala.collection.mutable.ArrayBuffer
-import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
@@ -31,7 +30,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
-import org.apache.spark.sql.execution.ui.SparkPlanGraph
+import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
 import org.apache.spark.sql.rapids.tool.AppBase
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.ui.UIUtils
@@ -456,16 +455,19 @@ class ApplicationInfo(
     }
   }
 
+
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
-  def processSQLPlanMetrics(): Unit ={
+  def processSQLPlanMetrics(): Unit = {
     for ((sqlID, planInfo) <- sqlPlan){
+      checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
+        checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {
@@ -714,6 +716,7 @@ class ApplicationInfo(
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |t.numExecutors, t.totalCores as executorCores,
          |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
          |null as executorMemory, null as numGpusPerExecutor,
@@ -745,6 +748,7 @@ class ApplicationInfo(
          |""".stripMargin
     } else {
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |count(executorID) as numExecutors,
          |first(totalCores) as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
@@ -885,7 +889,7 @@ class ApplicationInfo(
        |and s.accumulatorId=t.accumulatorId
        |and s.sqlID=p.sqlID and s.accumulatorId=p.accumulatorId
        |)
-       |select sqlID, nodeID, nodeName,
+       |select $index as appIndex, sqlID, nodeID, nodeName,
        |accumulatorId, name, max(value) as max_value, metricType
        |from allaccums
        |group by sqlID, nodeID, nodeName, accumulatorId, name, metricType
@@ -921,14 +925,14 @@ class ApplicationInfo(
   }
 
   def getblockManagersRemoved: String = {
-    s"""select executorID, time
+    s"""select $index as appIndex, executorID, time
        |from blockManagersRemovedDF_$index
        |order by cast(executorID as long)
        |""".stripMargin
   }
 
   def getExecutorsRemoved: String = {
-    s"""select executorID, time,
+    s"""select $index as appIndex, executorID, time,
        |substr(reason, 1, 100) reason_first100char
        |from executorsRemovedDF_$index
        |order by cast(executorID as long)

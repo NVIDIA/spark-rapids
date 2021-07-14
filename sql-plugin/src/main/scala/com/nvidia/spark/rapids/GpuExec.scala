@@ -68,6 +68,7 @@ object GpuMetric extends Logging {
   val SPILL_AMOUNT = "spillData"
   val SPILL_AMOUNT_DISK = "spillDisk"
   val SPILL_AMOUNT_HOST = "spillHost"
+  val NUM_TASKS_FALL_BACKED = "numTasksFallBacked"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -96,6 +97,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_SPILL_AMOUNT = "bytes spilled from GPU"
   val DESCRIPTION_SPILL_AMOUNT_DISK = "bytes spilled to disk"
   val DESCRIPTION_SPILL_AMOUNT_HOST = "bytes spilled to host"
+  val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric

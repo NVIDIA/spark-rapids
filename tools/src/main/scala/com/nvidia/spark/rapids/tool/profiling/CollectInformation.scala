@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.mutable.ArrayBuffer
-
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 case class StageMetrics(numTasks: Int, duration: String)
@@ -64,6 +65,30 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }
   }
 
+  // Print read data schema information
+  def printDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+    val messageHeader = "\nData Source Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    apps.foreach { app =>
+      val dfWithApp = getDataSourceInfo(app, sparkSession)
+      // don't check if dataframe empty because that runs a Spark job
+      if (app.dataSourceInfo.nonEmpty) {
+        fileWriter.foreach { writer =>
+          writer.write(ToolUtils.showString(dfWithApp, numRows))
+        }
+      } else {
+        fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+      }
+    }
+  }
+
+  def getDataSourceInfo(app: ApplicationInfo, sparkSession: SparkSession): DataFrame = {
+    import sparkSession.implicits._
+    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"))
+    df.withColumn("appIndex", lit(app.index.toString))
+      .select("appIndex", df.columns:_*)
+  }
+
   // Print executor related information
   def printExecutorInfo(): Unit = {
     val messageHeader = "\nExecutor Information:\n"
@@ -106,7 +131,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printSQLPlans(outputDirectory: String): Unit = {
     for (app <- apps) {
       val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"planDescriptions-${app.appId}")
+        s"planDescriptions-${app.appId}", "SQL Plan")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
           planFileWriter.write("\n=============================\n")

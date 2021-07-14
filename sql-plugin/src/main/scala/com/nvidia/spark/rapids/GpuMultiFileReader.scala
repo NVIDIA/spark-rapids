@@ -308,9 +308,11 @@ abstract class MultiFileCloudPartitionReaderBase(
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
   private var isInitted = false
+  private var isFirstBatch = true
   private val tasks = new ConcurrentLinkedQueue[Future[HostMemoryBuffersWithMetaDataBase]]()
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
-  private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
+  private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
+      .getOrElse(TrampolineUtil.newInputMetrics())
 
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set
@@ -382,11 +384,12 @@ abstract class MultiFileCloudPartitionReaderBase(
       // if we have batch left from the last file read return it
       if (currentFileHostBuffers.isDefined) {
         if (getSizeOfHostBuffers(currentFileHostBuffers.get) == 0) {
+          closeCurrentFileHostBuffers()
           next()
+        } else {
+          batch = readBatch(currentFileHostBuffers.get)
         }
-        batch = readBatch(currentFileHostBuffers.get)
       } else {
-        currentFileHostBuffers = None
         if (filesToRead > 0 && !isDone) {
           val fileBufsAndMeta = tasks.poll.get()
           filesToRead -= 1
@@ -399,6 +402,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           if (getSizeOfHostBuffers(fileBufsAndMeta) == 0) {
             // if sizes are 0 means no rows and no data so skip to next file
             // file data was empty so submit another task if any were waiting
+            closeCurrentFileHostBuffers()
             addNextTaskIfNeeded()
             next()
           } else {
@@ -419,9 +423,15 @@ abstract class MultiFileCloudPartitionReaderBase(
       next()
     }
 
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
+
     batch.isDefined
   }
 
@@ -436,10 +446,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     }
   }
 
-  override def close(): Unit = {
-    // this is more complicated because threads might still be processing files
-    // in cases close got called early for like limit() calls
-    isDone = true
+  private def closeCurrentFileHostBuffers(): Unit = {
     currentFileHostBuffers.foreach { current =>
       current.memBuffersAndSizes.foreach { case (buf, _) =>
         if (buf != null) {
@@ -448,6 +455,13 @@ abstract class MultiFileCloudPartitionReaderBase(
       }
     }
     currentFileHostBuffers = None
+  }
+
+  override def close(): Unit = {
+    // this is more complicated because threads might still be processing files
+    // in cases close got called early for like limit() calls
+    isDone = true
+    closeCurrentFileHostBuffers()
     batch.foreach(_.close())
     batch = None
     tasks.asScala.foreach { task =>
@@ -542,6 +556,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
+  private[this] var isFirstBatch = true
 
   private case class CurrentChunkMeta(
     isCorrectRebaseMode: Boolean,
@@ -677,9 +692,16 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         batch = readBatch()
       }
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
+
     batch.isDefined
   }
 

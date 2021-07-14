@@ -32,7 +32,7 @@ import scala.math.max
 import ai.rapids.cudf._
 import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableColumn
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -367,7 +367,16 @@ private case class OrcPartitionReaderContext(
     dataReader: DataReader,
     orcReader: Reader,
     blockIterator: BufferedIterator[OrcOutputStripe],
-    requestedMapping: Option[Array[Int]])
+    requestedMapping: Option[Array[Int]]) {
+  private var isClosed = false
+
+  def cleanUp() = {
+    if (!isClosed) {
+      Seq(orcReader, dataReader).safeClose()
+      isClosed =  true
+    }
+  }
+}
 
 /**
  * A base ORC partition reader which compose of some common methods
@@ -591,8 +600,7 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
 
   def cleanUpOrc(ctx: OrcPartitionReaderContext) = {
     if (ctx != null) {
-      if (ctx.orcReader != null) ctx.orcReader.close()
-      if (ctx.dataReader != null) ctx.dataReader.close()
+      ctx.cleanUp()
     }
   }
 }
@@ -606,12 +614,8 @@ trait OrcPartitionReaderBase extends Logging with Arm with ScanWithMetrics {
  *
  * @param conf Hadoop configuration
  * @param partFile file split to read
- * @param orcFileReaderOpts file reader options
- * @param orcReader ORC reader instance
- * @param readerOpts reader options
- * @param dataReader ORC data reader instance
+ * @param ctx     the context to provide some necessary information
  * @param readDataSchema Spark schema of what will be read from the file
- * @param requestedMapping map of read schema field index to data schema index if no column names
  * @param debugDumpPrefix path prefix for dumping the memory file or null
  * @param maxReadBatchSizeRows maximum number of rows to read in a batch
  * @param maxReadBatchSizeBytes maximum number of bytes to read in a batch
@@ -627,6 +631,7 @@ class GpuOrcPartitionReader(
     maxReadBatchSizeBytes: Long,
     execMetrics : Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
   with OrcPartitionReaderBase {
+  private[this] var isFirstBatch = true
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -636,10 +641,20 @@ class GpuOrcPartitionReader(
     } else {
       metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-    batch.isDefined
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
+
+    batch.map(_ => true).getOrElse {
+      // After finishing reading, we should clean up ctx early, just in case leaking orc readers
+      cleanUpOrc(ctx)
+      false
+    }
   }
 
   override def close(): Unit = {
@@ -844,20 +859,18 @@ private case class GpuOrcFileFilterHandler(
       OrcProto.Stream.Kind.ROW_INDEX)
 
     def getOrcPartitionReaderContext: OrcPartitionReaderContext = {
-      closeOnExcept(orcReader) { _ =>
-        val updatedReadSchema = checkSchemaCompatibility(orcReader.getSchema, readerOpts.getSchema,
-          readerOpts.getIsSchemaEvolutionCaseAware)
-        val evolution = new SchemaEvolution(orcReader.getSchema, readerOpts.getSchema, readerOpts)
-        val (sargApp, sargColumns) = getSearchApplier(evolution,
-          orcFileReaderOpts.getUseUTCTimestamp)
-        val splitStripes = orcReader.getStripes.asScala.filter(s =>
-          s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
-        val stripes = buildOutputStripes(splitStripes, evolution,
-          sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
-          orcReader.getWriterVersion)
-        OrcPartitionReaderContext(updatedReadSchema, evolution, dataReader, orcReader,
-          stripes.iterator.buffered, requestedMapping)
-      }
+      val updatedReadSchema = checkSchemaCompatibility(orcReader.getSchema, readerOpts.getSchema,
+        readerOpts.getIsSchemaEvolutionCaseAware)
+      val evolution = new SchemaEvolution(orcReader.getSchema, readerOpts.getSchema, readerOpts)
+      val (sargApp, sargColumns) = getSearchApplier(evolution,
+        orcFileReaderOpts.getUseUTCTimestamp)
+      val splitStripes = orcReader.getStripes.asScala.filter(s =>
+        s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
+      val stripes = buildOutputStripes(splitStripes, evolution,
+        sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
+        orcReader.getWriterVersion)
+      OrcPartitionReaderContext(updatedReadSchema, evolution, dataReader, orcReader,
+        stripes.iterator.buffered, requestedMapping)
     }
 
     /**
