@@ -285,9 +285,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
         val plusOne = udf((x: Int) => x + 1)
         import spark.implicits._
-        sparkSession.udf.register("plusOne", plusOne)
-        val df = Seq("1.32").toDF("value")
+        spark.udf.register("plusOne", plusOne)
+        val dfGen = Seq("1.32").toDF("value")
           .selectExpr("CAST(value AS DECIMAL(4, 2)) AS value")
+        val tmpParquet = s"$eventLogDir/decparquet"
+        dfGen.write.parquet(tmpParquet)
+        val df = spark.read.parquet(tmpParquet)
         val df2 = df.withColumn("mult", $"value" * $"value")
         val df4 = df2.withColumn("udfcol", plusOne($"value"))
         df4
