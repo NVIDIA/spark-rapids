@@ -1,5 +1,5 @@
-appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio,appEndDurationEstimated
-Rapids Spark Profiling Tool Unit Tests,local-1622043423018,68.19,"",11128,16319,37.7,false
-Rapids Spark Profiling Tool Unit Tests,local-1623281204390,32.56,"UDF",2032,6240,46.27,false
-Rapids Spark Profiling Tool Unit Tests,local-1621966649543,0.0,"",0,10650,26.65,false
-Rapids Spark Profiling Tool Unit Tests,local-1621955976602,0.0,"",0,10419,25.8,false
+appName,appID,dfRankTotal,potentialProblems,dfDurationFinal,appDuration,executorCPURatio,appEndDurationEstimated,SQL Duration with Potential Problems,SQL Ids with Failures
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,68.19,"",11128,16319,37.81,false,0,""
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,32.56,"UDF",2032,6240,46.27,false,577,""
+Rapids Spark Profiling Tool Unit Tests,local-1621966649543,0.0,"",0,10650,0.0,false,0,""
+Rapids Spark Profiling Tool Unit Tests,local-1621955976602,0.0,"",0,10419,0.0,false,0,""

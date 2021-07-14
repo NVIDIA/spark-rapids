@@ -18,6 +18,15 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 
+object NvtxWithMetrics {
+  def apply(name: String, color: NvtxColor, metric: Option[GpuMetric]): NvtxRange = {
+    metric match {
+      case Some(m) => new NvtxWithMetrics(name, color, m)
+      case _ => new NvtxRange(name, color)
+    }
+  }
+}
+
 /**
  *  NvtxRange with option to pass one or more nano timing metric(s) that are updated upon close
  *  by the amount of time spent in the range

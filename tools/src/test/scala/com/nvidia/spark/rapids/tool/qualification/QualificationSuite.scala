@@ -19,13 +19,17 @@ package com.nvidia.spark.rapids.tool.qualification
 import java.io.File
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.mutable.ListBuffer
+import scala.io.Source
+
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
-import scala.collection.mutable.ListBuffer
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
-import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.rapids.tool.ToolUtils
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -44,43 +48,150 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
+  val schema = new StructType()
+    .add("appName", StringType, true)
+    .add("appID", StringType, true)
+    .add("dfRankTotal", DoubleType, true)
+    .add("potentialProblems", StringType, true)
+    .add("dfDurationFinal", LongType, true)
+    .add("appDuration", LongType, true)
+    .add("executorCPURatio", DoubleType, true)
+    .add("appEndDurationEstimated", BooleanType, true)
+    .add("sqlDurationForProblematic", LongType, true)
+    .add("failedSQLIds", StringType, true)
+
+  def readExpectedFile(expected: File): DataFrame = {
+    ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
+      Some(schema))
+  }
+
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
       shouldReturnEmpty: Boolean = false) = {
-    Seq(true, false).foreach { hasExecCpu =>
-      TrampolineUtil.withTempDir { outpath =>
-        val resultExpectation = new File(expRoot, expectFileName)
-        val outputArgs = Array(
-          "--output-directory",
-          outpath.getAbsolutePath())
-        val allArgs = hasExecCpu match  {
-          case true => outputArgs
-          case false => outputArgs ++ Array("--no-exec-cpu-percent")
-        }
-        val appArgs = new QualificationArgs(allArgs ++ eventLogs)
+    TrampolineUtil.withTempDir { outpath =>
+      val resultExpectation = new File(expRoot, expectFileName)
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath())
 
-        val (exit, dfQualOpt) =
-          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
-            dropTempViews=true)
-        assert(exit == 0)
-        if (shouldReturnEmpty) {
-          assert(dfQualOpt.isEmpty)
-        } else {
-          val schema = new StructType()
-            .add("appName",StringType,true)
-            .add("appID",StringType,true)
-            .add("dfRankTotal",DoubleType,true)
-            .add("potentialProblems",StringType,true)
-            .add("dfDurationFinal",LongType,true)
-            .add("appDuration",LongType,true)
-            .add("executorCPURatio",DoubleType,true)
-            .add("appEndDurationEstimated",BooleanType,true)
-          val dfExpectOrig =
-            ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(),
-              Some(schema))
-          val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
-          assert(dfQualOpt.isDefined)
-          ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)
-        }
+      val appArgs = new QualificationArgs(allArgs ++ eventLogs)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val spark2 = sparkSession
+      import spark2.implicits._
+      val dfTmp = appSum.toDF
+      val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
+      if (shouldReturnEmpty) {
+        assert(appSum.head.sqlDataFrameDuration == 0.0)
+      } else {
+        val dfExpect = readExpectedFile(resultExpectation)
+        assert(!dfQual.isEmpty)
+        ToolTestUtils.compareDataFrames(dfQual, dfExpect)
+      }
+    }
+  }
+
+  test("test order asc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "asc")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 4)
+      assert(appSum.head.appId.equals("local-1622043423018"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 4))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        assert(firstRow.contains("local-1621955976602"))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
+  test("test order desc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "desc")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 4)
+      assert(appSum.head.appId.equals("local-1622043423018"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 4))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        assert(firstRow.contains("local-1622043423018"))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
+  test("test limit desc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "desc",
+        "-n",
+        "2")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines
+        // 4 lines of header and footer, limit is 2
+        assert(lines.size == (4 + 2))
+      } finally {
+        inputSource.close()
       }
     }
   }
@@ -90,6 +201,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val badEventLog = s"$profileLogDir/malformed_json_eventlog.zstd"
     val logFiles = Array(s"$logDir/nds_q86_test", badEventLog)
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
+  }
+
+  test("spark2 eventlog") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val log = s"$profileLogDir/spark2-eventlog.zstd"
+    runQualificationTest(Array(log), "spark2_expectation.csv")
   }
 
   test("test udf event logs") {
@@ -162,41 +279,24 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
-
-        // create new session for tool to use
-        val spark2 = SparkSession
-          .builder()
-          .master("local[*]")
-          .appName("Rapids Spark Profiling Tool Unit Tests")
-          .getOrCreate()
-
         val appArgs = new QualificationArgs(Array(
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))
 
-        val (exit, _) =
-          QualificationMain.mainInternal(spark2, appArgs, writeOutput = false,
-            dropTempViews = false)
+        val (exit, sumInfo) =
+          QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
-
-        val df = spark2.table("sqlAggMetricsDF")
-
-        def fieldIndex(name: String) = df.schema.fieldIndex(name)
-
-        val rows = df.collect()
-        assert(rows.length === 1)
-        val collect = rows.head
-        assert(collect.getString(fieldIndex("description")).startsWith("collect"))
 
         // parse results from listener
         val executorCpuTime = listener.executorCpuTime
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
 
+        val listenerCpuTimePercent = ToolUtils.calculatePercent(executorCpuTime, executorRunTime)
+
         // compare metrics from event log with metrics from listener
-        assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
-        assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
+        assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
       }
     }
   }

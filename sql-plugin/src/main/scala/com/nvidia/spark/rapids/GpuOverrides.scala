@@ -433,9 +433,8 @@ object GpuOverrides {
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
   val CASE_MODIFICATION_INCOMPAT =
-    "in some cases unicode characters change byte width when changing the case. The GPU string " +
-    "conversion does not support these characters. For a full list of unsupported characters " +
-    "see https://github.com/rapidsai/cudf/issues/3132"
+    "the Unicode version used by cuDF and the JVM may differ, resulting in some " +
+    "corner-case characters not changing case correctly."
   val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
   private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r",
@@ -844,14 +843,12 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
-            TypeSig.ARRAY),
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT ).nested(),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
-              TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -904,27 +901,44 @@ object GpuOverrides {
       }),
     expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
-              TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
-            TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }),
     expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN + TypeSig.DATE +
-            TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(), TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -1250,10 +1264,7 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
-      }).incompat(CASE_MODIFICATION_INCOMPAT + " Spark also only sees the space character as " +
-      "a word deliminator, but this will capitalize any character after a non-alphabetic " + 
-      "character.  The behavior will be aligned to match Spark in the future per " +
-      "https://github.com/NVIDIA/spark-rapids/issues/2786."),
+      }).incompat(CASE_MODIFICATION_INCOMPAT),
     expr[Log](
       "Natural log",
       ExprChecks.mathUnary,
@@ -1580,7 +1591,7 @@ object GpuOverrides {
           // types were and cannot recover it. As such for now we are going to do what Spark does,
           // but we have to recompute/recheck the temporary precision to be sure it will fit
           // on the GPU.
-          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
@@ -1778,7 +1789,7 @@ object GpuOverrides {
           // effectively calculating an extra digit of precision. Because cudf does not support this
           // right now we actually increase the scale (and corresponding precision) to get an extra
           // decimal place so we can round it in GpuCheckOverflow
-          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val outputType = GpuDivideUtil.decimalDataType(l, r)

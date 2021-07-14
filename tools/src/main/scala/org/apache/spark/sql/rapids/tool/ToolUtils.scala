@@ -14,19 +14,32 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.tool.profiling
+package org.apache.spark.sql.rapids.tool
 
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.DataFrame
 
 object ToolUtils extends Logging {
 
-  def isGPUMode(properties: collection.mutable.Map[String, String]): Boolean = {
+  def isPluginEnabled(properties: Map[String, String]): Boolean = {
     (properties.getOrElse(config.PLUGINS.key, "").contains("com.nvidia.spark.SQLPlugin")
-        && properties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean)
+      && properties.getOrElse("spark.rapids.sql.enabled", "true").toBoolean)
   }
 
   def showString(df: DataFrame, numRows: Int) = {
     df.showString(numRows, 0)
+  }
+
+  // get percent to 2 decimal places
+  def calculatePercent(first: Long, total: Long): Double = {
+    val firstDec = BigDecimal.decimal(first)
+    val totalDec = BigDecimal.decimal(total)
+    if (firstDec == 0 || totalDec == 0) {
+      0.toDouble
+    } else {
+      val res = (firstDec * 100) / totalDec
+      val resScale = res.setScale(2, BigDecimal.RoundingMode.HALF_UP)
+      resScale.toDouble
+    }
   }
 }

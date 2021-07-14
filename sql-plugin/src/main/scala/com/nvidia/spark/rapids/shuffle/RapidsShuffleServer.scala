@@ -296,16 +296,16 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             logDebug(s"Response will be at header ${TransportUtils.toHex(tx.getHeader)}:\n" +
               s"${ShuffleMetadata.printResponse("responding", materializedResponse)}")
 
-            val responseTx = tx.respond(respBuffer.getBuffer(), responseTx => {
-                withResource(responseTx) { responseTx =>
-                  withResource(respBuffer) { _ =>
-                    if (responseTx.getStatus == TransactionStatus.Error) {
-                      logError(s"Error sending metadata response in tx $tx")
-                    } else {
+            val responseTx = tx.respond(respBuffer.getBuffer(),
+              withResource(_) { responseTx =>
+                responseTx.getStatus match {
+                  case TransactionStatus.Success =>
+                    withResource(respBuffer) { _ =>
                       val stats = responseTx.getStats
                       logDebug(s"Sent metadata ${stats.sendSize} in ${stats.txTimeMs} ms")
                     }
-                  }
+                  case TransactionStatus.Error =>
+                    logError(s"Error sending metadata response in tx $tx")
                 }
               })
             logDebug(s"Waiting for send metadata to complete: $responseTx")
@@ -341,16 +341,16 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       // we are sure we actually copied everything to the bounce buffer
       bufferSendStates.foreach(_.releaseAcquiredToCatalog())
 
-      bssBuffers.foreach {
-        case (bufferSendState, buffersToSend) =>
-          val peerExecutorId = bufferSendState.getRequestTransaction.peerExecutorId()
-          serverConnection.send(peerExecutorId, buffersToSend, bufferTx =>
-            withResource(bufferTx) { _ =>
-              logDebug(s"Done with the send for ${bufferSendState} with ${buffersToSend}")
+      bssBuffers.foreach { case (bufferSendState, buffersToSend) =>
+        val peerExecutorId = bufferSendState.peerExecutorId
+        serverConnection.send(peerExecutorId, buffersToSend, withResource(_) { bufferTx =>
+          bufferTx.getStatus match {
+            case TransactionStatus.Success =>
+              logDebug(s"Done with the send for $bufferSendState with $buffersToSend")
 
               if (bufferSendState.hasNext) {
                 // continue issuing sends.
-                logDebug(s"Buffer send state ${bufferSendState} is NOT done. " +
+                logDebug(s"Buffer send state $bufferSendState is NOT done. " +
                   s"Still pending: ${pendingTransfersQueue.size}.")
                 bssExec.synchronized {
                   bssContinueQueue.add(bufferSendState)
@@ -360,35 +360,38 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                 val transferResponse = bufferSendState.getTransferResponse()
 
                 val requestTx = bufferSendState.getRequestTransaction
-
-                logDebug(s"Handling transfer request ${requestTx} for " +
-                  s"${peerExecutorId} " +
-                  s"with ${buffersToSend}")
+                logDebug(s"Handling transfer request $requestTx for executor " +
+                  s"$peerExecutorId with $buffersToSend")
 
                 // send the transfer response
-                requestTx.respond(transferResponse.acquire(),
-                  transferResponseTx => {
-                    withResource(transferResponseTx) { _ =>
-                      withResource(transferResponse) { _ =>
-                        transferResponseTx.getStatus match {
-                          case TransactionStatus.Cancelled | TransactionStatus.Error =>
-                            logError(s"Error while handling TransferResponse: " +
-                              s"${transferResponseTx.getErrorMessage}")
-                          case _ =>
-                        }
-                      }
+                requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
+                  withResource(transferResponse) { _ =>
+                    responseTx.getStatus match {
+                      case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                        logError(s"Error while handling TransferResponse: " +
+                          s"${responseTx.getErrorMessage}")
+                      case _ =>
                     }
-                  })
+                  }
+                })
 
                 // wake up the bssExec since bounce buffers became available
-                logDebug(s"Buffer send state ${buffersToSend} is done. Closing. " +
+                logDebug(s"Buffer send state $buffersToSend is done. Closing. " +
                   s"Still pending: ${pendingTransfersQueue.size}.")
                 bssExec.synchronized {
                   bufferSendState.close()
                   bssExec.notifyAll()
                 }
               }
-            })
+            case _ =>
+              // errored or cancelled
+              logError(s"Error while sending buffers $bufferTx.")
+              bssExec.synchronized {
+                bufferSendState.close()
+                bssExec.notifyAll()
+              }
+          }
+        })
       }
     }
   }

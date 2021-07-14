@@ -41,6 +41,7 @@
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
@@ -116,6 +117,7 @@
                         <configuration>
                             <artifactSet>
                                 <includes>
+                                    <include>org.scala-lang:scala-library</include>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
                                 </includes>
                             </artifactSet>

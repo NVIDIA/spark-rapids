@@ -106,7 +106,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -129,6 +130,18 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val exit = ProfileMain.mainInternal(sparkSession, appArgs)
       assert(exit == 0)
     }
+  }
+
+  test("test spark2 eventlog") {
+    val eventLog = Array(s"$logDir/spark2-eventlog.zstd")
+    val apps = ToolTestUtils.processProfileApps(eventLog, sparkSession)
+    assert(apps.size == 1)
+    assert(apps.head.sparkVersion.equals("2.2.3"))
+    assert(apps.head.gpuMode.equals(false))
+    assert(apps.head.jobStart.size == 1)
+    assert(apps.head.jobStart.head.jobID.equals(0))
+    val stage0 = apps.head.stageSubmitted.filter(_.stageId == 0)
+    assert(stage0.head.numTasks.equals(6))
   }
 
   test("malformed json eventlog") {
@@ -163,7 +176,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -185,7 +199,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
         apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-          EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
         index += 1
       }
       assert(apps.size == 1)
@@ -205,7 +220,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -232,7 +248,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
       apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path, sparkSession).head._1, index)
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -260,7 +277,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     ))
 
     val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+      appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+      sparkSession.sparkContext.hadoopConfiguration)
     assert(result.length == 2)
   }
 
@@ -289,7 +307,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       ))
 
       val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-        appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+        appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+        sparkSession.sparkContext.hadoopConfiguration)
       assert(result.length == 2)
       // Validate 2 newest files
       assert(result(0).eventLog.getName.equals(tempFile1.getName))
@@ -333,7 +352,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       ))
 
       val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-        appArgs.matchEventLogs.toOption, appArgs.eventlog(), sparkSession)
+        appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+        sparkSession.sparkContext.hadoopConfiguration)
       assert(result.length == 3)
       // Validate 3 oldest files
       assert(result(0).eventLog.getName.equals(tempFile2.getName))
@@ -344,6 +364,31 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       tempFile2.delete()
       tempFile3.delete()
       tempFile4.delete()
+    }
+  }
+
+  test("test gds-ucx-parameters") {
+    val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/gds_ucx_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+    for (app <- apps) {
+      val rows = app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
+        fileWriter = None).collect()
+      assert(rows.length == 5) // 5 properties captured.
+      // verify  ucx parameters are captured.
+      assert(rows(0)(0).equals("spark.executorEnv.UCX_RNDV_SCHEME"))
+
+      //verify gds parameters are captured.
+      assert(rows(1)(0).equals("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
     }
   }
 }

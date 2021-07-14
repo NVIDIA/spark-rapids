@@ -16,16 +16,19 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.RapidsBuffer
-import com.nvidia.spark.rapids.format.TableMeta
+import java.nio.ByteBuffer
 import java.util
+
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.{Arm, MetaUtils, RapidsBuffer, ShuffleMetadata}
+import com.nvidia.spark.rapids.format.TableMeta
+import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.{any, anyLong}
 import org.mockito.Mockito._
 
 import org.apache.spark.storage.ShuffleBlockBatchId
 
-class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
+class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
 
   def setupMocks(deviceBuffers: Seq[DeviceMemoryBuffer]): (RapidsShuffleRequestHandler,
       Seq[RapidsBuffer], util.HashMap[RapidsBuffer, Int]) = {
@@ -122,7 +125,6 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
     assert(bb.deviceBounceBuffer.isClosed)
     assert(transferRequest.isClosed)
-    newMocks()
   }
 
   test("sending tables that require two bounce buffer lengths") {
@@ -189,5 +191,66 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
     assert(bb.deviceBounceBuffer.isClosed)
     assert(transferRequest.isClosed)
+  }
+
+  test("when a send fails, we un-acquire buffers that are currently being sent") {
+    val mockSendBuffer = mock[SendBounceBuffers]
+    val mockDeviceBounceBuffer = mock[BounceBuffer]
+    withResource(DeviceMemoryBuffer.allocate(123)) { buff =>
+      when(mockDeviceBounceBuffer.buffer).thenReturn(buff)
+      when(mockSendBuffer.bounceBufferSize).thenReturn(buff.getLength)
+      when(mockSendBuffer.hostBounceBuffer).thenReturn(None)
+      when(mockSendBuffer.deviceBounceBuffer).thenReturn(mockDeviceBounceBuffer)
+
+      when(mockTransport.tryGetSendBounceBuffers(any(), any()))
+        .thenReturn(Seq(mockSendBuffer))
+
+      val tr = ShuffleMetadata.buildTransferRequest(Seq((1, 1)))
+      when(mockTransaction.getStatus)
+        .thenReturn(TransactionStatus.Success)
+        .thenReturn(TransactionStatus.Error)
+      when(mockTransaction.releaseMessage()).thenReturn(new RefCountedDirectByteBuffer(tr))
+
+      val mockServerConnection = mock[ServerConnection]
+      val ac = ArgumentCaptor.forClass(classOf[TransactionCallback])
+      when(mockServerConnection.send(any(), any(), ac.capture())).thenReturn(mockTransaction)
+
+      val mockRequestHandler = mock[RapidsShuffleRequestHandler]
+      val rapidsBuffer = mock[RapidsBuffer]
+
+      val bb = ByteBuffer.allocateDirect(123)
+      withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
+        val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
+        when(rapidsBuffer.meta).thenReturn(tableMeta)
+        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(1)))
+          .thenReturn(rapidsBuffer)
+
+        val server = new RapidsShuffleServer(
+          mockTransport,
+          mockServerConnection,
+          RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+          mockRequestHandler,
+          mockExecutor,
+          mockExecutor,
+          mockBssExecutor,
+          mockConf)
+
+        server.start()
+
+        val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null)
+        server.doHandleTransferRequest(Seq(bss))
+        val cb = ac.getValue.asInstanceOf[TransactionCallback]
+        cb(mockTransaction)
+        server.doHandleTransferRequest(Seq(bss)) //Error
+        cb(mockTransaction)
+        // bounce buffers are freed
+        verify(mockSendBuffer, times(1)).close()
+        // acquire 3 times, and close 3 times
+        verify(mockRequestHandler, times(3))
+          .acquireShuffleBuffer(ArgumentMatchers.eq(1))
+        verify(rapidsBuffer, times(3)).close()
+      }
+    }
   }
 }

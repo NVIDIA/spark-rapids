@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit
 
 import scala.language.{existentials, implicitConversions}
 
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, RollingAggregation, Scalar, WindowOptions}
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, ReplacePolicy, ReplacePolicyWithColumn, RollingAggregation, Scalar}
 import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 
@@ -30,7 +30,6 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure,
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.CalendarInterval
 
 class GpuWindowExpressionMeta(
@@ -40,17 +39,12 @@ class GpuWindowExpressionMeta(
     rule: DataFromReplacementRule)
   extends ExprMeta[WindowExpression](windowExpression, conf, parent, rule) {
 
-  private def getBoundaryValue(boundary : Expression) : Int = boundary match {
+  private def getAndCheckRowBoundaryValue(boundary: Expression) : Int = boundary match {
     case literal: Literal =>
       literal.dataType match {
         case IntegerType =>
           literal.value.asInstanceOf[Int]
-        case CalendarIntervalType =>
-          val ci = literal.value.asInstanceOf[CalendarInterval]
-          if (ci.months != 0 || ci.microseconds != 0) {
-            willNotWorkOnGpu("only days are supported for window range intervals")
-          }
-          ci.days
+          literal.value.asInstanceOf[Int]
         case t =>
           willNotWorkOnGpu(s"unsupported window boundary type $t")
           -1
@@ -75,8 +69,8 @@ class GpuWindowExpressionMeta(
         spec.frameType match {
           case RowFrame =>
             // Will also verify that the types are what we expect.
-            val lower = getBoundaryValue(spec.lower)
-            val upper = getBoundaryValue(spec.upper)
+            val lower = getAndCheckRowBoundaryValue(spec.lower)
+            val upper = getAndCheckRowBoundaryValue(spec.upper)
             windowFunction match {
               case Lead(_, _, _) | Lag(_, _, _) => // ignored we are good
               case _ =>
@@ -92,31 +86,28 @@ class GpuWindowExpressionMeta(
             }
           case RangeFrame =>
             // Spark by default does a RangeFrame if no RowFrame is given
-            // even for columns that are not time type columns. We can switch this back to row
-            // based iff the ranges we are looking at both unbounded. We do this for all range
-            // queries because https://github.com/NVIDIA/spark-rapids/issues/1039 makes it so
-            // we cannot support nulls in range queries
-            // Will also verify that the types are what we expect.
+            // even for columns that are not time type columns. We can switch this to row
+            // based iff the ranges we are looking at both unbounded.
             if (spec.isUnbounded) {
               // this is okay because we will translate it to be a row query
             } else {
               // check whether order by column is supported or not
               val orderSpec = wrapped.windowSpec.orderSpec
               if (orderSpec.length > 1) {
-                // We only support a single time column
+                // We only support a single order by column
                 willNotWorkOnGpu("only a single date/time or integral (Boolean exclusive)" +
                   "based column in window range functions is supported")
               }
               val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
-                  case ByteType | ShortType | IntegerType | LongType => true
-                  case DateType | TimestampType => true
+                  case ByteType | ShortType | IntegerType | LongType |
+                       DateType | TimestampType => true
                   case _ => false
                 }
               }
               if (!orderByTypeSupported) {
                 willNotWorkOnGpu(s"the type of orderBy column is not supported in a window" +
-                  s" range function, found ${orderSpec(0).dataType}")
+                  s" range function, found ${orderSpec.head.dataType}")
               }
 
               def checkRangeBoundaryConfig(dt: DataType): Unit = {
@@ -173,7 +164,7 @@ class GpuWindowExpressionMeta(
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
-  extends GpuExpression {
+  extends GpuUnevaluable {
 
   override def children: Seq[Expression] = windowFunction :: windowSpec :: Nil
 
@@ -187,9 +178,17 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
 
   override def sql: String = windowFunction.sql + " OVER " + windowSpec.sql
 
+  lazy val normalizedFrameSpec: GpuSpecifiedWindowFrame = {
+    val fs = windowFrameSpec.canonicalized.asInstanceOf[GpuSpecifiedWindowFrame]
+    fs.frameType match {
+      case RangeFrame if fs.isUnbounded =>
+        GpuSpecifiedWindowFrame(RowFrame, fs.lower, fs.upper)
+      case _ => fs
+    }
+  }
+
   private val windowFrameSpec = windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
-  private val frameType : FrameType = windowFrameSpec.frameType
-  private val windowFunc = windowFunction match {
+  lazy val wrappedWindowFunc = windowFunction match {
     case func: GpuAggregateWindowFunction[_] => func
     case agg: GpuAggregateExpression => agg.aggregateFunction match {
       case func: GpuAggregateWindowFunction[_] => func
@@ -199,275 +198,41 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
     case other =>
       throw new IllegalStateException(s"${other.getClass} is not a supported window function")
   }
-  private lazy val boundRowProjectList = windowSpec.partitionSpec ++
-      windowFunc.windowInputProjection
-  private lazy val boundRangeProjectList = windowSpec.partitionSpec ++
-      windowSpec.orderSpec.map(_.child.asInstanceOf[GpuExpression]) ++
-      windowFunc.windowInputProjection
 
-  override def columnarEval(cb: ColumnarBatch) : Any = {
-    frameType match {
-      case RowFrame   => evaluateRowBasedWindowExpression(cb)
-      case RangeFrame =>
-        if (windowFrameSpec.isUnbounded) {
-          // We already verified that this will be okay...
-          evaluateRowBasedWindowExpression(cb)
-        } else {
-          evaluateRangeBasedWindowExpression(cb)
-        }
-
-      case allElse    =>
-        throw new UnsupportedOperationException(
-          s"Unsupported window expression frame type: $allElse")
-    }
-  }
-
-  private def evaluateRowBasedWindowExpression(cb : ColumnarBatch) : GpuColumnVector = {
-    val numGroupingColumns = windowSpec.partitionSpec.length
-    val totalExtraColumns = numGroupingColumns
-
-    val aggColumn = withResource(GpuProjectExec.project(cb, boundRowProjectList)) { projected =>
-
-      // in case boundRowProjectList is empty
-      val finalCb = if (boundRowProjectList.nonEmpty) projected else cb
-
-      withResource(GpuColumnVector.from(finalCb)) { table =>
-        val bases = GpuColumnVector.extractBases(finalCb).zipWithIndex
-            .slice(totalExtraColumns, boundRowProjectList.length)
-
-        withResource(GpuWindowExpression.getRowBasedWindowOptions(windowFrameSpec)) {
-          windowOptions =>
-
-            val agg = windowFunc.windowAggregation(bases)
-              .overWindow(windowOptions)
-
-            withResource(table
-              .groupBy(0 until numGroupingColumns: _*)
-              .aggregateWindows(agg)) { aggResultTable =>
-              aggResultTable.getColumn(0).incRefCount()
-            }
-        }
+  private[this] lazy val optimizedRunningWindow: Option[GpuRunningWindowFunction] = {
+    if (normalizedFrameSpec.frameType == RowFrame &&
+        GpuWindowExec.isRunningWindow(windowSpec) &&
+        wrappedWindowFunc.isInstanceOf[GpuRunningWindowFunction]) {
+      val runningWin = wrappedWindowFunc.asInstanceOf[GpuRunningWindowFunction]
+      val isSupported = if (windowSpec.partitionSpec.isEmpty) {
+        runningWin.isScanSupported
+      } else {
+        runningWin.isGroupByScanSupported
       }
-    }
-    // For nested type, do not cast
-    aggColumn.getType match {
-      case dType if dType.isNestedType =>
-        GpuColumnVector.from(aggColumn, windowFunc.dataType)
-      case _ =>
-        val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
-        // The API 'castTo' will take care of the 'from' type and 'to' type, and
-        // just increase the reference count by one when they are the same.
-        // so it is OK to always call it here.
-        withResource(aggColumn) { aggColumn =>
-          GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
-        }
-    }
-  }
-
-  private def evaluateRangeBasedWindowExpression(cb : ColumnarBatch) : GpuColumnVector = {
-    val numGroupingColumns = windowSpec.partitionSpec.length
-    val numSortColumns = windowSpec.orderSpec.length
-    assert(numSortColumns == 1)
-    val totalExtraColumns = numGroupingColumns + numSortColumns
-
-    val aggColumn = withResource(GpuProjectExec.project(cb, boundRangeProjectList)) { projected =>
-      withResource(GpuColumnVector.from(projected)) { table =>
-        val bases = GpuColumnVector.extractBases(projected).zipWithIndex
-          .slice(totalExtraColumns, boundRangeProjectList.length)
-
-        // Since boundRangeProjectList = windowSpec.partitionSpec ++
-        //      windowSpec.orderSpec.map(_.child.asInstanceOf[GpuExpression]) ++
-        //      windowFunc.windowInputProjection
-        // Here table.getColumn(numGroupingColumns) is the orderBy column
-        val orderByType = table.getColumn(numGroupingColumns).getType
-        // get the preceding/following scalar to construct WindowOptions
-        val (isUnboundedPreceding, preceding) = GpuWindowExpression.getRangeBasedLower(
-          windowFrameSpec, Some(orderByType))
-        val (isUnBoundedFollowing, following) = GpuWindowExpression.getRangeBasedUpper(
-          windowFrameSpec, Some(orderByType))
-
-        withResource(preceding) { preceding =>
-          withResource(following) { following =>
-            withResource(GpuWindowExpression.getRangeBasedWindowOptions(windowSpec.orderSpec,
-              numGroupingColumns,
-              isUnboundedPreceding,
-              preceding.orNull,
-              isUnBoundedFollowing,
-              following.orNull)) { windowOptions =>
-              val agg = windowFunc.windowAggregation(bases).overWindow(windowOptions)
-              withResource(table
-                .groupBy(0 until numGroupingColumns: _*)
-                .aggregateWindowsOverRanges(agg)) { aggResultTable =>
-                aggResultTable.getColumn(0).incRefCount()
-              }
-            }
-          }
-        }
+      if (isSupported) {
+        Some(runningWin)
+      } else {
+        None
       }
-    }
-    // For nested type, do not cast
-    aggColumn.getType match {
-      case dType if dType.isNestedType =>
-        GpuColumnVector.from(aggColumn, windowFunc.dataType)
-      case _ =>
-        val expectedType = GpuColumnVector.getNonNestedRapidsType(windowFunc.dataType)
-        // The API 'castTo' will take care of the 'from' type and 'to' type, and
-        // just increase the reference count by one when they are the same.
-        // so it is OK to always call it here.
-        withResource(aggColumn) { aggColumn =>
-          GpuColumnVector.from(aggColumn.castTo(expectedType), windowFunc.dataType)
-        }
-    }
-  }
-}
-
-object GpuWindowExpression extends Arm {
-
-  def getRowBasedLower(windowFrameSpec : GpuSpecifiedWindowFrame): Scalar = {
-    val lower = getBoundaryValue(windowFrameSpec.lower)
-
-    // Translate the lower bound value to CUDF semantics:
-    // In spark 0 is the current row and lower bound is negative relative to that
-    // In CUDF the preceding window starts at the current row with 1 and up from there the
-    // further from the current row.
-    val ret = if (lower >= Int.MaxValue) {
-      Int.MinValue
-    } else if (lower <= Int.MinValue) {
-      Int.MaxValue
     } else {
-      -(lower-1)
+      None
     }
-    Scalar.fromInt(ret)
   }
 
-  def getRowBasedUpper(windowFrameSpec : GpuSpecifiedWindowFrame): Scalar =
-    Scalar.fromInt(getBoundaryValue(windowFrameSpec.upper))
+  lazy val isOptimizedRunningWindow: Boolean = optimizedRunningWindow.isDefined
 
-  def getRowBasedWindowOptions(windowFrameSpec : GpuSpecifiedWindowFrame): WindowOptions = {
-    withResource(getRowBasedLower(windowFrameSpec)) { lower =>
-      withResource(getRowBasedUpper(windowFrameSpec)) { upper =>
-        WindowOptions.builder().minPeriods(1)
-            .window(lower, upper).build()
+  lazy val initialProjections: Seq[Expression] = {
+    val running = optimizedRunningWindow
+    if (running.isDefined) {
+      val r = running.get
+      if (windowSpec.partitionSpec.isEmpty) {
+        Seq(r.scanInputProjection)
+      } else {
+        r.groupByScanInputProjection
       }
-    }
-  }
-
-  def getRangeBasedLower(windowFrameSpec: GpuSpecifiedWindowFrame, orderByType: Option[DType]):
-      (Boolean, Option[Scalar]) = {
-    getRangeBoundaryValue(windowFrameSpec.lower, orderByType)
-  }
-
-  def getRangeBasedUpper(windowFrameSpec: GpuSpecifiedWindowFrame, orderByType: Option[DType]):
-      (Boolean, Option[Scalar]) = {
-    getRangeBoundaryValue(windowFrameSpec.upper, orderByType)
-  }
-
-  def getRangeBasedWindowOptions(
-      orderSpec: Seq[SortOrder],
-      orderByColumnIndex : Int,
-      isUnboundedPreceding: Boolean,
-      preceding: Scalar,
-      isUnBoundedFollowing: Boolean,
-      following: Scalar): WindowOptions = {
-    val windowOptionBuilder = WindowOptions.builder()
-                                .minPeriods(1)
-                                .orderByColumnIndex(orderByColumnIndex)
-
-    if (isUnboundedPreceding) {
-      windowOptionBuilder.unboundedPreceding()
     } else {
-      windowOptionBuilder.preceding(preceding)
+      wrappedWindowFunc.windowInputProjection
     }
-
-    if (isUnBoundedFollowing) {
-      windowOptionBuilder.unboundedFollowing()
-    } else {
-      windowOptionBuilder.following(following)
-    }
-
-    // We only support a single time based column to order by right now, so just verify
-    // that it is correct.
-    assert(orderSpec.length == 1)
-    if (orderSpec.head.isAscending) {
-      windowOptionBuilder.orderByAscending()
-    } else {
-      windowOptionBuilder.orderByDescending()
-    }
-
-    windowOptionBuilder.build()
-  }
-
-  def getBoundaryValue(boundary : Expression) : Int = boundary match {
-    case literal: GpuLiteral if literal.dataType.equals(IntegerType) =>
-      literal.value.asInstanceOf[Int]
-    case literal: GpuLiteral if literal.dataType.equals(CalendarIntervalType) =>
-      literal.value.asInstanceOf[CalendarInterval].days
-    case special: GpuSpecialFrameBoundary =>
-      special.value
-    case anythingElse =>
-      throw new UnsupportedOperationException(s"Unsupported window frame expression $anythingElse")
-  }
-
-  /**
-   * Create a Scalar from boundary value according to order by column type.
-   *
-   * For the timestamp types, only days are supported for window range intervals
-   *
-   * @param orderByType the type of order by column
-   * @param value boundary value
-   * @return Scalar holding boundary value
-   */
-  def createRangeWindowBoundary(orderByType: DType, value: Long): Scalar = {
-    orderByType match {
-      case DType.INT8 => Scalar.fromByte(value.toByte)
-      case DType.INT16 => Scalar.fromShort(value.toShort)
-      case DType.INT32 => Scalar.fromInt(value.toInt)
-      case DType.INT64 => Scalar.fromLong(value)
-        // Interval is not working for DateType
-      case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value)
-      case DType.TIMESTAMP_MICROSECONDS =>
-        Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value)
-      case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
-    }
-  }
-
-  /**
-   * Get the range boundary tuple
-   * @param boundary boundary expression
-   * @param orderByType the type of order by column
-   * @return ret: (Boolean, Option[Scalar]). the first element of tuple specifies if the boundary is
-   *         unBounded, the second element of tuple specifies the Scalar created from boundary.
-   *         When orderByType is None, the Scalar will be None.
-   */
-  def getRangeBoundaryValue(boundary: Expression, orderByType: Option[DType]):
-      (Boolean, Option[Scalar]) = boundary match {
-    case special: GpuSpecialFrameBoundary =>
-      val isUnBounded = special.isUnBounded
-      (isUnBounded, if (isUnBounded) None else orderByType.map(
-        createRangeWindowBoundary(_, special.value)))
-    case GpuLiteral(ci: CalendarInterval, CalendarIntervalType) =>
-      // Get the total microseconds for TIMESTAMP_MICROSECONDS
-      var x = ci.days * TimeUnit.DAYS.toMicros(1) + ci.microseconds
-      if (x == Long.MinValue) x = Long.MaxValue
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
-    case GpuLiteral(value, ByteType) =>
-      var x = value.asInstanceOf[Byte]
-      if (x == Byte.MinValue) x = Byte.MaxValue
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
-    case GpuLiteral(value, ShortType) =>
-      var x = value.asInstanceOf[Short]
-      if (x == Short.MinValue) x = Short.MaxValue
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
-    case GpuLiteral(value, IntegerType) =>
-      var x = value.asInstanceOf[Int]
-      if (x == Int.MinValue) x = Int.MaxValue
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
-    case GpuLiteral(value, LongType) =>
-      var x = value.asInstanceOf[Long]
-      if (x == Long.MinValue) x = Long.MaxValue
-      (false, orderByType.map(createRangeWindowBoundary(_, Math.abs(x))))
-    case anything => throw new UnsupportedOperationException("Unsupported window frame" +
-      s" expression $anything")
   }
 }
 
@@ -815,6 +580,14 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
   override def foldable: Boolean = false
   override def nullable: Boolean = false
 
+  /**
+   * Maps boundary to an Int value that in some cases can be used to build up the window options
+   * for a window aggregation. UnboundedPreceding and UnboundedFollowing produce Int.MinValue and
+   * Int.MaxValue respectively. In row based operations this should be fine because we cannot have
+   * a batch with that many rows in it anyways. For range based queries isUnbounded should be
+   * called too, to properly interpret the data. CurrentRow produces 0 which works for both row and
+   * range based queries.
+   */
   def value : Int = {
     boundary match {
       case UnboundedPreceding => Int.MinValue
@@ -825,14 +598,17 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
     }
   }
 
-  def isUnBounded: Boolean = {
+  def isUnbounded: Boolean = {
     boundary match {
-      case UnboundedPreceding => true
-      case UnboundedFollowing => true
+      case UnboundedPreceding | UnboundedFollowing => true
       case _ => false
     }
   }
 }
+
+// This is here for now just to tag an expression as being a GpuWindowFunction and match
+// Spark. This may expand in the future if other types of window functions show up.
+trait GpuWindowFunction extends GpuUnevaluable
 
 /**
  * GPU Counterpart of `AggregateWindowFunction`.
@@ -842,7 +618,7 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
  * expressions.
  */
 trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
-    extends GpuUnevaluable {
+    extends GpuWindowFunction {
   /**
    * Using child references, define the shape of the vectors sent to the window operations
    */
@@ -855,6 +631,18 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
    * corresponding ColumnVector. Some aggregations need extra values.
    */
   def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[T]
+}
+
+trait GpuRunningWindowFunction extends GpuWindowFunction {
+  def groupByScanInputProjection: Seq[Expression]
+  def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_]
+  def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn]
+  def isGroupByScanSupported = true
+
+  def scanInputProjection: Expression
+  def scanAggregation: Aggregation
+  def scanReplaceNulls: Option[ReplacePolicy]
+  def isScanSupported = true
 }
 
 /**
@@ -934,12 +722,9 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
  * For many operations a running window (unbounded preceding to current row) can
  * process the data without dividing the data up into batches that contain all of the data
  * for a given group by key set. Instead we store a small amount of state from a previous result
- * and use it to fix the final result. This is a memory optimization. Any
- * GpuAggregateWindowFunction can still work for running window queries. This just reduces the
- * maximum amount of memory needed to process them.
+ * and use it to fix the final result. This is a memory optimization.
  */
-trait GpuBatchedRunningWindowFunction[T <: Aggregation with RollingAggregation[T]]
-    extends GpuAggregateWindowFunction[T] {
+trait GpuBatchedRunningWindowWithFixer {
 
   /**
    * Get a new class that can be used to fix up batched RunningWindowOperations.
@@ -989,11 +774,104 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
   override def close(): Unit = previousResult.foreach(_.close())
 }
 
-case class GpuRowNumber() extends GpuBatchedRunningWindowFunction[RowNumberAggregation] {
+/**
+ * This class fixes up batched running windows for sum. Sum is a lot like other binary op
+ * fixers, but it has to special case nulls and that is not super generic.  In the future we
+ * might be able to make this more generic but we need to see what the use case really is.
+ */
+class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
+  private val name = "sum"
+  private val binOp = BinaryOp.ADD
+  private var previousResult: Option[Scalar] = None
+
+  override def updateState(finalOutputColumn: GpuColumnVector): Unit = {
+    logDebug(s"$name: updateState from $previousResult to...")
+    previousResult.foreach(_.close)
+    previousResult =
+      Some(finalOutputColumn.getBase.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
+    logDebug(s"$name: ... $previousResult")
+  }
+
+  private def makeZeroScalar(dt: DataType): Scalar = dt match {
+    case ByteType => Scalar.fromByte(0.toByte)
+    case ShortType => Scalar.fromShort(0.toShort)
+    case IntegerType => Scalar.fromInt(0)
+    case LongType => Scalar.fromLong(0)
+    case FloatType => Scalar.fromFloat(0.0f)
+    case DoubleType => Scalar.fromDouble(0.0)
+    case dec: DecimalType =>
+      if (dec.precision <= DType.DECIMAL32_MAX_PRECISION) {
+        Scalar.fromDecimal(-dec.scale, 0)
+      } else {
+        Scalar.fromDecimal(-dec.scale, 0L)
+      }
+    case other =>
+      throw new IllegalArgumentException(s"Making a zero scalar for $other is not supported")
+  }
+
+  override def fixUp(samePartitionMask: Either[GpuColumnVector, Boolean],
+      windowedColumnOutput: GpuColumnVector): GpuColumnVector = {
+    logDebug(s"$name: fix up $previousResult $samePartitionMask")
+    (previousResult, samePartitionMask) match {
+      case (None, _) => windowedColumnOutput.incRefCount()
+      case (Some(prev), scala.util.Right(mask)) =>
+        if (mask) {
+          // ADD is not null safe, so we have to replace NULL with 0 if and only if prev is also
+          // not null
+          val base = windowedColumnOutput.getBase
+          if (prev.isValid) {
+            val nullsReplaced = withResource(base.isNull) { nulls =>
+              withResource(makeZeroScalar(windowedColumnOutput.dataType())) { zero =>
+                nulls.ifElse(zero, base)
+              }
+            }
+            withResource(nullsReplaced) { nullsReplaced =>
+              GpuColumnVector.from(nullsReplaced.binaryOp(binOp, prev, prev.getType),
+                windowedColumnOutput.dataType())
+            }
+          } else {
+            // prev is NULL but NULL + something == NULL which we don't want
+            windowedColumnOutput.incRefCount()
+          }
+        } else {
+          // The mask is all false so do nothing
+          windowedColumnOutput.incRefCount()
+        }
+      case (Some(prev), scala.util.Left(mask)) =>
+        val base = windowedColumnOutput.getBase
+        if (prev.isValid) {
+          val nullsReplaced = withResource(base.isNull) { nulls =>
+            withResource(nulls.and(mask.getBase)) { shouldReplace =>
+              withResource(makeZeroScalar(windowedColumnOutput.dataType())) { zero =>
+                shouldReplace.ifElse(zero, base)
+              }
+            }
+          }
+          withResource(nullsReplaced) { nullsReplaced =>
+            withResource(nullsReplaced.binaryOp(binOp, prev, prev.getType)) { updated =>
+              GpuColumnVector.from(mask.getBase.ifElse(updated, base),
+                windowedColumnOutput.dataType())
+            }
+          }
+        } else {
+          // prev is NULL but NULL + something == NULL which we don't want
+          windowedColumnOutput.incRefCount()
+        }
+    }
+  }
+
+  override def close(): Unit = previousResult.foreach(_.close())
+}
+
+case class GpuRowNumber() extends GpuAggregateWindowFunction[RowNumberAggregation]
+    with GpuBatchedRunningWindowWithFixer
+    with GpuRunningWindowFunction {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
   override def children: Seq[Expression] = Nil
+
+  // GENERAL WINDOW FUNCTION
 
   override val windowInputProjection: Seq[Expression] = Nil
 
@@ -1003,8 +881,24 @@ case class GpuRowNumber() extends GpuBatchedRunningWindowFunction[RowNumberAggre
     Aggregation.rowNumber().onColumn(0)
   }
 
+  // RUNNING WINDOW
+
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number")
+
+  // For group by scans cudf does not support ROW_NUMBER so we will do a SUM
+  // on a column of 1s. We could do a COUNT_ALL too, but it would not be as consistent
+  // with the non group by scan
+  override val groupByScanInputProjection: Seq[Expression] = Seq(GpuLiteral(1, IntegerType))
+  override def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_] =
+    Aggregation.sum().onColumn(inputs.head._2)
+  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] = None
+
+  // For regular scans cudf does not support ROW_NUMBER, nor does it support COUNT_ALL
+  // so we will do a SUM on a column of 1s
+  override val scanInputProjection: Expression = groupByScanInputProjection.head
+  override def scanAggregation: Aggregation = Aggregation.sum()
+  override val scanReplaceNulls: Option[ReplacePolicy] = None
 }
 
 abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
@@ -1035,7 +929,7 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
   }
   lazy val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
 
   override def tagExprForGpu(): Unit = {
     expr match {
