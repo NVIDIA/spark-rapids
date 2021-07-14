@@ -178,7 +178,9 @@ object GpuCast extends Arm {
 
   def sanitizeStringToFloat(input: ColumnVector): ColumnVector = {
 
-    // this regex gets applied after the transformation to normalize use of Inf
+    // This regex gets applied after the transformation to normalize use of Inf and is
+    // just strict enough to filter out known edge cases that would result in incorrect
+    // values. We further filter out invalid values using the cuDF is_float method.
     val VALID_FLOAT_REGEX =
       "^" +                         // start of line
       "[+\\-]?" +                   // optional + or - at start of string
@@ -216,7 +218,7 @@ object GpuCast extends Arm {
                   looksLikeFloat =>
                 looksLikeFloat.ifElse(infWithoutPlus, nullString)
               }
-              // strip floating-point designator 'f' or 'd'
+              // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
               withResource(floatOrNull) { _ =>
                 withResource(floatOrNull.matchesRe("^[+\\-]?Inf$")) { isInf =>
                   withResource(floatOrNull.stringReplaceWithBackrefs(
