@@ -26,7 +26,7 @@ case class ApplicationStartInfo(
     appId: Option[String],
     startTime: Long)
 
-class AppFilter(
+class FilterAppInfo(
     numOutputRows: Int,
     eventLogInfo: EventLogInfo,
     hadoopConf: Configuration) extends AppBase(numOutputRows, eventLogInfo, hadoopConf) {

@@ -41,7 +41,7 @@ abstract class AppBase(
 
   def processEvent(event: SparkListenerEvent): Boolean
 
-  protected def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
+  private def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
     EventLogFileWriter.codecName(log) match {
       case c if (c.isDefined && c.get.equals("gz")) =>
         val in = fs.open(log)

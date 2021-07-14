@@ -54,14 +54,13 @@ object QualificationMain extends Logging {
     val timeout = appArgs.timeout.toOption
 
     val hadoopConf = new Configuration()
-    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+    var eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
        matchEventLogs.toOption, eventlogPaths, hadoopConf)
-    //var eventLogInfos = EventLogPathProcessor.qualProcessAllPaths(numOutputRows, filterArgrs,
-    //  eventlogPaths, hadoopConf)
 
     if (argsContainsAppFilters(appArgs)) {
       val filteredeventLogs = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
       val finaleventlogs = filteredeventLogs.filterEventLogs(eventLogInfos, appArgs)
+      eventLogInfos = finaleventlogs
     }
 
     if (eventLogInfos.isEmpty) {

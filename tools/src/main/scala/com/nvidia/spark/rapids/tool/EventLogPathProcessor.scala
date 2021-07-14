@@ -20,8 +20,6 @@ import java.io.FileNotFoundException
 import java.time.LocalDateTime
 import java.util.zip.ZipOutputStream
 
-import org.rogach.scallop.ScallopOption
-import scala.collection.mutable
 import scala.collection.mutable.LinkedHashMap
 
 import org.apache.hadoop.conf.Configuration
@@ -170,40 +168,6 @@ object EventLogPathProcessor extends Logging {
     }.getOrElse(logsWithTimestamp)
 
     val filteredLogs = filterNLogs.map { filter =>
-      val filteredInfo = filterNLogs.get.split("-")
-      val numberofEventLogs = filteredInfo(0).toInt
-      val criteria = filteredInfo(1)
-      val matched = if (criteria.equals("newest")) {
-        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 > _._2): _*)
-      } else if (criteria.equals("oldest")) {
-        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
-      } else {
-        logError("Criteria should be either newest or oldest")
-        Map.empty[EventLogInfo, Long]
-      }
-      matched.take(numberofEventLogs)
-    }.getOrElse(matchedLogs)
-
-    filteredLogs.keys.toSeq
-  }
-
-  def qualProcessAllPaths(
-      numOutputRows: Int,
-      filterArgs: mutable.Map[String, ScallopOption[String]],
-      eventLogsPaths: List[String],
-      hadoopConf: Configuration): Seq[EventLogInfo] = {
-
-    val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, hadoopConf)).toMap
-
-    logDebug("Paths after stringToPath: " + logsWithTimestamp)
-    // Filter the event logs to be processed based on the criteria. If it is not provided in the
-    // command line, then return all the event logs processed above.
-    val matchedLogs = filterArgs("matchEventLogs").map { strMatch =>
-      logsWithTimestamp.filterKeys(_.eventLog.getName.contains(strMatch))
-    }.getOrElse(logsWithTimestamp)
-
-    val filterNLogs = filterArgs("filterCriteria").toOption
-    var filteredLogs = filterNLogs.map { filter =>
       val filteredInfo = filterNLogs.get.split("-")
       val numberofEventLogs = filteredInfo(0).toInt
       val criteria = filteredInfo(1)

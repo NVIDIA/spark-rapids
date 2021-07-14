@@ -40,7 +40,7 @@ class AppFilterImpl(
   private val threadFactory = new ThreadFactoryBuilder()
       .setDaemon(true).setNameFormat("qualTool" + "-%d").build()
   logInfo(s"Threadpool size is $nThreads")
-  private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
+  private val qualFilter = Executors.newFixedThreadPool(nThreads, threadFactory)
       .asInstanceOf[ThreadPoolExecutor]
 
   private class QualifyThread(path: EventLogInfo) extends Runnable {
@@ -52,23 +52,36 @@ class AppFilterImpl(
       appArgs: QualificationArgs): Seq[EventLogInfo] = {
     allPaths.foreach { path =>
       try {
-        threadPool.submit(new QualifyThread(path))
+        qualFilter.submit(new QualifyThread(path))
       } catch {
         case e: Exception =>
           logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
       }
     }
     // wait for the threads to finish processing the files
-    threadPool.shutdown()
-    if (!threadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
+    qualFilter.shutdown()
+    if (!qualFilter.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
       logError(s"Processing log files took longer then $waitTimeInSec seconds," +
           " stopping processing any more event logs")
-      threadPool.shutdownNow()
+      qualFilter.shutdownNow()
     }
-    val eventlog = filteredeventLogs.asScala.map(x => x.eventlog).toSeq
+    var eventlog = filteredeventLogs.asScala.map(x => x.eventlog).toSeq
 
     // This will be required to do the actual filtering
     val allSumfilteredEventLogs = filteredeventLogs.asScala.map(x => (x.appInfo, x.eventlog)).toSeq
+
+    if (appArgs.applicationName.isDefined) {
+      val applicationN = appArgs.applicationName
+      val finalEventLogs = allSumfilteredEventLogs.map { case (optQualInfo, y) =>
+        optQualInfo.get.appName match {
+          case a if a.equals(applicationN.getOrElse("")) =>
+            logWarning(s"matched on ${optQualInfo.get.appName} and $applicationN")
+            y
+          case _ => logWarning(s"didnt' match on ${optQualInfo.get.appName}")
+        }
+      }
+      eventlog = finalEventLogs.asInstanceOf[Seq[EventLogInfo]]
+    }
     eventlog
   }
 
@@ -81,7 +94,7 @@ class AppFilterImpl(
       numRows: Int,
       hadoopConf: Configuration): Unit = {
 
-    val startAppInfo = new AppFilter(numRows, path, hadoopConf)
+    val startAppInfo = new FilterAppInfo(numRows, path, hadoopConf)
     val appInfo = AppFilterReturnParameters(startAppInfo.appInfo, path)
     filteredeventLogs.add(appInfo)
   }

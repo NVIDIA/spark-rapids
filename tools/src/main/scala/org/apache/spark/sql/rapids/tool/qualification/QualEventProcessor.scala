@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
-import org.apache.spark.sql.rapids.tool.{AppFilter, EventProcessorBase, ToolUtils}
+import org.apache.spark.sql.rapids.tool.{EventProcessorBase, ToolUtils}
 
 class QualEventProcessor() extends EventProcessorBase {
 
