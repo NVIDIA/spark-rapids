@@ -189,7 +189,9 @@ case class GpuOrcMultiFilePartitionReaderFactory(
    */
   override def buildBaseColumnarReaderForCoalescing(files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    // Try best to group the same compression files together
+    // Coalescing reading can't coalesce orc files with different compression kind, which means
+    // we must split the different compress files into different ColumnarBatch.
+    // So here try the best to group the same compression files together before hand.
     val compressionAndStripes = LinkedHashMap[CompressionKind, ArrayBuffer[OrcSingleStripeMeta]]()
     files.map { file =>
       val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
@@ -272,27 +274,18 @@ case class OrcOutputStripe(
 /**
  * This class holds fields needed to read and iterate over the OrcFile
  *
- * @param updatedReadSchema read schema mapped to the file's field names
- * @param evolution ORC SchemaEvolution
- * @param dataReader ORC DataReader
- * @param orcReader ORC Input File Reader
- * @param blockIterator An iterator over the ORC output stripes
- */
-
-/**
- *
- * @param filePath  which file the orc context is  to
+ * @param filePath  ORC file path
  * @param conf      the Hadoop configuration
- * @param fileSchema the whole orc schema
- * @param updatedReadSchema the updated read schema
+ * @param fileSchema the schema of the whole ORC file
+ * @param updatedReadSchema read schema mapped to the file's field names
  * @param evolution  infer and track the evolution between the schema as stored in the file and
  *                   the schema that has been requested by the reader.
- * @param fileTail   the FileTail information
- * @param compressionSize  the orc compression size
- * @param compressionKind  the orc compression type
+ * @param fileTail   the ORC FileTail
+ * @param compressionSize  the ORC compression size
+ * @param compressionKind  the ORC compression type
  * @param readerOpts  options for creating a RecordReader.
- * @param blockIterator the readed stripes
- * @param requestedMapping
+ * @param blockIterator an iterator over the ORC output stripes
+ * @param requestedMapping the optional requested column ids
  */
 case class OrcPartitionReaderContext(
     filePath: Path,
@@ -307,8 +300,10 @@ case class OrcPartitionReaderContext(
     blockIterator: BufferedIterator[OrcOutputStripe],
     requestedMapping: Option[Array[Int]])
 
+/** Collections of some common functions for ORC */
 trait OrcCommonFunctions extends OrcCodecWritingHelper {
 
+  /** Copy the stripe to the channel */
   protected def copyStripeData(
       ctx: OrcPartitionReaderContext,
       out: WritableByteChannel,
@@ -346,10 +341,6 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     }
   }
 
-  protected def cleanUpOrc(ctx: OrcPartitionReaderContext) = {
-    if (ctx != null) {
-    }
-  }
 }
 
 /**
@@ -721,7 +712,6 @@ private case class GpuOrcFileFilterHandler(
       val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
         readDataSchema, orcReader)
       if (resultedColPruneInfo.isEmpty) {
-        orcReader.close()
         // Be careful when the OrcPartitionReaderContext is null, we should change
         // reader to EmptyPartitionReader for throwing exception
         null
@@ -1658,7 +1648,7 @@ class MultiFileOrcPartitionReader(
    *
    * @param dataBuffer  the data which can be decoded in GPU
    * @param dataSize    data size
-   * @param isCorrectRebaseMode rebase mode
+   * @param isCorrectRebaseMode rebase mode, which is not used in ORC
    * @param clippedSchema the clipped schema
    * @return Table
    */
@@ -1719,7 +1709,7 @@ class MultiFileOrcPartitionReader(
    * @param buffer         The buffer holding (header + data blocks)
    * @param bufferSize     The total buffer size which equals to size of (header + blocks + footer)
    * @param footerOffset   Where begin to write the footer
-   * @param blocks         The data block meta info
+   * @param stripes         The data block meta info
    * @param clippedSchema  The clipped schema info
    * @return the buffer and the buffer size
    */

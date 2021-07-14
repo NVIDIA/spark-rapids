@@ -583,8 +583,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *
    * Please be note, the estimated size should be at least equal to size of HEAD + Blocks + FOOTER
    *
-   * @param blocks a sequence of data block to be evaluated
-   * @param schema               schema info
+   * @param blocks A map with file as the key, and its stripes as the value
+   * @param schema shema info
    * @return Long, the estimated output size
    */
   def calculateEstimatedBlocksOutputSize(blocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
