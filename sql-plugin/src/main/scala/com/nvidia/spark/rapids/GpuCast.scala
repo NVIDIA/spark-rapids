@@ -220,8 +220,8 @@ object GpuCast extends Arm {
               withResource(floatOrNull) { _ =>
                 withResource(floatOrNull.matchesRe("^[+\\-]?Inf$")) { isInf =>
                   withResource(floatOrNull.stringReplaceWithBackrefs(
-                    "([^fFdD]*)([fFdD]$)", "\\1")) { stripDesignator =>
-                      isInf.ifElse(floatOrNull.incRefCount(), stripDesignator)
+                     "([^fFdD]*)([fFdD]$)", "\\1")) { stripDesignator =>
+                    isInf.ifElse(floatOrNull, stripDesignator)
                   }
                 }
               }
