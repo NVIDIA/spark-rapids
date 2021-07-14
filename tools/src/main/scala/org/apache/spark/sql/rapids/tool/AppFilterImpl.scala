@@ -70,17 +70,11 @@ class AppFilterImpl(
     // This will be required to do the actual filtering
     val allSumfilteredEventLogs = filteredeventLogs.asScala.map(x => (x.appInfo, x.eventlog)).toSeq
 
-    if (appArgs.applicationName.isDefined) {
+    if (appArgs.applicationName.isDefined) { // filter based on appName
       val applicationN = appArgs.applicationName
-      val finalEventLogs = allSumfilteredEventLogs.map { case (optQualInfo, y) =>
-        optQualInfo.get.appName match {
-          case a if a.equals(applicationN.getOrElse("")) =>
-            logWarning(s"matched on ${optQualInfo.get.appName} and $applicationN")
-            y
-          case _ => logWarning(s"didnt' match on ${optQualInfo.get.appName}")
-        }
-      }
-      eventlog = finalEventLogs.asInstanceOf[Seq[EventLogInfo]]
+      val filteredApplName = allSumfilteredEventLogs.
+          filter(_._1.get.appName.equals(applicationN.getOrElse("")))
+      eventlog = filteredApplName.map(x => x._2)
     }
     eventlog
   }
