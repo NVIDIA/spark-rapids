@@ -107,7 +107,8 @@ abstract class AppBase(
   }
 
   // Decimal support on the GPU is limited to less than 18 digits and decimals
-  // are configured off by default for now.
+  // are configured off by default for now. It would be nice to have this
+  // based off of what plugin supports at some point.
   private val decimalKeyWords = Map(".*promote_precision\\(.*" -> "DECIMAL",
     ".*decimal\\([0-9]+,[0-9]+\\).*" -> "DECIMAL",
     ".*DecimalType\\([0-9]+,[0-9]+\\).*" -> "DECIMAL")

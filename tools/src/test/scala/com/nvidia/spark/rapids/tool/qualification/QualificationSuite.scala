@@ -284,26 +284,30 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     TrampolineUtil.withTempDir { eventLogDir =>
       val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
         val plusOne = udf((x: Int) => x + 1)
+        import spark.implicits._
+        sparkSession.udf.register("plusOne", plusOne)
+        val df = Seq("1.32").toDF("value")
+          .selectExpr("CAST(value AS DECIMAL(4, 2)) AS value")
+        val df2 = df.withColumn("mult", $"value" * $"value")
+        val df4 = df2.withColumn("udfcol", plusOne($"value"))
+        df4
       }
 
+      TrampolineUtil.withTempDir { outpath =>
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val probApp = appSum.head
+        assert(probApp.potentialProblems.contains("UDF") &&
+          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.sqlDataFrameDuration == probApp.sqlDurationForProblematic)
+      }
     }
   }
-  2485 val df = spark.read.parquet("../readtypetestfiles/mapcomplex.parquet")
-  2486 df.collect()
-  2487 val df4 = df3.withColumn("udfcol", random.asNondeterministic())
-  2488 val df4 = df3.withColumn("udfcol", col(random.asNondeterministic()))
-  2489 val df4 = df3.withColumn("udfcol", random.asNondeterministic() * $"value")
-  2490 val plusOne = udf((x: Int) => x + 1)
-  2491 spark.udf.register("plusOne", plusOne)
-  2492 val df4 = df3.withColumn("udfcol", plusOne($"value"))
-  2493 df4.printSchema()
-  2494 df4.collect()
-  2495 :h?
-    2496 val plusOne = udf((x: Int) => x + 1)
-  2497 val df = spark.read.parquet("../readtypetestfiles/smalldec.parquet")
-  2498 val df3 = df.withColumn("mult", $"value" * $"value")
-  2499 val df4 = df3.withColumn("udfcol", plusOne($"value"))
-  2500 df4.collect()
 
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
