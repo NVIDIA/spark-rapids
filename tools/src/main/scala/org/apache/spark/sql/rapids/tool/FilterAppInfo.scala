@@ -23,7 +23,6 @@ import org.apache.spark.scheduler.{SparkListenerApplicationStart, SparkListenerE
 
 case class ApplicationStartInfo(
     appName: String,
-    appId: Option[String],
     startTime: Long)
 
 class FilterAppInfo(
@@ -36,7 +35,6 @@ class FilterAppInfo(
     logDebug("Processing event: " + event.getClass)
     val thisAppInfo = ApplicationStartInfo(
       event.appName,
-      event.appId,
       event.time
     )
     appInfo = Some(thisAppInfo)

@@ -188,6 +188,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
        <eventlogs | eventlog directories ...>
 
+  -a, --application-name <arg>      Filter event logs whose application name
+                                    matches exactly with input string i.e no
+                                    regular expressions supported.
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs for
                                     processing.eg: 100-newest (for processing
                                     newest 100 event logs). eg: 100-oldest (for

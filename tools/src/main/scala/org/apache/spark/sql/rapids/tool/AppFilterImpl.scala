@@ -33,17 +33,17 @@ class AppFilterImpl(
     timeout: Option[Long],
     nThreads: Int) extends Logging {
 
-  private val filteredeventLogs = new ConcurrentLinkedQueue[AppFilterReturnParameters]()
+  private val appsForFiltering = new ConcurrentLinkedQueue[AppFilterReturnParameters]()
   // default is 24 hours
   private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
   private val threadFactory = new ThreadFactoryBuilder()
-      .setDaemon(true).setNameFormat("qualTool" + "-%d").build()
+      .setDaemon(true).setNameFormat("qualAppFilter" + "-%d").build()
   logInfo(s"Threadpool size is $nThreads")
-  private val qualFilter = Executors.newFixedThreadPool(nThreads, threadFactory)
+  private val qualFilterthreadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
       .asInstanceOf[ThreadPoolExecutor]
 
-  private class QualifyThread(path: EventLogInfo) extends Runnable {
+  private class FilterThread(path: EventLogInfo) extends Runnable {
     def run: Unit = filterEventLog(path, numRows, hadoopConf)
   }
 
@@ -52,31 +52,38 @@ class AppFilterImpl(
       appArgs: QualificationArgs): Seq[EventLogInfo] = {
     allPaths.foreach { path =>
       try {
-        qualFilter.submit(new QualifyThread(path))
+        qualFilterthreadPool.submit(new FilterThread(path))
       } catch {
         case e: Exception =>
           logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
       }
     }
     // wait for the threads to finish processing the files
-    qualFilter.shutdown()
-    if (!qualFilter.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
+    qualFilterthreadPool.shutdown()
+    if (!qualFilterthreadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
       logError(s"Processing log files took longer then $waitTimeInSec seconds," +
           " stopping processing any more event logs")
-      qualFilter.shutdownNow()
+      qualFilterthreadPool.shutdownNow()
     }
-    var eventlog = filteredeventLogs.asScala.map(x => x.eventlog).toSeq
 
     // This will be required to do the actual filtering
-    val allSumfilteredEventLogs = filteredeventLogs.asScala.map(x => (x.appInfo, x.eventlog)).toSeq
+    val apps = appsForFiltering.asScala
 
-    if (appArgs.applicationName.isDefined) { // filter based on appName
-      val applicationN = appArgs.applicationName
-      val filteredApplName = allSumfilteredEventLogs.
-          filter(_._1.get.appName.equals(applicationN.getOrElse("")))
-      eventlog = filteredApplName.map(x => x._2)
+    val filterAppName = appArgs.applicationName.getOrElse("")
+    if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
+      val filtered = apps.filter { app =>
+        val appNameOpt = app.appInfo.map(_.appName)
+        if (appNameOpt.isDefined) {
+          appNameOpt.get.equals(filterAppName)
+        } else {
+          // in complete log file
+          false
+        }
+      }
+      filtered.map(_.eventlog).toSeq
+    } else {
+      apps.map(x => x.eventlog).toSeq
     }
-    eventlog
   }
 
   case class AppFilterReturnParameters(
@@ -90,6 +97,6 @@ class AppFilterImpl(
 
     val startAppInfo = new FilterAppInfo(numRows, path, hadoopConf)
     val appInfo = AppFilterReturnParameters(startAppInfo.appInfo, path)
-    filteredeventLogs.add(appInfo)
+    appsForFiltering.add(appInfo)
   }
 }

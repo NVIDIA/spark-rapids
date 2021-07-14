@@ -71,26 +71,29 @@ object QualificationMain extends Logging {
         return (1, Seq[QualificationSummaryInfo]())
     }
 
-    var eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
       matchEventLogs.toOption, eventlogPaths, hadoopConf)
-    if (argsContainsAppFilters(appArgs)) {
-      val filteredeventLogs = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
-      val finaleventlogs = filteredeventLogs.filterEventLogs(eventLogInfos, appArgs)
-      eventLogInfos = finaleventlogs
+
+    val filteredLogs = if (argsContainsAppFilters(appArgs)) {
+      val appFilter = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
+      val finaleventlogs = appFilter.filterEventLogs(eventLogInfos, appArgs)
+      finaleventlogs
+    } else {
+      eventLogInfos
     }
 
-    if (eventLogInfos.isEmpty) {
+    if (filteredLogs.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return (0, Seq[QualificationSummaryInfo]())
     }
 
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
       nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
-    val res = qual.qualifyApps(eventLogInfos)
+    val res = qual.qualifyApps(filteredLogs)
     (0, res)
   }
 
-  def argsContainsAppFilters(appArgs:QualificationArgs): Boolean = {
+  def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {
     appArgs.applicationName.isDefined
   }
 }
