@@ -270,16 +270,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "decimal_part_expectation.csv")
   }
 
-  test("test decimal udf same sql problematic") {
-    val logFiles = Array(s"$logDir/decimal_udf_same_sql_eventlog.zstd")
-    runQualificationTest(logFiles, "decimal_udf_same_sql_expectation.csv")
-  }
-
-  test("test decimal udf diff sql problematic") {
-    val logFiles = Array(s"$logDir/decimal_udf_diff_sql_eventlog.zstd")
-    runQualificationTest(logFiles, "decimal_udf_diff_sql_expectation.csv")
-  }
-
   private def createDecFile(spark: SparkSession, dir: String): Unit = {
     import spark.implicits._
     val dfGen = Seq("1.32").toDF("value")
@@ -334,9 +324,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           val df2 = df.withColumn("mult", $"value" * $"value")
           // first run sql op with decimal only
           df2.collect()
-          // run a separate sql op using both
-          val df4 = df2.withColumn("udfcol", plusOne($"value"))
-          df4.collect()
+          // run a separate sql op using just udf
+          spark.sql("SELECT plusOne(5)").collect()
           // Then run another sql op that doesn't use with decimal or udf
           import spark.implicits._
           val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
