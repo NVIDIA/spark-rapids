@@ -155,7 +155,7 @@ class QualAppInfo(
     }.mkString(":")
   }
   
-  // For the read score we looks at all the read formats and datatypes for each
+  // For the read score we look at all the read formats and datatypes for each
   // format and for each read give it a value 0.0 - 1.0 depending on whether
   // the format is supported and if the data types are supported. We then sum
   // those together and divide by the total number.  So if none of the data types
