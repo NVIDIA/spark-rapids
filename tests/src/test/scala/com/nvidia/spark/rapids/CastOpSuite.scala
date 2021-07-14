@@ -58,7 +58,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   private val BOOL_CHARS = " \t\r\nFALSEfalseTRUEtrue01yesYESnoNO"
-  private val NUMERIC_CHARS = "inf \t\r\n0123456789.+-eE"
+  private val NUMERIC_CHARS = "infinityINFINITY \t\r\n0123456789.+-eEfFdD"
   private val DATE_CHARS = " \t\r\n0123456789:-/TZ"
 
   test("Cast from string to boolean using random inputs") {
@@ -98,15 +98,16 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.LongType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to float using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2900
+  test("Cast from string to float using random inputs") {
     testCastStringTo(DataTypes.FloatType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to double using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2900
+  test("Cast from string to float using hand-picked values") {
+    testCastStringTo(DataTypes.FloatType, Seq(".", "e", "Infinity", "+Infinity", "-Infinity",
+      "nAn", "naN"))
+  }
+
+  test("Cast from string to double using random inputs") {
     testCastStringTo(DataTypes.DoubleType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
@@ -139,7 +140,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       prefix: Option[String] = None): Seq[String] = {
     val randomValueCount = 8192
 
-    val random = new Random(0)
+    val random = new Random()
     val r = new EnhancedRandom(random,
       FuzzerOptions(validChars, maxStringLen))
 
@@ -179,8 +180,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
       assert(cpuRow.getInt(INDEX_ID) === gpuRow.getInt(INDEX_ID))
       val cpuValue = cpuRow.get(INDEX_C1)
       val gpuValue = gpuRow.get(INDEX_C1)
-      if (!compare(cpuValue, gpuValue)) {
+      if (!compare(cpuValue, gpuValue, epsilon = 0.0001)) {
         val inputValue = cpuRow.getString(INDEX_C0)
+          .replace("\r", "\\r")
+          .replace("\t", "\\t")
+          .replace("\n", "\\n")
         fail(s"Mismatch casting string [$inputValue] " +
           s"to $toType. CPU: $cpuValue; GPU: $gpuValue")
       }
@@ -824,6 +828,26 @@ class CastOpSuite extends GpuExpressionTestSuite {
       testCastToDecimal(DataTypes.StringType, scale = scale,
         customDataGenerator = Some(exponentsAsStrings),
         ansiEnabled = true)
+    }
+  }
+
+  test("CAST string to float - sanitize step") {
+    val testPairs = Seq(
+      ("\tinf", "Inf"),
+      ("\t+InFinITy", "Inf"),
+      ("\tInFinITy", "Inf"),
+      ("\t-InFinITy", "-Inf"),
+      ("\t61f", "61"),
+      (".8E4f", ".8E4")
+    )
+    val inputs = testPairs.map(_._1)
+    val expected = testPairs.map(_._2)
+    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
+      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
+        withResource(GpuCast.sanitizeStringToFloat(v)) { actual =>
+          CudfTestHelper.assertColumnsAreEqual(expected, actual)
+        }
+      }
     }
   }
 
