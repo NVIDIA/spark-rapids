@@ -189,21 +189,22 @@ case class GpuOrcMultiFilePartitionReaderFactory(
    */
   override def buildBaseColumnarReaderForCoalescing(files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    val clippedStripes = ArrayBuffer[OrcSingleStripeMeta]()
+    // Try best to group the same compression files together
+    val compressionAndStripes = LinkedHashMap[CompressionKind, ArrayBuffer[OrcSingleStripeMeta]]()
     files.map { file =>
-      // TODO, Do we need to check if every file has the same CompressionKind and schema and
-      // The requestedMapping?
       val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
         readDataSchema, partitionSchema)
-      clippedStripes ++= orcPartitionReaderContext.blockIterator.map(block =>
-        OrcSingleStripeMeta(
-          orcPartitionReaderContext.filePath,
-          OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
-          file.partitionValues,
-          OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
-          false))
+      compressionAndStripes.getOrElseUpdate(orcPartitionReaderContext.compressionKind,
+        new ArrayBuffer[OrcSingleStripeMeta]) ++=
+        orcPartitionReaderContext.blockIterator.map(block =>
+          OrcSingleStripeMeta(
+            orcPartitionReaderContext.filePath,
+            OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
+            file.partitionValues,
+            OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
+            false))
     }
-
+    val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics, partitionSchema, numThreads)
   }
@@ -277,6 +278,22 @@ case class OrcOutputStripe(
  * @param orcReader ORC Input File Reader
  * @param blockIterator An iterator over the ORC output stripes
  */
+
+/**
+ *
+ * @param filePath  which file the orc context is  to
+ * @param conf      the Hadoop configuration
+ * @param fileSchema the whole orc schema
+ * @param updatedReadSchema the updated read schema
+ * @param evolution  infer and track the evolution between the schema as stored in the file and
+ *                   the schema that has been requested by the reader.
+ * @param fileTail   the FileTail information
+ * @param compressionSize  the orc compression size
+ * @param compressionKind  the orc compression type
+ * @param readerOpts  options for creating a RecordReader.
+ * @param blockIterator the readed stripes
+ * @param requestedMapping
+ */
 case class OrcPartitionReaderContext(
     filePath: Path,
     conf: Configuration,
@@ -288,12 +305,7 @@ case class OrcPartitionReaderContext(
     compressionKind: CompressionKind,
     readerOpts: Reader.Options,
     blockIterator: BufferedIterator[OrcOutputStripe],
-    requestedMapping: Option[Array[Int]]) {
-  private var isClosed = false
-
-  def cleanUp() = {
-  }
-}
+    requestedMapping: Option[Array[Int]])
 
 trait OrcCommonFunctions extends OrcCodecWritingHelper {
 
@@ -1527,6 +1539,14 @@ class MultiFileOrcPartitionReader(
         s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
       return true
     }
+
+    if (currentBlockInfo.dataBlock.ctx.compressionKind !=
+        nextBlockInfo.dataBlock.ctx.compressionKind) {
+      logInfo(s"Orc File compression for the next file ${nextBlockInfo.filePath}" +
+        s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
+      return true
+    }
+
     false
   }
 
