@@ -628,23 +628,23 @@ class GpuHashAggregateIterator(
       AggregateUtils.computeAggModeCudfAggregates(aggregateExpressions, aggBufferAttributes)
 
     // boundInputReferences is used to pick out of the input batch the appropriate columns
-    // for aggregation
-    // - Partial Merge mode: we use the inputBindExpressions which can be only
-    //   non distinct merge expressions.
+    // for aggregation.
+    //
     // - PartialMerge with Partial mode: we use the inputProjections or distinct update expressions
     //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final or PartialMerge-only mode: we pick the columns in the order as handed to us.
     // - Partial or Complete mode: we use the inputProjections or distinct update expressions.
-    val boundInputReferences = if (modeInfo.hasPartialMerge && modeInfo.hasPartialMode) {
+    val boundInputReferences =
+    if (modeInfo.hasPartialMerge && modeInfo.uniqueModes.contains(Partial)) {
       // The 3rd stage of AggWithOneDistinct, which combines (partial) reduce-side
       // nonDistinctAggExpressions and map-side distinctAggExpressions. For this stage, we need to
       // switch the position of distinctAttributes and nonDistinctAttributes.
       //
-      // The layout of the 2nd stage's outputs:
+      // The schema of the 2nd stage's outputs:
       // groupingAttributes ++ distinctAttributes ++ nonDistinctAggBufferAttributes
       //
-      // The layout of the 3rd stage's expressions:
-      // groupingAttributes ++ nonDistinctMergeAggAttributes ++ distinctPartialAggAttributes
+      // The schema of the 3rd stage's expressions:
+      // nonDistinctMergeAggExpressions ++ distinctPartialAggExpressions
 
       val (distinctAggExpressions, nonDistinctAggExpressions) = aggregateExpressions.partition(
         _.isDistinct)
@@ -663,21 +663,29 @@ class GpuHashAggregateIterator(
       val inputProjections = groupingExpressions ++ nonDistinctExpressions ++ distinctExpressions
       val inputAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
       GpuBindReferences.bindGpuReferences(inputProjections, inputAttributes)
-    } else if (modeInfo.hasFinalMode || modeInfo.hasPartialMerge) {
-      // two possible conditions:
+    } else if (modeInfo.hasFinalMode ||
+        (modeInfo.hasPartialMerge && modeInfo.uniqueModes.length == 1) ||
+        modeInfo.uniqueModes.isEmpty) {
+      // three possible conditions:
       // 1. The Final stage, including the 2nd stage of NoDistinctAgg and 4th stage of
       // AggWithOneDistinct, which needs no input projections. Because the child outputs are
       // internal aggregation buffers, which are aligned for the final stage.
       //
       // 2. The 2nd stage (PartialMerge) of AggWithOneDistinct, which works like the final stage
       // taking the child outputs as inputs without any projections.
+      //
+      // 3. AggregateExec without any aggregateExpression
       GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
-    } else {
-      // The first aggregation stage (including Partial or Complete modes), whose child node
-      // is not an AggregateExec. Therefore, input projections are essential.
+    } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode) {
+      // The first aggregation stage (including Partial or Complete), whose child node is not
+      // an AggregateExec. Therefore, input projections are essential.
       val inputProjections: Seq[Expression] = groupingExpressions ++ aggregateExpressions
           .flatMap(_.aggregateFunction.inputProjection)
-      GpuBindReferences.bindGpuReferences(inputProjections, childAttr)    }
+      GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
+    } else {
+      // This branch should NOT be reached.
+      throw new IllegalStateException(s"invalid unique modes: ${modeInfo.uniqueModes}")
+    }
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
       val finalProjections = groupingExpressions ++
