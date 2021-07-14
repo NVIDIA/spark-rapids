@@ -319,6 +319,47 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("test decimal generate udf different sql ops") {
+    TrampolineUtil.withTempDir { outpath =>
+
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val tmpParquet = s"$outpath/decparquet"
+        createDecFile(sparkSession, tmpParquet)
+
+        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          val plusOne = udf((x: Int) => x + 1)
+          import spark.implicits._
+          spark.udf.register("plusOne", plusOne)
+          val df = spark.read.parquet(tmpParquet)
+          val df2 = df.withColumn("mult", $"value" * $"value")
+          // first run sql op with decimal only
+          df2.collect()
+          // run a separate sql op using both
+          val df4 = df2.withColumn("udfcol", plusOne($"value"))
+          df4.collect()
+          // Then run another sql op that doesn't use with decimal or udf
+          import spark.implicits._
+          val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
+          t1.createOrReplaceTempView("t1")
+          spark.sql("SELECT a, MAX(b) FROM t1 GROUP BY a ORDER BY a")
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val probApp = appSum.head
+        assert(probApp.potentialProblems.contains("UDF") &&
+          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.sqlDurationForProblematic > 0)
+        assert(probApp.sqlDataFrameDuration > probApp.sqlDurationForProblematic)
+      }
+    }
+  }
+
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener
