@@ -1,2 +1,2 @@
 App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,ReadFileFormat Score,Unsupported Read File Formats and Types
-TPC-DS Like Bench q86,app-20210319163812-1778,4320658.00,"",4,4320658,26171,0.0,false,0,24,20,100.00,""
+Spark shell,local-1624371906627,19864.04,"",6760,21802,83738,71.3,false,0,"",20,55.56,"Text[*];json[*]"

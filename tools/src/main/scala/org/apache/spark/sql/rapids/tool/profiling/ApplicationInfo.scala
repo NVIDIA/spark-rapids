@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.{immutable, mutable, Map}
 import scala.collection.mutable.ArrayBuffer
-import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
@@ -31,7 +30,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
-import org.apache.spark.sql.execution.ui.SparkPlanGraph
+import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
 import org.apache.spark.sql.rapids.tool.AppBase
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.ui.UIUtils
@@ -455,16 +454,19 @@ class ApplicationInfo(
     }
   }
 
+
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
-  def processSQLPlanMetrics(): Unit ={
+  def processSQLPlanMetrics(): Unit = {
     for ((sqlID, planInfo) <- sqlPlan){
+      checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
+        checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {
