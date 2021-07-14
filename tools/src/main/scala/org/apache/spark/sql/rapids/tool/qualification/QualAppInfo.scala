@@ -61,8 +61,9 @@ class QualAppInfo(
 
   processEvents()
 
-  override def processEvent(event: SparkListenerEvent): Unit = {
+  override def processEvent(event: SparkListenerEvent): Boolean = {
     eventProcessor.processAnyEvent(this, event)
+    false
   }
 
   // time in ms

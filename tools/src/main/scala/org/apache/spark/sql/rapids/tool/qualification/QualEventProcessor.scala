@@ -57,22 +57,6 @@ class QualEventProcessor() extends EventProcessorBase {
     app.appId = event.appId.getOrElse("")
   }
 
-  override def doSparkListenerApplicationStart(
-      app: AppFilter,
-      event: SparkListenerApplicationStart): Unit = {
-    logDebug("Processing event: " + event.getClass)
-    val thisAppInfo = QualApplicationInfo(
-      event.appName,
-      event.appId,
-      event.time,
-      event.sparkUser,
-      None,
-      None,
-      endDurationEstimated = false
-    )
-    app.appInfo = Some(thisAppInfo)
-  }
-
   override def doSparkListenerTaskEnd(
       app: QualAppInfo,
       event: SparkListenerTaskEnd): Unit = {

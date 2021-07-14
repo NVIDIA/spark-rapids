@@ -427,6 +427,7 @@ class ApplicationInfo(
 
   override def processEvent(event: SparkListenerEvent) = {
     eventProcessor.processAnyEvent(this, event)
+    false
   }
 
   /**

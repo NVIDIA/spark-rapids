@@ -19,17 +19,17 @@ package com.nvidia.spark.rapids.tool
 import java.io.FileNotFoundException
 import java.time.LocalDateTime
 import java.util.zip.ZipOutputStream
+
+import org.rogach.scallop.ScallopOption
+import scala.collection.mutable
 import scala.collection.mutable.LinkedHashMap
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
+
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.rapids.tool.AppFilter
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
-import org.rogach.scallop.ScallopOption
-
-import scala.collection.mutable
 
 sealed trait EventLogInfo {
   def eventLog: Path
@@ -218,33 +218,6 @@ object EventLogPathProcessor extends Logging {
       matched.take(numberofEventLogs)
     }.getOrElse(matchedLogs)
 
-    println("PRINTING KEYS")
-    println(filterArgs.keys.toSeq)
-
-    if (filterArgs.keys.exists(_=="applicationName") &&
-        filterArgs("applicationName").toOption != None) {
-      println("Application name exists")
-        val finalevents = filteredLogs.map { x =>
-        val temp = new AppFilter(numOutputRows, x._1, hadoopConf)
-        temp.processEvents()
-        (temp.appInfo, x)
-      }
-      println(s"length of finalEvents ${finalevents.size}")
-      println(s"finalEvents is ${finalevents}")
-      val applicationN = filterArgs("applicationName")
-
-      // THIS SEEMS TO BE INCORRECT
-      val test:scala.collection.Map[EventLogInfo, Long] = finalevents.map { x =>
-          x._1.get.appName match {
-            case a if a.equals(applicationN) => x._2
-            //case _ =>
-          }
-      }
-      println("FINAL ANSWER IS: ")
-      println(test)
-    } else {
-      println("Nothing exists")
-    }
     filteredLogs.keys.toSeq
   }
 

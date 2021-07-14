@@ -39,7 +39,7 @@ abstract class AppBase(
   var sparkVersion: String = ""
   var appEndTime: Option[Long] = None
 
-  def processEvent(event: SparkListenerEvent): Unit
+  def processEvent(event: SparkListenerEvent): Boolean
 
   protected def openEventLogInternal(log: Path, fs: FileSystem): InputStream = {
     EventLogFileWriter.codecName(log) match {
@@ -80,10 +80,15 @@ abstract class AppBase(
         Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
           val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
           totalNumEvents += lines.size
-          lines.foreach { line =>
+          var i = 0
+          var done = false
+          val linesSize = lines.size
+          while (i < linesSize && !done) {
             try {
+              val line = lines(i)
               val event = JsonProtocol.sparkEventFromJson(parse(line))
-              processEvent(event)
+              i += 1
+              done = processEvent(event)
             }
             catch {
               case e: ClassNotFoundException =>

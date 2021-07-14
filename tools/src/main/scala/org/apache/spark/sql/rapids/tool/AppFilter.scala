@@ -1,79 +1,56 @@
+/*
+ * Copyright (c) 2021, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.spark.sql.rapids.tool
 
-import com.nvidia.spark.rapids.tool.{DatabricksEventLog, DatabricksRollingEventLogFilesFileReader, EventLogInfo}
+import com.nvidia.spark.rapids.tool.EventLogInfo
 import org.apache.hadoop.conf.Configuration
-import org.apache.spark.deploy.history.EventLogFileReader
-import org.apache.spark.scheduler.{SparkListenerApplicationStart, SparkListenerEvent}
-import org.apache.spark.sql.rapids.tool.qualification.{QualApplicationInfo, QualEventProcessor}
-import org.apache.spark.util.{JsonProtocol, Utils}
-import org.json4s.jackson.JsonMethods.parse
 
-import scala.io.{Codec, Source}
+import org.apache.spark.scheduler.{SparkListenerApplicationStart, SparkListenerEvent}
+
+case class ApplicationStartInfo(
+    appName: String,
+    appId: Option[String],
+    startTime: Long)
 
 class AppFilter(
     numOutputRows: Int,
     eventLogInfo: EventLogInfo,
     hadoopConf: Configuration) extends AppBase(numOutputRows, eventLogInfo, hadoopConf) {
 
-  private lazy val eventProcessor = new QualEventProcessor()
-
-  var appInfo: Option[QualApplicationInfo] = None
-
-  override def processEvent(event: SparkListenerEvent): Unit = {
-    println("INSIDE APP FILTER ProcessEvent")
-    eventProcessor.doSparkListenerApplicationStart(
-      this, event.asInstanceOf[SparkListenerApplicationStart])
+  def doSparkListenerApplicationStart(
+      event: SparkListenerApplicationStart): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val thisAppInfo = ApplicationStartInfo(
+      event.appName,
+      event.appId,
+      event.time
+    )
+    appInfo = Some(thisAppInfo)
   }
 
-  override def processEvents(): Unit = {
-    val eventlog = eventLogInfo.eventLog
+  var appInfo: Option[ApplicationStartInfo] = None
 
-    logInfo("Parsing Event Log: " + eventlog.toString)
-
-    // at this point all paths should be valid event logs or event log dirs
-    val fs = eventlog.getFileSystem(hadoopConf)
-    var totalNumEvents = 0
-    val readerOpt = eventLogInfo match {
-      case dblog: DatabricksEventLog =>
-        Some(new DatabricksRollingEventLogFilesFileReader(fs, eventlog))
-      case apachelog => EventLogFileReader(fs, eventlog)
-    }
-
-    if (readerOpt.isDefined) {
-      val reader = readerOpt.get
-      val logFiles = reader.listEventLogFiles
-      logFiles.foreach { file =>
-        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
-          val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-          totalNumEvents += lines.size
-          //println(s"TOTAL NUM EVENTS $totalNumEvents")
-          //println("LISTING EVENTS")
-          val appStartClass = "org.apache.spark.scheduler.SparkListenerApplicationStart"
-          lines.foreach { line =>
-            try {
-              val event = JsonProtocol.sparkEventFromJson(parse(line))
-
-              if (event.getClass.getName.equals(appStartClass)) {
-                println("INSIDE IF")
-                println(event)
-                processEvent(event)
-                return
-              }
-              println(event.getClass)
-              //println(processEvent(event))
-              //processEvent(event)
-            }
-            catch {
-              case e: ClassNotFoundException =>
-                logWarning(s"ClassNotFoundException: ${e.getMessage}")
-            }
-          }
-        }
-      }
+  override def processEvent(event: SparkListenerEvent): Boolean = {
+    if (event.isInstanceOf[SparkListenerApplicationStart]) {
+      doSparkListenerApplicationStart(event.asInstanceOf[SparkListenerApplicationStart])
+      true
     } else {
-      logError(s"Error getting reader for ${eventlog.getName}")
+      false
     }
-    logInfo(s"Total number of events parsed: $totalNumEvents for ${eventlog.toString}")
   }
 
   processEvents()

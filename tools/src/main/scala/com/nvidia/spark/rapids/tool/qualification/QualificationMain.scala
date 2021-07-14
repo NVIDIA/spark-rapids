@@ -18,11 +18,10 @@ package com.nvidia.spark.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.EventLogPathProcessor
 import org.apache.hadoop.conf.Configuration
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
-import org.rogach.scallop.ScallopOption
 
-import scala.collection.mutable
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
 /**
  * A tool to analyze Spark event logs and determine if 
@@ -45,12 +44,8 @@ object QualificationMain extends Logging {
       dropTempViews: Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
     val eventlogPaths = appArgs.eventlog()
-    // val filterN = appArgs.filterCriteria
-    // val matchEventLogs = appArgs.matchEventLogs
-    val filterArgrs = mutable.Map[String, ScallopOption[String]]()
-    filterArgrs("filterCriteria") = appArgs.filterCriteria
-    filterArgrs("matchEventLogs") = appArgs.matchEventLogs
-    filterArgrs("applicationName") = appArgs.applicationName
+    val filterN = appArgs.filterCriteria
+    val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
@@ -59,21 +54,27 @@ object QualificationMain extends Logging {
     val timeout = appArgs.timeout.toOption
 
     val hadoopConf = new Configuration()
-    // val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-    //   matchEventLogs.toOption, eventlogPaths, hadoopConf)
-    val eventLogInfos = EventLogPathProcessor.qualProcessAllPaths(numOutputRows, filterArgrs,
-      eventlogPaths, hadoopConf)
+    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+       matchEventLogs.toOption, eventlogPaths, hadoopConf)
+    //var eventLogInfos = EventLogPathProcessor.qualProcessAllPaths(numOutputRows, filterArgrs,
+    //  eventlogPaths, hadoopConf)
+
+    if (argsContainsAppFilters(appArgs)) {
+      val filteredeventLogs = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
+      val finaleventlogs = filteredeventLogs.filterEventLogs(eventLogInfos, appArgs)
+    }
 
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return (0, Seq[QualificationSummaryInfo]())
     }
 
-    println("PRINTING EVENT LOG PATHS")
-    eventLogInfos.foreach(println)
-
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout, nThreads)
     val res = qual.qualifyApps(eventLogInfos)
     (0, res)
+  }
+
+  def argsContainsAppFilters(appArgs:QualificationArgs): Boolean = {
+    appArgs.applicationName.isDefined
   }
 }

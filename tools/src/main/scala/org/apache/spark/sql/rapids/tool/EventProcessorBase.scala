@@ -140,10 +140,6 @@ trait EventProcessorBase extends Logging {
       app: T,
       event: SparkListenerApplicationStart): Unit = {}
 
-  def doSparkListenerApplicationStart(
-      app: AppFilter,
-      event: SparkListenerApplicationStart): Unit = {}
-
   def doSparkListenerApplicationEnd(
       app: T,
       event: SparkListenerApplicationEnd): Unit = {
