@@ -664,21 +664,19 @@ class GpuHashAggregateIterator(
       val inputAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
       GpuBindReferences.bindGpuReferences(inputProjections, inputAttributes)
     } else if (modeInfo.hasFinalMode ||
-        (modeInfo.hasPartialMerge && modeInfo.uniqueModes.length == 1) ||
-        modeInfo.uniqueModes.isEmpty) {
-      // three possible conditions:
+        (modeInfo.hasPartialMerge && modeInfo.uniqueModes.length == 1)) {
+      // two possible conditions:
       // 1. The Final stage, including the 2nd stage of NoDistinctAgg and 4th stage of
       // AggWithOneDistinct, which needs no input projections. Because the child outputs are
       // internal aggregation buffers, which are aligned for the final stage.
       //
       // 2. The 2nd stage (PartialMerge) of AggWithOneDistinct, which works like the final stage
       // taking the child outputs as inputs without any projections.
-      //
-      // 3. AggregateExec without any aggregateExpression
       GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
-    } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode) {
-      // The first aggregation stage (including Partial or Complete), whose child node is not
-      // an AggregateExec. Therefore, input projections are essential.
+    } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode ||
+        modeInfo.uniqueModes.isEmpty) {
+      // The first aggregation stage (including Partial or Complete or no aggExpression),
+      // whose child node is not an AggregateExec. Therefore, input projections are essential.
       val inputProjections: Seq[Expression] = groupingExpressions ++ aggregateExpressions
           .flatMap(_.aggregateFunction.inputProjection)
       GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
@@ -695,21 +693,29 @@ class GpuHashAggregateIterator(
       None
     }
 
+    // allAttributes can be different things, depending on aggregation mode:
+    // - Partial mode: grouping key + cudf aggregates (e.g. no avg, intead sum::count
+    // - Final mode: grouping key + spark aggregates (e.g. avg)
+    val finalAttributes = groupingAttributes ++ aggregateAttributes
+
     // boundResultReferences is used to project the aggregated input batch(es) for the result.
-    // - For final stages (Final or Complete mode): we use resultExpressions to pick out the
-    //   correct columns that finalReferences has pre-processed for us
-    // - For non-Final stages (Partial or PartialMerge mode): it's just a pass through. We take
-    //   whatever was aggregated and let it come out of the node as is.
-    val boundResultReferences = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
-      GpuBindReferences.bindGpuReferences(
-        resultExpressions,
-        groupingAttributes ++ aggregateAttributes)
-    } else {
+    // - Partial mode: it's a pass through. We take whatever was aggregated and let it come
+    //   out of the node as is.
+    // - Final or Complete mode: we use resultExpressions to pick out the correct columns that
+    //   finalReferences has pre-processed for us
+    val boundResultReferences = if (modeInfo.hasPartialMode) {
       GpuBindReferences.bindGpuReferences(
         resultExpressions,
         resultExpressions.map(_.toAttribute))
+    } else if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
+        finalAttributes)
+    } else {
+      GpuBindReferences.bindGpuReferences(
+        resultExpressions,
+        groupingAttributes)
     }
-
     BoundExpressionsModeAggregates(boundInputReferences, boundFinalProjections,
       boundResultReferences, aggModeCudfAggregates)
   }
