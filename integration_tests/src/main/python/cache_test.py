@@ -280,17 +280,13 @@ def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     # NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
     assert_equal(reg_result, cached_result)
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
-@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
-@ignore_order
-def test_cache_count(data_gen, with_x_session, enable_vectorized_conf):
+def test_function_on_cached_df(with_x_session, func, data_gen, enable_vectorized_conf):
     def with_cache(cached):
         def helper(spark):
             df = unary_op_df(spark, data_gen)
             if cached:
                 df.cache().count()
-            return df.count()
+            return func(df)
         return helper
 
     conf = enable_vectorized_conf.copy()
@@ -301,3 +297,22 @@ def test_cache_count(data_gen, with_x_session, enable_vectorized_conf):
 
     assert_equal(reg_result, cached_result)
 
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@ignore_order
+def test_cache_count(data_gen, with_x_session, enable_vectorized_conf):
+    test_function_on_cached_df(with_x_session, lambda df: df.count(), data_gen, enable_vectorized_conf)
+
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('with_x_session', [with_cpu_session, with_gpu_session])
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@ignore_order
+# This tests the cached and uncached values returned by collect on the CPU and GPU.
+# When running on the GPU with the DefaultCachedBatchSerializer, to project the results Spark adds a ColumnarToRowExec
+# to be able to show the results which will cause this test to throw an exception as it's not on the GPU so we have to
+# add that case to the `allowed` list. As of now there is no way for us to limit the scope of allow_non_gpu based on a
+# condition therefore we must allow it in all cases
+@allow_non_gpu('ColumnarToRowExec')
+def test_cache_multi_batch(data_gen, with_x_session, enable_vectorized_conf):
+    test_function_on_cached_df(with_x_session, lambda df: df.collect(), data_gen, enable_vectorized_conf)
