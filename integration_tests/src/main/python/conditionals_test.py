@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
 all_gens = all_gen + [NullGen()]
-all_single_nested_gens = single_level_array_gens + all_basic_struct_gen
+all_nested_gens = array_gens_sample + struct_gens_sample
 
 @pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
 def test_if_else(data_gen):
@@ -39,7 +39,7 @@ def test_if_else(data_gen):
                 'IF(a, b, {})'.format(null_lit),
                 'IF(a, {}, c)'.format(null_lit)))
 
-@pytest.mark.parametrize('data_gen', all_gens + all_single_nested_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
 def test_case_when(data_gen):
     num_cmps = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))

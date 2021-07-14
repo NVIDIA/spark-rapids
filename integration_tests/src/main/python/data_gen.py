@@ -640,11 +640,18 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
         src.data_type)
 
 def _mark_as_lit(data, data_type = None):
-    # Sadly you cannot create a literal from just an array in pyspark
-    if isinstance(data, list):
-        return f.array([_mark_as_lit(x) for x in data])
-    if data_type is None:
-        return f.lit(data)
+    # To support nested types, 'data_type' is required.
+    assert data_type is not None
+
+    if isinstance(data_type, ArrayType):
+        assert isinstance(data, list)
+        # Sadly you cannot create a literal from just an array in pyspark
+        return f.array([_mark_as_lit(x, data_type.elementType) for x in data])
+    elif isinstance(data_type, StructType):
+        assert isinstance(data, tuple) and len(data) == len(data_type.fields)
+        # Sadly you cannot create a literal from just a dict/tuple in pyspark
+        children = zip(data, data_type.fields)
+        return f.struct([_mark_as_lit(x, fd.dataType).alias(fd.name) for x, fd in children])
     else:
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)
