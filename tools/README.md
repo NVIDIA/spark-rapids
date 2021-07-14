@@ -370,15 +370,15 @@ Rapids Accelerator Jar and cuDF Jar:
 These are also called accumulables in Spark.
 ```
 SQL Plan Metrics for Application:
-+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
-|sqlID|nodeID|nodeName                                                   |accumulatorId|name                   |max_value    |metricType|
-+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
-|0    |1     |GpuColumnarExchange                                        |111          |output rows            |1111111111   |sum       |
-|0    |1     |GpuColumnarExchange                                        |112          |output columnar batches|222222       |sum       |
-|0    |1     |GpuColumnarExchange                                        |113          |data size              |333333333333 |size      |
-|0    |1     |GpuColumnarExchange                                        |114          |shuffle bytes written  |444444444444 |size      |
-|0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
-|0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
++--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
+|appIndex|sqlID|nodeID|nodeName                                                   |accumulatorId|name                   |max_value    |metricType|
++--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
+|1       |0    |1     |GpuColumnarExchange                                        |111          |output rows            |1111111111   |sum       |
+|1       |0    |1     |GpuColumnarExchange                                        |112          |output columnar batches|222222       |sum       |
+|1       |0    |1     |GpuColumnarExchange                                        |113          |data size              |333333333333 |size      |
+|1       |0    |1     |GpuColumnarExchange                                        |114          |shuffle bytes written  |444444444444 |size      |
+|1       |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
+|1       |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
 ```
 
 - Print SQL Plans (-p option):

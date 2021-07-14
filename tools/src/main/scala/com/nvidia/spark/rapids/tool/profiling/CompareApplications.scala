@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions.asc
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
@@ -188,7 +188,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
   }
 
   // Compare Executors information
-  def compareExecutorInfo(): Unit = {
+  def compareExecutorInfo(): DataFrame = {
     val messageHeader = "\n\nCompare Executor Information:\n"
     var query = ""
     var i = 1

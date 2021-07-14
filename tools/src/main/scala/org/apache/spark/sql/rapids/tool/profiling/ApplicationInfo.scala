@@ -715,6 +715,7 @@ class ApplicationInfo(
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |t.numExecutors, t.totalCores as executorCores,
          |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
          |null as executorMemory, null as numGpusPerExecutor,
@@ -746,6 +747,7 @@ class ApplicationInfo(
          |""".stripMargin
     } else {
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |count(executorID) as numExecutors,
          |first(totalCores) as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
@@ -886,7 +888,7 @@ class ApplicationInfo(
        |and s.accumulatorId=t.accumulatorId
        |and s.sqlID=p.sqlID and s.accumulatorId=p.accumulatorId
        |)
-       |select sqlID, nodeID, nodeName,
+       |select $index as appIndex, sqlID, nodeID, nodeName,
        |accumulatorId, name, max(value) as max_value, metricType
        |from allaccums
        |group by sqlID, nodeID, nodeName, accumulatorId, name, metricType
@@ -922,14 +924,14 @@ class ApplicationInfo(
   }
 
   def getblockManagersRemoved: String = {
-    s"""select executorID, time
+    s"""select $index as appIndex, executorID, time
        |from blockManagersRemovedDF_$index
        |order by cast(executorID as long)
        |""".stripMargin
   }
 
   def getExecutorsRemoved: String = {
-    s"""select executorID, time,
+    s"""select $index as appIndex, executorID, time,
        |substr(reason, 1, 100) reason_first100char
        |from executorsRemovedDF_$index
        |order by cast(executorID as long)

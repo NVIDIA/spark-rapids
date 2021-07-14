@@ -342,6 +342,32 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(row1.executorCores.equals(2))
   }
 
+  test("test spark2 and spark3 event logs") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs = new ProfileArgs(Array(s"$logDir/tasks_executors_fail_compressed_eventlog.zstd",
+      s"$logDir/spark2-eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 2)
+    val compare = new CompareApplications(apps, None)
+    val df = compare.compareExecutorInfo()
+    // just the fact it worked makes sure we can run with both files
+    val execinfo = df.collect()
+    // since we give them indexes above they should be in the right order
+    // and spark2 event info should be second
+    val firstRow = execinfo.head
+    assert(firstRow.getInt(firstRow.schema.fieldIndex("resourceProfileId")) === 0)
+
+    val secondRow = execinfo(1)
+    assert(secondRow.isNullAt(secondRow.schema.fieldIndex("resourceProfileId")))
+  }
+
   test("test filename match") {
     val matchFileName = "udf"
     val appArgs = new ProfileArgs(Array(

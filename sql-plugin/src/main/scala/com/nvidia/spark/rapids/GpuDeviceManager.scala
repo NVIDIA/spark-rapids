@@ -135,6 +135,7 @@ object GpuDeviceManager extends Logging {
     // assume error during shutdown until we complete it
     singletonMemoryInitialized = Errored
     RapidsBufferCatalog.close()
+    GpuShuffleEnv.shutdown()
     Rmm.shutdown()
     singletonMemoryInitialized = Uninitialized
   }
