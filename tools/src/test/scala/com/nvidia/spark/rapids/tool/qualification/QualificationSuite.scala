@@ -281,22 +281,23 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("test decimal generate udf same") {
-    TrampolineUtil.withTempDir { eventLogDir =>
-      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
-        val plusOne = udf((x: Int) => x + 1)
-        import spark.implicits._
-        spark.udf.register("plusOne", plusOne)
-        val dfGen = Seq("1.32").toDF("value")
-          .selectExpr("CAST(value AS DECIMAL(4, 2)) AS value")
-        val tmpParquet = s"$eventLogDir/decparquet"
-        dfGen.write.parquet(tmpParquet)
-        val df = spark.read.parquet(tmpParquet)
-        val df2 = df.withColumn("mult", $"value" * $"value")
-        val df4 = df2.withColumn("udfcol", plusOne($"value"))
-        df4
-      }
+    TrampolineUtil.withTempDir { outpath =>
 
-      TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          val plusOne = udf((x: Int) => x + 1)
+          import spark.implicits._
+          spark.udf.register("plusOne", plusOne)
+          val dfGen = Seq("1.32").toDF("value")
+            .selectExpr("CAST(value AS DECIMAL(4, 2)) AS value")
+          val tmpParquet = s"$outpath/decparquet"
+          dfGen.write.parquet(tmpParquet)
+          val df = spark.read.parquet(tmpParquet)
+          val df2 = df.withColumn("mult", $"value" * $"value")
+          val df4 = df2.withColumn("udfcol", plusOne($"value"))
+          df4
+        }
+
         val allArgs = Array(
           "--output-directory",
           outpath.getAbsolutePath())
