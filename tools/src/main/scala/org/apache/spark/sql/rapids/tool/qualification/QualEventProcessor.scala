@@ -64,10 +64,11 @@ class QualEventProcessor() extends EventProcessorBase {
     // Adds in everything (including failures)
     app.stageIdToSqlID.get(event.stageId).foreach { sqlID =>
       val taskSum = app.sqlIDToTaskEndSum.getOrElseUpdate(sqlID, {
-        new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0)
+        new StageTaskQualificationSummary(event.stageId, event.stageAttemptId, 0, 0, 0)
       })
       taskSum.executorRunTime += event.taskMetrics.executorRunTime
       taskSum.executorCPUTime += NANOSECONDS.toMillis(event.taskMetrics.executorCpuTime)
+      taskSum.totalTaskDuration += event.taskInfo.duration
     }
   }
 
@@ -86,7 +87,6 @@ class QualEventProcessor() extends EventProcessorBase {
       ""
     )
     app.sqlStart += (event.executionId -> sqlExecution)
-    // app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
     // -1 to indicate that it started but not complete
     app.sqlDurationTime += (event.executionId -> -1)
@@ -136,18 +136,18 @@ class QualEventProcessor() extends EventProcessorBase {
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.lastJobEndTime = Some(event.time)
-    // TODO - verify job failures show up in sql failures
-    // do we want to track separately for any failures?
     if (event.jobResult != JobSucceeded) {
-      val sqlID = app.jobIdToSqlID(event.jobId)
-      logWarning(s"job failed: ${event.jobId}")
-      // zero out the cpu and run times since failed
-      app.sqlIDToTaskEndSum.get(sqlID).foreach { sum =>
-        sum.executorRunTime = 0
-        sum.executorCPUTime = 0
+      val sqlID = app.jobIdToSqlID.get(event.jobId) match {
+        case Some(id) =>
+          // zero out the cpu and run times since failed
+          app.sqlIDToTaskEndSum.get(id).foreach { sum =>
+            sum.executorRunTime = 0
+            sum.executorCPUTime = 0
+          }
+          val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(id, ArrayBuffer.empty[Int])
+          failedJobs += event.jobId
+        case None =>
       }
-      val failedJobs = app.sqlIDtoJobFailures.getOrElseUpdate(sqlID, ArrayBuffer.empty[Int])
-      failedJobs += event.jobId
     }
   }
 

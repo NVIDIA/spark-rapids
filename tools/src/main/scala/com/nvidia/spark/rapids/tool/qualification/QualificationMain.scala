@@ -29,7 +29,7 @@ import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 object QualificationMain extends Logging {
 
   def main(args: Array[String]) {
-    val (exitCode, _) = mainInternal(new QualificationArgs(args))
+    val (exitCode, _) = mainInternal(new QualificationArgs(args), printStdout = true)
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -40,7 +40,8 @@ object QualificationMain extends Logging {
    */
   def mainInternal(appArgs: QualificationArgs,
       writeOutput: Boolean = true,
-      dropTempViews: Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
+      dropTempViews: Boolean = false,
+      printStdout:Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
@@ -51,9 +52,24 @@ object QualificationMain extends Logging {
     val nThreads = appArgs.numThreads.getOrElse(
       Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
     val timeout = appArgs.timeout.toOption
+    val readScorePercent = appArgs.readScorePercent.getOrElse(20)
+    val reportReadSchema = appArgs.reportReadSchema.getOrElse(false)
     val order = appArgs.order.getOrElse("desc")
 
     val hadoopConf = new Configuration()
+
+    val pluginTypeChecker = try {
+      if (readScorePercent > 0 || reportReadSchema) {
+        Some(new PluginTypeChecker())
+      } else {
+        None
+      }
+    } catch {
+      case ie: IllegalStateException =>
+        logError("Error creating the plugin type checker!", ie)
+        return (1, Seq[QualificationSummaryInfo]())
+    }
+
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
       matchEventLogs.toOption, eventlogPaths, hadoopConf)
     if (eventLogInfos.isEmpty) {
@@ -61,8 +77,8 @@ object QualificationMain extends Logging {
       return (0, Seq[QualificationSummaryInfo]())
     }
 
-    val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf,
-      timeout, nThreads, order)
+    val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
+      nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
     val res = qual.qualifyApps(eventLogInfos)
     (0, res)
   }

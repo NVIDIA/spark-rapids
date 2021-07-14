@@ -50,16 +50,20 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   val schema = new StructType()
-    .add("appName", StringType, true)
-    .add("appID", StringType, true)
-    .add("dfRankTotal", DoubleType, true)
-    .add("potentialProblems", StringType, true)
-    .add("dfDurationFinal", LongType, true)
-    .add("appDuration", LongType, true)
-    .add("executorCPURatio", DoubleType, true)
-    .add("appEndDurationEstimated", BooleanType, true)
-    .add("sqlDurationForProblematic", LongType, true)
-    .add("failedSQLIds", StringType, true)
+    .add("App Name", StringType, true)
+    .add("App ID", StringType, true)
+    .add("Score", DoubleType, true)
+    .add("Potential Problems", StringType, true)
+    .add("SQL Dataframe Duration", LongType, true)
+    .add("SQL Dataframe Task Duration", LongType, true)
+    .add("App Duration", LongType, true)
+    .add("Executor CPU Time Percent", DoubleType, true)
+    .add("App Duration Estimated", BooleanType, true)
+    .add("SQL Duration with Potential Problems", LongType, true)
+    .add("SQL Ids with Failures", StringType, true)
+    .add("Read Score Percent", IntegerType, true)
+    .add("Read File Format Score", DoubleType, true)
+    .add("Unsupported Read File Formats and Types", StringType, true)
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -79,7 +83,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(exit == 0)
       val spark2 = sparkSession
       import spark2.implicits._
-      val dfTmp = appSum.toDF
+      val dfTmp = appSum.toDF.drop("readFileFormats")
       val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
       if (shouldReturnEmpty) {
         assert(appSum.head.sqlDataFrameDuration == 0.0)
@@ -191,6 +195,35 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val lines = inputSource.getLines
         // 4 lines of header and footer, limit is 2
         assert(lines.size == (4 + 2))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
+  test("test datasource read format included") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--report-read-schema")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.csv"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toSeq
+        // 1 for header, 1 for values
+        assert(lines.size == 2)
+        assert(lines.head.contains("Read Schema"))
+        assert(lines(1).contains("loan399"))
       } finally {
         inputSource.close()
       }
@@ -349,6 +382,23 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("test read datasource v1") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
+    runQualificationTest(logFiles, "read_dsv1_expectation.csv")
+  }
+
+  test("test read datasource v2") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv2.zstd")
+    runQualificationTest(logFiles, "read_dsv2_expectation.csv")
+  }
+
+  test("test dsv1 complex and decimal") {
+    val logFiles = Array(s"$logDir/complex_dec_eventlog.zstd")
+    runQualificationTest(logFiles, "complex_dec_expectation.csv")
+  }
+
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener
@@ -380,7 +430,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
 
-        val listenerCpuTimePercent = ToolUtils.calculatePercent(executorCpuTime, executorRunTime)
+        val listenerCpuTimePercent =
+          ToolUtils.calculateDurationPercent(executorCpuTime, executorRunTime)
 
         // compare metrics from event log with metrics from listener
         assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
