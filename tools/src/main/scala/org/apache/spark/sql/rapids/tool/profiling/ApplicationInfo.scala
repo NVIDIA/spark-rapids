@@ -713,6 +713,7 @@ class ApplicationInfo(
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |t.numExecutors, t.totalCores as executorCores,
          |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
          |null as executorMemory, null as numGpusPerExecutor,
@@ -744,6 +745,7 @@ class ApplicationInfo(
          |""".stripMargin
     } else {
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |count(executorID) as numExecutors,
          |first(totalCores) as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
