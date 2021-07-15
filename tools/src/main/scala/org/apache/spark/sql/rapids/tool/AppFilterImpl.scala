@@ -130,9 +130,8 @@ object AppFilterImpl {
     val timePeriod = raw"(\d+)([h,d,w,m]|min)?".r
     val (timeStr, periodStr) = appStartStr match {
       case timePeriod(time, "") =>
-        println(s"4: $time")
         (time, "d")
-      case timePeriod(time, period) => println(s"1: $time $period")
+      case timePeriod(time, period) =>
         (time, period)
       case _ =>
         throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
