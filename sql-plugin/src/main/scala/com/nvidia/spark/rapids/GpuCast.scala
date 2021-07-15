@@ -203,30 +203,32 @@ object GpuCast extends Arm {
       withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
         // filter out strings containing breaking whitespace
         val withoutWhitespace = withResource(stripped.containsRe("(\r|\n)")) {
-            hasVerticalWhitespace =>
-          hasVerticalWhitespace.ifElse(nullString, stripped)
+          _.ifElse(nullString, stripped)
         }
         // replace all possible versions of infinity with Inf
-        withResource(withoutWhitespace) { _ =>
-          withResource(withoutWhitespace.stringReplaceWithBackrefs(
-            "([iI][nN][fF])([iI][nN][iI][tT][yY])?", "Inf")) { inf =>
-            // replace +Inf with Inf
-            withResource(inf.stringReplaceWithBackrefs("([+])(Inf)", "Inf")) {
-                infWithoutPlus =>
-              // filter out any strings that are not valid floating point numbers
-              val floatOrNull = withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) {
-                  looksLikeFloat =>
-                looksLikeFloat.ifElse(infWithoutPlus, nullString)
-              }
-              // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
-              withResource(floatOrNull) { _ =>
-                withResource(floatOrNull.matchesRe("^[+\\-]?Inf$")) { isInf =>
-                  withResource(floatOrNull.stringReplaceWithBackrefs(
-                     "([^fFdD]*)([fFdD]$)", "\\1")) { stripDesignator =>
-                    isInf.ifElse(floatOrNull, stripDesignator)
-                  }
-                }
-              }
+        val inf = withResource(withoutWhitespace) { _ =>
+          withoutWhitespace.stringReplaceWithBackrefs(
+            "([iI][nN][fF])([iI][nN][iI][tT][yY])?", "Inf")
+        }
+        // replace +Inf with Inf because cuDF only supports "Inf" and "-Inf"
+        val infWithoutPlus = withResource(inf) { _ =>
+          withResource(GpuScalar.from("+Inf", DataTypes.StringType)) { search =>
+            withResource(GpuScalar.from("Inf", DataTypes.StringType)) { replace =>
+              inf.stringReplace(search, replace)
+            }
+          }
+        }
+        // filter out any strings that are not valid floating point numbers according
+        // to the regex pattern
+        val floatOrNull = withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) {
+            _.ifElse(infWithoutPlus, nullString)
+        }
+        // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
+        withResource(floatOrNull) { _ =>
+          withResource(floatOrNull.matchesRe("^[+\\-]?Inf$")) { isInf =>
+            withResource(floatOrNull.stringReplaceWithBackrefs(
+              "([^fFdD]*)([fFdD]$)", "\\1")) { stripDesignator =>
+              isInf.ifElse(floatOrNull, stripDesignator)
             }
           }
         }
