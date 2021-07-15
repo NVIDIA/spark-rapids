@@ -94,6 +94,8 @@ object QualificationMain extends Logging {
   }
 
   def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {
-    appArgs.applicationName.isDefined
+    val filterCriteria = appArgs.filterCriteria.toOption
+    appArgs.applicationName.isDefined || (filterCriteria.isDefined &&
+        (filterCriteria.get.endsWith("-overall") || filterCriteria.get.endsWith("-per-app-name")))
   }
 }
