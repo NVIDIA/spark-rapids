@@ -20,29 +20,13 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import java.util.Calendar
 
-import com.nvidia.spark.rapids.tool.ToolTestUtils
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.FunSuite
 
-import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.TrampolineUtil
 import org.apache.spark.sql.rapids.tool.AppFilterImpl
 
 
-class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
-
-  private var sparkSession: SparkSession = _
-
-  private val expRoot = ToolTestUtils.getTestResourceFile("QualificationExpectations")
-  private val logDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
-
-  override protected def beforeEach(): Unit = {
-    TrampolineUtil.cleanupAnyExistingSession()
-    sparkSession = SparkSession
-      .builder()
-      .master("local[*]")
-      .appName("Rapids Spark Profiling Tool Unit Tests")
-      .getOrCreate()
-  }
+class AppFilterSuite extends FunSuite {
 
   test("illegal args") {
     assertThrows[IllegalArgumentException](AppFilterImpl.parseAppTimePeriod("0"))
@@ -153,5 +137,4 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
-
 }

@@ -125,7 +125,6 @@ object AppFilterImpl {
   }
 
   // parse the user provided time period string into ms.
-  // date parameter is for testing.
   def parseAppTimePeriod(appStartStr: String): Long = {
     val timePeriod = raw"(\d+)([h,d,w,m]|min)?".r
     val (timeStr, periodStr) = appStartStr match {
