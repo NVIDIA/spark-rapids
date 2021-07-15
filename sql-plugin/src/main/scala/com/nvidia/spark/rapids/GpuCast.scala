@@ -180,7 +180,7 @@ object GpuCast extends Arm {
 
     // This regex gets applied after the transformation to normalize use of Inf and is
     // just strict enough to filter out known edge cases that would result in incorrect
-    // values. We further filter out invalid values using the cuDF is_float method.
+    // values. We further filter out invalid values using the cuDF isFloat method.
     val VALID_FLOAT_REGEX =
       "^" +                         // start of line
       "[+\\-]?" +                   // optional + or - at start of string
@@ -822,14 +822,10 @@ case class GpuCast(
         // now check if the values are floats
         withResource(sanitized.isFloat) { isFloat =>
           if (ansiEnabled) {
-            withResource(isNan.not()) { notNan =>
-              withResource(isFloat.not()) { notFloat =>
-                withResource(notFloat.and(notNan)) { notFloatAndNotNan =>
-                  withResource(notFloatAndNotNan.any()) { notNanAndNotFloat =>
-                    if (notNanAndNotFloat.getBoolean) {
-                      throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
-                    }
-                  }
+            withResource(isNan.or(isFloat)) { nanOrFloat =>
+              withResource(nanOrFloat.all()) { allNanOrFloat =>
+                if (!allNanOrFloat.getBoolean) {
+                  throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
                 }
               }
             }
