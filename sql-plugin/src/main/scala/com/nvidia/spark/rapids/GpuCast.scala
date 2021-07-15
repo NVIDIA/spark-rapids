@@ -179,18 +179,18 @@ object GpuCast extends Arm {
   def sanitizeStringToIntegralType(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
     // Convert any strings containing whitespace to null values. The input is assumed to already
     // have been stripped of leading and trailing whitespace
-    val sanitized = withResource(GpuScalar.from(null, DataTypes.StringType)) { nullVal =>
-      withResource(input.containsRe("\\s")) { hasWhitespace =>
-        withResource(hasWhitespace.any()) { any =>
-          if (any.getBoolean) {
-            if (ansiEnabled) {
-              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-            } else {
+    val sanitized = withResource(input.containsRe("\\s")) { hasWhitespace =>
+      withResource(hasWhitespace.any()) { any =>
+        if (any.getBoolean) {
+          if (ansiEnabled) {
+            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+          } else {
+            withResource(GpuScalar.from(null, DataTypes.StringType)) { nullVal =>
               hasWhitespace.ifElse(nullVal, input)
             }
-          } else {
-            input.incRefCount()
           }
+        } else {
+          input.incRefCount()
         }
       }
     }
