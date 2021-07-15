@@ -861,7 +861,7 @@ class MultiFileParquetPartitionReader(
   override def calculateEstimatedBlocksOutputSize(
       filesAndBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
       schema: SchemaBase): Long = {
-    val allBlocks = filesAndBlocks.flatMap(item => item._2).toSeq
+    val allBlocks = filesAndBlocks.values.flatten.toSeq
     calculateParquetOutputSize(allBlocks, schema, true)
   }
 

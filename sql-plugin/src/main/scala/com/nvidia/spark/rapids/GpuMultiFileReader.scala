@@ -588,7 +588,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *
    * Please be note, the estimated size should be at least equal to size of HEAD + Blocks + FOOTER
    *
-   * @param blocks A map with file as the key, and its stripes as the value
+   * @param blocks a map with file as the key, and its stripes as the value
    * @param schema shema info
    * @return Long, the estimated output size
    */
@@ -596,10 +596,15 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     schema: SchemaBase): Long
 
   /**
-   * calculate the final block output size.
+   * Calculate the final block output size which will be used to decide
+   * if re-allocate HostMemoryBuffer
    *
-   * There is no need to re-calculate the block size,
-   * just calculate the footer size and plus footerOffset
+   * There is no need to re-calculate the block size, just calculate the footer size and
+   * plus footerOffset.
+   *
+   * If the size calculated by this function is bigger than the one calculated
+   * by calculateEstimatedBlocksOutputSize, then it will cause HostMemoryBuffer re-allocating, and
+   * cause the performance issue.
    *
    * @param footerOffset  footer offset
    * @param blocks        blocks to be evaluated

@@ -128,7 +128,8 @@ object GpuOrcScanBase {
 }
 
 /**
- * The multi-file partition reader factory for creating cloud reading for ORC file format.
+ * The multi-file partition reader factory for creating cloud reading or coalescing reading for
+ * ORC file format.
  *
  * @param sqlConf             the SQLConf
  * @param broadcastedConf     the Hadoop configuration
@@ -342,6 +343,44 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     }
   }
 
+  /** write the ORC file Footer and PostScript  */
+  protected def writeOrcFileFooter(
+      ctx: OrcPartitionReaderContext,
+      fileFooterBuilder: OrcProto.Footer.Builder,
+      rawOut: HostMemoryOutputStream,
+      footerStartOffset: Long,
+      numRows: Long,
+      protoWriter: CodedOutputStream,
+      codecStream: OutStream) = {
+
+    val startPoint = rawOut.getPos
+
+    // write the footer
+    val footer = fileFooterBuilder.setHeaderLength(OrcFile.MAGIC.length)
+      .setContentLength(footerStartOffset) // the content length is everything before file footer
+      .addAllTypes(org.apache.orc.OrcUtils.getOrcTypes(buildReaderSchema(ctx)))
+      .setNumberOfRows(numRows)
+      .build()
+
+    footer.writeTo(protoWriter)
+    protoWriter.flush()
+    codecStream.flush()
+
+    val footerLen = rawOut.getPos - startPoint
+
+    // write the postscript (uncompressed)
+    val postscript = OrcProto.PostScript.newBuilder(ctx.fileTail.getPostscript)
+      .setFooterLength(footerLen)
+      .setMetadataLength(0)
+      .build()
+    postscript.writeTo(rawOut)
+    val postScriptLength = rawOut.getPos - startPoint - footerLen
+    if (postScriptLength > 255) {
+      throw new IllegalArgumentException(s"PostScript length is too large at $postScriptLength")
+    }
+    rawOut.write(postScriptLength.toInt)
+  }
+
 }
 
 /**
@@ -482,29 +521,8 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging with Arm wi
         numRows += stripe.infoBuilder.getNumberOfRows
       }
 
-      // write the footer
-      val footer = fileFooterBuilder.setHeaderLength(OrcFile.MAGIC.length)
-        .setContentLength(rawOut.getPos)
-        .addAllTypes(org.apache.orc.OrcUtils.getOrcTypes(buildReaderSchema(ctx)))
-        .setNumberOfRows(numRows)
-        .build()
-      val footerStartOffset = rawOut.getPos
-      footer.writeTo(protoWriter)
-      protoWriter.flush()
-      codecStream.flush()
-      val postScriptStartOffset = rawOut.getPos
-
-      // write the postscript (uncompressed)
-      val postscript = OrcProto.PostScript.newBuilder(ctx.fileTail.getPostscript)
-        .setFooterLength(postScriptStartOffset - footerStartOffset)
-        .setMetadataLength(0)
-        .build()
-      postscript.writeTo(rawOut)
-      val postScriptLength = rawOut.getPos - postScriptStartOffset
-      if (postScriptLength > 255) {
-        throw new IllegalArgumentException(s"PostScript length is too large at $postScriptLength")
-      }
-      rawOut.write(postScriptLength.toInt)
+      writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, rawOut.getPos, numRows,
+        protoWriter, codecStream)
     }
   }
 }
@@ -643,12 +661,14 @@ object OrcMultiFileThreadPoolFactory {
 
 private object OrcTools extends Arm {
 
+  /** Build an ORC data reader using OrcPartitionReaderContext */
   def buildDataReader(ctx: OrcPartitionReaderContext): DataReader = {
     val fs = ctx.filePath.getFileSystem(ctx.conf)
     buildDataReader(ctx.compressionSize, ctx.compressionKind, ctx.fileSchema, ctx.readerOpts,
       ctx.filePath, fs, ctx.conf)
   }
 
+  /** Build an ORC data reader */
   def buildDataReader(
       compressionSize: Int,
       compressionKind: CompressionKind,
@@ -709,6 +729,7 @@ private case class GpuOrcFileFilterHandler(
     val fs = filePath.getFileSystem(conf)
     val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
 
+    // After getting the necessary information from ORC reader, we must close the ORC reader
     withResource(OrcFile.createReader(filePath, orcFileReaderOpts)) { orcReader =>
       val resultedColPruneInfo = requestedColumnIds(isCaseSensitive, dataSchema,
         readDataSchema, orcReader)
@@ -1427,11 +1448,12 @@ case class OrcExtraInfo(requestedMapping: Option[Array[Int]]) extends ExtraInfo
 
 // Contains meta about a single stripe of an ORC file
 private case class OrcSingleStripeMeta(
-  filePath: Path,
-  dataBlock: OrcDataStripe,
-  partitionValues: InternalRow,
-  schema: OrcSchemaWrapper,
-  extraInfo: OrcExtraInfo) extends SingleDataBlockInfo
+  filePath: Path, // Orc file path
+  dataBlock: OrcDataStripe, // Orc stripe information with the OrcPartitionReaderContext
+  partitionValues: InternalRow, // partitioned values
+  schema: OrcSchemaWrapper, // Orc schema
+  extraInfo: OrcExtraInfo // Orc ExtraInfo containing the requested column ids
+) extends SingleDataBlockInfo
 
 /**
  *
@@ -1587,7 +1609,7 @@ class MultiFileOrcPartitionReader(
         // the original file's footer should be worst-case
         size += ctx.fileTail.getPostscript.getFooterLength
     }
-    // the size of Postscript must be less than 256 bytes.
+    // Per ORC v1 spec, the size of Postscript must be less than 256 bytes.
     size += 256
     // finally the single-byte postscript length at the end of the file
     size += 1
@@ -1597,10 +1619,13 @@ class MultiFileOrcPartitionReader(
   }
 
   /**
-   * calculate the final block output size.
+   * Calculate the final block output size which will be used to decide
+   * if re-allocate HostMemoryBuffer
    *
-   * There is no need to re-calculate the block size,
-   * just calculate the footer size and plus footerOffset
+   * For now, we still don't know the ORC file footer size, so we can't get the final size.
+   *
+   * Since calculateEstimatedBlocksOutputSize has over-estimated the size, it's safe to
+   * use it and it will not cause HostMemoryBuffer re-allocating.
    *
    * @param footerOffset  footer offset
    * @param stripes       stripes to be evaluated
@@ -1612,9 +1637,9 @@ class MultiFileOrcPartitionReader(
       stripes: Seq[DataBlockBase],
       schema: SchemaBase): Long = {
 
-    // In calculateEstimatedBlocksOutputSize, we have got the true size for HEADER + All STRIPES
-    // and the estimated the FileFooter size with the worst-case. So in this case, there is no need
-    // to do re-allocate. We just ensure the final size is smaller than the initial size.
+    // In calculateEstimatedBlocksOutputSize, we have got the true size for
+    // HEADER + All STRIPES + the estimated the FileFooter size with the worst-case.
+    // We return a size that is smaller than the initial size to avoid the re-allocate
 
     footerOffset
   }
@@ -1753,32 +1778,8 @@ class MultiFileOrcPartitionReader(
               fileFooterBuilder.addStripes(stripeWithMeta.stripe.infoBuilder.build())
             }
 
-            // write the footer
-            val footer = fileFooterBuilder.setHeaderLength(OrcFile.MAGIC.length)
-              .setContentLength(footerOffset) //the content length is everythings before file footer
-              .addAllTypes(org.apache.orc.OrcUtils.getOrcTypes(buildReaderSchema(ctx)))
-              .setNumberOfRows(numRows)
-              .build()
-
-            footer.writeTo(protoWriter)
-            protoWriter.flush()
-            codecStream.flush()
-
-            val footerLength = rawOut.getPos
-
-            // write the postscript (uncompressed)
-            val postscript = OrcProto.PostScript.newBuilder(ctx.fileTail.getPostscript)
-              .setFooterLength(footerLength)
-              .setMetadataLength(0)
-              .build()
-            postscript.writeTo(rawOut)
-
-            val postScriptLength = rawOut.getPos - footerLength
-            if (postScriptLength > 255) {
-              throw new IllegalArgumentException(s"PostScript length is too large at" +
-                s" $postScriptLength")
-            }
-            rawOut.write(postScriptLength.toInt)
+            writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, footerOffset, numRows,
+              protoWriter, codecStream)
             (buffer, rawOut.getPos + footerOffset)
           }
         }
