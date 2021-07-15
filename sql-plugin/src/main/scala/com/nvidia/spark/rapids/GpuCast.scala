@@ -211,7 +211,7 @@ object GpuCast extends Arm {
                 // for these values and it also returns null for invalid inputs so we need this
                 // explicit check
                 withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
-                  withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.([0-9]*)?$")) { table =>
+                  withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.[0-9]*$")) { table =>
                     withResource(Scalar.fromString("0")) { zero =>
                       withResource(startsWithDot.ifElse(zero, table.getColumn(0).incRefCount())) {
                         decimal => hasDot.ifElse(decimal, sanitized)
