@@ -85,13 +85,13 @@ abstract class AppBase(
       logFiles.foreach { file =>
         Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
           val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-          totalNumEvents += lines.size
           var i = 0
           var done = false
           val linesSize = lines.size
           while (i < linesSize && !done) {
             try {
               val line = lines(i)
+              totalNumEvents += 1
               val event = JsonProtocol.sparkEventFromJson(parse(line))
               done = processEvent(event)
             }
