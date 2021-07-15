@@ -202,8 +202,11 @@ object GpuCast extends Arm {
     withResource(input.lstrip()) { stripped =>
       withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
         // filter out strings containing breaking whitespace
-        val withoutWhitespace = withResource(stripped.containsRe("(\r|\n)")) {
-          _.ifElse(nullString, stripped)
+        val withoutWhitespace = withResource(ColumnVector.fromStrings("\r", "\n")) {
+            verticalWhitespace =>
+          withResource(stripped.contains(verticalWhitespace)) {
+            _.ifElse(nullString, stripped)
+          }
         }
         // replace all possible versions of infinity with Inf
         val inf = withResource(withoutWhitespace) { _ =>
