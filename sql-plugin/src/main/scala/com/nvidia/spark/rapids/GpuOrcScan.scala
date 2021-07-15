@@ -27,6 +27,7 @@ import java.util.concurrent.{Callable, ThreadPoolExecutor}
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
+import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf._
@@ -204,7 +205,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
             OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
             file.partitionValues,
             OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
-            false))
+            OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,
@@ -1421,13 +1422,16 @@ private case class OrcDataStripe(stripeMeta: OrcStripeWithMeta) extends DataBloc
   }
 }
 
+/** Orc extra information containing the requested column ids for the current coalescing stripes */
+case class OrcExtraInfo(requestedMapping: Option[Array[Int]]) extends ExtraInfo
+
 // Contains meta about a single stripe of an ORC file
 private case class OrcSingleStripeMeta(
   filePath: Path,
   dataBlock: OrcDataStripe,
   partitionValues: InternalRow,
   schema: OrcSchemaWrapper,
-  isCorrectedRebaseMode: Boolean) extends SingleDataBlockInfo
+  extraInfo: OrcExtraInfo) extends SingleDataBlockInfo
 
 /**
  *
@@ -1465,12 +1469,11 @@ class MultiFileOrcPartitionReader(
   implicit def toStripe(block: DataBlockBase): OrcStripeWithMeta =
     block.asInstanceOf[OrcDataStripe].stripeMeta
 
-  implicit def toOrcStripeWithMetas(stripes: Seq[DataBlockBase]): Seq[OrcStripeWithMeta] = {
+  implicit def toOrcStripeWithMetas(stripes: Seq[DataBlockBase]): Seq[OrcStripeWithMeta] =
     stripes.map(_.asInstanceOf[OrcDataStripe].stripeMeta)
-  }
 
-  // TODO
-  private val requestedMapping = clippedStripes(0).dataBlock.ctx.requestedMapping
+  implicit def toOrcExtraInfo(in: ExtraInfo): OrcExtraInfo =
+    in.asInstanceOf[OrcExtraInfo]
 
   // The runner to copy stripes to the offset of HostMemoryBuffer and update
   // the StripeInformation to construct the file Footer
@@ -1537,6 +1540,22 @@ class MultiFileOrcPartitionReader(
       return true
     }
 
+    val ret = (currentBlockInfo.extraInfo.requestedMapping,
+      nextBlockInfo.extraInfo.requestedMapping) match {
+      case (None, None) => true
+      case (Some(cols1), Some(cols2)) =>
+        if (cols1.sameElements(cols2)) true else false
+      case (_, _) => {
+        false
+      }
+    }
+
+    if (!ret) {
+      logInfo(s"Orc requested column ids for the next file ${nextBlockInfo.filePath}" +
+        s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
+      return true
+    }
+
     false
   }
 
@@ -1546,7 +1565,7 @@ class MultiFileOrcPartitionReader(
    *
    * Please be note, the estimated size should be at least equal to size of HEAD + Blocks + FOOTER
    *
-   * @param blocks a sequence of data block to be evaluated
+   * @param filesAndBlocks a map with file as the key, and its stripes as the value
    * @param schema schema info
    * @return Long, the estimated output size
    */
@@ -1584,7 +1603,7 @@ class MultiFileOrcPartitionReader(
    * just calculate the footer size and plus footerOffset
    *
    * @param footerOffset  footer offset
-   * @param blocks        blocks to be evaluated
+   * @param stripes       stripes to be evaluated
    * @param schema        schema info
    * @return the output size
    */
@@ -1648,21 +1667,20 @@ class MultiFileOrcPartitionReader(
    *
    * @param dataBuffer  the data which can be decoded in GPU
    * @param dataSize    data size
-   * @param isCorrectRebaseMode rebase mode, which is not used in ORC
    * @param clippedSchema the clipped schema
    * @return Table
    */
   override def readBufferToTable(
       dataBuffer: HostMemoryBuffer,
       dataSize: Long,
-      isCorrectRebaseMode: Boolean,
-      clippedSchema: SchemaBase): Table = {
+      clippedSchema: SchemaBase,
+      extraInfo: ExtraInfo): Table = {
 
     // Dump ORC data into a file
     dumpDataToFile(dataBuffer, dataSize, files, Option(debugDumpPrefix), Some("orc"))
 
     val fieldNames = clippedSchema.getFieldNames.asScala.toArray
-    val includedColumns = requestedMapping.map(_.map(fieldNames(_))).getOrElse(fieldNames)
+    val includedColumns = extraInfo.requestedMapping.map(_.map(fieldNames(_))).getOrElse(fieldNames)
     val parseOpts = ORCOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
       .withNumPyTypes(false)

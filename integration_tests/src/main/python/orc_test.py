@@ -117,6 +117,25 @@ orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
 # The following need extra jars 'lzo'
 # https://github.com/NVIDIA/spark-rapids/issues/143
 
+# Test the different compress combinations
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_mixed_compress_read(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_pathes = []
+    for compress in orc_compress_options:
+        data_path = spark_tmp_path + '/ORC_DATA' + compress
+        with_cpu_session(
+                lambda spark : binary_op_df(spark, long_gen).write.orc(data_path),
+                conf={'spark.sql.orc.compression.codec': compress})
+        data_pathes.append(data_path)
+
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc(data_pathes),
+            conf=all_confs)
+
 @pytest.mark.parametrize('compress', orc_compress_options)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)

@@ -33,7 +33,6 @@ import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -52,7 +51,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -370,7 +369,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           ParquetDataBlock(block),
           file.partitionValues,
           ParquetSchemaWrapper(singleFileInfo.schema),
-          singleFileInfo.isCorrectedRebaseMode))
+          ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode)))
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
@@ -748,13 +747,16 @@ private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockB
   override def getBlockSize: Long = dataBlock.getColumns.asScala.map(_.getTotalSize).sum
 }
 
+/** Parquet extra information containing isCorrectedRebaseMode */
+case class ParquetExtraInfo(isCorrectedRebaseMode: Boolean) extends ExtraInfo
+
 // contains meta about a single block in a file
 private case class ParquetSingleDataBlockMeta(
   filePath: Path,
   dataBlock: ParquetDataBlock,
   partitionValues: InternalRow,
   schema: ParquetSchemaWrapper,
-  isCorrectedRebaseMode: Boolean) extends SingleDataBlockInfo
+  extraInfo: ParquetExtraInfo) extends SingleDataBlockInfo
 
 /**
  * A PartitionReader that can read multiple Parquet files up to the certain size. It will
@@ -807,6 +809,9 @@ class MultiFileParquetPartitionReader(
   implicit def toBlockMetaDataSeq(blocks: Seq[DataBlockBase]): Seq[BlockMetaData] =
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 
+  implicit def ParquetSingleDataBlockMeta(in: ExtraInfo): ParquetExtraInfo =
+    in.asInstanceOf[ParquetExtraInfo]
+
   // The runner to copy blocks to offset of HostMemoryBuffer
   class ParquetCopyBlocksRunner(
       file: Path,
@@ -833,7 +838,8 @@ class MultiFileParquetPartitionReader(
       nextBlockInfo: SingleDataBlockInfo): Boolean = {
     // We need to ensure all files we are going to combine have the same datetime
     // rebase mode.
-    if (nextBlockInfo.isCorrectedRebaseMode != currentBlockInfo.isCorrectedRebaseMode) {
+    if (nextBlockInfo.extraInfo.isCorrectedRebaseMode !=
+        currentBlockInfo.extraInfo.isCorrectedRebaseMode) {
       logInfo(s"datetime rebase mode for the next file ${nextBlockInfo.filePath} is " +
         s"different then current file ${currentBlockInfo.filePath}, splitting into another batch.")
       return true
@@ -874,7 +880,7 @@ class MultiFileParquetPartitionReader(
   override final def getFileFormatShortName: String = "Parquet"
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      isCorrectRebaseMode: Boolean, clippedSchema: SchemaBase): Table = {
+      clippedSchema: SchemaBase, extraInfo: ExtraInfo): Table = {
 
     // Dump parquet data into a file
     dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
@@ -893,7 +899,7 @@ class MultiFileParquetPartitionReader(
     }
 
     closeOnExcept(table) { _ =>
-      if (!isCorrectRebaseMode) {
+      if (!extraInfo.isCorrectedRebaseMode) {
         (0 until table.getNumberOfColumns).foreach { i =>
           if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
             throw RebaseHelper.newRebaseExceptionInRead("Parquet")

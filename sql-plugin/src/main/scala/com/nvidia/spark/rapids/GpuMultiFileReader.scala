@@ -500,6 +500,11 @@ trait DataBlockBase {
 trait SchemaBase
 
 /**
+ * A common trait for the extra information for different file format
+ */
+trait ExtraInfo
+
+/**
  * A single block info of a file,
  * Eg, A parquet file has 3 RowGroup, then it will produce 3 SingleBlockInfoWithMeta
  */
@@ -507,8 +512,8 @@ trait SingleDataBlockInfo {
   def filePath: Path // file path info
   def partitionValues: InternalRow // partition value
   def dataBlock: DataBlockBase // a single block info of a single file
-  def isCorrectedRebaseMode: Boolean // rebase mode
-  def schema: SchemaBase // schema info
+  def schema: SchemaBase // schema information
+  def extraInfo: ExtraInfo // extra information
 }
 
 /**
@@ -559,12 +564,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private[this] var isFirstBatch = true
 
   private case class CurrentChunkMeta(
-    isCorrectRebaseMode: Boolean,
     clippedSchema: SchemaBase,
     currentChunk: Seq[(Path, DataBlockBase)],
     numTotalRows: Long,
     rowsPerPartition: Array[Long],
-    allPartValues: Array[InternalRow])
+    allPartValues: Array[InternalRow],
+    extraInfo: ExtraInfo)
 
   /**
    * To check if the next block will be split into another ColumnarBatch
@@ -648,12 +653,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *
    * @param dataBuffer  the data which can be decoded in GPU
    * @param dataSize    data size
-   * @param isCorrectRebaseMode rebase mode
    * @param clippedSchema the clipped schema
+   * @param extraInfo the extra information for specific file format
    * @return Table
    */
-  def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
-    isCorrectRebaseMode: Boolean, clippedSchema: SchemaBase): Table
+  def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long, clippedSchema: SchemaBase,
+    extraInfo: ExtraInfo): Table
 
   /**
    * Write a header for a specific file format. If there is no header for the file format,
@@ -722,7 +727,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
       } else {
         val table = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
-          currentChunkMeta.isCorrectRebaseMode)
+          currentChunkMeta.extraInfo)
         try {
           val colTypes = readDataSchema.fields.map(f => f.dataType)
           val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes))
@@ -743,7 +748,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private def readToTable(
       currentChunkedBlocks: Seq[(Path, DataBlockBase)],
       clippedSchema: SchemaBase,
-      isCorrectRebaseMode: Boolean = false): Option[Table] = {
+      extraInfo: ExtraInfo): Option[Table] = {
     if (currentChunkedBlocks.isEmpty) {
       return None
     }
@@ -752,7 +757,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       if (dataSize == 0) {
         None
       } else {
-        val table = readBufferToTable(dataBuffer, dataSize, isCorrectRebaseMode, clippedSchema)
+        val table = readBufferToTable(dataBuffer, dataSize, clippedSchema, extraInfo)
         closeOnExcept(table) { _ =>
           maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
           if (readDataSchema.length < table.getNumberOfColumns) {
@@ -880,12 +885,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     var currentFile: Path = null
     var currentPartitionValues: InternalRow = null
     var currentClippedSchema: SchemaBase = null
-    var currentIsCorrectRebaseMode: Boolean = false
     val rowsPerPartition = new ArrayBuffer[Long]()
     var lastPartRows: Long = 0
     val allPartValues = new ArrayBuffer[InternalRow]()
-
     var currrentDataBlock: SingleDataBlockInfo = null
+    var extraInfo: ExtraInfo = null
 
     @tailrec
     def readNextBatch(): Unit = {
@@ -897,7 +901,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           currentPartitionValues = blockIterator.head.partitionValues
           allPartValues += currentPartitionValues
           currentClippedSchema = blockIterator.head.schema
-          currentIsCorrectRebaseMode = blockIterator.head.isCorrectedRebaseMode
+          extraInfo = blockIterator.head.extraInfo
         }
 
         val peekedRowCount = blockIterator.head.dataBlock.getRowCount
@@ -948,8 +952,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     logDebug(s"Loaded $numRows rows from ${getFileFormatShortName}. " +
       s"${getFileFormatShortName} bytes read: $numChunkBytes. Estimated GPU bytes: $numBytes. " +
       s"Number of different partitions: ${allPartValues.size}")
-    CurrentChunkMeta(currentIsCorrectRebaseMode, currentClippedSchema, currentChunk,
-      numRows, rowsPerPartition.toArray, allPartValues.toArray)
+    CurrentChunkMeta(currentClippedSchema, currentChunk,
+      numRows, rowsPerPartition.toArray, allPartValues.toArray, extraInfo)
   }
 
   /**
