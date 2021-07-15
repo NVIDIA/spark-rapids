@@ -779,14 +779,20 @@ object RapidsConf {
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {
-    val AUTO, MULTITHREADED, PERFILE = Value
+    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
 
   val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
     .doc("Sets the orc reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
       "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
-      "individually has high overhead, and using MULTITHREADED is recommended instead. " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.orc.multiThreadedRead.numThreads. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
@@ -796,7 +802,7 @@ object RapidsConf {
       "spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
-      "be the MULTITHREADED when we think the file is " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
@@ -1551,6 +1557,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isOrcAutoReaderEnabled: Boolean =
     OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.AUTO
+
+  lazy val isOrcCoalesceFileReadEnabled: Boolean = isOrcAutoReaderEnabled ||
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.COALESCING
 
   lazy val isOrcMultiThreadReadEnabled: Boolean = isOrcAutoReaderEnabled ||
     OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.MULTITHREADED
