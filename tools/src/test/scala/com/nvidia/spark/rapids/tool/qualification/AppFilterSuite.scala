@@ -87,7 +87,43 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
     testTimePeriod(newTimeStamp, "10m")
   }
 
-  private def testTimePeriod(eventLogTime: Long, startTimePeriod: String): Unit = {
+  test("time period minute parsing fail") {
+    val c = Calendar.getInstance
+    c.add(Calendar.MINUTE, -16)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "10min")
+  }
+
+  test("time period hour parsing fail") {
+    val c = Calendar.getInstance
+    c.add(Calendar.HOUR, -10)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "8h")
+  }
+
+  test("time period day parsing fail") {
+    val c = Calendar.getInstance
+    c.add(Calendar.DATE, -40)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "38d")
+  }
+
+  test("time period week parsing fail") {
+    val c = Calendar.getInstance
+    c.add(Calendar.WEEK_OF_YEAR, -2)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "1w")
+  }
+
+  test("time period month parsing fail") {
+    val c = Calendar.getInstance
+    c.add(Calendar.MONTH, -8)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "7m", failFilter=true)
+  }
+
+  private def testTimePeriod(eventLogTime: Long, startTimePeriod: String,
+      failFilter: Boolean = false): Unit = {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
 
@@ -109,7 +145,11 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
-        assert(appSum.size == 1)
+        if (failFilter) {
+          assert(appSum.size == 0)
+        } else {
+          assert(appSum.size == 1)
+        }
       }
     }
   }
