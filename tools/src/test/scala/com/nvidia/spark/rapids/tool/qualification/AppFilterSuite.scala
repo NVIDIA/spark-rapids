@@ -60,9 +60,10 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val c = Calendar.getInstance
         c.add(Calendar.MINUTE, -6)
         val newTimeStamp = c.getTimeInMillis
-        val supText = "{\"Event\":\"SparkListenerApplicationStart\",\"App Name\":" +
-          s"\"Spark shell\",\"App ID\":\"local-1626104300434\",\"Timestamp\":$newTimeStamp," +
-          "\"User\":\"user1\"}"
+        val supText =
+          s"""
+           |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${newTimeStamp},"User":"user1"}
+          """.stripMargin
         Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
 
 
@@ -99,9 +100,10 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val c = Calendar.getInstance
         c.add(Calendar.HOUR, -10)
         val newTimeStamp = c.getTimeInMillis
-        val supText = "{\"Event\":\"SparkListenerApplicationStart\",\"App Name\":" +
-          s"\"Spark shell\",\"App ID\":\"local-1626104300434\",\"Timestamp\":$newTimeStamp," +
-          "\"User\":\"user1\"}"
+        val supText =
+          s"""
+            |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${newTimeStamp},"User":"user1"}
+          """.stripMargin
           Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
 
 
