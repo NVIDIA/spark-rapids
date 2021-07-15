@@ -227,13 +227,8 @@ object GpuCast extends Arm {
             _.ifElse(infWithoutPlus, nullString)
         }
         // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
-        withResource(floatOrNull) { _ =>
-          withResource(floatOrNull.matchesRe("^[+\\-]?Inf$")) { isInf =>
-            withResource(floatOrNull.stringReplaceWithBackrefs(
-              "([^fFdD]*)([fFdD]$)", "\\1")) { stripDesignator =>
-              isInf.ifElse(floatOrNull, stripDesignator)
-            }
-          }
+        withResource(floatOrNull) {
+          _.stringReplaceWithBackrefs("(Inf|-Inf|[nN][aA][nN]|[^InNaAfFdD]*)([fFdD]?)", "\\1")
         }
       }
     }
