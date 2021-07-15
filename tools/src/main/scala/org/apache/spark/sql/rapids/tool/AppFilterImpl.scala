@@ -103,7 +103,7 @@ class AppFilterImpl(
   private def parseAppTimePeriod(appArgs: QualificationArgs): Long = {
     if (appArgs.startAppTime.isSupplied) {
       val appStartStr = appArgs.startAppTime.getOrElse("")
-      val timePeriod = raw"(\d+)([min,h,d,w,m]*)".r
+      val timePeriod = raw"(\d+)([min,h,d,w,m]?)".r
       val (timeStr, periodStr) = appStartStr match {
         case timePeriod(time, "") =>
           println(s"4: $time")

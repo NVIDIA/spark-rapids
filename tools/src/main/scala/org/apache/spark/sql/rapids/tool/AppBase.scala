@@ -90,7 +90,6 @@ abstract class AppBase(
           var done = false
           val linesSize = lines.size
           while (i < linesSize && !done) {
-            i += 1
             try {
               val line = lines(i)
               val event = JsonProtocol.sparkEventFromJson(parse(line))
@@ -98,8 +97,13 @@ abstract class AppBase(
             }
             catch {
               case e: ClassNotFoundException =>
-                logWarning(s"ClassNotFoundException: ${e.getMessage}")
+                // swallow any messages about this class since likely using spark version
+                // before 3.1
+                if (!e.getMessage.contains("SparkListenerResourceProfileAdded")) {
+                  logWarning(s"ClassNotFoundException: ${e.getMessage}")
+                }
             }
+            i += 1
           }
         }
       }
