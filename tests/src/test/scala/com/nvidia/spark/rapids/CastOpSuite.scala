@@ -24,12 +24,13 @@ import java.util.TimeZone
 
 import ai.rapids.cudf.ColumnVector
 import scala.collection.JavaConverters._
-import scala.util.Random
+import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 class CastOpSuite extends GpuExpressionTestSuite {
@@ -92,7 +93,33 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("Cast from string to int using hand-picked values") {
     testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
-      ".", "+1.2", "\n123\n456\n"))
+      ".", "+1.2", "\n123\n456\n", "1e+4"))
+  }
+
+  test("Cast from string to int ANSI mode with mix of valid and invalid values") {
+    testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
+      ".", "+1.2", "\n123\n456\n", "1 2", null, "123"), ansiMode = AnsiExpectFailure)
+  }
+
+  test("Cast from string to int ANSI mode with valid values") {
+    testCastStringTo(DataTypes.IntegerType, Seq("1", "-1"),
+      ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to int ANSI mode with invalid values") {
+    val values = Seq("1e4", "Inf", "1.2")
+    // test the values individually
+    for (value <- values ) {
+      testCastStringTo(DataTypes.IntegerType, Seq(value), ansiMode = AnsiExpectFailure)
+    }
+  }
+
+  test("Cast from string to int ANSI mode with nulls") {
+    testCastStringTo(DataTypes.IntegerType, Seq(null, null, null), ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to int ANSI mode with newline in string") {
+    testCastStringTo(DataTypes.IntegerType, Seq("1\n2"), ansiMode = AnsiExpectFailure)
   }
 
   test("Cast from string to long using random inputs") {
@@ -148,7 +175,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .map(_ => prefix.getOrElse("") + r.nextString())
   }
 
-  private def testCastStringTo(toType: DataType, strings: Seq[String]) {
+  private def testCastStringTo(
+      toType: DataType,
+      strings: Seq[String],
+      ansiMode: AnsiTestMode = AnsiDisabled) {
 
     def castDf(spark: SparkSession): Seq[Row] = {
       import spark.implicits._
@@ -161,10 +191,16 @@ class CastOpSuite extends GpuExpressionTestSuite {
     val INDEX_C0 = 0
     val INDEX_C1 = 2
 
-    val cpu = withCpuSparkSession(castDf)
-      .sortBy(_.getInt(INDEX_ID))
+    val ansiModeBoolString = (ansiMode != AnsiDisabled).toString
 
-    val conf = new SparkConf()
+    val cpuConf = new SparkConf()
+      .set(SQLConf.ANSI_ENABLED.key, ansiModeBoolString)
+
+    val tryCpu = Try(withCpuSparkSession(castDf, cpuConf)
+      .sortBy(_.getInt(INDEX_ID)))
+
+    val gpuConf = new SparkConf()
+      .set(SQLConf.ANSI_ENABLED.key, ansiModeBoolString)
       .set(RapidsConf.EXPLAIN.key, "ALL")
       .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
@@ -172,19 +208,31 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
 
-    val gpu = withGpuSparkSession(castDf, conf)
-      .sortBy(_.getInt(INDEX_ID))
+    val tryGpu = Try(withGpuSparkSession(castDf, gpuConf)
+      .sortBy(_.getInt(INDEX_ID)))
 
-    for ((cpuRow, gpuRow) <- cpu.zip(gpu)) {
-      assert(cpuRow.getString(INDEX_C0) === gpuRow.getString(INDEX_C0))
-      assert(cpuRow.getInt(INDEX_ID) === gpuRow.getInt(INDEX_ID))
-      val cpuValue = cpuRow.get(INDEX_C1)
-      val gpuValue = gpuRow.get(INDEX_C1)
-      if (!compare(cpuValue, gpuValue)) {
-        val inputValue = cpuRow.getString(INDEX_C0)
-        fail(s"Mismatch casting string [$inputValue] " +
-          s"to $toType. CPU: $cpuValue; GPU: $gpuValue")
-      }
+    (tryCpu, tryGpu) match {
+      case (Success(cpu), Success(gpu)) if ansiMode != AnsiExpectFailure =>
+        for ((cpuRow, gpuRow) <- cpu.zip(gpu)) {
+          assert(cpuRow.getString(INDEX_C0) === gpuRow.getString(INDEX_C0))
+          assert(cpuRow.getInt(INDEX_ID) === gpuRow.getInt(INDEX_ID))
+          val cpuValue = cpuRow.get(INDEX_C1)
+          val gpuValue = gpuRow.get(INDEX_C1)
+          if (!compare(cpuValue, gpuValue)) {
+            val inputValue = cpuRow.getString(INDEX_C0)
+            fail(s"Mismatch casting string [$inputValue] " +
+              s"to $toType. CPU: $cpuValue; GPU: $gpuValue")
+          }
+        }
+
+      case (Failure(_), Failure(_)) if ansiMode == AnsiExpectFailure =>
+        // this is fine
+
+      case (Success(_), Failure(gpu)) =>
+        fail(s"Query succeeded on CPU but failed on GPU: $gpu")
+
+      case (Failure(cpu), Success(_)) =>
+        fail(s"Query succeeded on GPU but failed on CPU: $cpu")
     }
   }
 
@@ -830,6 +878,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("CAST string to integer - sanitize step") {
     val testPairs: Seq[(String, String)] = Seq(
+      (null, null),
+      ("1e4", "1e4"),
       ("123", "123"),
       (".", "0"),
       (".2", "0"),
@@ -1313,3 +1363,8 @@ object CastOpSuite {
   private val timestampValues: Seq[Long] = Seq(6321706291000L)
 
 }
+
+sealed trait AnsiTestMode;
+case object AnsiDisabled extends AnsiTestMode
+case object AnsiExpectSuccess extends AnsiTestMode
+case object AnsiExpectFailure extends AnsiTestMode

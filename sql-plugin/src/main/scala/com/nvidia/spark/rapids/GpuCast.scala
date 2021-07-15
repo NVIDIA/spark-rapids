@@ -195,11 +195,20 @@ object GpuCast extends Arm {
       }
     }
 
-    // truncate strings that represent decimals, so that we just look at the string before the dot
     if (ansiEnabled) {
-      // ansi mode does not support casting decimal strings to integers
-      sanitized
+      // ansi mode only supports simple integers, so no exponents, decimal places, or Inf
+      val regex = "^[+\\-]?[0-9]+$"
+      withResource(sanitized.matchesRe(regex)) { isNumeric =>
+        withResource(isNumeric.all()) { all =>
+          if (!all.getBoolean) {
+            throw new NumberFormatException(
+              s"At least one input does not match the regular expression $regex")
+          }
+        }
+        sanitized
+      }
     } else {
+      // truncate strings that represent decimals, so that we just look at the string before the dot
       withResource(sanitized) { _ =>
         withResource(Scalar.fromString(".")) { dot =>
           withResource(sanitized.stringContains(dot)) { hasDot =>
@@ -737,17 +746,9 @@ case class GpuCast(
 
     withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
       withResource(sanitized.isInteger(dType)) { isInt =>
-        withResource(isInt.all()) { allInts =>
-          if (allInts.getBoolean) {
-            sanitized.castTo(dType)
-          } else if (ansiEnabled) {
-            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-          } else {
-            withResource(sanitized.castTo(dType)) { parsedInt =>
-              withResource(GpuScalar.from(null, dataType)) { nullVal =>
-                isInt.ifElse(parsedInt, nullVal)
-              }
-            }
+        withResource(sanitized.castTo(dType)) { parsedInt =>
+          withResource(GpuScalar.from(null, dataType)) { nullVal =>
+            isInt.ifElse(parsedInt, nullVal)
           }
         }
       }
