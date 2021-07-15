@@ -90,10 +90,10 @@ abstract class AppBase(
           var done = false
           val linesSize = lines.size
           while (i < linesSize && !done) {
+            i += 1
             try {
               val line = lines(i)
               val event = JsonProtocol.sparkEventFromJson(parse(line))
-              i += 1
               done = processEvent(event)
             }
             catch {
