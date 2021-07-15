@@ -163,17 +163,16 @@ case class GpuHashAggregateMetrics(
 case class AggregateModeInfo(
     uniqueModes: Seq[AggregateMode],
     hasPartialMode: Boolean,
-    hasPartialMerge: Boolean,
+    hasPartialMergeMode: Boolean,
     hasFinalMode: Boolean,
     hasCompleteMode: Boolean)
 
 object AggregateModeInfo {
   def apply(uniqueModes: Seq[AggregateMode]): AggregateModeInfo = {
-    val hasPartialMerge = uniqueModes.contains(PartialMerge)
     AggregateModeInfo(
       uniqueModes = uniqueModes,
-      hasPartialMode = hasPartialMerge || uniqueModes.contains(Partial),
-      hasPartialMerge = hasPartialMerge,
+      hasPartialMode = uniqueModes.contains(Partial),
+      hasPartialMergeMode = uniqueModes.contains(PartialMerge),
       hasFinalMode = uniqueModes.contains(Final),
       hasCompleteMode = uniqueModes.contains(Complete)
     )
@@ -635,7 +634,7 @@ class GpuHashAggregateIterator(
     // - Final or PartialMerge-only mode: we pick the columns in the order as handed to us.
     // - Partial or Complete mode: we use the inputProjections or distinct update expressions.
     val boundInputReferences =
-    if (modeInfo.hasPartialMerge && modeInfo.uniqueModes.contains(Partial)) {
+    if (modeInfo.hasPartialMergeMode && modeInfo.hasPartialMode) {
       // The 3rd stage of AggWithOneDistinct, which combines (partial) reduce-side
       // nonDistinctAggExpressions and map-side distinctAggExpressions. For this stage, we need to
       // switch the position of distinctAttributes and nonDistinctAttributes.
@@ -649,22 +648,27 @@ class GpuHashAggregateIterator(
       val (distinctAggExpressions, nonDistinctAggExpressions) = aggregateExpressions.partition(
         _.isDistinct)
 
-      // Pick merge non-distinct for PartialMerge
-      val nonDistinctExpressions = nonDistinctAggExpressions
-          .flatMap(_.aggregateFunction.mergeExpressions)
-          .map(_.asInstanceOf[CudfAggregate].ref)
-      val nonDistinctAttributes = nonDistinctAggExpressions
-          .flatMap(_.aggregateFunction.aggBufferAttributes)
+      // The schema of childAttr: [groupAttr, distinctAttr, nonDistinctAttr].
+      // With the size of nonDistinctAttr, we can easily extract distinctAttr and nonDistinctAttr
+      // from childAttr.
+      val sizeOfNonDistAttr = nonDistinctAggExpressions
+          .map(_.aggregateFunction.aggBufferAttributes.length).sum
+      val nonDistinctAttributes = childAttr.attrs.takeRight(sizeOfNonDistAttr)
+      val distinctAttributes = childAttr.attrs.slice(
+        groupingAttributes.length, childAttr.attrs.length - sizeOfNonDistAttr)
 
-      // Pick update distinct attributes or input projections for Partial
+      // With PartialMerge modes, we just pass through corresponding attributes of child plan into
+      // nonDistinctExpressions.
+      val nonDistinctExpressions = nonDistinctAttributes.asInstanceOf[Seq[Expression]]
+      // With Partial modes, the input projections are necessary for distinctExpressions.
       val distinctExpressions = distinctAggExpressions.flatMap(_.aggregateFunction.inputProjection)
-      val distinctAttributes = distinctExpressions.flatMap(_.references.toSeq).distinct
 
+      // Align the expressions of input projections and input attributes
       val inputProjections = groupingExpressions ++ nonDistinctExpressions ++ distinctExpressions
       val inputAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
       GpuBindReferences.bindGpuReferences(inputProjections, inputAttributes)
     } else if (modeInfo.hasFinalMode ||
-        (modeInfo.hasPartialMerge && modeInfo.uniqueModes.length == 1)) {
+        (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1)) {
       // two possible conditions:
       // 1. The Final stage, including the 2nd stage of NoDistinctAgg and 4th stage of
       // AggWithOneDistinct, which needs no input projections. Because the child outputs are
@@ -682,7 +686,8 @@ class GpuHashAggregateIterator(
       GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
     } else {
       // This branch should NOT be reached.
-      throw new IllegalStateException(s"invalid unique modes: ${modeInfo.uniqueModes}")
+      throw new IllegalStateException(
+        s"Unable to handle aggregate with modes: ${modeInfo.uniqueModes}")
     }
 
     val boundFinalProjections = if (modeInfo.hasFinalMode || modeInfo.hasCompleteMode) {
@@ -703,7 +708,7 @@ class GpuHashAggregateIterator(
     //   out of the node as is.
     // - Final or Complete mode: we use resultExpressions to pick out the correct columns that
     //   finalReferences has pre-processed for us
-    val boundResultReferences = if (modeInfo.hasPartialMode) {
+    val boundResultReferences = if (modeInfo.hasPartialMode || modeInfo.hasPartialMergeMode) {
       GpuBindReferences.bindGpuReferences(
         resultExpressions,
         resultExpressions.map(_.toAttribute))
