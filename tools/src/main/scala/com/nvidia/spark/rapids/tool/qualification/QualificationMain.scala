@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.tool.EventLogPathProcessor
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
 /**
@@ -72,14 +73,27 @@ object QualificationMain extends Logging {
 
     val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
       matchEventLogs.toOption, eventlogPaths, hadoopConf)
-    if (eventLogInfos.isEmpty) {
+
+    val filteredLogs = if (argsContainsAppFilters(appArgs)) {
+      val appFilter = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
+      val finaleventlogs = appFilter.filterEventLogs(eventLogInfos, appArgs)
+      finaleventlogs
+    } else {
+      eventLogInfos
+    }
+
+    if (filteredLogs.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return (0, Seq[QualificationSummaryInfo]())
     }
 
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
       nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
-    val res = qual.qualifyApps(eventLogInfos)
+    val res = qual.qualifyApps(filteredLogs)
     (0, res)
+  }
+
+  def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {
+    appArgs.applicationName.isDefined
   }
 }
