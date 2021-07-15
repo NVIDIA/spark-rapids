@@ -227,6 +227,13 @@ SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=integration_tests/target/run
   ${SPARK_HOME}/bin/spark-class org.apache.spark.deploy.history.HistoryServer
 ```
 
+By default, integration tests write event logs using [Zstandard](https://facebook.github.io/zstd/)
+(`zstd`) compression codec. It can be changed by setting the environment variable `PYSP_TEST_spark_eventLog_compression_codec` to one of
+the SHS supported values for the config key
+[`spark.eventLog.compression.codec`](https://spark.apache.org/docs/3.1.1/configuration.html#spark-ui)
+
+With `zstd` it's easy to view / decompress event logs using the CLI `zstd -d [--stdout] <file>`
+
 ### Enabling cudf_udf Tests
 
 The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default not only because of the complicated environment setup, but also because GPU resources scheduling for Pandas UDF is an experimental feature now, the performance may not always be better.
