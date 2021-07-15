@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids.tool
 
 import java.util.Calendar
-import java.util.Date
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecutor, TimeUnit}
 
 import scala.collection.JavaConverters._

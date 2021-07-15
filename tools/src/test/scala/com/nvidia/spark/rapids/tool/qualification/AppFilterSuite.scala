@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import java.util.Date
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Paths}
+import java.util.Calendar
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
@@ -42,7 +44,7 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
-  test("time period parsing") {
+  test("illegal args") {
     assertThrows[IllegalArgumentException](AppFilterImpl.parseAppTimePeriod("0"))
     assertThrows[IllegalArgumentException](AppFilterImpl.parseAppTimePeriod("1hd"))
     assertThrows[IllegalArgumentException](AppFilterImpl.parseAppTimePeriod("1yr"))
@@ -50,5 +52,36 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assertThrows[IllegalArgumentException](AppFilterImpl.parseAppTimePeriod("0m"))
   }
 
+  test("time period minute parsing") {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, "testTimeEventLog")
+        val c = Calendar.getInstance
+        c.add(Calendar.MINUTE, -6)
+        val newTimeStamp = c.getTimeInMillis
+        val supText =
+          s"""
+             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434",
+             |"Timestamp":$newTimeStamp,"User":"user1"}
+          """.stripMargin.stripLineEnd
+        Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          "--start-app-time",
+          "3min"
+
+        )
+
+        val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+      }
+    }
+  }
 
 }
