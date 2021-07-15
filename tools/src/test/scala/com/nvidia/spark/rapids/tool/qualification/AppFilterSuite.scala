@@ -96,7 +96,7 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val supText =
           s"""
              |{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${newTimeStamp},"User":"user1"}
+             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${eventLogTime},"User":"user1"}
              |
           """.stripMargin
         Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
@@ -105,7 +105,7 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "--output-directory",
           outpath.getAbsolutePath(),
           "--start-app-time",
-          "14h"
+          startTimePeriod
         )
         val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
