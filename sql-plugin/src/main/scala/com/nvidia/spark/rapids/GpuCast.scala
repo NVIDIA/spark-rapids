@@ -192,10 +192,10 @@ object GpuCast extends Arm {
             "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
           ")" +
           "([eE][+\\-]?[0-9]+)?" +  // exponent
-          "([fFdD])?" +             // floating-point designator
+          "[fFdD]?" +               // floating-point designator
         ")" +
-        "|(Inf)" +                  // Infinity
-        "|([nN][aA][nN])" +         // NaN
+        "|Inf" +                    // Infinity
+        "|[nN][aA][nN]" +           // NaN
       ")" +
       "$"                           // end of line
 
