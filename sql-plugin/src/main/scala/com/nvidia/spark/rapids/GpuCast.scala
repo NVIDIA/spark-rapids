@@ -748,6 +748,13 @@ case class GpuCast(
 
     withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
       withResource(sanitized.isInteger(dType)) { isInt =>
+        if (ansiMode) {
+          withResource(isInt.all()) { isAllInt =>
+            if (!isAllInt.getBoolean) {
+              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
+          }
+        }
         withResource(sanitized.castTo(dType)) { parsedInt =>
           withResource(GpuScalar.from(null, dataType)) { nullVal =>
             isInt.ifElse(parsedInt, nullVal)
