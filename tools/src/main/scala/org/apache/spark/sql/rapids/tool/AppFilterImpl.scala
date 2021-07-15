@@ -84,7 +84,7 @@ class AppFilterImpl(
       }
       filtered.map(_.eventlog).toSeq
     } else if (appArgs.startAppTime.isSupplied) {
-      val msTimeToFilter = parseAppTimePeriod(appArgs)
+      val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs)
       val filtered = apps.filter { app =>
         val appStartOpt = app.appInfo.map(_.startTime)
         if (appStartOpt.isDefined) {
@@ -96,56 +96,6 @@ class AppFilterImpl(
       filtered.map(_.eventlog).toSeq
     } else {
       apps.map(x => x.eventlog).toSeq
-    }
-  }
-
-  // parse the user provided time period string into ms
-  private def parseAppTimePeriod(appArgs: QualificationArgs): Long = {
-    if (appArgs.startAppTime.isSupplied) {
-      val appStartStr = appArgs.startAppTime.getOrElse("")
-      val timePeriod = raw"(\d+)([min,h,d,w,m]?)".r
-      val (timeStr, periodStr) = appStartStr match {
-        case timePeriod(time, "") =>
-          println(s"4: $time")
-          (time, "d")
-        case timePeriod(time, period) => println(s"1: $time $period")
-          (time, period)
-        case _ =>
-          throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
-            "time must be greater than 0 and valid periods are min(minute),h(hours)" +
-            ",d(days),w(weeks),m(months).")
-      }
-      val timeInt = try {
-        timeStr.toInt
-      } catch {
-        case ne: NumberFormatException =>
-          throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
-            "time must be greater than 0 and valid periods are min(minute),h(hours)" +
-            ",d(days),w(weeks),m(months).")
-      }
-
-      if (timeInt <= 0) {
-        throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
-          "time must be greater than 0 and valid periods are min(minute),h(hours)" +
-          ",d(days),w(weeks),m(months).")
-      }
-      val c = Calendar.getInstance
-      c.setTime(new Date())
-      periodStr match {
-        case "min" =>
-          c.add(Calendar.MINUTE, -timeInt)
-        case "h" =>
-          c.add(Calendar.HOUR, -timeInt)
-        case "d" =>
-          c.add(Calendar.DATE, -timeInt)
-        case "w" =>
-          c.add(Calendar.WEEK_OF_YEAR, -timeInt)
-        case "m" =>
-          c.add(Calendar.MONTH, -timeInt)
-      }
-      c.getTimeInMillis
-    } else {
-      0L
     }
   }
 
@@ -162,4 +112,66 @@ class AppFilterImpl(
     val appInfo = AppFilterReturnParameters(startAppInfo.appInfo, path)
     appsForFiltering.add(appInfo)
   }
+}
+
+object AppFilterImpl {
+
+  def parseAppTimePeriodArgs(appArgs: QualificationArgs): Long = {
+    if (appArgs.startAppTime.isSupplied) {
+      val appStartStr = appArgs.startAppTime.getOrElse("")
+      parseAppTimePeriod(appStartStr)
+    } else {
+      0L
+    }
+  }
+
+  // parse the user provided time period string into ms
+  def parseAppTimePeriod(appStartStr: String): Long = {
+    val timePeriod = raw"(\d+)([min,h,d,w,m]?)".r
+    val (timeStr, periodStr) = appStartStr match {
+      case timePeriod(time, "") =>
+        println(s"4: $time")
+        (time, "d")
+      case timePeriod(time, period) => println(s"1: $time $period")
+        (time, period)
+      case _ =>
+        throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
+          "time must be greater than 0 and valid periods are min(minute),h(hours)" +
+          ",d(days),w(weeks),m(months).")
+    }
+    val timeInt = try {
+      timeStr.toInt
+    } catch {
+      case ne: NumberFormatException =>
+        throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
+          "time must be greater than 0 and valid periods are min(minute),h(hours)" +
+          ",d(days),w(weeks),m(months).")
+    }
+
+    if (timeInt <= 0) {
+      throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
+        "time must be greater than 0 and valid periods are min(minute),h(hours)" +
+        ",d(days),w(weeks),m(months).")
+    }
+    val c = Calendar.getInstance
+    c.setTime(new Date())
+    periodStr match {
+      case "min" =>
+        c.add(Calendar.MINUTE, -timeInt)
+      case "h" =>
+        c.add(Calendar.HOUR, -timeInt)
+      case "d" =>
+        c.add(Calendar.DATE, -timeInt)
+      case "w" =>
+        c.add(Calendar.WEEK_OF_YEAR, -timeInt)
+      case "m" =>
+        c.add(Calendar.MONTH, -timeInt)
+      case _ =>
+        throw new IllegalArgumentException(s"Invalid time period $appStartStr specified, " +
+          "time must be greater than 0 and valid periods are min(minute),h(hours)" +
+          ",d(days),w(weeks),m(months).")
+    }
+    c.getTimeInMillis
+  }
+
 }

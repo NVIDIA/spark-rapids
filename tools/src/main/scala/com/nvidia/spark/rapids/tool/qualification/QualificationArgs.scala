@@ -17,6 +17,8 @@ package com.nvidia.spark.rapids.tool.qualification
 
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
+
 class QualificationArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
 
   banner("""
@@ -103,6 +105,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   validate(readScorePercent) {
     case percent if (percent >= 0) && (percent <= 100) => Right(Unit)
     case _ => Left("Error, read score percent must be between 0 and 100.")
+  }
+
+  validate(startAppTime) {
+    case time if (AppFilterImpl.parseAppTimePeriod(time) > 0L) => Right(Unit)
+    case _ => Left("Time period specified, must be greater than 0 and valid periods " +
+      "are min(minute),h(hours),d(days),w(weeks),m(months).")
   }
 
   verify()
