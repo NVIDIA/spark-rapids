@@ -199,10 +199,12 @@ object GpuCast extends Arm {
       // ansi mode only supports simple integers, so no exponents, decimal places, or Inf
       val regex = "^[+\\-]?[0-9]+$"
       withResource(sanitized.matchesRe(regex)) { isNumeric =>
-        withResource(isNumeric.all()) { all =>
-          if (!all.getBoolean) {
-            throw new NumberFormatException(
-              s"At least one input does not match the regular expression $regex")
+        withResource(isNumeric.not()) { notNumeric =>
+          withResource(notNumeric.any()) { any =>
+            if (any.getBoolean) {
+              throw new NumberFormatException(
+                s"At least one input does not match the regular expression $regex")
+            }
           }
         }
         sanitized
