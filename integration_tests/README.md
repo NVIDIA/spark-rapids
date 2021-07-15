@@ -233,6 +233,7 @@ the SHS supported values for the config key
 [`spark.eventLog.compression.codec`](https://spark.apache.org/docs/3.1.1/configuration.html#spark-ui)
 
 With `zstd` it's easy to view / decompress event logs using the CLI `zstd -d [--stdout] <file>`
+even without the SHS webUI.
 
 ### Enabling cudf_udf Tests
 
