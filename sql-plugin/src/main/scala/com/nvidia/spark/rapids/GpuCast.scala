@@ -196,7 +196,7 @@ object GpuCast extends Arm {
     }
 
     if (ansiEnabled) {
-      // ansi mode only supports simple integers, so no exponents, decimal places, or Inf
+      // ansi mode only supports simple integers, so no exponents or decimal places
       val regex = "^[+\\-]?[0-9]+$"
       withResource(sanitized.matchesRe(regex)) { isNumeric =>
         withResource(isNumeric.not()) { notNumeric =>
