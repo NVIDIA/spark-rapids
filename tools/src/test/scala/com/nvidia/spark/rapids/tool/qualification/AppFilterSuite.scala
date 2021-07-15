@@ -70,7 +70,7 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val c = Calendar.getInstance
     c.add(Calendar.DATE, -40)
     val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "40d")
+    testTimePeriod(newTimeStamp, "41d")
   }
 
   test("time period week parsing") {
@@ -93,12 +93,11 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
         val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, "testTimeEventLog")
 
+        // scalastyle:off line.size.limit
         val supText =
-          s"""
-             |{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${eventLogTime},"User":"user1"}
-             |
-          """.stripMargin
+          s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${eventLogTime},"User":"user1"}""".stripMargin
+        // scalastyle:on line.size.limit
         Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
 
         val allArgs = Array(
