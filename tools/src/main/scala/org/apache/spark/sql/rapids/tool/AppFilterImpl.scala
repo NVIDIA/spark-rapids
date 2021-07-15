@@ -83,7 +83,7 @@ class AppFilterImpl(
         }
       }
       filtered.map(_.eventlog).toSeq
-    } else if (appArgs.applicationStart.isSupplied) {
+    } else if (appArgs.startAppTime.isSupplied) {
       val msTimeToFilter = parseAppTimePeriod(appArgs)
       val filtered = apps.filter { app =>
         val appStartOpt = app.appInfo.map(_.startTime)
@@ -101,8 +101,8 @@ class AppFilterImpl(
 
   // parse the user provided time period string into ms
   private def parseAppTimePeriod(appArgs: QualificationArgs): Long = {
-    if (appArgs.applicationStart.isSupplied) {
-      val appStartStr = appArgs.applicationStart.getOrElse("")
+    if (appArgs.startAppTime.isSupplied) {
+      val appStartStr = appArgs.startAppTime.getOrElse("")
       val timePeriod = raw"(\d+)([min,h,d,w,m]*)".r
       val (timeStr, periodStr) = appStartStr match {
         case timePeriod(time, "") =>
