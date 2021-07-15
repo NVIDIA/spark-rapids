@@ -17,15 +17,15 @@
 package org.apache.spark.sql.rapids.tool
 
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecutor, TimeUnit}
-
 import scala.collection.JavaConverters._
-
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.EventLogPathProcessor.logError
 import com.nvidia.spark.rapids.tool.qualification.QualificationArgs
 import org.apache.hadoop.conf.Configuration
-
 import org.apache.spark.internal.Logging
+
+import scala.collection.mutable.LinkedHashMap
 
 class AppFilterImpl(
     numRows: Int,
@@ -68,8 +68,37 @@ class AppFilterImpl(
 
     // This will be required to do the actual filtering
     val apps = appsForFiltering.asScala
+    val ascendingOrder = apps.toSeq.sortBy(_.appInfo.get.startTime)
+    val descendingOrder = ascendingOrder.reverse
 
+    println(s"ASCENDING IS $ascendingOrder\n\n")
+    println(s"DESCENDING IS $descendingOrder\n\n")
     val filterAppName = appArgs.applicationName.getOrElse("")
+    val filterCriteria = appArgs.filterCriteria.getOrElse("")
+    if (appArgs.filterCriteria.isSupplied && filterCriteria.nonEmpty) {
+      if (filterCriteria.endsWith("-overall")) {
+        println("ENDS WITH OVERALL")
+        /*val filteredInfo = filterCriteria.split("-")
+        val numberofEventLogs = filteredInfo(0).toInt
+        val criteria = filteredInfo(1)
+        val matched = if (criteria.equals("newest")) {
+          //LinkedHashMap(apps.toSeq.sortWith(_._2 > _._2): _*)
+         LinkedHashMap(apps.toSeq.sortWith(_.appInfo.get.startTime > _.appInfo.get.startTime): _*)
+         val t = apps.toSeq.sortBy(_.appInfo.get.startTime).reverse
+
+        //} else if (criteria.equals("oldest")) {
+         // LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
+        } else {
+          logError("Criteria should be either newest or oldest")
+          //Map.empty[EventLogInfo, Long]
+          Seq[AppFilterReturnParameters]().toSeq
+        }
+        matched.take(numberofEventLogs)*/
+
+      } else {
+        println("ENDS WITH PER-APP-NAME")
+      }
+    }
     if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
       val filtered = apps.filter { app =>
         val appNameOpt = app.appInfo.map(_.appName)
