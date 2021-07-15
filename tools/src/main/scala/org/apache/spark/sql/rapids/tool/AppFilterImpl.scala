@@ -125,7 +125,8 @@ object AppFilterImpl {
     }
   }
 
-  // parse the user provided time period string into ms
+  // parse the user provided time period string into ms.
+  // date parameter is for testing.
   def parseAppTimePeriod(appStartStr: String): Long = {
     val timePeriod = raw"(\d+)([min,h,d,w,m]?)".r
     val (timeStr, periodStr) = appStartStr match {
@@ -154,7 +155,6 @@ object AppFilterImpl {
         ",d(days),w(weeks),m(months).")
     }
     val c = Calendar.getInstance
-    c.setTime(new Date())
     periodStr match {
       case "min" =>
         c.add(Calendar.MINUTE, -timeInt)
