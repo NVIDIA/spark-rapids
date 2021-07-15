@@ -1600,6 +1600,10 @@ class MultiFileOrcPartitionReader(
 
     filesAndBlocks.foreach {
       case (_, stripes) =>
+        // path is not needed here anymore, since filesAndBlocks is already a map: file -> stripes.
+        // and every stripe in the same file has the OrcPartitionReaderContext. we just get the
+        // OrcPartitionReaderContext from the first stripe and use the file footer size as
+        // the worst-case
         stripes.foreach { stripeMeta =>
           // account for the size of every stripe including index + data + stripe footer
           size += stripeMeta.getBlockSize
@@ -1752,7 +1756,7 @@ class MultiFileOrcPartitionReader(
    * @param buffer         The buffer holding (header + data blocks)
    * @param bufferSize     The total buffer size which equals to size of (header + blocks + footer)
    * @param footerOffset   Where begin to write the footer
-   * @param stripes         The data block meta info
+   * @param stripes        The data block meta info
    * @param clippedSchema  The clipped schema info
    * @return the buffer and the buffer size
    */

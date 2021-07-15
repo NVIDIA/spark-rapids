@@ -872,6 +872,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             s"small, actual written: ${finalBufferSize}")
         }
       }
+      logDebug(s"$getFileFormatShortName Coalescing reading estimates the initTotalSize:" +
+        s" $initTotalSize, and the true size: $finalBufferSize")
       (finalBuffer, finalBufferSize)
     }
   }
