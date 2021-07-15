@@ -56,6 +56,13 @@ class AppFilterSuite extends FunSuite {
     testTimePeriod(newTimeStamp, "41d")
   }
 
+  test("time period day parsing default") {
+    val c = Calendar.getInstance
+    c.add(Calendar.DATE, -5)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "6")
+  }
+
   test("time period week parsing") {
     val c = Calendar.getInstance
     c.add(Calendar.WEEK_OF_YEAR, -2)
