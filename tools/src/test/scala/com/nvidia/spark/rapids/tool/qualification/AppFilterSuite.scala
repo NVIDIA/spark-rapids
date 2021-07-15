@@ -91,28 +91,28 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val c = Calendar.getInstance
     c.add(Calendar.MINUTE, -16)
     val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "10min")
+    testTimePeriod(newTimeStamp, "10min", failFilter=true)
   }
 
   test("time period hour parsing fail") {
     val c = Calendar.getInstance
     c.add(Calendar.HOUR, -10)
     val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "8h")
+    testTimePeriod(newTimeStamp, "8h", failFilter=true)
   }
 
   test("time period day parsing fail") {
     val c = Calendar.getInstance
     c.add(Calendar.DATE, -40)
     val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "38d")
+    testTimePeriod(newTimeStamp, "38d", failFilter=true)
   }
 
   test("time period week parsing fail") {
     val c = Calendar.getInstance
     c.add(Calendar.WEEK_OF_YEAR, -2)
     val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "1w")
+    testTimePeriod(newTimeStamp, "1w", failFilter=true)
   }
 
   test("time period month parsing fail") {
