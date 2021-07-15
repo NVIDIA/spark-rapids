@@ -128,7 +128,7 @@ object AppFilterImpl {
   def parseAppTimePeriod(appStartStr: String): Long = {
     val timePeriod = raw"(\d+)([h,d,w,m]|min)?".r
     val (timeStr, periodStr) = appStartStr match {
-      case timePeriod(time, "") =>
+      case timePeriod(time, null) =>
         (time, "d")
       case timePeriod(time, period) =>
         (time, period)
