@@ -25,7 +25,6 @@ import org.scalatest.FunSuite
 import org.apache.spark.sql.TrampolineUtil
 import org.apache.spark.sql.rapids.tool.AppFilterImpl
 
-
 class AppFilterSuite extends FunSuite {
 
   test("illegal args") {
