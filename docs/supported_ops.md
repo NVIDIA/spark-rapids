@@ -20918,9 +20918,9 @@ dates or timestamps, or for a lack of type coercion support.
 <td> </td>
 <td><b>NS</b></td>
 <td> </td>
+<td><em>PS* (missing nested DECIMAL, BINARY, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested DECIMAL, BINARY, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
