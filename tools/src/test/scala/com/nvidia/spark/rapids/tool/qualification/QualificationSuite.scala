@@ -28,6 +28,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
@@ -314,6 +315,92 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test nds q86 with failure test") {
     val logFiles = Array(s"$logDir/nds_q86_fail_test")
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
+  }
+
+  // this event log has both decimal and non-decimal so comes out partial
+  // it has both reading decimal, multiplication and join on decimal
+  test("test decimal problematic") {
+    val logFiles = Array(s"$logDir/decimal_part_eventlog.zstd")
+    runQualificationTest(logFiles, "decimal_part_expectation.csv")
+  }
+
+  private def createDecFile(spark: SparkSession, dir: String): Unit = {
+    import spark.implicits._
+    val dfGen = Seq("1.32").toDF("value")
+      .selectExpr("CAST(value AS DECIMAL(4, 2)) AS value")
+    dfGen.write.parquet(dir)
+  }
+
+  test("test decimal generate udf same") {
+    TrampolineUtil.withTempDir { outpath =>
+
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val tmpParquet = s"$outpath/decparquet"
+        createDecFile(sparkSession, tmpParquet)
+
+        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          val plusOne = udf((x: Int) => x + 1)
+          import spark.implicits._
+          spark.udf.register("plusOne", plusOne)
+          val df = spark.read.parquet(tmpParquet)
+          val df2 = df.withColumn("mult", $"value" * $"value")
+          val df4 = df2.withColumn("udfcol", plusOne($"value"))
+          df4
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val probApp = appSum.head
+        assert(probApp.potentialProblems.contains("UDF") &&
+          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.sqlDataFrameDuration == probApp.sqlDurationForProblematic)
+      }
+    }
+  }
+
+  test("test decimal generate udf different sql ops") {
+    TrampolineUtil.withTempDir { outpath =>
+
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val tmpParquet = s"$outpath/decparquet"
+        createDecFile(sparkSession, tmpParquet)
+
+        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          val plusOne = udf((x: Int) => x + 1)
+          import spark.implicits._
+          spark.udf.register("plusOne", plusOne)
+          val df = spark.read.parquet(tmpParquet)
+          val df2 = df.withColumn("mult", $"value" * $"value")
+          // first run sql op with decimal only
+          df2.collect()
+          // run a separate sql op using just udf
+          spark.sql("SELECT plusOne(5)").collect()
+          // Then run another sql op that doesn't use with decimal or udf
+          import spark.implicits._
+          val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
+          t1.createOrReplaceTempView("t1")
+          spark.sql("SELECT a, MAX(b) FROM t1 GROUP BY a ORDER BY a")
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val probApp = appSum.head
+        assert(probApp.potentialProblems.contains("UDF") &&
+          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.sqlDurationForProblematic > 0)
+        assert(probApp.sqlDataFrameDuration > probApp.sqlDurationForProblematic)
+      }
+    }
   }
 
   test("test read datasource v1") {
