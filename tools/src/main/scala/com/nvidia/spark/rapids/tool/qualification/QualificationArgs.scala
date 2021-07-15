@@ -47,9 +47,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[String](required = false,
       descr = "Filter event logs whose application name matches " +
           "exactly or is a substring of input string. Regular expressions not supported." +
-          "For complement of eventlogs, use ~APPLICATION_NAME. Filter event logs based on the " +
-          "complement of a selection criterion. i.e Select all event logs except the ones which " +
-          "have application name as the input string.")
+          "For filtering based on complement of application name, use ~APPLICATION_NAME. Filter " +
+          "event logs based on the complement of a selection criterion. i.e Select all event " +
+          "logs except the ones which have application name as the input string.")
   val matchEventLogs: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose filenames contain the input string")
