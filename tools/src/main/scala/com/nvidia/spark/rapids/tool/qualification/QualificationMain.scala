@@ -94,6 +94,6 @@ object QualificationMain extends Logging {
   }
 
   def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {
-    appArgs.applicationName.isDefined
+    appArgs.applicationName.isSupplied || appArgs.applicationStart.isSupplied
   }
 }
