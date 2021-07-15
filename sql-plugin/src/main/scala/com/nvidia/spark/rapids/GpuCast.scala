@@ -213,7 +213,7 @@ object GpuCast extends Arm {
                 withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
                   withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.[0-9]*$")) { table =>
                     withResource(Scalar.fromString("0")) { zero =>
-                      withResource(startsWithDot.ifElse(zero, table.getColumn(0).incRefCount())) {
+                      withResource(startsWithDot.ifElse(zero, table.getColumn(0))) {
                         decimal => hasDot.ifElse(decimal, sanitized)
                       }
                     }
