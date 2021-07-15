@@ -60,11 +60,9 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val c = Calendar.getInstance
         c.add(Calendar.MINUTE, -6)
         val newTimeStamp = c.getTimeInMillis
-        val supText =
-          s"""
-             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434",
-             |"Timestamp":$newTimeStamp,"User":"user1"}
-          """.stripMargin.stripLineEnd
+        val supText = "{\"Event\":\"SparkListenerApplicationStart\",\"App Name\":" +
+          s"\"Spark shell\",\"App ID\":\"local-1626104300434\",\"Timestamp\":$newTimeStamp," +
+          "\"User\":\"user1\"}"
         Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
 
 
@@ -73,9 +71,46 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
           outpath.getAbsolutePath(),
           "--start-app-time",
           "3min"
-
         )
+        val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
 
+        val allArgs2 = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          "--start-app-time",
+          "10min"
+        )
+        val appArgs2 = new QualificationArgs(allArgs2 ++ Array(elogFile.toString()))
+        val (exit2, appSum2) = QualificationMain.mainInternal(appArgs2)
+        assert(exit2 == 0)
+        assert(appSum2.size == 0)
+      }
+    }
+  }
+
+  test("time period minute parsing") {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, "testTimeEventLog")
+        val c = Calendar.getInstance
+        c.add(Calendar.HOUR, -10)
+        val newTimeStamp = c.getTimeInMillis
+        val supText = "{\"Event\":\"SparkListenerApplicationStart\",\"App Name\":" +
+          s"\"Spark shell\",\"App ID\":\"local-1626104300434\",\"Timestamp\":$newTimeStamp," +
+          "\"User\":\"user1\"}"
+          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          "--start-app-time",
+          "4h"
+        )
         val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
