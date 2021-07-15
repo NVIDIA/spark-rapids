@@ -22,13 +22,13 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.ListBuffer
 import scala.io.Source
 
-import com.nvidia.spark.rapids.tool.ToolTestUtils
+import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
-import org.apache.spark.sql.rapids.tool.ToolUtils
+import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
 import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
 
@@ -240,6 +240,27 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val log = s"$profileLogDir/spark2-eventlog.zstd"
     runQualificationTest(Array(log), "spark2_expectation.csv")
+  }
+
+  test("test appName filter") {
+    val appName = "Spark shell"
+    val appArgs = new QualificationArgs(Array(
+      "--application-name",
+      appName,
+      s"$logDir/rdd_only_eventlog",
+      s"$logDir/empty_eventlog",
+      s"$logDir/udf_dataset_eventlog"
+    ))
+
+    val eventLogInfo = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+      appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+      sparkSession.sparkContext.hadoopConfiguration)
+
+    val appFilter = new AppFilterImpl(1000, sparkSession.sparkContext.hadoopConfiguration,
+      Some(84000), 2)
+    val result = appFilter.filterEventLogs(eventLogInfo, appArgs)
+    assert(eventLogInfo.length == 3)
+    assert(result.length == 2) // 2 out of 3 have "Spark shell" as appName.
   }
 
   test("test udf event logs") {
