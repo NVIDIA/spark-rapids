@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims.spark311cdh
 import java.net.URI
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
+import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, Spark311Shims}
 import com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
