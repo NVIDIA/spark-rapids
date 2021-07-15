@@ -117,11 +117,19 @@ abstract class AppBase(
     }
   }
 
-  protected def findPotentialIssues(desc: String): Option[String] =  {
-    desc match {
-      case u if u.matches(".*UDF.*") => Some("UDF")
-      case _ => None
-    }
+  // Decimal support on the GPU is limited to less than 18 digits and decimals
+  // are configured off by default for now. It would be nice to have this
+  // based off of what plugin supports at some point.
+  private val decimalKeyWords = Map(".*promote_precision\\(.*" -> "DECIMAL",
+    ".*decimal\\([0-9]+,[0-9]+\\).*" -> "DECIMAL",
+    ".*DecimalType\\([0-9]+,[0-9]+\\).*" -> "DECIMAL")
+
+  private val UDFKeywords = Map(".*UDF.*" -> "UDF")
+
+  protected def findPotentialIssues(desc: String): Set[String] =  {
+    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords
+    val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
+    issues.values.toSet
   }
 
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {

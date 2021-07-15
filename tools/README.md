@@ -120,8 +120,9 @@ outputs this same report to STDOUT.
 The other file is a CSV file that contains more information and can be used for further post processing.
 
 Note, potential problems are reported in the CSV file in a separate column, which is not included in the score. This
-currently only includes some UDFs. The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps. 
-Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
+currently includes some UDFs and some decimal operations. The tool won't catch all UDFs, and some of the UDFs can be
+handled with additional steps. Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
+For decimals, it tries to recognize decimal operations but it may not catch them all.
 
 The CSV output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
 at how much time the tasks spent doing processing on the CPU vs waiting on IO. This is not always a good indicator
