@@ -189,8 +189,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        <eventlogs | eventlog directories ...>
 
   -a, --application-name <arg>      Filter event logs whose application name
-                                    matches exactly with input string i.e no
-                                    regular expressions supported.
+                                    matches exactly or is a substring of input 
+                                    string. Regular expressions not supported.
       --application-name ~<arg>     Filter event logs based on the complement
                                     of a selection criterion. i.e Select all
                                     event logs except the ones which have
