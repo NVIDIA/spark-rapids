@@ -263,6 +263,27 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(result.length == 2) // 2 out of 3 have "Spark shell" as appName.
   }
 
+  test("test appName filter - Negation") {
+    val appName = "~Spark shell"
+    val appArgs = new QualificationArgs(Array(
+      "--application-name",
+      appName,
+      s"$logDir/rdd_only_eventlog",
+      s"$logDir/empty_eventlog",
+      s"$logDir/udf_dataset_eventlog"
+    ))
+
+    val eventLogInfo = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+      appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+      sparkSession.sparkContext.hadoopConfiguration)
+
+    val appFilter = new AppFilterImpl(1000, sparkSession.sparkContext.hadoopConfiguration,
+      Some(84000), 2)
+    val result = appFilter.filterEventLogs(eventLogInfo, appArgs)
+    assert(eventLogInfo.length == 3)
+    assert(result.length == 1) // 1 out of 3 does not has "Spark shell" as appName.
+  }
+
   test("test udf event logs") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",

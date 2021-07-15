@@ -71,18 +71,35 @@ class AppFilterImpl(
 
     val filterAppName = appArgs.applicationName.getOrElse("")
     if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
-      val filtered = apps.filter { app =>
-        val appNameOpt = app.appInfo.map(_.appName)
-        if (appNameOpt.isDefined) {
-          appNameOpt.get.equals(filterAppName)
-        } else {
-          // in complete log file
-          false
-        }
+      val checkNegation = filterAppName(0)
+      val filtered = if (checkNegation.equals('~')) {
+        apps.filterNot(app => filterAppsNegate(app, filterAppName))
+      } else {
+        apps.filter(app => filterApps(app, filterAppName))
       }
       filtered.map(_.eventlog).toSeq
     } else {
       apps.map(x => x.eventlog).toSeq
+    }
+  }
+
+  def filterApps(app: AppFilterReturnParameters, filterAppName: String): Boolean = {
+    val appNameOpt = app.appInfo.map(_.appName)
+    if (appNameOpt.isDefined) {
+      appNameOpt.get.equals(filterAppName)
+    } else {
+      // in complete log file
+      false
+    }
+  }
+
+  def filterAppsNegate(app: AppFilterReturnParameters, filterAppName: String): Boolean = {
+    val appNameOpt = app.appInfo.map(_.appName)
+    if (appNameOpt.isDefined) {
+      appNameOpt.get.equals(filterAppName.substring(1))
+    } else {
+      // in complete log file
+      false
     }
   }
 
