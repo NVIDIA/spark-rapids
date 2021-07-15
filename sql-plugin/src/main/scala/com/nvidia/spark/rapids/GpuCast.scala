@@ -737,17 +737,16 @@ case class GpuCast(
 
     withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
       withResource(sanitized.isInteger(dType)) { isInt =>
-        if (ansiEnabled) {
-          withResource(isInt.all()) { allInts =>
-            if (!allInts.getBoolean) {
-              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
-          }
-          sanitized.castTo(dType)
-        } else {
-          withResource(sanitized.castTo(dType)) { parsedInt =>
-            withResource(GpuScalar.from(null, dataType)) { nullVal =>
-              isInt.ifElse(parsedInt, nullVal)
+        withResource(isInt.all()) { allInts =>
+          if (allInts.getBoolean) {
+            sanitized.castTo(dType)
+          } else if (ansiEnabled) {
+            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+          } else {
+            withResource(sanitized.castTo(dType)) { parsedInt =>
+              withResource(GpuScalar.from(null, dataType)) { nullVal =>
+                isInt.ifElse(parsedInt, nullVal)
+              }
             }
           }
         }
