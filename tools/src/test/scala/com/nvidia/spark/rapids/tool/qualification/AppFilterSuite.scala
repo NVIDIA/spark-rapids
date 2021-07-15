@@ -53,50 +53,53 @@ class AppFilterSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("time period minute parsing") {
-    TrampolineUtil.withTempDir { outpath =>
-      TrampolineUtil.withTempDir { tmpEventLogDir =>
-
-        val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, "testTimeEventLog")
-        val c = Calendar.getInstance
-        c.add(Calendar.MINUTE, -6)
-        val newTimeStamp = c.getTimeInMillis
-        val supText =
-          s"""
-           |{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-           |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${newTimeStamp},"User":"user1"}
-           |
-          """.stripMargin
-        Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
-
-        val allArgs = Array(
-          "--output-directory",
-          outpath.getAbsolutePath(),
-          "--start-app-time",
-          "10min"
-        )
-        val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
-        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
-        assert(exit == 0)
-        assert(appSum.size == 1)
-      }
-    }
+    val c = Calendar.getInstance
+    c.add(Calendar.MINUTE, -6)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "10min")
   }
 
   test("time period hour parsing") {
+    val c = Calendar.getInstance
+    c.add(Calendar.HOUR, -10)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "14h")
+  }
+
+  test("time period day parsing") {
+    val c = Calendar.getInstance
+    c.add(Calendar.DATE, -40)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "40d")
+  }
+
+  test("time period week parsing") {
+    val c = Calendar.getInstance
+    c.add(Calendar.WEEK_OF_YEAR, -2)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "3w")
+  }
+
+  test("time period month parsing") {
+    val c = Calendar.getInstance
+    c.add(Calendar.MONTH, -8)
+    val newTimeStamp = c.getTimeInMillis
+    testTimePeriod(newTimeStamp, "10m")
+  }
+
+  private def testTimePeriod(eventLogTime: Long, startTimePeriod: String): Unit = {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
 
         val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, "testTimeEventLog")
-        val c = Calendar.getInstance
-        c.add(Calendar.HOUR, -10)
-        val newTimeStamp = c.getTimeInMillis
+
         val supText =
           s"""
-            |{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-            |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${newTimeStamp},"User":"user1"}
-            |
+             |{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${newTimeStamp},"User":"user1"}
+             |
           """.stripMargin
-          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+        Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
 
         val allArgs = Array(
           "--output-directory",
