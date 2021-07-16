@@ -60,7 +60,7 @@ object ProfileMain extends Logging {
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
     // Create the FileWriter and sparkSession used for ALL Applications.
-    val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName)
+    val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName, "Profile summary")
     try {
       // Get the event logs required to process
       val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
@@ -125,6 +125,7 @@ object ProfileMain extends Logging {
         textFileWriter.write("### A. Compare Information Collected ###")
         val compare = new CompareApplications(apps, Some(textFileWriter))
         compare.compareAppInfo()
+        compare.compareDataSourceInfo(sparkSession, numOutputRows)
         compare.compareExecutorInfo()
         compare.findMatchingStages()
         compare.compareJobInfo()
@@ -133,6 +134,7 @@ object ProfileMain extends Logging {
         val collect = new CollectInformation(apps, Some(textFileWriter))
         textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
+        collect.printDataSourceInfo(sparkSession, numOutputRows)
         collect.printExecutorInfo()
         collect.printJobInfo()
         collect.printRapidsProperties()

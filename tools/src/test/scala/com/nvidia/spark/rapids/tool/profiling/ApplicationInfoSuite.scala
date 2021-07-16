@@ -212,6 +212,82 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test read datasourcev1") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog_dsv1.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps, None)
+      val df = collect.getDataSourceInfo(apps.head, sparkSession)
+      val rows = df.collect()
+      assert(rows.size == 7)
+      val allFormats = rows.map { r =>
+        r.getString(r.schema.fieldIndex("format"))
+      }.toSet
+      val expectedFormats = Set("Text", "CSV", "Parquet", "ORC", "JSON")
+      assert(allFormats.equals(expectedFormats))
+      val allSchema = rows.map { r =>
+        r.getString(r.schema.fieldIndex("schema"))
+      }.toSet
+      assert(allSchema.forall(_.nonEmpty))
+      val schemaParquet = rows.filter { r =>
+        r.getLong(r.schema.fieldIndex("sqlID")) == 2
+      }
+      assert(schemaParquet.size == 1)
+      val parquetRow = schemaParquet.head
+      assert(parquetRow.getString(parquetRow.schema.fieldIndex("schema")).contains("loan400"))
+      assert(parquetRow.getString(parquetRow.schema.fieldIndex("location"))
+        .contains("lotscolumnsout"))
+    }
+  }
+
+  test("test read datasourcev2") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$logDir/eventlog_dsv2.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps, None)
+      val df = collect.getDataSourceInfo(apps.head, sparkSession)
+      val rows = df.collect()
+      assert(rows.size == 9)
+      val allFormats = rows.map { r =>
+        r.getString(r.schema.fieldIndex("format"))
+      }.toSet
+      val expectedFormats = Set("Text", "csv", "parquet", "orc", "json")
+      assert(allFormats.equals(expectedFormats))
+      val allSchema = rows.map { r =>
+        r.getString(r.schema.fieldIndex("schema"))
+      }.toSet
+      assert(allSchema.forall(_.nonEmpty))
+      val schemaParquet = rows.filter { r =>
+        r.getLong(r.schema.fieldIndex("sqlID")) == 2
+      }
+      assert(schemaParquet.size == 1)
+      val parquetRow = schemaParquet.head
+      // schema is truncated in v2
+      assert(!parquetRow.getString(parquetRow.schema.fieldIndex("schema")).contains("loan400"))
+      assert(parquetRow.getString(parquetRow.schema.fieldIndex("schema")).contains("..."))
+      assert(parquetRow.getString(parquetRow.schema.fieldIndex("location"))
+        .contains("lotscolumnsout"))
+    }
+  }
+
   test("test printJobInfo") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
@@ -264,6 +340,32 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(row1.id.equals(1))
     assert(row1.executorMemory.equals(6144L))
     assert(row1.executorCores.equals(2))
+  }
+
+  test("test spark2 and spark3 event logs") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs = new ProfileArgs(Array(s"$logDir/tasks_executors_fail_compressed_eventlog.zstd",
+      s"$logDir/spark2-eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+        EventLogPathProcessor.getEventLogInfo(path,
+          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 2)
+    val compare = new CompareApplications(apps, None)
+    val df = compare.compareExecutorInfo()
+    // just the fact it worked makes sure we can run with both files
+    val execinfo = df.collect()
+    // since we give them indexes above they should be in the right order
+    // and spark2 event info should be second
+    val firstRow = execinfo.head
+    assert(firstRow.getInt(firstRow.schema.fieldIndex("resourceProfileId")) === 0)
+
+    val secondRow = execinfo(1)
+    assert(secondRow.isNullAt(secondRow.schema.fieldIndex("resourceProfileId")))
   }
 
   test("test filename match") {

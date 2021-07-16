@@ -458,11 +458,16 @@ class Spark311Shims extends Spark301Shims {
     new ShuffleManagerShim
   }
 
-  override def copyParquetBatchScanExec(
+  override def copyBatchScanExec(
       batchScanExec: GpuBatchScanExec,
       queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
-    val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
+    val scanCopy = batchScanExec.scan match {
+      case parquetScan: GpuParquetScan =>
+        parquetScan.copy(queryUsesInputFile=queryUsesInputFile)
+      case orcScan: GpuOrcScan =>
+        orcScan.copy(queryUsesInputFile=queryUsesInputFile)
+      case _ => throw new RuntimeException("Wrong format") // never reach here
+    }
     batchScanExec.copy(scan=scanCopy)
   }
 

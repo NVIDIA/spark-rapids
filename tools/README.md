@@ -20,7 +20,9 @@ GPU generated event logs.
   at the top level when specifying a directory.
 
 Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
-or can be found in the location specified by `spark.eventLog.dir`.
+or can be found in the location specified by `spark.eventLog.dir`. See the
+[Apache Spark Monitoring](http://spark.apache.org/docs/latest/monitoring.html) documentation for
+more information.
 
 Optional:
 - maven installed 
@@ -99,12 +101,12 @@ rapids-4-spark-tools_2.12-<version>.jar \
 The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications. The tool works by processing the CPU generated event logs from Spark.
 
-Currently it does this by looking at the amount of time spent doing SQL Dataframe
-operations vs the entire application time: `(sum(SQL Dataframe Duration) / (application-duration))`.
-The more time spent doing SQL Dataframe operations the higher the score is
-and the more likely the plugin will be able to help accelerate that application.
-Note that the application time is from application start to application end so if you are using an interactive
-shell where there is nothing running from a while, this time will include that which might skew the score.
+This tool is intended to give the users a starting point and does not guarantee the applications it scores highest
+will actually be accelerated the most. Currently it works by looking at the amount of time spent in tasks of SQL
+Dataframe operations. The more total task time doing SQL Dataframe operations the higher the score is and the more
+likely the plugin will be able to help accelerate that application. The tool also looks for read data formats and types
+that the plugin doesn't support and if it finds any not supported it will take away from the score (based on the
+total task time in SQL Dataframe operations).
 
 Each application(event log) could have multiple SQL queries. If a SQL's plan has Dataset API inside such as keyword
  `$Lambda` or `.apply`, that SQL query is categorized as a DataSet SQL query, otherwise it is a Dataframe SQL query.
@@ -113,12 +115,14 @@ Note: the duration(s) reported are in milli-seconds.
 
 There are 2 output files from running the tool. One is a summary text file printing in order the applications most
 likely to be good candidates for the GPU to the ones least likely. It outputs the application ID, duration,
-the SQL Dataframe duration and the SQL duration spent when we found SQL queries with potential problems.
+the SQL Dataframe duration and the SQL duration spent when we found SQL queries with potential problems. It also
+outputs this same report to STDOUT.
 The other file is a CSV file that contains more information and can be used for further post processing.
 
 Note, potential problems are reported in the CSV file in a separate column, which is not included in the score. This
-currently only includes some UDFs. The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps. 
-Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
+currently includes some UDFs and some decimal operations. The tool won't catch all UDFs, and some of the UDFs can be
+handled with additional steps. Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
+For decimals, it tries to recognize decimal operations but it may not catch them all.
 
 The CSV output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
 at how much time the tasks spent doing processing on the CPU vs waiting on IO. This is not always a good indicator
@@ -133,21 +137,20 @@ Note that SQL queries that contain failed jobs are not included.
 
 Sample output in csv:
 ```
-App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures
-job1,app-20210507174503-2538,98.13,"",952802,970984,63.14,false,0,""
-job2,app-20210507180116-2539,97.88,"",903845,923419,64.88,false,0,""
-job3,app-20210319151533-1704,97.59,"",737826,756039,33.95,false,0,""
+App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types
+job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,""
+job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]"
 ```
 
 Sample output in text:
 ```
-================================================================================================================
-|                 App ID|                App Duration|      SQL Dataframe Duration|SQL Duration For Problematic|
-================================================================================================================
-|app-20210507174503-2538|                      970984|                      952802|                           0|
-|app-20210507180116-2539|                      923419|                      903845|                           0|
-|app-20210319151533-1704|                      756039|                      737826|                           0|
+===========================================================================
+|                 App ID|App Duration|SQL DF Duration|Problematic Duration|
+===========================================================================
+|app-20210507174503-2538|       26171|           9569|                   0|
+|app-20210507174503-1704|       83738|           6760|                   0|
 ```
+
 ## Download the Spark 3.x distribution
 The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
 Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
@@ -186,35 +189,47 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
        <eventlogs | eventlog directories ...>
 
-  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
-                                  processing.eg: 100-newest (for processing
-                                  newest 100 event logs). eg: 100-oldest (for
-                                  processing oldest 100 event logs)
-  -m, --match-event-logs  <arg>   Filter event logs whose filenames contain the
-                                  input string
-  -n, --num-output-rows  <arg>    Number of output rows in the summary report.
-                                  Default is 1000.
-      --num-threads  <arg>        Number of thread to use for parallel
-                                  processing. The default is the number of cores
-                                  on host divided by 4.
-      --order  <arg>              Specify the sort order of the report. desc or
-                                  asc, desc is the default. desc (descending)
-                                  would report applications most likely to be
-                                  accelerated at the top and asc (ascending)
-                                  would show the least likely to be accelerated
-                                  at the top.
-  -o, --output-directory  <arg>   Base output directory. Default is current
-                                  directory for the default filesystem. The
-                                  final output will go into a subdirectory
-                                  called rapids_4_spark_qualification_output. It
-                                  will overwrite any existing directory with the
-                                  same name.
-  -t, --timeout  <arg>            Maximum time in seconds to wait for the event
-                                  logs to be processed. Default is 24 hours
-                                  (86400 seconds) and must be greater than 3
-                                  seconds. If it times out, it will report what
-                                  it was able to process up until the timeout.
-  -h, --help                      Show help message
+  -a, --application-name <arg>      Filter event logs whose application name
+                                    matches exactly or is a substring of input 
+                                    string. Regular expressions not supported.
+      --application-name ~<arg>     Filter event logs based on the complement
+                                    of a selection criterion. i.e Select all
+                                    event logs except the ones which have
+                                    application name as the input string.
+  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs for
+                                    processing.eg: 100-newest (for processing
+                                    newest 100 event logs). eg: 100-oldest (for
+                                    processing oldest 100 event logs)
+  -m, --match-event-logs  <arg>     Filter event logs whose filenames contain the
+                                    input string
+  -n, --num-output-rows  <arg>      Number of output rows in the summary report.
+                                    Default is 1000.
+      --num-threads  <arg>          Number of thread to use for parallel
+                                    processing. The default is the number of cores
+                                    on host divided by 4.
+      --order  <arg>                Specify the sort order of the report. desc or
+                                    asc, desc is the default. desc (descending)
+                                    would report applications most likely to be
+                                    accelerated at the top and asc (ascending)
+                                    would show the least likely to be accelerated
+                                    at the top.
+  -o, --output-directory  <arg>     Base output directory. Default is current
+                                    directory for the default filesystem. The
+                                    final output will go into a subdirectory
+                                    called rapids_4_spark_qualification_output. It
+                                    will overwrite any existing directory with the
+                                    same name.
+  -r, --read-score-percent  <arg>   The percent the read format and datatypes
+                                    apply to the score. Default is 20 percent.
+      --report-read-schema          Whether to output the read formats and
+                                    datatypes to the CSV file. This can be very
+                                    long. Default is false.
+  -t, --timeout  <arg>              Maximum time in seconds to wait for the event
+                                    logs to be processed. Default is 24 hours
+                                    (86400 seconds) and must be greater than 3
+                                    seconds. If it times out, it will report what
+                                    it was able to process up until the timeout.
+  -h, --help                        Show help message
 
  trailing arguments:
   eventlog (required)   Event log filenames(space separated) or directories
@@ -223,9 +238,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
 ### Output
-By default this outputs a 2 files under sub-directory `./rapids_4_spark_qualification_output/` that contains 
-the processed applications. The output will go into your default filesystem, it supports local filesystem
-or HDFS. 
+The summary report goes to STDOUT and by default it outputs 2 files under sub-directory
+`./rapids_4_spark_qualification_output/` that contain the processed applications. The output will
+go into your default filesystem, it supports local filesystem or HDFS.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
 
