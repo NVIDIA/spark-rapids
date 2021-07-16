@@ -101,18 +101,24 @@ class AppFilterImpl(
         val criteria = filteredInfo(1)
         val filtered = if (criteria.equals("oldest")) {
           apps.toSeq.sortBy(_.appInfo.get.startTime)
-        } else if (criteria.equals("newest")) {
-          apps.toSeq.sortBy(_.appInfo.get.startTime).reverse
         } else {
-          logError("Criteria should be either newest-overall or oldest-overall")
-          Seq[AppFilterReturnParameters]()
+          apps.toSeq.sortBy(_.appInfo.get.startTime).reverse
         }
         filtered.map(_.eventlog).take(numberofEventLogs)
       } else {
         val distinctAppNameMap = apps.groupBy(_.appInfo.get.appName)
-        //TODO : filter N eventlogs per app Name
-        //TEMPORARILY RETURNING ALL EVENTLOGS
-        apps.map(x => x.eventlog).toSeq
+        val filteredInfo = filterCriteria.split("-")
+        val numberofEventLogs = filteredInfo(0).toInt
+        val criteria = filteredInfo(1)
+        val filtered = distinctAppNameMap.map { case (name, apps) =>
+          val sortedApps = if (criteria.equals("oldest")) {
+            apps.toSeq.sortBy(_.appInfo.get.startTime).take(numberofEventLogs)
+          } else {
+            apps.toSeq.sortBy(_.appInfo.get.startTime).reverse.take(numberofEventLogs)
+          }
+          (name, sortedApps)
+        }
+        filtered.values.flatMap(_.map(_.eventlog)).toSeq
       }
     } else {
       apps.map(x => x.eventlog).toSeq
