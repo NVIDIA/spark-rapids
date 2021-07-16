@@ -210,8 +210,8 @@ object GpuCast extends Arm {
         }
         // replace all possible versions of "Inf" and "Infinity" with "Inf"
         val inf = withResource(withoutWhitespace) { _ =>
-          withoutWhitespace.stringReplaceWithBackrefs(
-            "([iI][nN][fF])" + "([iI][nN][iI][tT][yY])?", "Inf")
+            withoutWhitespace.stringReplaceWithBackrefs(
+          "([iI][nN][fF])" + "([iI][nN][iI][tT][yY])?", "Inf")
         }
         // replace "+Inf" with "Inf" because cuDF only supports "Inf" and "-Inf"
         val infWithoutPlus = withResource(inf) { _ =>
@@ -230,7 +230,7 @@ object GpuCast extends Arm {
                 // Check that all non-null values are valid floats. Note that isFloat will be false
                 // if all rows are null so we need to check for that condition.
                 if (!allMatch.getBoolean &&
-                  infWithoutPlus.getNullCount != infWithoutPlus.getRowCount) {
+                    infWithoutPlus.getNullCount != infWithoutPlus.getRowCount) {
                   throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
                 }
                 infWithoutPlus.incRefCount()
