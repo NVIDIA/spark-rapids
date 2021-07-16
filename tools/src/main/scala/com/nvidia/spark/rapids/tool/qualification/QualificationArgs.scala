@@ -44,7 +44,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[String](required = false,
       descr = "Filter newest or oldest N eventlogs based on timestamp of file for processing." +
           "eg: 100-newest (for processing newest 100 event logs). " +
-          "eg: 100-oldest (for processing oldest 100 event logs)" +
+          "eg: 100-oldest (for processing oldest 100 event logs). Filesystem " +
+          "based filtering happens before any application based filtering." +
           "eg: 100-newest-overall (for processing newest 100 event logs based on timestamp inside" +
           "the eventlog) " +
           "eg: 100-oldest-overall (for processing oldest 100 event logs based on timestamp inside" +
@@ -62,7 +63,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         "m(months). If a period is not specified it defaults to days.")
   val matchEventLogs: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter event logs whose filenames contain the input string")
+      descr = "Filter event logs whose filenames contain the input string. Filesystem " +
+              "based filtering happens before any application based filtering.")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows in the summary report. Default is 1000.",
