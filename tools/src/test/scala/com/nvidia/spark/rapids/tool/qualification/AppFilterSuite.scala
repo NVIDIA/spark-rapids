@@ -36,7 +36,7 @@ class AppFilterSuite extends FunSuite {
   }
 
   test("time period minute parsing") {
-    testTimePeriod(msMonthsAgo(6), "10min")
+    testTimePeriod(msMinAgo(6), "10min")
   }
 
   test("time period hour parsing") {
@@ -149,9 +149,12 @@ class AppFilterSuite extends FunSuite {
     TestEventLogInfo("nds86", msDaysAgo(4), 1),
     TestEventLogInfo("nds86", msWeeksAgo(2), 2))
 
-  test("app name and start time") {
-    testTimePeriodAndStart(appsToTest, "2d", "nds", 1)
+  test("app name and start time 20m") {
     testTimePeriodAndStart(appsToTest, "20m", "nds", appsToTest.size)
+  }
+
+  test("app name and start time 2d") {
+    testTimePeriodAndStart(appsToTest, "2d", "nds", 1)
   }
 
   case class TestEventLogInfo(appName: String, eventLogTime: Long, uniqueId: Int)
