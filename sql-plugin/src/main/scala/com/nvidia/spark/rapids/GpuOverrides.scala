@@ -1201,10 +1201,10 @@ object GpuOverrides {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectNotLambda(
-        _commonTypes.nested() + TypeSig.ARRAY + TypeSig.STRUCT,
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          _commonTypes.nested() + TypeSig.ARRAY + TypeSig.STRUCT,
+          (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1752,14 +1752,14 @@ object GpuOverrides {
     expr[If](
       "IF expression",
       ExprChecks.projectNotLambda(
-        _commonTypes.nested() + TypeSig.ARRAY + TypeSig.STRUCT,
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
-            _commonTypes.nested() + TypeSig.ARRAY + TypeSig.STRUCT,
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
-            _commonTypes.nested() + TypeSig.ARRAY + TypeSig.STRUCT,
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
