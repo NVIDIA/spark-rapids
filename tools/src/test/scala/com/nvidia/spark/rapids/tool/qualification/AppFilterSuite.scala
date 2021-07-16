@@ -154,6 +154,10 @@ class AppFilterSuite extends FunSuite {
     testTimePeriodAndStart(appsToTest, "20m", "nds", appsToTest.size - 1)
   }
 
+  test("app name no matche and start time 20m") {
+    testTimePeriodAndStart(appsToTest, "20m", "nomatch", 0)
+  }
+
   test("app name and start time 2d") {
     testTimePeriodAndStart(appsToTest, "2d", "nds", 2)
   }
@@ -164,6 +168,14 @@ class AppFilterSuite extends FunSuite {
 
   test("app name exact and start time 2d") {
     testTimePeriodAndStart(appsToTest, "2d", "ndsmins34", 1)
+  }
+
+  test("app name and start time 20h") {
+    testTimePeriodAndStart(appsToTest, "20h", "nds", 2)
+  }
+
+  test("app name exact and start time 6d") {
+    testTimePeriodAndStart(appsToTest, "6d", "nds86", 1)
   }
 
   case class TestEventLogInfo(appName: String, eventLogTime: Long, uniqueId: Int)
