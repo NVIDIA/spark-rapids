@@ -86,18 +86,19 @@ class QueryFuzzer(val seed: Long) {
       SortRandomColumns(ctx),
       RandomCastFromString(ctx),
       Aggregate(ctx),
-      Repartition(ctx),
-      NoopTransform(ctx),
+      Repartition(ctx)
     )
 
     // filter down to a list of transformations that are applicable in the current context
     val validTransformations = transformations.filter(_.canTransform(df))
-
-    // pick a transformation at random
-    val tf = randomElement(validTransformations)
-
-    // apply the transformation
-    tf.transform(df)
+    if (validTransformations.isEmpty) {
+      df
+    } else {
+      // pick a transformation at random
+      val tf = randomElement(validTransformations)
+      // apply the transformation
+      tf.transform(df)
+    }
   }
 
   /**
@@ -187,12 +188,8 @@ case class Aggregate(ctx: FuzzContext) extends Transformation {
   override def transform(df: DataFrame): DataFrame = {
     val groupCol = col(df.columns(ctx.fuzzer.rand.nextInt(df.columns.length)))
     val intCols = df.schema.fields.filter(_.dataType == DataTypes.IntegerType)
-    if (intCols.nonEmpty) {
-      val aggrCol = intCols(ctx.fuzzer.rand.nextInt(intCols.length)).name
-      ctx.fuzzer.renameColumns(df.groupBy(groupCol).sum(aggrCol))
-    } else {
-      df
-    }
+    val aggrCol = intCols(ctx.fuzzer.rand.nextInt(intCols.length)).name
+    ctx.fuzzer.renameColumns(df.groupBy(groupCol).sum(aggrCol))
   }
 }
 
@@ -241,7 +238,3 @@ case class Join(ctx: FuzzContext) extends Transformation {
   }
 }
 
-case class NoopTransform(ctx: FuzzContext) extends Transformation {
-  override def canTransform(df: DataFrame): Boolean = true
-  override def transform(df: DataFrame): DataFrame = df
-}

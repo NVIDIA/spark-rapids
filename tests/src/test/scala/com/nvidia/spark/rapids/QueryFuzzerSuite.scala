@@ -25,15 +25,16 @@ class QueryFuzzerSuite extends SparkQueryCompareTestSuite {
 
   // this is a manual test that we should never enable
   ignore("Execute random plans forever until we hit a failure case") {
+    var i = 0
     while (true) {
-      compareRandomPlansCpuGpu()
+      val seed = System.currentTimeMillis()
+      println(s"Running query #$i with seed $seed")
+      compareRandomPlansCpuGpu(seed)
+      i += 1
     }
   }
 
-  def compareRandomPlansCpuGpu() {
-
-    val seed = System.currentTimeMillis()
-    println(s"QueryFuzzerSuite: seed=$seed")
+  def compareRandomPlansCpuGpu(seed: Long) {
 
     def executeRandomPlan(spark: SparkSession): Array[Row] = {
       // create new fuzzer here so that CPU and GPU runs use the same seed
@@ -61,10 +62,10 @@ class QueryFuzzerSuite extends SparkQueryCompareTestSuite {
       case (Failure(cpu), Success(_)) =>
         fail(s"GPU run succeeded. CPU run failed.", cpu)
       case (Failure(cpu), Failure(gpu)) =>
+        println(s"Query failed both on CPU and GPU:\nCPU: $cpu\nGPU: $gpu")
         // this is fine for now, but it would be nice to see if we could
         // determine if they both failed for the same reason
         if (cpu.getMessage != gpu.getMessage) {
-          println(s"Query failed both on CPU and GPU:\nCPU: $cpu\nGPU: $gpu")
           showStackTrace("CPU", cpu)
           showStackTrace("GPU", gpu)
         }
