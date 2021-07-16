@@ -147,14 +147,23 @@ class AppFilterSuite extends FunSuite {
     TestEventLogInfo("ndsdays3", msDaysAgo(3), 1),
     TestEventLogInfo("ndsmins34", msMinAgo(34), 1),
     TestEventLogInfo("nds86", msDaysAgo(4), 1),
-    TestEventLogInfo("nds86", msWeeksAgo(2), 2))
+    TestEventLogInfo("nds86", msWeeksAgo(2), 2),
+    TestEventLogInfo("otherapp", msWeeksAgo(2), 1))
 
   test("app name and start time 20m") {
-    testTimePeriodAndStart(appsToTest, "20m", "nds", appsToTest.size)
+    testTimePeriodAndStart(appsToTest, "20m", "nds", appsToTest.size - 1)
   }
 
   test("app name and start time 2d") {
-    testTimePeriodAndStart(appsToTest, "2d", "nds", 1)
+    testTimePeriodAndStart(appsToTest, "2d", "nds", 2)
+  }
+
+  test("app name and start time small") {
+    testTimePeriodAndStart(appsToTest, "1min", "nds", 0)
+  }
+
+  test("app name exact and start time 2d") {
+    testTimePeriodAndStart(appsToTest, "2d", "ndsmins34", 1)
   }
 
   case class TestEventLogInfo(appName: String, eventLogTime: Long, uniqueId: Int)
@@ -171,7 +180,7 @@ class AppFilterSuite extends FunSuite {
           // scalastyle:off line.size.limit
           val supText =
             s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-               |{"Event":"SparkListenerApplicationStart","App Name":${app.appName},"App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.eventLogTime},"User":"user1"}""".stripMargin
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}","App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.eventLogTime},"User":"user1"}""".stripMargin
           // scalastyle:on line.size.limit
           Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
           elogFile
