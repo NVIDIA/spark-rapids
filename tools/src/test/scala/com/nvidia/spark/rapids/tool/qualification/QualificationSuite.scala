@@ -285,6 +285,78 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(result.length == 1) // 1 out of 3 does not has "Spark shell" as appName.
   }
 
+  test("test filter based on application timestamp - newest") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--filter-criteria",
+        "2-newest-overall")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 2)
+      assert(appSum.head.appId.equals("local-1622043423018"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+          s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 2))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        assert(firstRow.contains("local-1622043423018"))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
+  test("test filter based on application timestamp - oldest") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--filter-criteria",
+        "2-oldest-overall")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 2)
+      assert(appSum.head.appId.equals("local-1621966649543"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+          s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 2))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        assert(firstRow.contains("local-1621966649543"))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
   test("test udf event logs") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",

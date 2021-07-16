@@ -196,10 +196,14 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     of a selection criterion. i.e Select all
                                     event logs except the ones which have
                                     application name as the input string.
-  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs for
-                                    processing.eg: 100-newest (for processing
-                                    newest 100 event logs). eg: 100-oldest (for
-                                    processing oldest 100 event logs)
+  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on 
+                                    timestamp of file for processing. eg: 100-newest 
+                                    (for processing newest 100 event logs). eg: 100-oldest
+                                    (for processing oldest 100 event logs)
+                                    eg: 100-newest-overall (for processing newest 100 event 
+                                    logs based on timestamp inside the eventlog)
+                                    eg: 100-oldest-overall (for processing oldest 100 event 
+                                    logs based on timestamp inside the eventlog)
   -m, --match-event-logs  <arg>     Filter event logs whose filenames contain the
                                     input string
   -n, --num-output-rows  <arg>      Number of output rows in the summary report.

@@ -42,9 +42,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           " eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val filterCriteria: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter newest or oldest N eventlogs for processing." +
+      descr = "Filter newest or oldest N eventlogs based on timestamp of file for processing." +
           "eg: 100-newest (for processing newest 100 event logs). " +
-          "eg: 100-oldest (for processing oldest 100 event logs)")
+          "eg: 100-oldest (for processing oldest 100 event logs)" +
+          "eg: 100-newest-overall (for processing newest 100 event logs based on timestamp inside" +
+          "the eventlog) " +
+          "eg: 100-oldest-overall (for processing oldest 100 event logs based on timestamp inside" +
+          "the eventlog)")
   val applicationName: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose application name matches " +
