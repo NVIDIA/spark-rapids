@@ -37,7 +37,7 @@ class QueryFuzzer(val seed: Long) {
     FilterCompareTwoInts(),
     SortRandomColumns(),
     RandomCastFromString(),
-    SimplAggregate(),
+    SimpleAggregate(),
     Repartition()
   )
 
@@ -188,7 +188,7 @@ case class SortRandomColumns() extends Transformation {
  * Introduce a simple aggregation (sum) of an integer column, using a
  * single random column as the grouping key.
  */
-case class SimplAggregate() extends Transformation {
+case class SimpleAggregate() extends Transformation {
 
   override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
     df.schema.fields.exists(_.dataType == DataTypes.IntegerType)
