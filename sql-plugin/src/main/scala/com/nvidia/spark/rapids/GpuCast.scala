@@ -200,6 +200,8 @@ object GpuCast extends Arm {
       val regex = "^[+\\-]?[0-9]+$"
       withResource(sanitized.matchesRe(regex)) { isNumeric =>
         withResource(isNumeric.all()) { allNumeric =>
+          // Check that all non-null values are valid integers. Note that allInts will be false
+          // if all rows are null so we need to check for that condition.
           if (!allNumeric.getBoolean && sanitized.getNullCount != sanitized.getRowCount) {
             throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
           }
@@ -747,7 +749,8 @@ case class GpuCast(
       withResource(sanitized.isInteger(dType)) { isInt =>
         if (ansiEnabled) {
           withResource(isInt.all()) { allInts =>
-            // we can't rely on all() if all values are null so we need for all nulls here
+            // Check that all non-null values are valid integers. Note that allInts will be false
+            // if all rows are null so we need to check for that condition.
             if (!allInts.getBoolean && sanitized.getNullCount != sanitized.getRowCount) {
               throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
