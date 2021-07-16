@@ -144,7 +144,7 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
     withResource(cudfCols) { _ =>
       val cb = new ColumnarBatch(gpuCols, ROWS)
       whenSplitCalled(cb)
-      val ser = new ParquetCachedBatchSerializer
+      val ser = new com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
       val dummySchema = new StructType(
         Array(StructField("empty", ByteType, false),
           StructField("empty", ByteType, false),
