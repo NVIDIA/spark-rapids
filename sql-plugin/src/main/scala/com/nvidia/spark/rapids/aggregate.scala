@@ -629,7 +629,7 @@ class GpuHashAggregateIterator(
     // boundInputReferences is used to pick out of the input batch the appropriate columns
     // for aggregation.
     //
-    // - PartialMerge with Partial mode: we use the inputProjections or distinct update expressions
+    // - PartialMerge with Partial mode: we use the inputProjections
     //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final or PartialMerge-only mode: we pick the columns in the order as handed to us.
     // - Partial or Complete mode: we use the inputProjections or distinct update expressions.
