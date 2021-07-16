@@ -176,7 +176,9 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           }
 
           withResource(new NvtxRange("UCX Handling Tasks", NvtxColor.CYAN)) { _ =>
-            while (!workerTasks.isEmpty) {
+            // check initialized since on close we queue a "task" that sets initialized to false
+            // to exit the progress loop, we don't want to execute any other tasks after that.
+            while (!workerTasks.isEmpty && initialized) {
               val wt = workerTasks.poll()
               if (wt != null) {
                 wt()
@@ -190,8 +192,11 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         }
       }
 
-      logDebug("Exiting UCX progress thread.")
-      Seq(endpointManager, worker, context).safeClose()
+      worker.synchronized {
+        logDebug("Exiting UCX progress thread.")
+        Seq(endpointManager, worker, context).safeClose()
+        worker = null
+      }
     })
   }
 
@@ -626,21 +631,18 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     endpointManager.getConnection(peerExecutorId, peerMgmtHost, peerMgmtPort)
   }
 
-  private def signalWorker(): Unit = {
+  def onWorkerThreadAsync(task: () => Unit): Unit = {
+    workerTasks.add(task)
     if (rapidsConf.shuffleUcxUseWakeup) {
       withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
-        try {
-          worker.signal()
-        } catch {
-          case e: Throwable if isShuttingDown => // ignore these
+        // take up the worker object lock to protect against another `.close`
+        worker.synchronized {
+          if (worker != null) {
+            worker.signal()
+          }
         }
       }
     }
-  }
-
-  def onWorkerThreadAsync(task: () => Unit): Unit = {
-    workerTasks.add(task)
-    signalWorker()
   }
 
   /**
@@ -702,8 +704,15 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   }
 
   override def close(): Unit = {
+    // put a UCX task in the progress thread. This will:
+    // - signal the worker, so the task is executed
+    // - tear down endpoints
+    // - remove all active messages
+    // - remove all memory registrations
+    // - sets `initialized` to false, which means that no further
+    //   tasks will get executed in the progress thread, the loop exits
+    //   and we close the endpointManager, the worker, and the context.
     onWorkerThreadAsync(() => {
-      endpointManager.close()
       amRegistrations.forEach { (activeMessageId, _) =>
         logDebug(s"Removing Active Message registration for " +
           s"${TransportUtils.toHex(activeMessageId)}")
@@ -727,8 +736,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         wait(100)
       }
     }
-
-    signalWorker()
 
     progressThread.shutdown()
     if (!progressThread.awaitTermination(500, TimeUnit.MILLISECONDS)) {
