@@ -215,7 +215,8 @@ class AppFilterSuite extends FunSuite {
 
   case class TestEventLogFSAndAppNameInfo(appName: String, fsTime: Long, uniqueId: Int)
 
-  private val appsWithFsToTest = Array(TestEventLogFSAndAppNameInfo("ndshours18", msHoursAgo(18), 1),
+  private val appsWithFsToTest = Array(
+    TestEventLogFSAndAppNameInfo("ndshours18", msHoursAgo(18), 1),
     TestEventLogFSAndAppNameInfo("ndsweeks2", msWeeksAgo(2), 1),
     TestEventLogFSAndAppNameInfo("nds86", msDaysAgo(4), 1),
     TestEventLogFSAndAppNameInfo("nds86", msWeeksAgo(2), 2))
@@ -264,33 +265,40 @@ class AppFilterSuite extends FunSuite {
 
   case class TestEventLogFSAndAppInfo(fileName: String, fsTime: Long, appName: String, appTime: Long, uniqueId: Int)
 
-  private val appsFullWithFsToTest = Array(TestEventLogFSAndAppInfo("app-ndshours18", msHoursAgo(16), "ndshours18", msHoursAgo(18), 1),
+  private val appsFullWithFsToTest = Array(
+    TestEventLogFSAndAppInfo("app-ndshours18", msHoursAgo(16), "ndshours18", msHoursAgo(18), 1),
     TestEventLogFSAndAppInfo("app-ndsweeks2", msWeeksAgo(2), "ndsweeks2", msWeeksAgo(2), 1),
     TestEventLogFSAndAppInfo("app-nds86-1", msDaysAgo(3), "nds86", msDaysAgo(4), 1),
     TestEventLogFSAndAppInfo("app-nds86-2", msDaysAgo(13), "nds86", msWeeksAgo(2), 2))
 
   test("full app name exact and fs 10-newest 6 days") {
-    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "10-newest", "nds86", "nds86", "6d", 1)
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "10-newest", "nds86", "nds86",
+      "6d", 1)
   }
 
   test("full app name exact and 2-oldest no match from app start") {
-    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "ndsweeks2", "nds", "6d", 0)
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "ndsweeks2", "nds",
+      "6d", 0)
   }
 
   test("full app name exact and 2-oldest") {
-    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "ndsweeks2", "nds", "3w", 1)
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "ndsweeks2", "nds",
+      "3w", 1)
   }
 
   test("full app name exact and 2-oldest no match from filename") {
-    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "nds", "nomatch", "3w", 0)
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "nds", "nomatch",
+      "3w", 0)
   }
 
   test("full 2-oldest no match from app name") {
-    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "nomatch", "nds", "3w", 0)
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "nomatch", "nds",
+      "3w", 0)
   }
 
   test("full app name exact and 10-oldest and 3w") {
-    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "10-oldest", "nds86", "app-nds86", "3w", 2)
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "10-oldest", "nds86", "app-nds86",
+      "3w", 2)
   }
 
   private def testFileSystemTimeAndStartAndAppFull(apps: Array[TestEventLogFSAndAppInfo],
