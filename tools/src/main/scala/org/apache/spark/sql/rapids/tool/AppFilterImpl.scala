@@ -78,22 +78,23 @@ class AppFilterImpl(
     if (appArgs.filterCriteria.isSupplied && filterCriteria.nonEmpty) {
       if (filterCriteria.endsWith("-overall")) {
         println("ENDS WITH OVERALL")
-        /*val filteredInfo = filterCriteria.split("-")
+        val filteredInfo = filterCriteria.split("-")
         val numberofEventLogs = filteredInfo(0).toInt
         val criteria = filteredInfo(1)
         val matched = if (criteria.equals("newest")) {
           //LinkedHashMap(apps.toSeq.sortWith(_._2 > _._2): _*)
-         LinkedHashMap(apps.toSeq.sortWith(_.appInfo.get.startTime > _.appInfo.get.startTime): _*)
-         val t = apps.toSeq.sortBy(_.appInfo.get.startTime).reverse
-
-        //} else if (criteria.equals("oldest")) {
-         // LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
+         //LinkedHashMap(apps.toSeq.sortWith(_.appInfo.get.startTime > _.appInfo.get.startTime): _*)
+         //val t = apps.toSeq.sortBy(_.appInfo.get.startTime).reverse
+         val ascendingOrder = apps.toSeq.sortBy(_.appInfo.get.startTime)
+         ascendingOrder
+        } else if (criteria.equals("oldest")) {
+          apps.toSeq.sortBy(_.appInfo.get.startTime).reverse
         } else {
           logError("Criteria should be either newest or oldest")
           //Map.empty[EventLogInfo, Long]
-          Seq[AppFilterReturnParameters]().toSeq
+          Seq[AppFilterReturnParameters]()
         }
-        matched.take(numberofEventLogs)*/
+        val t = matched.map(_.eventlog).take(numberofEventLogs)
 
       } else {
         println("ENDS WITH PER-APP-NAME")

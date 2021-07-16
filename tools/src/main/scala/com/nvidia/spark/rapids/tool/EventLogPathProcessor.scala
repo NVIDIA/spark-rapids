@@ -171,25 +171,23 @@ object EventLogPathProcessor extends Logging {
     }.getOrElse(logsWithTimestamp)
 
     val test = matchedLogs.toSeq.map(_._2)
-    val filteredLogs = if(!filterByAppName(filterNLogs)) {
+    val filteredLogs = if (!filterByAppName(filterNLogs)) {
       //filterNLogs.map { filter =>
-        val filteredInfo = filterNLogs.get.split("-")
-        val numberofEventLogs = filteredInfo(0).toInt
-        val criteria = filteredInfo(1)
-        val matched = if (criteria.equals("newest")) {
-          LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 > _._2): _*)
-        } else if (criteria.equals("oldest")) {
-          LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
-        } else {
-          logError("Criteria should be either newest or oldest")
-          Map.empty[EventLogInfo, Long]
-        }
-        matched.take(numberofEventLogs)
-      //}
+      val filteredInfo = filterNLogs.get.split("-")
+      val numberofEventLogs = filteredInfo(0).toInt
+      val criteria = filteredInfo(1)
+      val matched = if (criteria.equals("newest")) {
+        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 > _._2): _*)
+      } else if (criteria.equals("oldest")) {
+        LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
+      } else {
+        logError("Criteria should be either newest or oldest")
+        Map.empty[EventLogInfo, Long]
+      }
+      matched.take(numberofEventLogs)
     } else {
       matchedLogs
     }
-
     filteredLogs.keys.toSeq
   }
 
