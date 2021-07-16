@@ -208,12 +208,12 @@ object GpuCast extends Arm {
             _.ifElse(nullString, stripped)
           }
         }
-        // replace all possible versions of infinity with Inf
+        // replace all possible versions of "Inf" and "Infinity" with "Inf"
         val inf = withResource(withoutWhitespace) { _ =>
           withoutWhitespace.stringReplaceWithBackrefs(
-            "([iI][nN][fF])([iI][nN][iI][tT][yY])?", "Inf")
+            "([iI][nN][fF])" + "([iI][nN][iI][tT][yY])?", "Inf")
         }
-        // replace +Inf with Inf because cuDF only supports "Inf" and "-Inf"
+        // replace "+Inf" with "Inf" because cuDF only supports "Inf" and "-Inf"
         val infWithoutPlus = withResource(inf) { _ =>
           withResource(GpuScalar.from("+Inf", DataTypes.StringType)) { search =>
             withResource(GpuScalar.from("Inf", DataTypes.StringType)) { replace =>
