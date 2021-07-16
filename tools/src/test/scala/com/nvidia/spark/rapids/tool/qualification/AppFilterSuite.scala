@@ -263,7 +263,8 @@ class AppFilterSuite extends FunSuite {
     }
   }
 
-  case class TestEventLogFSAndAppInfo(fileName: String, fsTime: Long, appName: String, appTime: Long, uniqueId: Int)
+  case class TestEventLogFSAndAppInfo(fileName: String, fsTime: Long, appName: String,
+    appTime: Long, uniqueId: Int)
 
   private val appsFullWithFsToTest = Array(
     TestEventLogFSAndAppInfo("app-ndshours18", msHoursAgo(16), "ndshours18", msHoursAgo(18), 1),
