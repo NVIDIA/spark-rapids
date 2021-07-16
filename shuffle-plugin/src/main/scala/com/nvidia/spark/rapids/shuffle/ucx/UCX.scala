@@ -192,7 +192,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         }
       }
 
-      worker.synchronized {
+      synchronized {
         logDebug("Exiting UCX progress thread.")
         Seq(endpointManager, worker, context).safeClose()
         worker = null
@@ -636,7 +636,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     if (rapidsConf.shuffleUcxUseWakeup) {
       withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
         // take up the worker object lock to protect against another `.close`
-        worker.synchronized {
+        synchronized {
           if (worker != null) {
             worker.signal()
           }
