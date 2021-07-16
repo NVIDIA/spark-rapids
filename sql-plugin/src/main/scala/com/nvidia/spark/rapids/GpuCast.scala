@@ -804,7 +804,7 @@ case class GpuCast(
     // 6. set the indices where we originally had nans to Float.NaN
     //
     // NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
-    // Inf even though spark does
+    // Inf even though Spark does
 
     val NAN_REGEX = "^[nN][aA][nN]$"
 
