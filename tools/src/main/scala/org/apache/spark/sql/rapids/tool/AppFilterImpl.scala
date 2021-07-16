@@ -38,6 +38,8 @@ class AppFilterImpl(
   // default is 24 hours
   private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
+  private val NEGATE = "~"
+
   private val threadFactory = new ThreadFactoryBuilder()
       .setDaemon(true).setNameFormat("qualAppFilter" + "-%d").build()
   logInfo(s"Threadpool size is $nThreads")
@@ -72,14 +74,11 @@ class AppFilterImpl(
 
     val filterAppName = appArgs.applicationName.getOrElse("")
     if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
-      val filtered = apps.filter { app =>
-        val appNameOpt = app.appInfo.map(_.appName)
-        if (appNameOpt.isDefined) {
-          appNameOpt.get.equals(filterAppName)
-        } else {
-          // incomplete log file
-          false
-        }
+      val filtered = if (filterAppName.startsWith(NEGATE)) {
+        // remove ~ before passing it into the containsAppName function
+        apps.filterNot(app => containsAppName(app, filterAppName.substring(1)))
+      } else {
+        apps.filter(app => containsAppName(app, filterAppName))
       }
       filtered.map(_.eventlog).toSeq
     } else if (appArgs.startAppTime.isSupplied) {
@@ -95,6 +94,16 @@ class AppFilterImpl(
       filtered.map(_.eventlog).toSeq
     } else {
       apps.map(x => x.eventlog).toSeq
+    }
+  }
+
+  private def containsAppName(app: AppFilterReturnParameters, filterAppName: String): Boolean = {
+    val appNameOpt = app.appInfo.map(_.appName)
+    if (appNameOpt.isDefined) {
+      appNameOpt.get.contains(filterAppName)
+    } else {
+      // in complete log file
+      false
     }
   }
 

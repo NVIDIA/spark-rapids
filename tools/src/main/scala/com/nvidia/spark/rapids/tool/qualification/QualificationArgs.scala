@@ -47,8 +47,10 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           "eg: 100-oldest (for processing oldest 100 event logs)")
   val applicationName: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter event logs whose application name matches exactly with input string" +
-          "i.e no regular expressions supported.")
+      descr = "Filter event logs whose application name matches " +
+          "exactly or is a substring of input string. Regular expressions not supported." +
+          "For filtering based on complement of application name, use ~APPLICATION_NAME. i.e " +
+          "Select all event logs except the ones which have application name as the input string.")
   val startAppTime: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose application start occurred within the past specified " +
