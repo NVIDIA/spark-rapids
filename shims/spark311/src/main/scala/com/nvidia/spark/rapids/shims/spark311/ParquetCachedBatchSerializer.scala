@@ -1011,6 +1011,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         }
       }
 
+      TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
+        close()
+      })
+
       override def close(): Unit = {
         parquetFileReader.close()
       }
@@ -1027,8 +1031,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         if (!cbIter.hasNext) {
           Iterator.empty
         } else {
-          CloseableColumnBatchIterator(
-            new CurrentBatchIterator(cbIter.next().asInstanceOf[ParquetCachedBatch]))
+            new CurrentBatchIterator(cbIter.next().asInstanceOf[ParquetCachedBatch])
         }
       }
 
@@ -1063,10 +1066,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       .add("_months", IntegerType)
       .add("_ms", LongType)
 
-  val APPROX_PAR_META_DATA: Int = 10 * 1024 * 1024 // we are estimating 10MB
-
   def getBytesAllowedPerBatch(conf: SQLConf): Long = {
-    Math.max(RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf) - APPROX_PAR_META_DATA, 1024)
+    val gpuBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    // we are rough estimating 0.5% as meta_data_size. we can do better estimation in future
+    val approxMetaDataSizeBytes = gpuBatchSize * 0.5/100
+    (gpuBatchSize - approxMetaDataSizeBytes).toLong
   }
 
   /**

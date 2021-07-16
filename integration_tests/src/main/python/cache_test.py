@@ -56,7 +56,7 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
            BooleanGen(), DateGen(), TimestampGen()] + decimal_gens
 
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [BooleanGen()], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
