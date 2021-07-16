@@ -31,6 +31,15 @@ class QueryFuzzer(val seed: Long) {
 
   val idGen = new AtomicLong(0)
 
+  val transformations = Seq(
+    Join(),
+    Filter(),
+    SortRandomColumns(),
+    RandomCastFromString(),
+    Aggregate(),
+    Repartition()
+  )
+
   def generateConfig(): SparkConf = {
     new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, boolString())
@@ -66,14 +75,6 @@ class QueryFuzzer(val seed: Long) {
     // if we have reached maximum depth then create a leaf node
     if (depth == maxDepth) {
       return generateDataSource(spark)
-
-      //TODO Add support for reading from CSV and Parquet data sources
-//      if (rand.nextFloat() > 0.7) {
-//        return generateDataSource(spark)
-//      } else {
-//        return renameColumns(
-//          spark.read.parquet("/mnt/tpcds/parquet/sf100-decimals/web_sales.dat"))
-//      }
     }
 
     // recurse down first to get a DataFrame
@@ -81,23 +82,17 @@ class QueryFuzzer(val seed: Long) {
 
     // build a list of available transformations
     val ctx = FuzzContext(spark, this)
-    val transformations = Seq(
-      Filter(ctx),
-      SortRandomColumns(ctx),
-      RandomCastFromString(ctx),
-      Aggregate(ctx),
-      Repartition(ctx)
-    )
 
     // filter down to a list of transformations that are applicable in the current context
-    val validTransformations = transformations.filter(_.canTransform(df))
+    val validTransformations = transformations.filter(_.canTransform(ctx, df))
     if (validTransformations.isEmpty) {
+      // there are no valid transformations so just return the DataFrame
       df
     } else {
       // pick a transformation at random
       val tf = randomElement(validTransformations)
       // apply the transformation
-      tf.transform(df)
+      tf.transform(ctx, df)
     }
   }
 
@@ -151,27 +146,27 @@ class QueryFuzzer(val seed: Long) {
 case class FuzzContext(spark: SparkSession, fuzzer: QueryFuzzer)
 
 trait Transformation {
-  def canTransform(df: DataFrame): Boolean
-  def transform(df: DataFrame): DataFrame
+  def canTransform(ctx: FuzzContext, df: DataFrame): Boolean
+  def transform(ctx: FuzzContext, df: DataFrame): DataFrame
 }
 
-case class Filter(ctx: FuzzContext) extends Transformation {
+case class Filter() extends Transformation {
 
-  override def canTransform(df: DataFrame): Boolean = {
+  override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
     df.schema.fields.exists(_.dataType == DataTypes.IntegerType)
   }
 
-  override def transform(df: DataFrame): DataFrame = {
+  override def transform(ctx: FuzzContext, df: DataFrame): DataFrame = {
     val intCols = df.schema.fields.filter(_.dataType == DataTypes.IntegerType)
     df.filter(col(intCols(0).name).gt(col(intCols(1).name)))
   }
 }
 
-case class SortRandomColumns(ctx: FuzzContext) extends Transformation {
+case class SortRandomColumns() extends Transformation {
 
-  override def canTransform(df: DataFrame): Boolean = df.schema.fields.nonEmpty
+  override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = df.schema.fields.nonEmpty
 
-  override def transform(df: DataFrame): DataFrame = {
+  override def transform(ctx: FuzzContext, df: DataFrame): DataFrame = {
     val numSortColumns = 1 + ctx.fuzzer.rand.nextInt(2)
     val sortColumns = (0 until numSortColumns)
       .map(_ => df.columns(ctx.fuzzer.rand.nextInt(df.columns.length)))
@@ -179,13 +174,13 @@ case class SortRandomColumns(ctx: FuzzContext) extends Transformation {
   }
 }
 
-case class Aggregate(ctx: FuzzContext) extends Transformation {
+case class Aggregate() extends Transformation {
 
-  override def canTransform(df: DataFrame): Boolean = {
+  override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
     df.schema.fields.exists(_.dataType == DataTypes.IntegerType)
   }
 
-  override def transform(df: DataFrame): DataFrame = {
+  override def transform(ctx: FuzzContext, df: DataFrame): DataFrame = {
     val groupCol = col(df.columns(ctx.fuzzer.rand.nextInt(df.columns.length)))
     val intCols = df.schema.fields.filter(_.dataType == DataTypes.IntegerType)
     val aggrCol = intCols(ctx.fuzzer.rand.nextInt(intCols.length)).name
@@ -193,40 +188,40 @@ case class Aggregate(ctx: FuzzContext) extends Transformation {
   }
 }
 
-case class RandomCastFromString(ctx: FuzzContext) extends Transformation {
+case class RandomCastFromString() extends Transformation {
 
   val castTo = Seq(DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType,
     DataTypes.LongType, DataTypes.FloatType, DataTypes.DoubleType,
     DataTypes.DateType, DataTypes.TimestampType)
 
-  override def canTransform(df: DataFrame): Boolean = {
+  override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
     df.schema.fields.exists(_.dataType == DataTypes.StringType)
   }
 
-  override def transform(df: DataFrame): DataFrame = {
+  override def transform(ctx: FuzzContext, df: DataFrame): DataFrame = {
     val stringCol = df.schema.fields.find(_.dataType == DataTypes.StringType)
       df.withColumn(ctx.fuzzer.nextName(),
         col(stringCol.get.name).cast(castTo(ctx.fuzzer.rand.nextInt(castTo.length))))
   }
 }
 
-case class Repartition(ctx: FuzzContext) extends Transformation {
+case class Repartition() extends Transformation {
 
-  override def canTransform(df: DataFrame): Boolean = true
+  override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = true
 
-  override def transform(df: DataFrame): DataFrame = {
+  override def transform(ctx: FuzzContext, df: DataFrame): DataFrame = {
     df.repartition(1 + ctx.fuzzer.rand.nextInt(4),
       col(df.columns(ctx.fuzzer.rand.nextInt(df.columns.length))))
   }
 }
 
-case class Join(ctx: FuzzContext) extends Transformation {
+case class Join() extends Transformation {
 
-  override def canTransform(df: DataFrame): Boolean = {
+  override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
     df.schema.fields.exists(_.dataType == DataTypes.IntegerType)
   }
 
-  override def transform(df: DataFrame): DataFrame = {
+  override def transform(ctx: FuzzContext, df: DataFrame): DataFrame = {
     val df2 = ctx.fuzzer.generateDataSource(ctx.spark)
     val leftKey = df.schema.fields.find(_.dataType == DataTypes.IntegerType)
     val rightKey = df2.schema.fields.find(_.dataType == DataTypes.IntegerType)
