@@ -30,6 +30,7 @@ import org.apache.spark.sql.types._
  */
 sealed abstract class SupportLevel {
   def htmlTag: String
+  def text: String
 }
 
 /**
@@ -37,13 +38,15 @@ sealed abstract class SupportLevel {
  */
 object NotApplicable extends SupportLevel {
   override def htmlTag: String = "<td> </td>"
+  override def text: String = "NA"
 }
 
 /**
  * Spark supports this but the plugin does not.
  */
 object NotSupported extends SupportLevel {
-  override def htmlTag: String = "<td><b>NS</b></td>"
+  override def htmlTag: String = s"<td><b>$text</b></td>"
+  override def text: String = "NS"
 }
 
 /**
@@ -52,12 +55,14 @@ object NotSupported extends SupportLevel {
  *                  types because they are not 100% supported.
  */
 class Supported(val asterisks: Boolean = false) extends SupportLevel {
-  override def htmlTag: String =
+  override def htmlTag: String = s"<td>$text</td>"
+  override def text: String = {
     if (asterisks) {
-      "<td>S*</td>"
+      "S*"
     } else {
-      "<td>S</td>"
+      "S"
     }
+  }
 }
 
 /**
@@ -86,10 +91,17 @@ class PartiallySupported(
       None
     }
     val extraInfo = (note.toSeq ++ litOnly.toSeq ++ typeStr.toSeq).mkString("; ")
+    val allText = s"$text ($extraInfo)"
+    s"<td><em>$allText</em></td>"
+  }
+
+  // don't include the extra info in the supported text field for now
+  // as the qualification tool doesn't use it
+  override def text: String = {
     if (asterisks) {
-      "<td><em>PS* (" + extraInfo + ")</em></td>"
+      "PS*"
     } else {
-      "<td><em>PS (" + extraInfo + ")</em></td>"
+      "PS"
     }
   }
 }
@@ -214,19 +226,25 @@ final class TypeSig private(
 
   /**
    * Given an expression tag the associated meta for it to be supported or not.
-   * @param meta the meta that gets marked for support or not.
-   * @param expr the expression to check against.
-   * @param name the name of the expression (typically a parameter name)
+   *
+   * @param meta     the meta that gets marked for support or not.
+   * @param exprMeta the meta of expression to check against.
+   * @param name     the name of the expression (typically a parameter name)
    */
-  def tagExprParam(meta: RapidsMeta[_, _, _], expr: Expression, name: String): Unit = {
+  def tagExprParam(meta: RapidsMeta[_, _, _], exprMeta: BaseExprMeta[_], name: String): Unit = {
+    val typeMeta = exprMeta.typeMeta
     // This is for a parameter so skip it if there is no data type for the expression
-    getDataType(expr).foreach { dt =>
-        val allowDecimal = meta.conf.decimalTypeEnabled
+    typeMeta.dataType.foreach { dt =>
+      val expr = exprMeta.wrapped.asInstanceOf[Expression]
+      val allowDecimal = meta.conf.decimalTypeEnabled
       if (!isSupportedByPlugin(dt, allowDecimal)) {
-        meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
+        meta.willNotWorkOnGpu(s"$name expression ${expr.getClass.getSimpleName} $expr " +
             s"produces an unsupported type $dt")
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
         meta.willNotWorkOnGpu(s"$name only supports $dt if it is a literal value")
+      }
+      if (typeMeta.typeConverted) {
+        meta.addConvertedDataType(expr.getClass.getSimpleName, typeMeta)
       }
     }
   }
@@ -541,23 +559,26 @@ case class ContextChecks(
     repeatingParamCheck: Option[RepeatingParamCheck] = None)
     extends TypeChecks[Map[String, SupportLevel]] {
 
-  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-    import TypeSig.getDataType
+  override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
+    val meta = rapidsMeta.asInstanceOf[BaseExprMeta[_]]
     val expr = meta.wrapped.asInstanceOf[Expression]
-    val dt = getDataType(expr)
-    if (dt.isEmpty) {
-      if (!meta.asInstanceOf[BaseExprMeta[_]].ignoreUnsetDataTypes) {
-        meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
-            s" does not have a corresponding dataType.")
-      }
-    } else {
-      if (!outputCheck.isSupportedByPlugin(dt.get, meta.conf.decimalTypeEnabled)) {
-        meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
-            s"produces an unsupported type ${dt.get}")
-      }
+    meta.typeMeta.dataType match {
+      case Some(dt: DataType) =>
+        if (!outputCheck.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
+          meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
+              s"produces an unsupported type $dt")
+        }
+        if (meta.typeMeta.typeConverted) {
+          meta.addConvertedDataType(expr.prettyName, meta.typeMeta)
+        }
+      case None =>
+        if (!meta.ignoreUnsetDataTypes) {
+          meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
+              s" does not have a corresponding dataType.")
+        }
     }
 
-    val children = expr.children.toArray
+    val children = meta.childExprs
     val fixedChecks = paramCheck.toArray
     assert (fixedChecks.length <= children.length,
       s"${expr.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
@@ -650,17 +671,18 @@ class ExecChecks private(
     override val shown: Boolean = true)
     extends TypeChecks[SupportLevel] {
 
-  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-    val plan = meta.wrapped.asInstanceOf[SparkPlan]
+  override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
+    val meta = rapidsMeta.asInstanceOf[SparkPlanMeta[_]]
     val allowDecimal = meta.conf.decimalTypeEnabled
 
     // expression.toString to capture ids in not-on-GPU tags
     def toStructField(a: Attribute) = StructField(name = a.toString(), dataType = a.dataType)
 
-    tagUnsupportedTypes(meta, check, allowDecimal, plan.output.map(toStructField),
+    tagUnsupportedTypes(meta, check, allowDecimal,
+      meta.outputAttributes.map(toStructField),
       "unsupported data types in output: %s")
     tagUnsupportedTypes(meta, check, allowDecimal,
-      plan.children.flatMap(_.output.map(toStructField)),
+      meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
       "unsupported data types in input: %s")
   }
 
@@ -689,7 +711,7 @@ case class PartChecksImpl(
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val part = meta.wrapped
-    val children = meta.childExprs.map(_.wrapped.asInstanceOf[Expression]).toArray
+    val children = meta.childExprs
 
     val fixedChecks = paramCheck.toArray
     assert (fixedChecks.length <= children.length,
@@ -768,13 +790,17 @@ object CaseWhenCheck extends ExprChecks {
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
-      val cw = meta.wrapped.asInstanceOf[CaseWhen]
-      cw.branches.foreach {
-        case (pred, value) =>
+      // children of CaseWhen: branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue (Optional)
+      //
+      // The length of children will be odd if elseValue is not None, which means we can detect
+      // both branch pair and possible elseValue via a size 2 grouped iterator.
+      exprMeta.childExprs.grouped(2).foreach {
+        case Seq(pred, value) =>
           TypeSig.BOOLEAN.tagExprParam(meta, pred, "predicate")
           check.tagExprParam(meta, value, "value")
+        case Seq(elseValue) =>
+          check.tagExprParam(meta, elseValue, "else")
       }
-      cw.elseValue.foreach(e => check.tagExprParam(meta, e, "else"))
     }
   }
 
@@ -801,7 +827,9 @@ object CaseWhenCheck extends ExprChecks {
  * This is specific to WidowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {
-  val check: TypeSig = TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL
+  val check: TypeSig =
+    TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+      TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL)
   val sparkSig: TypeSig = TypeSig.all
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
@@ -811,8 +839,12 @@ object WindowSpecCheck extends ExprChecks {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
       val win = meta.wrapped.asInstanceOf[WindowSpecDefinition]
-      win.partitionSpec.foreach(e => check.tagExprParam(meta, e, "partition"))
-      win.orderSpec.foreach(e => check.tagExprParam(meta, e, "order"))
+      // children of WindowSpecDefinition: partitionSpec ++ orderSpec :+ frameSpecification
+      win.partitionSpec.indices.foreach(i =>
+        check.tagExprParam(meta, exprMeta.childExprs(i), "partition"))
+      val partSize = win.partitionSpec.length
+      win.orderSpec.indices.foreach(i =>
+        check.tagExprParam(meta, exprMeta.childExprs(i + partSize), "order"))
     }
   }
 
@@ -846,18 +878,15 @@ object CreateNamedStructCheck extends ExprChecks {
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
-      val origExpr = exprMeta.wrapped.asInstanceOf[Expression]
-      val (nameExprs, valExprs) = origExpr.children.grouped(2).map {
-        case Seq(name, value) => (name, value)
-      }.toList.unzip
-      nameExprs.foreach { expr =>
-        nameSig.tagExprParam(meta, expr, "name")
+      exprMeta.childExprs.grouped(2).foreach {
+        case Seq(nameMeta, valueMeta) =>
+          nameSig.tagExprParam(meta, nameMeta, "name")
+          valueSig.tagExprParam(meta, valueMeta, "value")
       }
-      valExprs.foreach { expr =>
-        valueSig.tagExprParam(meta, expr, "value")
-      }
-      if (!resultSig.isSupportedByPlugin(origExpr.dataType, meta.conf.decimalTypeEnabled)) {
-        meta.willNotWorkOnGpu(s"unsupported data type in output: ${origExpr.dataType}")
+      exprMeta.typeMeta.dataType.foreach { dt =>
+        if (!resultSig.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
+          meta.willNotWorkOnGpu(s"unsupported data type in output: $dt")
+        }
       }
     }
   }
@@ -1620,6 +1649,73 @@ object SupportedOpsDocs {
     Console.withOut(out) {
       Console.withErr(out) {
         SupportedOpsDocs.help()
+      }
+    }
+  }
+}
+
+object SupportedOpsForTools {
+
+  private def outputSupportIO() {
+    // Look at what we have for defaults for some configs because if the configs are off
+    // it likely means something isn't completely compatible.
+    val conf = new RapidsConf(Map.empty[String, String])
+    val types = TypeEnum.values.toSeq
+    val header = Seq("Format", "Direction") ++ types
+    println(header.mkString(","))
+    GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
+      case (format, ioMap) =>
+        val formatEnabled = format.toString.toLowerCase match {
+          case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+          case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
+          case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
+          case _ =>
+            throw new IllegalArgumentException("Format is unknown we need to add it here!")
+        }
+        val read = ioMap(ReadFileOp)
+        // we have lots of configs for various operations, just try to get the main ones
+        val readOps = types.map { t =>
+          val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
+            t.toString() match {
+              case "BOOLEAN" => conf.isCsvBoolReadEnabled
+              case "BYTE" => conf.isCsvByteReadEnabled
+              case "SHORT" => conf.isCsvShortReadEnabled
+              case "INT" => conf.isCsvIntReadEnabled
+              case "LONG" => conf.isCsvLongReadEnabled
+              case "FLOAT" => conf.isCsvFloatReadEnabled
+              case "DOUBLE" => conf.isCsvDoubleReadEnabled
+              case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
+              case "DATE" => conf.isCsvDateReadEnabled
+              case "DECIMAL" => conf.decimalTypeEnabled
+              case _ => true
+            }
+          } else {
+            t.toString() match {
+              case "DECIMAL" => conf.decimalTypeEnabled
+              case _ => true
+            }
+          }
+          if (!formatEnabled || !typeEnabled) {
+            // indicate configured off by default
+            "CO"
+          } else {
+            read.support(t).text
+          }
+        }
+        // only support reads for now
+        println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
+    }
+  }
+
+  def help(): Unit = {
+    outputSupportIO()
+  }
+
+  def main(args: Array[String]): Unit = {
+    val out = new FileOutputStream(new File(args(0)))
+    Console.withOut(out) {
+      Console.withErr(out) {
+        SupportedOpsForTools.help()
       }
     }
   }

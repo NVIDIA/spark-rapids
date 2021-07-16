@@ -348,7 +348,7 @@ object GenerateTimeline {
     val imageWidth = timingsEndX
 
     val fileWriter = new ToolTextFileWriter(outputDirectory,
-      s"${app.appId}-timeline.svg")
+      s"${app.appId}-timeline.svg", "Timeline file")
     try {
       fileWriter.write(
         s"""<?xml version="1.0" encoding="UTF-8" standalone="no"?>

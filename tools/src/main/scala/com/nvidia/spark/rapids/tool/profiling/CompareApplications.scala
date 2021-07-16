@@ -23,7 +23,9 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.functions.asc
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
@@ -186,7 +188,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
   }
 
   // Compare Executors information
-  def compareExecutorInfo(): Unit = {
+  def compareExecutorInfo(): DataFrame = {
     val messageHeader = "\n\nCompare Executor Information:\n"
     var query = ""
     var i = 1
@@ -206,6 +208,27 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
 
+  def compareDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+    import sparkSession.implicits._
+    val messageHeader = "\n\nCompare Data Source Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    val allAppsDs = apps.flatMap { app =>
+      val dsInfo = app.dataSourceInfo
+      dsInfo.map { ds =>
+        DataSourceCompareCase(app.index, app.appId, ds.sqlID, ds.format, ds.location,
+          ds.pushedFilters, ds.schema)
+      }
+    }
+    val df = allAppsDs.toDF.sort(asc("appIndex"), asc("sqlID"), asc("location"))
+    if (allAppsDs.nonEmpty) {
+      fileWriter.foreach { writer =>
+        writer.write(ToolUtils.showString(df, numRows))
+      }
+    } else {
+      fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+    }
+  }
+
   // Compare Rapids Properties which are set explicitly
   def compareRapidsProperties(): Unit = {
     val messageHeader = "\n\nCompare Rapids Properties which are set explicitly:\n"
@@ -218,14 +241,14 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
         if (i < apps.size) {
           withClauseAllKeys += "select distinct propertyName from (" +
-              app.generateRapidsProperties + ") union "
-          query += "(" + app.generateRapidsProperties + s") tmp_$i"
+              app.generateNvidiaProperties + ") union "
+          query += "(" + app.generateNvidiaProperties + s") tmp_$i"
           query += s" on allKeys.propertyName=tmp_$i.propertyName"
           query += "\n LEFT OUTER JOIN \n"
         } else { // For the last app
           withClauseAllKeys += "select distinct propertyName from (" +
-              app.generateRapidsProperties + "))\n"
-          query += "(" + app.generateRapidsProperties + s") tmp_$i"
+              app.generateNvidiaProperties + "))\n"
+          query += "(" + app.generateNvidiaProperties + s") tmp_$i"
           query += s" on allKeys.propertyName=tmp_$i.propertyName"
         }
         selectValuePart += s",appIndex_${app.index}"

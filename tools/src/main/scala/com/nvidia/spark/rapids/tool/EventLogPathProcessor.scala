@@ -27,7 +27,6 @@ import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 sealed trait EventLogInfo {
@@ -137,8 +136,11 @@ object EventLogPathProcessor extends Logging {
         }.toMap
       }
     } catch {
-      case e: FileNotFoundException =>
+      case fe: FileNotFoundException =>
         logWarning(s"$pathString not found, skipping!")
+        Map.empty[EventLogInfo, Long]
+      case e: Exception =>
+        logWarning(s"Unexpected exception occurred reading $pathString, skipping!", e)
         Map.empty[EventLogInfo, Long]
     }
   }
