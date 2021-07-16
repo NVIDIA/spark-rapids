@@ -202,8 +202,7 @@ object GpuCast extends Arm {
         withResource(isNumeric.not()) { notNumeric =>
           withResource(notNumeric.any()) { any =>
             if (any.getBoolean) {
-              throw new NumberFormatException(
-                s"At least one input does not match the regular expression $regex")
+              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
         }
@@ -748,17 +747,28 @@ case class GpuCast(
 
     withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
       withResource(sanitized.isInteger(dType)) { isInt =>
-        if (ansiMode) {
-          withResource(isInt.all()) { isAllInt =>
-            if (!isAllInt.getBoolean) {
-              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
-          }
-        }
-        withResource(sanitized.castTo(dType)) { parsedInt =>
+        val parsed = withResource(sanitized.castTo(dType)) { parsedInt =>
           withResource(GpuScalar.from(null, dataType)) { nullVal =>
             isInt.ifElse(parsedInt, nullVal)
           }
+        }
+        if (ansiEnabled) {
+          withResource(parsed) { _ =>
+            withResource(sanitized.isNull) { wasNull =>
+              withResource(parsed.isNull) { isNull =>
+                withResource(wasNull.not()) { wasNotNull =>
+                  withResource(wasNotNull.and(isNull)) { invalidInput =>
+                    if (invalidInput.any().getBoolean) {
+                      throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+                    }
+                  }
+                }
+              }
+            }
+            parsed.incRefCount()
+          }
+        } else {
+          parsed
         }
       }
     }
