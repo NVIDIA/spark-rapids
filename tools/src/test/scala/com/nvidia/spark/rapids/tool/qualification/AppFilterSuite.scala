@@ -36,80 +36,47 @@ class AppFilterSuite extends FunSuite {
   }
 
   test("time period minute parsing") {
-    val c = Calendar.getInstance
-    c.add(Calendar.MINUTE, -6)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "10min")
+    testTimePeriod(msMonthsAgo(6), "10min")
   }
 
   test("time period hour parsing") {
-    val c = Calendar.getInstance
-    c.add(Calendar.HOUR, -10)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "14h")
+    testTimePeriod(msHoursAgo(10), "14h")
   }
 
   test("time period day parsing") {
-    val c = Calendar.getInstance
-    c.add(Calendar.DATE, -40)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "41d")
+    testTimePeriod(msDaysAgo(40), "41d")
   }
 
   test("time period day parsing default") {
-    val c = Calendar.getInstance
-    c.add(Calendar.DATE, -5)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "6")
+    testTimePeriod(msDaysAgo(5), "6")
   }
 
   test("time period week parsing") {
-    val c = Calendar.getInstance
-    c.add(Calendar.WEEK_OF_YEAR, -2)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "3w")
+    testTimePeriod(msWeeksAgo(2), "3w")
   }
 
   test("time period month parsing") {
-    val c = Calendar.getInstance
-    c.add(Calendar.MONTH, -8)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "10m")
+    testTimePeriod(msMonthsAgo(8), "10m")
   }
 
   test("time period minute parsing fail") {
-    val c = Calendar.getInstance
-    c.add(Calendar.MINUTE, -16)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "10min", failFilter=true)
+    testTimePeriod(msMinAgo(16), "10min", failFilter=true)
   }
 
   test("time period hour parsing fail") {
-    val c = Calendar.getInstance
-    c.add(Calendar.HOUR, -10)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "8h", failFilter=true)
+    testTimePeriod(msHoursAgo(10), "8h", failFilter=true)
   }
 
   test("time period day parsing fail") {
-    val c = Calendar.getInstance
-    c.add(Calendar.DATE, -40)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "38d", failFilter=true)
+    testTimePeriod(msDaysAgo(40), "38d", failFilter=true)
   }
 
   test("time period week parsing fail") {
-    val c = Calendar.getInstance
-    c.add(Calendar.WEEK_OF_YEAR, -2)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "1w", failFilter=true)
+    testTimePeriod(msWeeksAgo(2), "1w", failFilter=true)
   }
 
   test("time period month parsing fail") {
-    val c = Calendar.getInstance
-    c.add(Calendar.MONTH, -8)
-    val newTimeStamp = c.getTimeInMillis
-    testTimePeriod(newTimeStamp, "7m", failFilter=true)
+    testTimePeriod(msMonthsAgo(8), "7m", failFilter=true)
   }
 
   private def testTimePeriod(eventLogTime: Long, startTimePeriod: String,
@@ -140,6 +107,77 @@ class AppFilterSuite extends FunSuite {
         } else {
           assert(appSum.size == 1)
         }
+      }
+    }
+  }
+
+  private def msMonthsAgo(months: Int): Long = {
+    val c = Calendar.getInstance
+    c.add(Calendar.MONTH, -months)
+    c.getTimeInMillis
+  }
+
+  private def msWeeksAgo(weeks: Int): Long = {
+    val c = Calendar.getInstance
+    c.add(Calendar.WEEK_OF_YEAR, -weeks)
+    c.getTimeInMillis
+  }
+
+  private def msDaysAgo(days: Int): Long = {
+    val c = Calendar.getInstance
+    c.add(Calendar.DATE, -days)
+    c.getTimeInMillis
+  }
+
+  private def msMinAgo(mins: Int): Long = {
+    val c = Calendar.getInstance
+    c.add(Calendar.MINUTE, -mins)
+    c.getTimeInMillis
+  }
+
+  private def msHoursAgo(hours: Int): Long = {
+    val c = Calendar.getInstance
+    c.add(Calendar.HOUR, -hours)
+    c.getTimeInMillis
+  }
+
+  val appsToTest = Array(TestEventLogInfo("ndshours18", msHoursAgo(18)),
+    TestEventLogInfo("ndsweeks2", msWeeksAgo(2)),
+    TestEventLogInfo("ndsmonths4", msMonthsAgo(5)),
+    TestEventLogInfo("ndsdays3", msDaysAgo(3)),
+    TestEventLogInfo("ndsmins34", msMinAgo(34)))
+
+  test("app name and start time") {
+    testTimePeriodAndStart(appsToTest, "2d", 1)
+    testTimePeriodAndStart(appsToTest, "20m", 5)
+  }
+
+  case class TestEventLogInfo(appName: String, eventLogTime: Long)
+
+  private def testTimePeriodAndStart(apps: Array[TestEventLogInfo],
+      startTimePeriod: String, expectedFilterSize: Int): Unit = {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, "testTimeEventLog")
+
+        // scalastyle:off line.size.limit
+        val supText =
+          s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${eventLogTime},"User":"user1"}""".stripMargin
+        // scalastyle:on line.size.limit
+        Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          "--start-app-time",
+          startTimePeriod
+        )
+        val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == expectedFilterSize)
       }
     }
   }
