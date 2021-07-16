@@ -40,9 +40,13 @@ def test_if_else(data_gen):
                 'IF(a, b, {})'.format(null_lit),
                 'IF(a, {}, c)'.format(null_lit)))
 
-# Sadly you can not create literals for nested types in the sql string, according to
-# https://spark.apache.org/docs/latest/sql-ref-literals.html. So the tests can only cover
-# column cases for nested types.
+# Sadly you can not create literals for nested types in the form of sql string, according to
+# https://spark.apache.org/docs/latest/sql-ref-literals.html, and there is no API in Spark
+# for the 'If' function so far, so the tests can only cover column cases for nested types.
+#
+# However it should be OK because GpuIf and GpuCaseWhen use the same backend 'copy_if' from
+# cudf, and the support for literals of nested types had been verified already by the tests
+# for GpuCaseWhen.
 @pytest.mark.parametrize('data_gen', all_nested_gens, ids=idfn)
 def test_if_else_nested(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
