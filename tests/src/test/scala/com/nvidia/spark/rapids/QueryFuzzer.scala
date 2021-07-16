@@ -81,7 +81,7 @@ class QueryFuzzer(val seed: Long) {
     // recurse down first to get a DataFrame
     val df = randomOperator(spark, depth+1, maxDepth)
 
-    // build a list of available transformations
+    // create a context to pass to the transformations
     val ctx = FuzzContext(spark, this)
 
     // filter down to a list of transformations that are applicable in the current context
