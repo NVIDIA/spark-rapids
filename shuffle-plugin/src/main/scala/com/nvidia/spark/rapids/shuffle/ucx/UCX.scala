@@ -626,13 +626,21 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     endpointManager.getConnection(peerExecutorId, peerMgmtHost, peerMgmtPort)
   }
 
-  def onWorkerThreadAsync(task: () => Unit): Unit = {
-    workerTasks.add(task)
+  private def signalWorker(): Unit = {
     if (rapidsConf.shuffleUcxUseWakeup) {
       withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
-        worker.signal()
+        try {
+          worker.signal()
+        } catch {
+          case e: Throwable if isShuttingDown => // ignore these
+        }
       }
     }
+  }
+
+  def onWorkerThreadAsync(task: () => Unit): Unit = {
+    workerTasks.add(task)
+    signalWorker()
   }
 
   /**
@@ -695,6 +703,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
   override def close(): Unit = {
     onWorkerThreadAsync(() => {
+      endpointManager.close()
       amRegistrations.forEach { (activeMessageId, _) =>
         logDebug(s"Removing Active Message registration for " +
           s"${TransportUtils.toHex(activeMessageId)}")
@@ -719,22 +728,12 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       }
     }
 
-    if (rapidsConf.shuffleUcxUseWakeup && worker != null) {
-      worker.signal()
-    }
+    signalWorker()
 
     progressThread.shutdown()
     if (!progressThread.awaitTermination(500, TimeUnit.MILLISECONDS)) {
       logError("UCX progress thread failed to terminate correctly")
     }
-
-    endpointManager.close()
-
-    if (worker != null) {
-      worker.close()
-    }
-
-    context.close()
   }
 
   private def makeClientConnection(peerExecutorId: Long): UCXClientConnection = {
