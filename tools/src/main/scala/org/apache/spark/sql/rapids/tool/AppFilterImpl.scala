@@ -96,7 +96,7 @@ class AppFilterImpl(
       }
       filtered
     } else {
-      apps
+      appNameFiltered
     }
     appTimeFiltered.map(_.eventlog).toSeq
   }
