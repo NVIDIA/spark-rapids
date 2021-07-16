@@ -104,7 +104,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("Cast from string to float using hand-picked values") {
     testCastStringTo(DataTypes.FloatType, Seq(".", "e", "Infinity", "+Infinity", "-Infinity",
-      "+nAn", "-naN", "Nan"))
+      "+nAn", "-naN", "Nan", "5f", "1.2f", null))
   }
 
   test("Cast from string to double using random inputs") {
