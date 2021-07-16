@@ -20,15 +20,16 @@ import java.util.concurrent.TimeUnit
 
 import scala.language.{existentials, implicitConversions}
 
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, ReplacePolicy, ReplacePolicyWithColumn, RollingAggregation, Scalar}
-import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation, RowNumberAggregation}
+import ai.rapids.cudf
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, RollingAggregation, Scalar}
+import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCreateNamedStruct}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -189,9 +190,9 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
 
   private val windowFrameSpec = windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
   lazy val wrappedWindowFunc = windowFunction match {
-    case func: GpuAggregateWindowFunction[_] => func
+    case func: GpuWindowFunction => func
     case agg: GpuAggregateExpression => agg.aggregateFunction match {
-      case func: GpuAggregateWindowFunction[_] => func
+      case func: GpuWindowFunction => func
       case other =>
         throw new IllegalStateException(s"${other.getClass} is not a supported window aggregation")
     }
@@ -221,17 +222,17 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
 
   lazy val isOptimizedRunningWindow: Boolean = optimizedRunningWindow.isDefined
 
-  lazy val initialProjections: Seq[Expression] = {
+  def initialProjections(isRunningBatched: Boolean): Seq[Expression] = {
     val running = optimizedRunningWindow
     if (running.isDefined) {
       val r = running.get
       if (windowSpec.partitionSpec.isEmpty) {
-        Seq(r.scanInputProjection)
+        r.scanInputProjection(isRunningBatched)
       } else {
-        r.groupByScanInputProjection
+        r.groupByScanInputProjection(isRunningBatched)
       }
     } else {
-      wrappedWindowFunc.windowInputProjection
+      wrappedWindowFunc.asInstanceOf[GpuAggregateWindowFunction[_]].windowInputProjection
     }
   }
 }
@@ -633,16 +634,76 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
   def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[T]
 }
 
+/**
+ * A window function that is optimized for running windows using the cudf scan and group by
+ * scan operations. In some cases, like row number and rank, Spark only supports them as running
+ * window operations. This is why it directly extends GpuWindowFunction because it can be a stand
+ * alone window function. In all other cases it should be combined with GpuAggregateWindowFunction
+ * to provide a fully functional window operation. It should be noted that WindowExec tries to
+ * deduplicate input projections and aggregations to reduce memory usage. Because of tracking
+ * requirements it is required that there is a one to one relationship between an input projection
+ * and a corresponding aggregation.
+ */
 trait GpuRunningWindowFunction extends GpuWindowFunction {
-  def groupByScanInputProjection: Seq[Expression]
-  def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_]
-  def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn]
+  /**
+   * Get the input projections for a group by scan. This corresponds to a running window with
+   * a partition by clause. The partition keys will be used as the grouping keys.
+   * @param isRunningBatched is this for a batched running window that will use a fixer or not?
+   * @return the input expressions that will be aggregated using the result from
+   *         `groupByScanAggregation`
+   */
+  def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression]
+
+  /**
+   * Get the aggregations to perform on the results of `groupByScanInputProjection`. The
+   * aggregations will be zipped with the values to produce the output.
+   * @param isRunningBatched is this for a batched running window that will use a fixer or not?
+   * @return the aggregations to perform as a group by scan.
+   */
+  def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace]
+
+  /**
+   * Should a group by scan be run or not. This should never return false unless this is also an
+   * instance of `GpuAggregateWindowFunction` so the window code can fall back to it for
+   * computation.
+   */
   def isGroupByScanSupported = true
 
-  def scanInputProjection: Expression
-  def scanAggregation: Aggregation
-  def scanReplaceNulls: Option[ReplacePolicy]
+  /**
+   * Get the input projections for a scan. This corresponds to a running window without a
+   * partition by clause.
+   * @param isRunningBatched is this for a batched running window that will use a fixer or not?
+   * @return the input expressions that will be aggregated using the result from
+   *         `scanAggregation`
+   */
+  def scanInputProjection(isRunningBatched: Boolean): Seq[Expression]
+
+  /**
+   * Get the aggregations to perform on the results of `scanInputProjection`. The
+   * aggregations will be zipped with the values to produce the output.
+   * @param isRunningBatched is this for a batched running window that will use a fixer or not?
+   * @return the aggregations to perform as a group by scan.
+   */
+  def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace]
+
+  /**
+   * Should a group by scan be run or not. This should never return false unless this is also an
+   * instance of `GpuAggregateWindowFunction` so the window code can fall back to it for
+   * computation.
+   */
   def isScanSupported = true
+
+  /**
+   * Provides a way to combine the result of multiple aggregations into a final value. By
+   * default it requires that there is a single aggregation and works as just a pass through.
+   * @param isRunningBatched is this for a batched running window that will use a fixer or not?
+   * @param cols the columns to be combined
+   * @return the result of combining these together.
+   */
+  def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
+    require(cols.length == 1, "Only one column is supported fro the default scan combine")
+    cols.head.incRefCount()
+  }
 }
 
 /**
@@ -660,9 +721,8 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  *   MINS: 2, 2, 10, 9
  * </code>
  *
- * But we don't know if the group with 2 in PARTS is done or not. So the framework will call
- * `updateState` to have this save the last value in MINS, which is a 9. When the next batch
- * shows up
+ * But we don't know if the group with 2 in PARTS is done or not. So the fixer saved
+ * the last value in MINS, which is a 9. When the next batch shows up
  *
  * <code>
  *  PARTS:  2,  2,  3,  3
@@ -688,13 +748,6 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
  */
 trait BatchedRunningWindowFixer extends AutoCloseable {
   /**
-   * Save any state needed from the previous output that will be needed to fix up the next batch.
-   * You don't need to worry about the partition columns. Those will be saved separately.
-   * @param finalOutputColumn the output of fixup.
-   */
-  def updateState(finalOutputColumn: GpuColumnVector): Unit
-
-  /**
    * Fix up `windowedColumnOutput` with any stored state from previous batches.
    * Like all window operations the input data will have been sorted by the partition
    * by columns and the order by columns.
@@ -707,6 +760,11 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
    *                          Only values that are for the same partition by keys should be
    *                          modified. Because the input data is sorted by the partition by
    *                          columns the boolean values will be grouped together.
+   * @param sameOrderMask a mask just like `samePartitionMask` but for ordering. This happens
+   *                      for some operations like `rank` and `dense_rank` that use the ordering
+   *                      columns in a row based query. This is not needed for all fixers and is not
+   *                      free to calculate, so you must set `needsOrderMask` to true if you are
+   *                      going to use it.
    * @param windowedColumnOutput the output of the windowAggregation without anything
    *                             fixed/modified. This should not be closed by `fixUp` as it will be
    *                             handled by the framework.
@@ -714,8 +772,16 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
    *         group by key as the last row in the previous batch.
    */
   def fixUp(
-      samePartitionMask: Either[GpuColumnVector, Boolean],
-      windowedColumnOutput: GpuColumnVector): GpuColumnVector
+      samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]],
+      windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector
+
+  def needsOrderMask: Boolean = false
+
+  protected def incRef(col: cudf.ColumnView): cudf.ColumnVector = col match {
+    case cv: cudf.ColumnVector => cv.incRefCount()
+    case _ => col.copyToColumnVector()
+  }
 }
 
 /**
@@ -742,33 +808,36 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
     extends BatchedRunningWindowFixer with Arm with Logging {
   private var previousResult: Option[Scalar] = None
 
-  override def updateState(finalOutputColumn: GpuColumnVector): Unit = {
+  def getPreviousResult: Option[Scalar] = previousResult
+
+  def updateState(finalOutputColumn: cudf.ColumnVector): Unit = {
     logDebug(s"$name: updateState from $previousResult to...")
     previousResult.foreach(_.close)
     previousResult =
-      Some(finalOutputColumn.getBase.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
+      Some(finalOutputColumn.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
     logDebug(s"$name: ... $previousResult")
   }
 
-  override def fixUp(samePartitionMask: Either[GpuColumnVector, Boolean],
-      windowedColumnOutput: GpuColumnVector): GpuColumnVector = {
+  override def fixUp(samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]],
+      windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector = {
     logDebug(s"$name: fix up $previousResult $samePartitionMask")
-    (previousResult, samePartitionMask) match {
-      case (None, _) => windowedColumnOutput.incRefCount()
+    val ret = (previousResult, samePartitionMask) match {
+      case (None, _) => incRef(windowedColumnOutput)
       case (Some(prev), scala.util.Right(mask)) =>
         if (mask) {
-          GpuColumnVector.from(windowedColumnOutput.getBase.binaryOp(binOp, prev, prev.getType),
-            windowedColumnOutput.dataType())
+          windowedColumnOutput.binaryOp(binOp, prev, prev.getType)
         } else {
           // The mask is all false so do nothing
-          windowedColumnOutput.incRefCount()
+          incRef(windowedColumnOutput)
         }
       case (Some(prev), scala.util.Left(mask)) =>
-        val base = windowedColumnOutput.getBase
-        withResource(base.binaryOp(binOp, prev, prev.getType)) { updated =>
-          GpuColumnVector.from(mask.getBase.ifElse(updated, base), windowedColumnOutput.dataType())
+        withResource(windowedColumnOutput.binaryOp(binOp, prev, prev.getType)) { updated =>
+          mask.ifElse(updated, windowedColumnOutput)
         }
     }
+    updateState(ret)
+    ret
   }
 
   override def close(): Unit = previousResult.foreach(_.close())
@@ -784,104 +853,427 @@ class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
   private val binOp = BinaryOp.ADD
   private var previousResult: Option[Scalar] = None
 
-  override def updateState(finalOutputColumn: GpuColumnVector): Unit = {
+  def updateState(finalOutputColumn: cudf.ColumnVector): Unit = {
     logDebug(s"$name: updateState from $previousResult to...")
     previousResult.foreach(_.close)
     previousResult =
-      Some(finalOutputColumn.getBase.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
+      Some(finalOutputColumn.getScalarElement(finalOutputColumn.getRowCount.toInt - 1))
     logDebug(s"$name: ... $previousResult")
   }
 
-  private def makeZeroScalar(dt: DataType): Scalar = dt match {
-    case ByteType => Scalar.fromByte(0.toByte)
-    case ShortType => Scalar.fromShort(0.toShort)
-    case IntegerType => Scalar.fromInt(0)
-    case LongType => Scalar.fromLong(0)
-    case FloatType => Scalar.fromFloat(0.0f)
-    case DoubleType => Scalar.fromDouble(0.0)
-    case dec: DecimalType =>
-      if (dec.precision <= DType.DECIMAL32_MAX_PRECISION) {
-        Scalar.fromDecimal(-dec.scale, 0)
+  private def makeZeroScalar(dt: DType): Scalar = dt match {
+    case DType.INT8 => Scalar.fromByte(0.toByte)
+    case DType.INT16 => Scalar.fromShort(0.toShort)
+    case DType.INT32 => Scalar.fromInt(0)
+    case DType.INT64=> Scalar.fromLong(0)
+    case DType.FLOAT32 => Scalar.fromFloat(0.0f)
+    case DType.FLOAT64 => Scalar.fromDouble(0.0)
+    case dec if dec.isDecimalType =>
+      if (dec.getTypeId == DType.DTypeEnum.DECIMAL32) {
+        Scalar.fromDecimal(dec.getScale, 0)
       } else {
-        Scalar.fromDecimal(-dec.scale, 0L)
+        Scalar.fromDecimal(dec.getScale, 0L)
       }
     case other =>
       throw new IllegalArgumentException(s"Making a zero scalar for $other is not supported")
   }
 
-  override def fixUp(samePartitionMask: Either[GpuColumnVector, Boolean],
-      windowedColumnOutput: GpuColumnVector): GpuColumnVector = {
+  override def fixUp(samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]],
+      windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector = {
     logDebug(s"$name: fix up $previousResult $samePartitionMask")
-    (previousResult, samePartitionMask) match {
-      case (None, _) => windowedColumnOutput.incRefCount()
+    val ret = (previousResult, samePartitionMask) match {
+      case (None, _) => incRef(windowedColumnOutput)
       case (Some(prev), scala.util.Right(mask)) =>
         if (mask) {
           // ADD is not null safe, so we have to replace NULL with 0 if and only if prev is also
           // not null
-          val base = windowedColumnOutput.getBase
           if (prev.isValid) {
-            val nullsReplaced = withResource(base.isNull) { nulls =>
-              withResource(makeZeroScalar(windowedColumnOutput.dataType())) { zero =>
-                nulls.ifElse(zero, base)
+            val nullsReplaced = withResource(windowedColumnOutput.isNull) { nulls =>
+              withResource(makeZeroScalar(windowedColumnOutput.getType)) { zero =>
+                nulls.ifElse(zero, windowedColumnOutput)
               }
             }
             withResource(nullsReplaced) { nullsReplaced =>
-              GpuColumnVector.from(nullsReplaced.binaryOp(binOp, prev, prev.getType),
-                windowedColumnOutput.dataType())
+              nullsReplaced.binaryOp(binOp, prev, prev.getType)
             }
           } else {
             // prev is NULL but NULL + something == NULL which we don't want
-            windowedColumnOutput.incRefCount()
+            incRef(windowedColumnOutput)
           }
         } else {
           // The mask is all false so do nothing
-          windowedColumnOutput.incRefCount()
+          incRef(windowedColumnOutput)
         }
       case (Some(prev), scala.util.Left(mask)) =>
-        val base = windowedColumnOutput.getBase
         if (prev.isValid) {
-          val nullsReplaced = withResource(base.isNull) { nulls =>
-            withResource(nulls.and(mask.getBase)) { shouldReplace =>
-              withResource(makeZeroScalar(windowedColumnOutput.dataType())) { zero =>
-                shouldReplace.ifElse(zero, base)
+          val nullsReplaced = withResource(windowedColumnOutput.isNull) { nulls =>
+            withResource(nulls.and(mask)) { shouldReplace =>
+              withResource(makeZeroScalar(windowedColumnOutput.getType)) { zero =>
+                shouldReplace.ifElse(zero, windowedColumnOutput)
               }
             }
           }
           withResource(nullsReplaced) { nullsReplaced =>
             withResource(nullsReplaced.binaryOp(binOp, prev, prev.getType)) { updated =>
-              GpuColumnVector.from(mask.getBase.ifElse(updated, base),
-                windowedColumnOutput.dataType())
+              mask.ifElse(updated, windowedColumnOutput)
             }
           }
         } else {
           // prev is NULL but NULL + something == NULL which we don't want
-          windowedColumnOutput.incRefCount()
+          incRef(windowedColumnOutput)
         }
     }
+    updateState(ret)
+    ret
   }
 
   override def close(): Unit = previousResult.foreach(_.close())
 }
 
-case class GpuRowNumber() extends GpuAggregateWindowFunction[RowNumberAggregation]
-    with GpuBatchedRunningWindowWithFixer
-    with GpuRunningWindowFunction {
+/**
+ * Rank is more complicated than DenseRank to fix. This is because there are gaps in the
+ * rank values. The rank value of each group is row number of the first row in the group.
+ * So values in the same partition group but not the same ordering are fixed by adding
+ * the row number from the previous batch to them. If they are a part of the same ordering and
+ * part of the same partition, then we need to just put in the previous rank value.
+ *
+ * Because we need both a rank and a row number to fix things up the input to this is a struct
+ * containing a rank column as the first entry and a row number column as the second entry. This
+ * happens in the `scanCombine` method for GpuRank.  It is a little ugly but it works to maintain
+ * the requirement that the input to the fixer is a single column.
+ */
+class RankFixer extends BatchedRunningWindowFixer with Arm with Logging {
+  import RankFixer._
+
+  // We have to look at row number as well as rank.  This fixer is the same one that `GpuRowNumber`
+  // uses.
+  private[this] val rowNumFixer = new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number")
+  // convenience method to get access to the previous row number.
+  private[this] def previousRow: Option[Scalar] = rowNumFixer.getPreviousResult
+  // The previous rank value
+  private[this] var previousRank: Option[Scalar] = None
+
+  override def needsOrderMask: Boolean = true
+
+  override def fixUp(
+      samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]],
+      windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector = {
+    assert(windowedColumnOutput.getType == DType.STRUCT)
+    assert(windowedColumnOutput.getNumChildren == 2)
+    val initialRank = windowedColumnOutput.getChildColumnView(0)
+    val initialRowNum = windowedColumnOutput.getChildColumnView(1)
+    val ret = (previousRank, samePartitionMask) match {
+      case (None, _) => incRef(initialRank)
+      case (Some(prevRank), scala.util.Right(partMask)) =>
+        if (partMask) {
+          // We are in the same partition as the last part of the batch so we have to look at the
+          // ordering to know what to do.
+          sameOrderMask.get match {
+            case scala.util.Left(orderMask) =>
+              fixRankSamePartition(initialRank, orderMask, prevRank, previousRow)
+            case scala.util.Right(orderMask) =>
+              // Technically I think this code is unreachable because the only time a constant
+              // true or false is returned is if the order by column is empty or if the parts mask
+              // is false. Spark requires there to be order by columns and we already know that
+              // the partition mask is true. But it is small so just to be on the safe side.
+              if (orderMask) {
+                // it is all for the same partition and order so it is the same value as the
+                // previous rank
+                cudf.ColumnVector.fromScalar(prevRank, initialRank.getRowCount.toInt)
+              } else {
+                fixRankSamePartDifferentOrdering(initialRank, previousRow)
+              }
+          }
+        } else {
+          incRef(initialRank)
+        }
+      case (Some(prevRank), scala.util.Left(partMask)) =>
+        sameOrderMask.get match {
+          case scala.util.Left(orderMask) =>
+            // Fix up the data for the same partition and keep the rest unchanged.
+            val samePart = fixRankSamePartition(initialRank, orderMask, prevRank, previousRow)
+            withResource(samePart) { samePart =>
+              partMask.ifElse(samePart, initialRank)
+            }
+          case scala.util.Right(_) =>
+            // The framework guarantees that the order by mask is a subset of the group by mask
+            // So if the group by mask in not a constant, then the order by mask also cannot be
+            // a constant
+            throw new IllegalStateException(
+              "Internal Error the order mask is not a subset of the part mask")
+        }
+    }
+
+    // We just want to update the state for row num
+    rowNumFixer.fixUp(samePartitionMask, sameOrderMask, initialRowNum).close()
+    logDebug(s"rank: updateState from $previousRank to...")
+    previousRank.foreach(_.close)
+    previousRank = Some(ret.getScalarElement(ret.getRowCount.toInt - 1))
+    logDebug(s"rank/row: ... $previousRank $previousRow")
+    ret
+  }
+
+  override def close(): Unit = {
+    previousRank.foreach(_.close())
+  }
+}
+
+object RankFixer extends Arm {
+  private def fixRankSamePartDifferentOrdering(rank: cudf.ColumnView,
+      previousRow: Option[Scalar]): cudf.ColumnVector =
+    rank.add(previousRow.get, rank.getType)
+
+  private def fixRankSamePartition(rank: cudf.ColumnView,
+      orderMask: cudf.ColumnView,
+      prevRank: Scalar,
+      previousRow: Option[Scalar]): cudf.ColumnVector = {
+    withResource(fixRankSamePartDifferentOrdering(rank, previousRow)) { partlyFixed =>
+      orderMask.ifElse(prevRank, partlyFixed)
+    }
+  }
+}
+
+/**
+ * Fix up dense rank batches. A dense rank has no gaps in the rank values.
+ * The rank corresponds to the ordering columns(s) equality. So when a batch
+ * finishes and another starts that split can either be at the beginning of a
+ * new order by section or part way through one. If it is at the beginning, then
+ * like row number we want to just add in the previous value and go on. If
+ * it was part way through, then we want to add in the previous value minus 1.
+ * The minus one is to pick up where we left off.
+ * If anything is outside of a continues partition by group then we just keep
+ * those values unchanged.
+ */
+class DenseRankFixer extends BatchedRunningWindowFixer with Arm with Logging {
+  import DenseRankFixer._
+
+  private var previousRank: Option[Scalar] = None
+
+  override def needsOrderMask: Boolean = true
+
+  override def fixUp(
+      samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]],
+      windowedColumnOutput: cudf.ColumnView): cudf.ColumnVector = {
+    val ret = (previousRank, samePartitionMask) match {
+      case (None, _) => incRef(windowedColumnOutput)
+      case (Some(prevRank), scala.util.Right(partMask)) =>
+        if (partMask) {
+          // We are in the same partition as the last part of the batch so we have to look at the
+          // ordering to know what to do.
+          sameOrderMask.get match {
+            case scala.util.Left(orderMask) =>
+              // It is all in the same partition so just fix it for that.
+              fixRankInSamePartition(windowedColumnOutput, orderMask, prevRank)
+            case scala.util.Right(orderMask) =>
+              // Technically I think this code is unreachable because the only time a constant
+              // true or false is returned is if the order by column is empty or if the parts mask
+              // is false. Spark requires there to be order by columns and we already know that
+              // the partition mask is true. But it is small so just to be on the safe side.
+              if (orderMask) {
+                // Everything in this batch is part of the same ordering group too.
+                // We don't add previous rank - 1, because the current value for everything is 1
+                // so rank - 1 + 1 == rank.
+                cudf.ColumnVector.fromScalar(prevRank, windowedColumnOutput.getRowCount.toInt)
+              } else {
+                // Same partition but hit an order by boundary.
+                addPrevRank(windowedColumnOutput, prevRank)
+              }
+          }
+        } else {
+          // Different partition by group so this is a NOOP
+          incRef(windowedColumnOutput)
+        }
+      case (Some(prevRank), scala.util.Left(partMask)) =>
+        sameOrderMask.get match {
+          case scala.util.Left(orderMask) =>
+            // Fix up the data for the same partition and keep the rest unchanged.
+            val samePart = fixRankInSamePartition(windowedColumnOutput, orderMask, prevRank)
+            withResource(samePart) { samePart =>
+              partMask.ifElse(samePart, windowedColumnOutput)
+            }
+          case scala.util.Right(_) =>
+            // The framework guarantees that the order by mask is a subset of the group by mask
+            // So if the group by mask in not a constant, then the order by mask also cannot be
+            // a constant
+            throw new IllegalStateException(
+              "Internal Error the order mask is not a subset of the part mask")
+        }
+    }
+
+    logDebug(s"dense rank: updateState from $previousRank to...")
+    previousRank.foreach(_.close)
+    previousRank = Some(ret.getScalarElement(ret.getRowCount.toInt - 1))
+    logDebug(s"dense rank: ... $previousRank")
+
+    ret
+  }
+
+  override def close(): Unit = {
+    previousRank.foreach(_.close())
+  }
+}
+
+object DenseRankFixer extends Arm {
+  private[this] def isFirstTrue(cv: cudf.ColumnView): Boolean = {
+    withResource(cv.getScalarElement(0)) { scalar =>
+      scalar.getBoolean
+    }
+  }
+
+  private def addPrevRank(cv: cudf.ColumnView, prevRank: Scalar): cudf.ColumnVector =
+    cv.add(prevRank)
+
+  private[this] def addPrevRankMinusOne(cv: cudf.ColumnView,
+      prevRank: Scalar): cudf.ColumnVector = {
+    withResource(addPrevRank(cv, prevRank)) { prev =>
+      withResource(Scalar.fromInt(1)) { one =>
+        prev.sub(one)
+      }
+    }
+  }
+
+  private def fixRankInSamePartition(
+      rank: cudf.ColumnView,
+      orderMask: cudf.ColumnView,
+      prevRank: Scalar): cudf.ColumnVector = {
+    // This is a little ugly, but the only way to tell if we are part of the previous order by
+    // group or not is to look at the orderMask. In this case we check if the first value in the
+    // mask is true.
+    val added = if (isFirstTrue(orderMask)) {
+      addPrevRankMinusOne(rank, prevRank)
+    } else {
+      addPrevRank(rank, prevRank)
+    }
+    withResource(added) { added =>
+      orderMask.ifElse(prevRank, added)
+    }
+  }
+}
+
+/**
+ * Rank is a special window operation where it is only supported as a running window. In cudf
+ * it is only supported as a scan and a group by scan. But there are special requirements beyond
+ * that when doing the computation as a running batch. To fix up each batch it needs both the rank
+ * and the row number. To make this work and be efficient there is different behavior for batched
+ * running window vs non-batched. If it is for a running batch we include the row number values,
+ * in both the initial projections and in the corresponding aggregations. Then we combine them
+ * into a struct column in `scanCombine` before it is passed on to the `RankFixer`. If it is not
+ * a running batch, then we drop the row number part because it is just not needed.
+ * @param children the order by columns.
+ */
+case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
+    with GpuBatchedRunningWindowWithFixer {
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  // RUNNING WINDOW ONLY - RANK DOES NOT WORK FOR ANYTHING ELSE IN SPARK
+
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
+    // The requirement is that each input projection has a corresponding aggregation
+    // associated with it. This also fits with how rank works in cudf, where the input is also
+    // a single column. If there are multiple order by columns we wrap them in a struct.
+    // This is not ideal from a memory standpoint, and in the future we might be able to fix this
+    // with a ColumnView, but for now with how the java cudf APIs work it would be hard to work
+    // around.
+    val orderedBy = if (children.length == 1) {
+      children.head
+    } else {
+      val childrenWithNames = children.zipWithIndex.flatMap {
+        case (expr, idx) => Seq(GpuLiteral(idx.toString, StringType), expr)
+      }
+      GpuCreateNamedStruct(childrenWithNames)
+    }
+
+    // If the computation is for a batched running window then we need a row number too
+    if (isRunningBatched) {
+      Seq(orderedBy, GpuLiteral(1, IntegerType))
+    } else {
+      Seq(orderedBy)
+    }
+  }
+
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+    if (isRunningBatched) {
+      // We are computing both rank and row number so we can fix it up at the end
+      Seq(AggAndReplace(Aggregation.rank(), None), AggAndReplace(Aggregation.sum(), None))
+    } else {
+      // Not batched just do the rank
+      Seq(AggAndReplace(Aggregation.rank(), None))
+    }
+  }
+
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    groupByScanInputProjection(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    groupByScanAggregation(isRunningBatched)
+
+  override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
+    if (isRunningBatched) {
+      // When the data is batched we are using the fixer, and it needs rank and row number
+      // to calculate the final value
+      assert(cols.length == 2)
+      ColumnVector.makeStruct(cols: _*)
+    } else {
+      assert(cols.length == 1)
+      cols.head.incRefCount()
+    }
+  }
+
+  override def newFixer(): BatchedRunningWindowFixer = new RankFixer()
+}
+
+/**
+ * Dense Rank is a special window operation where it is only supported as a running window. In cudf
+ * it is only supported as a scan and a group by scan.
+ * @param children the order by columns.
+ */
+case class GpuDenseRank(children: Seq[Expression]) extends GpuRunningWindowFunction
+    with GpuBatchedRunningWindowWithFixer {
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  // RUNNING WINDOW ONLY - DENSE RANK DOES NOT WORK FOR ANYTHING ELSE IN SPARK
+
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
+    // The requirement is that each input projection has a corresponding aggregation
+    // associated with it. This also fits with how rank works in cudf, where the input is also
+    // a single column. If there are multiple order by columns we wrap them in a struct.
+    // This is not ideal from a memory standpoint, and in the future we might be able to fix this
+    // with a ColumnView, but for now with how the java cudf APIs work it would be hard to work
+    // around.
+    if (children.length == 1) {
+      Seq(children.head)
+    } else {
+      val childrenWithNames = children.zipWithIndex.flatMap {
+        case (expr, idx) => Seq(GpuLiteral(idx.toString, StringType), expr)
+      }
+      Seq(GpuCreateNamedStruct(childrenWithNames))
+    }
+  }
+
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    Seq(AggAndReplace(Aggregation.denseRank(), None))
+
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    groupByScanInputProjection(isRunningBatched)
+
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    groupByScanAggregation(isRunningBatched)
+
+  override def newFixer(): BatchedRunningWindowFixer = new DenseRankFixer()
+}
+
+case object GpuRowNumber extends GpuRunningWindowFunction
+    with GpuBatchedRunningWindowWithFixer {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
   override def children: Seq[Expression] = Nil
 
-  // GENERAL WINDOW FUNCTION
-
-  override val windowInputProjection: Seq[Expression] = Nil
-
-  override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[RowNumberAggregation] = {
-    assert(inputs.isEmpty, inputs)
-    Aggregation.rowNumber().onColumn(0)
-  }
-
-  // RUNNING WINDOW
+  // RUNNING WINDOW ONLY - ROW NUMBER DOES NOT WORK FOR ANYTHING ELSE IN SPARK
 
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number")
@@ -889,16 +1281,18 @@ case class GpuRowNumber() extends GpuAggregateWindowFunction[RowNumberAggregatio
   // For group by scans cudf does not support ROW_NUMBER so we will do a SUM
   // on a column of 1s. We could do a COUNT_ALL too, but it would not be as consistent
   // with the non group by scan
-  override val groupByScanInputProjection: Seq[Expression] = Seq(GpuLiteral(1, IntegerType))
-  override def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_] =
-    Aggregation.sum().onColumn(inputs.head._2)
-  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] = None
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    Seq(GpuLiteral(1, IntegerType))
+
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    Seq(AggAndReplace(Aggregation.sum(), None))
 
   // For regular scans cudf does not support ROW_NUMBER, nor does it support COUNT_ALL
   // so we will do a SUM on a column of 1s
-  override val scanInputProjection: Expression = groupByScanInputProjection.head
-  override def scanAggregation: Aggregation = Aggregation.sum()
-  override val scanReplaceNulls: Option[ReplacePolicy] = None
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    groupByScanInputProjection(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    groupByScanAggregation(isRunningBatched)
 }
 
 abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (

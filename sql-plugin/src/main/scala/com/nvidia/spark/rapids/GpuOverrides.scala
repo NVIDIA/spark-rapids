@@ -897,7 +897,27 @@ object GpuOverrides {
       "Window function that returns the index for the row within the aggregation window",
       ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT),
       (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuRowNumber()
+        override def convertToGpu(): GpuExpression = GpuRowNumber
+      }),
+    expr[Rank](
+      "Window function that returns the rank value within the aggregation window",
+      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("ordering",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL,
+            TypeSig.all))),
+      (rank, conf, p, r) => new ExprMeta[Rank](rank, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuRank(childExprs.map(_.convertToGpu()))
+      }),
+    expr[DenseRank](
+      "Window function that returns the dense rank value within the aggregation window",
+      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("ordering",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL,
+            TypeSig.all))),
+      (denseRank, conf, p, r) => new ExprMeta[DenseRank](denseRank, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuDenseRank(childExprs.map(_.convertToGpu()))
       }),
     expr[Lead](
       "Window function that returns N entries ahead of this one",
