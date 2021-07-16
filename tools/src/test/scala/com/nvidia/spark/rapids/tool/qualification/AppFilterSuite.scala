@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import java.util.Calendar
@@ -184,8 +185,6 @@ class AppFilterSuite extends FunSuite {
       startTimePeriod: String, filterAppName: String, expectedFilterSize: Int): Unit = {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
-
-
         val fileNames = apps.map { app =>
           val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath,
             s"${app.appName}-${app.uniqueId}-eventlog")
@@ -195,7 +194,7 @@ class AppFilterSuite extends FunSuite {
                |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}","App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.eventLogTime},"User":"user1"}""".stripMargin
           // scalastyle:on line.size.limit
           Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
-          elogFile
+          elogFile.toString
         }
 
         val allArgs = Array(
@@ -206,7 +205,113 @@ class AppFilterSuite extends FunSuite {
           "--application-name",
           filterAppName
         )
-        val appArgs = new QualificationArgs(allArgs ++ fileNames.map(_.toString))
+        val appArgs = new QualificationArgs(allArgs ++ fileNames)
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == expectedFilterSize)
+      }
+    }
+  }
+
+  case class TestEventLogFSAndAppNameInfo(appName: String, fsTime: Long, uniqueId: Int)
+
+  private val appsWithFsToTest = Array(TestEventLogFSAndAppNameInfo("ndshours18", msHoursAgo(18), 1),
+    TestEventLogFSAndAppNameInfo("ndsweeks2", msWeeksAgo(2), 1),
+    TestEventLogFSAndAppNameInfo("nds86", msDaysAgo(4), 1),
+    TestEventLogFSAndAppNameInfo("nds86", msWeeksAgo(2), 2))
+
+  test("app name exact and fs 10-newest") {
+    testFileSystemTimeAndStart(appsWithFsToTest, "10-newest", "nds86", 2)
+  }
+
+  test("app name exact and 2-oldest") {
+    testFileSystemTimeAndStart(appsWithFsToTest, "2-oldest", "ndsweeks2", 1)
+  }
+
+  private def testFileSystemTimeAndStart(apps: Array[TestEventLogFSAndAppNameInfo],
+      filterCriteria: String, filterAppName: String, expectedFilterSize: Int): Unit = {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val fileNames = apps.map { app =>
+          val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath,
+            s"${app.appName}-${app.uniqueId}-eventlog")
+          // scalastyle:off line.size.limit
+          val supText =
+            s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}","App ID":"local-16261043003${app.uniqueId}","Timestamp":1626104299853,"User":"user1"}""".stripMargin
+          // scalastyle:on line.size.limit
+          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+          new File(elogFile.toString).setLastModified(app.fsTime)
+          elogFile.toString
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          "--filter-criteria",
+          filterCriteria,
+          "--application-name",
+          filterAppName
+        )
+        val appArgs = new QualificationArgs(allArgs ++ fileNames)
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == expectedFilterSize)
+      }
+    }
+  }
+
+  case class TestEventLogFSAndAppInfo(fileName: String, fsTime: Long, appName: String, appTime: Long, uniqueId: Int)
+
+  private val appsFullWithFsToTest = Array(TestEventLogFSAndAppInfo("app-ndshours18", msHoursAgo(16), "ndshours18", msHoursAgo(18), 1),
+    TestEventLogFSAndAppInfo("app-ndsweeks2", msWeeksAgo(2), "ndsweeks2", msWeeksAgo(2), 1),
+    TestEventLogFSAndAppInfo("app-nds86-1", msDaysAgo(3), "nds86", msDaysAgo(4), 1),
+    TestEventLogFSAndAppInfo("app-nds86-2", msDaysAgo(13), "nds86", msWeeksAgo(2), 2))
+
+  test("full app name exact and fs 10-newest 6 days") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "10-newest", "nds86", "nds86", "6d", 1)
+  }
+
+  test("full app name exact and 2-oldest no match") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "ndsweeks2", "nds", "6d", 0)
+  }
+
+  test("full app name exact and 2-oldest") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest", "ndsweeks2", "nds", "3w", 1)
+  }
+
+  private def testFileSystemTimeAndStartAndAppFull(apps: Array[TestEventLogFSAndAppInfo],
+      filterCriteria: String, filterAppName: String, matchFileName: String,
+      startTimePeriod: String, expectedFilterSize: Int): Unit = {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val fileNames = apps.map { app =>
+          val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, app.fileName)
+          // scalastyle:off line.size.limit
+          val supText =
+            s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}","App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime},"User":"user1"}""".stripMargin
+          // scalastyle:on line.size.limit
+          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+          new File(elogFile.toString).setLastModified(app.fsTime)
+          elogFile.toString
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          "--filter-criteria",
+          filterCriteria,
+          "--application-name",
+          filterAppName,
+          "--start-app-time",
+          startTimePeriod,
+          "--match-event-logs",
+          matchFileName
+        )
+        val appArgs = new QualificationArgs(allArgs ++ fileNames)
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
         assert(appSum.size == expectedFilterSize)
