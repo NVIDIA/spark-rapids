@@ -77,7 +77,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
         app.allDataFrames.contains(s"stageDF_${app.index}") &&
         app.allDataFrames.contains(s"jobDF_${app.index}")) {
-        app.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by appIndex, Duration desc, ID",
+        app.runQuery(apps.head.jobAndStageMetricsAggregationSQL +
+          " order by appIndex, Duration desc, ID",
           false, fileWriter, messageHeader)
       } else {
         apps.head.sparkSession.emptyDataFrame
