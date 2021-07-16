@@ -750,11 +750,7 @@ class GroupedAggregations extends Arm {
                     // because for windows that only happens if the first values are nulls. So we
                     // will then call replace nulls as needed to fix that up. Typically the
                     // replacement policy is preceding.
-                    if (replacePolicy.isDefined) {
-                      scanned.replaceNulls(replacePolicy.get)
-                    } else {
-                      scanned.incRefCount()
-                    }
+                    replacePolicy.map(scanned.replaceNulls).getOrElse(scanned.incRefCount())
                 }
           }
           func.scanCombine(isRunningBatched, replacedCols)

@@ -840,7 +840,10 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
     ret
   }
 
-  override def close(): Unit = previousResult.foreach(_.close())
+  override def close(): Unit = {
+    previousResult.foreach(_.close())
+    previousResult = None
+  }
 }
 
 /**
@@ -928,7 +931,10 @@ class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
     ret
   }
 
-  override def close(): Unit = previousResult.foreach(_.close())
+  override def close(): Unit = {
+    previousResult.foreach(_.close())
+    previousResult = None
+  }
 }
 
 /**
@@ -1017,6 +1023,7 @@ class RankFixer extends BatchedRunningWindowFixer with Arm with Logging {
 
   override def close(): Unit = {
     previousRank.foreach(_.close())
+    previousRank = None
   }
 }
 
@@ -1113,6 +1120,7 @@ class DenseRankFixer extends BatchedRunningWindowFixer with Arm with Logging {
 
   override def close(): Unit = {
     previousRank.foreach(_.close())
+    previousRank = None
   }
 }
 
@@ -1163,20 +1171,19 @@ object DenseRankFixer extends Arm {
  * into a struct column in `scanCombine` before it is passed on to the `RankFixer`. If it is not
  * a running batch, then we drop the row number part because it is just not needed.
  * @param children the order by columns.
+ * @note this is a running window only operator.
  */
 case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
     with GpuBatchedRunningWindowWithFixer {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
-  // RUNNING WINDOW ONLY - RANK DOES NOT WORK FOR ANYTHING ELSE IN SPARK
-
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
     // The requirement is that each input projection has a corresponding aggregation
     // associated with it. This also fits with how rank works in cudf, where the input is also
     // a single column. If there are multiple order by columns we wrap them in a struct.
     // This is not ideal from a memory standpoint, and in the future we might be able to fix this
-    // with a ColumnView, but for now with how the java cudf APIs work it would be hard to work
+    // with a ColumnView, but for now with how the Java cudf APIs work it would be hard to work
     // around.
     val orderedBy = if (children.length == 1) {
       children.head
@@ -1229,20 +1236,19 @@ case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
  * Dense Rank is a special window operation where it is only supported as a running window. In cudf
  * it is only supported as a scan and a group by scan.
  * @param children the order by columns.
+ * @note this is a running window only operator
  */
 case class GpuDenseRank(children: Seq[Expression]) extends GpuRunningWindowFunction
     with GpuBatchedRunningWindowWithFixer {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
-  // RUNNING WINDOW ONLY - DENSE RANK DOES NOT WORK FOR ANYTHING ELSE IN SPARK
-
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
     // The requirement is that each input projection has a corresponding aggregation
     // associated with it. This also fits with how rank works in cudf, where the input is also
     // a single column. If there are multiple order by columns we wrap them in a struct.
     // This is not ideal from a memory standpoint, and in the future we might be able to fix this
-    // with a ColumnView, but for now with how the java cudf APIs work it would be hard to work
+    // with a ColumnView, but for now with how the Java cudf APIs work it would be hard to work
     // around.
     if (children.length == 1) {
       Seq(children.head)
@@ -1266,14 +1272,16 @@ case class GpuDenseRank(children: Seq[Expression]) extends GpuRunningWindowFunct
   override def newFixer(): BatchedRunningWindowFixer = new DenseRankFixer()
 }
 
+/**
+ * The row number in the window.
+ * @note this is a running window only operator
+ */
 case object GpuRowNumber extends GpuRunningWindowFunction
     with GpuBatchedRunningWindowWithFixer {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
   override def children: Seq[Expression] = Nil
-
-  // RUNNING WINDOW ONLY - ROW NUMBER DOES NOT WORK FOR ANYTHING ELSE IN SPARK
 
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "row_number")
