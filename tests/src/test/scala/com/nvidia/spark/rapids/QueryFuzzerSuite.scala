@@ -25,10 +25,14 @@ class QueryFuzzerSuite extends SparkQueryCompareTestSuite {
 
   // this is a manual test that we should never enable
   ignore("Execute random plans forever until we hit a failure case") {
+    // sometimes we generate plans that are trivial and we end up testing the
+    // same seed multiple times if we always use the current time in millis, so
+    // we start with current time and then just increment it
+    val initialSeed = System.currentTimeMillis()
     var i = 0
     while (true) {
-      val seed = System.currentTimeMillis()
-      println(s"Running query #$i with seed $seed")
+      val seed = initialSeed + i
+      println(s"Running query #$i with seed=$seed")
       compareRandomPlansCpuGpu(seed)
       i += 1
     }
@@ -58,14 +62,15 @@ class QueryFuzzerSuite extends SparkQueryCompareTestSuite {
       case (Success(cpu), Success(gpu)) =>
         compareResults(sort = true, maxFloatDiff = 0.0001, cpu, gpu)
       case (Success(_), Failure(gpu)) =>
-        fail(s"CPU run succeeded. GPU run failed.", gpu)
+        fail(s"[seed=$seed] CPU run succeeded. GPU run failed.", gpu)
       case (Failure(cpu), Success(_)) =>
-        fail(s"GPU run succeeded. CPU run failed.", cpu)
+        fail(s"[seed=$seed] GPU run succeeded. CPU run failed.", cpu)
       case (Failure(cpu), Failure(gpu)) =>
-        println(s"Query failed both on CPU and GPU:\nCPU: $cpu\nGPU: $gpu")
-        // this is fine for now, but it would be nice to see if we could
-        // determine if they both failed for the same reason
+        // This is fine for now, but it would be nice to see if we could do a better
+        // job of determining if they both failed for the same reason. It is not always
+        // possible for us to produce the exact same error message as Spark.
         if (cpu.getMessage != gpu.getMessage) {
+          println(s"[seed=$seed] Query failed both on CPU and GPU:\nCPU: $cpu\nGPU: $gpu")
           showStackTrace("CPU", cpu)
           showStackTrace("GPU", gpu)
         }

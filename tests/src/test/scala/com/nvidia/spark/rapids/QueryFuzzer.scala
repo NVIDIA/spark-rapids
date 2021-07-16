@@ -15,8 +15,6 @@
  */
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.atomic.AtomicLong
-
 import scala.util.Random
 
 import org.apache.spark.SparkConf
@@ -29,14 +27,17 @@ class QueryFuzzer(val seed: Long) {
 
   val rand = new Random(seed)
 
-  val idGen = new AtomicLong(0)
+  var idGen = 0L
 
+  // these are some trivial transformations that demonstrate how the fuzzer works and
+  // are enough to catch some bugs already but we will need to invest in building out
+  // some more realistic/complex transformations to really stress the product
   val transformations = Seq(
-    Join(),
-    Filter(),
+    InnerJoinOnIntegerKeys(),
+    FilterCompareTwoInts(),
     SortRandomColumns(),
     RandomCastFromString(),
-    Aggregate(),
+    SimplAggregate(),
     Repartition()
   )
 
@@ -99,7 +100,7 @@ class QueryFuzzer(val seed: Long) {
   /**
    * Generate a random in-memory DataFrame.
    */
-  def generateDataSource(spark: SparkSession) = {
+  def generateDataSource(spark: SparkSession): DataFrame = {
     val numFields = 1 + rand.nextInt(32)
     val supportedTypes = Seq(DataTypes.IntegerType,
       DataTypes.StringType,
@@ -114,7 +115,6 @@ class QueryFuzzer(val seed: Long) {
     val options = FuzzerOptions(validStringChars = Some(" \t\r\n0123456789.+-/:aidfnT"),
       maxStringLen = 12)
     val df = FuzzerUtils.generateDataFrame(spark, schema, rowCount = 256, options, seed)
-      .repartition(1 + rand.nextInt(4))
     renameColumns(df)
   }
 
@@ -139,7 +139,11 @@ class QueryFuzzer(val seed: Long) {
   /**
    * Generate the next column name.
    */
-  def nextName(): String = "c" + idGen.getAndIncrement()
+  def nextName(): String = {
+    val name = "c" + idGen
+    idGen += 1
+    name
+  }
 
 }
 
@@ -150,10 +154,13 @@ trait Transformation {
   def transform(ctx: FuzzContext, df: DataFrame): DataFrame
 }
 
-case class Filter() extends Transformation {
+/**
+ * Introduce a filter comparing two integer columns.
+ */
+case class FilterCompareTwoInts() extends Transformation {
 
   override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
-    df.schema.fields.exists(_.dataType == DataTypes.IntegerType)
+    df.schema.fields.count(_.dataType == DataTypes.IntegerType) > 1
   }
 
   override def transform(ctx: FuzzContext, df: DataFrame): DataFrame = {
@@ -162,6 +169,9 @@ case class Filter() extends Transformation {
   }
 }
 
+/**
+ * Introduce a sort using a random set of columns.
+ */
 case class SortRandomColumns() extends Transformation {
 
   override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = df.schema.fields.nonEmpty
@@ -174,7 +184,11 @@ case class SortRandomColumns() extends Transformation {
   }
 }
 
-case class Aggregate() extends Transformation {
+/**
+ * Introduce a simple aggregation (sum) of an integer column, using a
+ * single random column as the grouping key.
+ */
+case class SimplAggregate() extends Transformation {
 
   override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
     df.schema.fields.exists(_.dataType == DataTypes.IntegerType)
@@ -188,6 +202,9 @@ case class Aggregate() extends Transformation {
   }
 }
 
+/**
+ * Introduce a projection that casts a string column to another data type.
+ */
 case class RandomCastFromString() extends Transformation {
 
   val castTo = Seq(DataTypes.ByteType, DataTypes.ShortType, DataTypes.IntegerType,
@@ -205,6 +222,9 @@ case class RandomCastFromString() extends Transformation {
   }
 }
 
+/**
+ * Repartition using a single column and a random number of partitions.
+ */
 case class Repartition() extends Transformation {
 
   override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = true
@@ -215,7 +235,11 @@ case class Repartition() extends Transformation {
   }
 }
 
-case class Join() extends Transformation {
+/**
+ * Performs an inner join on two relations using the first integer column from each
+ * relation as the join keys.
+ */
+case class InnerJoinOnIntegerKeys() extends Transformation {
 
   override def canTransform(ctx: FuzzContext, df: DataFrame): Boolean = {
     df.schema.fields.exists(_.dataType == DataTypes.IntegerType)
