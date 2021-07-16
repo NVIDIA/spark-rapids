@@ -226,6 +226,8 @@ object FuzzerUtils {
           map.toMap
         case s: StructType =>
           generateRow(s.fields, rand, options)
+        case d: DecimalType =>
+          new java.math.BigDecimal(r.nextDouble()).setScale(d.scale)
         case _ => throw new IllegalStateException(
           s"fuzzer does not support data type $dataType")
       }

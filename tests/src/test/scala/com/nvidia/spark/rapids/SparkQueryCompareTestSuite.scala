@@ -596,7 +596,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   // we guarantee that the types will be the same
-  private def seqLt(a: Seq[Any], b: Seq[Any]): Boolean = {
+  def seqLt(a: Seq[Any], b: Seq[Any]): Boolean = {
     if (a.length < b.length) {
       return true
     }
@@ -661,6 +661,19 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
             } else if (cmp > 0) {
               return false
             } // else equal go on
+          case (s1: Boolean, s2: Boolean) =>
+            (s1, s2) match {
+              case (false, true) => return true
+              case (true, false) => return false
+              case _ => // else equal go on
+            }
+          case (s1: BigDecimal, s2: BigDecimal) =>
+            s1.compareTo(s2) match {
+              case n if n < 0 => return true
+              case n if n > 0 => return false
+              case _ =>
+                // equal, so continue
+            }
           case (o1, _) =>
             throw new UnsupportedOperationException(o1.getClass + " is not supported yet")
         }
