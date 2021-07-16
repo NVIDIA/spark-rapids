@@ -747,28 +747,18 @@ case class GpuCast(
 
     withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
       withResource(sanitized.isInteger(dType)) { isInt =>
-        val parsed = withResource(sanitized.castTo(dType)) { parsedInt =>
+        if (ansiEnabled) {
+          withResource(isInt.all()) { allInts =>
+            // we can't rely on all() if all values are null so we need for all nulls here
+            if (!allInts.getBoolean && sanitized.getNullCount != sanitized.getRowCount) {
+              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
+          }
+        }
+        withResource(sanitized.castTo(dType)) { parsedInt =>
           withResource(GpuScalar.from(null, dataType)) { nullVal =>
             isInt.ifElse(parsedInt, nullVal)
           }
-        }
-        if (ansiEnabled) {
-          withResource(parsed) { _ =>
-            withResource(sanitized.isNull) { wasNull =>
-              withResource(parsed.isNull) { isNull =>
-                withResource(wasNull.not()) { wasNotNull =>
-                  withResource(wasNotNull.and(isNull)) { invalidInput =>
-                    if (invalidInput.any().getBoolean) {
-                      throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-                    }
-                  }
-                }
-              }
-            }
-            parsed.incRefCount()
-          }
-        } else {
-          parsed
         }
       }
     }
