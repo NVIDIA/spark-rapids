@@ -141,40 +141,48 @@ class AppFilterSuite extends FunSuite {
     c.getTimeInMillis
   }
 
-  val appsToTest = Array(TestEventLogInfo("ndshours18", msHoursAgo(18)),
-    TestEventLogInfo("ndsweeks2", msWeeksAgo(2)),
-    TestEventLogInfo("ndsmonths4", msMonthsAgo(5)),
-    TestEventLogInfo("ndsdays3", msDaysAgo(3)),
-    TestEventLogInfo("ndsmins34", msMinAgo(34)))
+  val appsToTest = Array(TestEventLogInfo("ndshours18", msHoursAgo(18), 1),
+    TestEventLogInfo("ndsweeks2", msWeeksAgo(2), 1),
+    TestEventLogInfo("ndsmonths4", msMonthsAgo(5), 1),
+    TestEventLogInfo("ndsdays3", msDaysAgo(3), 1),
+    TestEventLogInfo("ndsmins34", msMinAgo(34), 1),
+    TestEventLogInfo("nds86", msDaysAgo(4), 1),
+    TestEventLogInfo("nds86", msWeeksAgo(2), 2))
 
   test("app name and start time") {
-    testTimePeriodAndStart(appsToTest, "2d", 1)
-    testTimePeriodAndStart(appsToTest, "20m", 5)
+    testTimePeriodAndStart(appsToTest, "2d", "nds", 1)
+    testTimePeriodAndStart(appsToTest, "20m", "nds", appsToTest.size)
   }
 
-  case class TestEventLogInfo(appName: String, eventLogTime: Long)
+  case class TestEventLogInfo(appName: String, eventLogTime: Long, uniqueId: Int)
 
   private def testTimePeriodAndStart(apps: Array[TestEventLogInfo],
-      startTimePeriod: String, expectedFilterSize: Int): Unit = {
+      startTimePeriod: String, filterAppName: String, expectedFilterSize: Int): Unit = {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
 
-        val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, "testTimeEventLog")
 
-        // scalastyle:off line.size.limit
-        val supText =
-          s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-             |{"Event":"SparkListenerApplicationStart","App Name":"Spark shell","App ID":"local-1626104300434","Timestamp":${eventLogTime},"User":"user1"}""".stripMargin
-        // scalastyle:on line.size.limit
-        Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+        val fileNames = apps.map { app =>
+          val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath,
+            s"${app.appName}-${app.uniqueId}-eventlog")
+          // scalastyle:off line.size.limit
+          val supText =
+            s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+               |{"Event":"SparkListenerApplicationStart","App Name":${app.appName},"App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.eventLogTime},"User":"user1"}""".stripMargin
+          // scalastyle:on line.size.limit
+          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+          elogFile
+        }
 
         val allArgs = Array(
           "--output-directory",
           outpath.getAbsolutePath(),
           "--start-app-time",
-          startTimePeriod
+          startTimePeriod,
+          "--application-name",
+          filterAppName
         )
-        val appArgs = new QualificationArgs(allArgs ++ Array(elogFile.toString()))
+        val appArgs = new QualificationArgs(allArgs ++ fileNames.map(_.toString))
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
         assert(appSum.size == expectedFilterSize)
