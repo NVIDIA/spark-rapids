@@ -190,8 +190,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        <eventlogs | eventlog directories ...>
 
   -a, --application-name <arg>      Filter event logs whose application name
-                                    matches exactly with input string i.e no
-                                    regular expressions supported.
+                                    matches exactly or is a substring of input 
+                                    string. Regular expressions not supported.
+      --application-name ~<arg>     Filter event logs based on the complement
+                                    of a selection criterion. i.e Select all
+                                    event logs except the ones which have
+                                    application name as the input string.
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs for
                                     processing.eg: 100-newest (for processing
                                     newest 100 event logs). eg: 100-oldest (for

@@ -85,21 +85,25 @@ abstract class AppBase(
       logFiles.foreach { file =>
         Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
           val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-          totalNumEvents += lines.size
           var i = 0
           var done = false
           val linesSize = lines.size
           while (i < linesSize && !done) {
             try {
               val line = lines(i)
+              totalNumEvents += 1
               val event = JsonProtocol.sparkEventFromJson(parse(line))
-              i += 1
               done = processEvent(event)
             }
             catch {
               case e: ClassNotFoundException =>
-                logWarning(s"ClassNotFoundException: ${e.getMessage}")
+                // swallow any messages about this class since likely using spark version
+                // before 3.1
+                if (!e.getMessage.contains("SparkListenerResourceProfileAdded")) {
+                  logWarning(s"ClassNotFoundException: ${e.getMessage}")
+                }
             }
+            i += 1
           }
         }
       }
