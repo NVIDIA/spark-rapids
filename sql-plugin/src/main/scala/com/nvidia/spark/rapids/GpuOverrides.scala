@@ -768,7 +768,7 @@ object GpuOverrides {
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
-      cudfRead = (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
       cudfWrite = TypeSig.commonCudfTypes,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))

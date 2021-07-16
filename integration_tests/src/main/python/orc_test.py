@@ -54,8 +54,8 @@ orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen i
 
 # Some array gens, but not all because of nesting
 orc_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens] + [
-    ArrayGen(ArrayGen(short_gen, max_length=10)),
-    ArrayGen(ArrayGen(string_gen, max_length=10)),
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
 
 # Some struct gens, but not all because of nesting
