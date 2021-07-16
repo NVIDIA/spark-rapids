@@ -176,7 +176,7 @@ object GpuCast extends Arm {
     })
   }
 
-  def sanitizeStringToFloat(input: ColumnVector): ColumnVector = {
+  def sanitizeStringToFloat(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
 
     // This regex gets applied after the transformation to normalize use of Inf and is
     // just strict enough to filter out known edge cases that would result in incorrect
@@ -223,8 +223,22 @@ object GpuCast extends Arm {
         }
         // filter out any strings that are not valid floating point numbers according
         // to the regex pattern
-        val floatOrNull = withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) {
-            _.ifElse(infWithoutPlus, nullString)
+        val floatOrNull = withResource(infWithoutPlus) { _ =>
+          withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
+            if (ansiEnabled) {
+              withResource(isFloat.all()) { allMatch =>
+                // Check that all non-null values are valid floats. Note that isFloat will be false
+                // if all rows are null so we need to check for that condition.
+                if (!allMatch.getBoolean &&
+                  infWithoutPlus.getNullCount != infWithoutPlus.getRowCount) {
+                  throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+                }
+                infWithoutPlus.incRefCount()
+              }
+            } else {
+              isFloat.ifElse(infWithoutPlus, nullString)
+            }
+          }
         }
         // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
         withResource(floatOrNull) {
@@ -845,10 +859,7 @@ case class GpuCast(
 
     val NAN_REGEX = "^[nN][aA][nN]$"
 
-    withResource(GpuCast.sanitizeStringToFloat(input)) { sanitized =>
-      if (ansiEnabled && sanitized.hasNulls) {
-        throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
-      }
+    withResource(GpuCast.sanitizeStringToFloat(input, ansiEnabled)) { sanitized =>
       //Now identify the different variations of nans
       withResource(sanitized.matchesRe(NAN_REGEX)) { isNan =>
         // now check if the values are floats
@@ -856,7 +867,10 @@ case class GpuCast(
           if (ansiEnabled) {
             withResource(isNan.or(isFloat)) { nanOrFloat =>
               withResource(nanOrFloat.all()) { allNanOrFloat =>
-                if (!allNanOrFloat.getBoolean) {
+                // Check that all non-null values are valid floats or NaN. Note that
+                // allNanOrFloat will be false if all rows are null so we need to check
+                // for that condition.
+                if (!allNanOrFloat.getBoolean && sanitized.getNullCount != sanitized.getRowCount) {
                   throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
                 }
               }

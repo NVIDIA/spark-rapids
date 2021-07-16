@@ -131,6 +131,18 @@ class CastOpSuite extends GpuExpressionTestSuite {
       "+nAn", "-naN", "Nan", "5f", "1.2f", "\riNf", null))
   }
 
+  test("Cast from string to float ANSI mode with nulls") {
+    testCastStringTo(DataTypes.FloatType, Seq(null, null, null), ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to float ANSI mode with invalid values") {
+    val values = Seq(".", "e")
+    // test the values individually
+    for (value <- values ) {
+      testCastStringTo(DataTypes.FloatType, Seq(value), ansiMode = AnsiExpectFailure)
+    }
+  }
+
   test("Cast from string to double using random inputs") {
     testCastStringTo(DataTypes.DoubleType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
@@ -889,7 +901,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     val expected = testPairs.map(_._2)
     withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
       withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(GpuCast.sanitizeStringToFloat(v)) { actual =>
+        withResource(GpuCast.sanitizeStringToFloat(v, ansiEnabled = false)) { actual =>
           CudfTestHelper.assertColumnsAreEqual(expected, actual)
         }
       }
