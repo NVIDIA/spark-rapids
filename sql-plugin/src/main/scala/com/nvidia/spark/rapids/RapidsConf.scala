@@ -779,14 +779,20 @@ object RapidsConf {
 
   // This will be deleted when COALESCING is implemented for ORC
   object OrcReaderType extends Enumeration {
-    val AUTO, MULTITHREADED, PERFILE = Value
+    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
 
   val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
     .doc("Sets the orc reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
       "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
-      "individually has high overhead, and using MULTITHREADED is recommended instead. " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.orc.multiThreadedRead.numThreads. " +
       "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
       "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
       "environments also get better throughput when you have multiple readers in parallel. " +
@@ -796,7 +802,7 @@ object RapidsConf {
       "spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel to control " +
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
-      "be the MULTITHREADED when we think the file is " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
@@ -1005,33 +1011,19 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
-  val SHUFFLE_UCX_ACTIVE_MESSAGES_MODE = conf("spark.rapids.shuffle.ucx.activeMessages.mode")
-    .doc("Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to " +
-      "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
-      "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
-    .stringConf
-    .checkValues(Set("rndv", "eager", "auto"))
-    .createWithDefault("rndv")
+  val SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV =
+    conf("spark.rapids.shuffle.ucx.activeMessages.forceRndv")
+      .doc("Set to true to force 'rndv' mode for all UCX Active Messages. " +
+        "This should only be required with UCX 1.10.x. UCX 1.11.x deployments should " +
+        "set to false.")
+      .booleanConf
+      .createWithDefault(false)
 
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
     .booleanConf
     .createWithDefault(true)
-
-  val SHUFFLE_UCX_LISTENER_ENABLED = conf("spark.rapids.shuffle.ucx.listener.enabled")
-    .doc("When set to true, start listener and exchange socket address." +
-      " This improves detection of remote peer failures.")
-    .internal()
-    .booleanConf
-    .createWithDefault(false)
-
-  val SHUFFLE_UCX_USE_PEER_ERR_HDNL = conf("spark.rapids.shuffle.ucx.peerErrorHandling.enabled")
-    .doc("When set to true, enable peer error handling for UCX endpoints. " +
-      "This can impact transports and protocols selected in UCX.")
-    .internal()
-    .booleanConf
-    .createWithDefault(false)
 
   val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
     .doc("Starting port to try to bind the UCX listener.")
@@ -1566,6 +1558,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isOrcAutoReaderEnabled: Boolean =
     OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.AUTO
 
+  lazy val isOrcCoalesceFileReadEnabled: Boolean = isOrcAutoReaderEnabled ||
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.COALESCING
+
   lazy val isOrcMultiThreadReadEnabled: Boolean = isOrcAutoReaderEnabled ||
     OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.MULTITHREADED
 
@@ -1589,13 +1584,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
-  lazy val shuffleUcxActiveMessagesMode: String = get(SHUFFLE_UCX_ACTIVE_MESSAGES_MODE)
+  lazy val shuffleUcxActiveMessagesForceRndv: Boolean = get(SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV)
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
-
-  lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_LISTENER_ENABLED)
-
-  lazy val shuffleUcxUsePeerErrorHandler: Boolean = get(SHUFFLE_UCX_USE_PEER_ERR_HDNL)
 
   lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
 

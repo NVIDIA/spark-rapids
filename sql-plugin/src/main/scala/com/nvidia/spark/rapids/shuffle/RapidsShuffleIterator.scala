@@ -184,7 +184,7 @@ class RapidsShuffleIterator(
           }
 
         val client = try {
-          transport.makeClient(localExecutorId, blockManagerId)
+          transport.makeClient(blockManagerId)
         } catch {
           case t: Throwable => {
             val BlockIdMapIndex(firstId, firstMapIndex) = shuffleRequestsMapIndex.head
@@ -219,6 +219,9 @@ class RapidsShuffleIterator(
                 s"resolved by this client: $clientResolvedBatches")
           }
 
+          def clientDone: Boolean = clientExpectedBatches > 0 &&
+            clientExpectedBatches == clientResolvedBatches
+
           def batchReceived(bufferId: ShuffleReceivedBufferId): Boolean =
             resolvedBatches.synchronized {
               if (taskComplete) {
@@ -234,7 +237,7 @@ class RapidsShuffleIterator(
                   clientResolvedBatches = clientResolvedBatches + 1
                   resolvedBatches.offer(BufferReceived(bufferId))
 
-                  if (clientExpectedBatches == clientResolvedBatches) {
+                  if (clientDone) {
                     logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
                         s"done fetching batches. Total batches expected $clientExpectedBatches, " +
                         s"total batches resolved $clientResolvedBatches.")
@@ -250,13 +253,15 @@ class RapidsShuffleIterator(
 
           override def transferError(errorMessage: String, throwable: Throwable): Unit = {
             resolvedBatches.synchronized {
-              // If Spark detects a single fetch failure, the whole task has failed
-              // as per `FetchFailedException`. In the future `mapIndex` will come from the
-              // error callback.
-              shuffleRequestsMapIndex.map { case BlockIdMapIndex(id, mapIndex) =>
-                resolvedBatches.offer(TransferError(
-                  blockManagerId, id, mapIndex, errorMessage, throwable))
-              }
+              if (!clientDone) {
+                // If Spark detects a single fetch failure, the whole task has failed
+                // as per `FetchFailedException`. In the future `mapIndex` will come from the
+                // error callback.
+                shuffleRequestsMapIndex.map { case BlockIdMapIndex(id, mapIndex) =>
+                  resolvedBatches.offer(TransferError(
+                    blockManagerId, id, mapIndex, errorMessage, throwable))
+                }
+              } // else, the task is complete, and we can drop any extra errors.
             }
 
             // tell the client to cancel pending requests
@@ -265,6 +270,7 @@ class RapidsShuffleIterator(
         }
 
         logInfo(s"Client $blockManagerId triggered, for ${shuffleRequestsMapIndex.size} blocks")
+        client.registerPeerErrorListener(handler)
         client.doFetch(shuffleRequestsMapIndex.map(_.id), handler)
         clientAndHandlers = clientAndHandlers :+ ((client, handler))
       }
@@ -288,6 +294,10 @@ class RapidsShuffleIterator(
       clientAndHandlers.foreach {
         case (client, handler) => client.cancelPending(handler)
       }
+    }
+    // tell the client this handler is done, and no longer requires peer failures
+    clientAndHandlers.foreach {
+      case (client, handler) => client.unregisterPeerErrorListener(handler)
     }
   }
 

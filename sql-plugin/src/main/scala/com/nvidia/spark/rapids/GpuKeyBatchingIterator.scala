@@ -32,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * target size. It assumes that the input batches will already be close to that size and does
  * not try to split them too much further.
  */
-class GpuKeyBatchingIterator private (
+class GpuKeyBatchingIterator(
     iter: Iterator[ColumnarBatch],
     sorter: GpuSorter,
     types: Array[DataType],

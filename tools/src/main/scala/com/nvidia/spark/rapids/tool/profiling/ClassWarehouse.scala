@@ -165,3 +165,19 @@ case class DatasetSQLCase(sqlID: Long)
 case class ProblematicSQLCase(sqlID: Long, reason: String)
 
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String, nodeDesc: String)
+
+case class DataSourceCase(
+    sqlID: Long,
+    format: String,
+    location: String,
+    pushedFilters: String,
+    schema: String)
+
+case class DataSourceCompareCase(
+    appIndex: Int,
+    appId: String,
+    sqlID: Long,
+    format: String,
+    location: String,
+    pushedFilters: String,
+    schema: String)

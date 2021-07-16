@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.{immutable, mutable, Map}
 import scala.collection.mutable.ArrayBuffer
-import scala.io.{Codec, Source}
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
@@ -31,7 +30,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
-import org.apache.spark.sql.execution.ui.SparkPlanGraph
+import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
 import org.apache.spark.sql.rapids.tool.AppBase
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.ui.UIUtils
@@ -427,6 +426,7 @@ class ApplicationInfo(
 
   override def processEvent(event: SparkListenerEvent) = {
     eventProcessor.processAnyEvent(this, event)
+    false
   }
 
   /**
@@ -455,16 +455,19 @@ class ApplicationInfo(
     }
   }
 
+
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
-  def processSQLPlanMetrics(): Unit ={
+  def processSQLPlanMetrics(): Unit = {
     for ((sqlID, planInfo) <- sqlPlan){
+      checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
+        checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {
@@ -713,6 +716,7 @@ class ApplicationInfo(
         !allDataFrames.contains(s"resourceProfilesDF_$index")) {
 
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |t.numExecutors, t.totalCores as executorCores,
          |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
          |null as executorMemory, null as numGpusPerExecutor,
@@ -744,6 +748,7 @@ class ApplicationInfo(
          |""".stripMargin
     } else {
       s"""select $index as appIndex,
+         |null as resourceProfileId,
          |count(executorID) as numExecutors,
          |first(totalCores) as executorCores,
          |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
@@ -884,7 +889,7 @@ class ApplicationInfo(
        |and s.accumulatorId=t.accumulatorId
        |and s.sqlID=p.sqlID and s.accumulatorId=p.accumulatorId
        |)
-       |select sqlID, nodeID, nodeName,
+       |select $index as appIndex, sqlID, nodeID, nodeName,
        |accumulatorId, name, max(value) as max_value, metricType
        |from allaccums
        |group by sqlID, nodeID, nodeName, accumulatorId, name, metricType
@@ -920,14 +925,14 @@ class ApplicationInfo(
   }
 
   def getblockManagersRemoved: String = {
-    s"""select executorID, time
+    s"""select $index as appIndex, executorID, time
        |from blockManagersRemovedDF_$index
        |order by cast(executorID as long)
        |""".stripMargin
   }
 
   def getExecutorsRemoved: String = {
-    s"""select executorID, time,
+    s"""select $index as appIndex, executorID, time,
        |substr(reason, 1, 100) reason_first100char
        |from executorsRemovedDF_$index
        |order by cast(executorID as long)
@@ -945,52 +950,6 @@ class ApplicationInfo(
        |sqlID
        |from jobDF_$index j
        |where j.jobResult != "JobSucceeded" or j.jobResult is null
-       |""".stripMargin
-  }
-
-  def qualificationDurationNoMetricsSQL: String = {
-    s"""select
-       |first(appName) as `App Name`,
-       |'$appId' as `App ID`,
-       |ROUND((sum(sqlQualDuration) * 100) / first(app.duration), 2) as Score,
-       |concat_ws(",", collect_set(problematic)) as `Potential Problems`,
-       |sum(sqlQualDuration) as `SQL Dataframe Duration`,
-       |first(app.duration) as `App Duration`,
-       |first(app.endDurationEstimated) as `App Duration Estimated`
-       |from sqlDF_$index sq, appdf_$index app
-       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
-       |""".stripMargin
-  }
-
-  // only include jobs that are marked as succeeded
-  def qualificationDurationSQL: String = {
-    s"""select
-       |$index as appIndex,
-       |'$appId' as appID,
-       |app.appName,
-       |sq.sqlID, sq.description,
-       |sq.sqlQualDuration as dfDuration,
-       |app.duration as appDuration,
-       |app.endDurationEstimated as appEndDurationEstimated,
-       |problematic as potentialProblems,
-       |m.executorCPUTime,
-       |m.executorRunTime
-       |from sqlDF_$index sq, appdf_$index app
-       |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
-       |where sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
-       |""".stripMargin
-  }
-
-  def qualificationDurationSumSQL: String = {
-    s"""select first(appName) as `App Name`,
-       |'$appId' as `App ID`,
-       |ROUND((sum(dfDuration) * 100) / first(appDuration), 2) as Score,
-       |concat_ws(",", collect_set(potentialProblems)) as `Potential Problems`,
-       |sum(dfDuration) as `SQL Dataframe Duration`,
-       |first(appDuration) as `App Duration`,
-       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) as `Executor CPU Time Percent`,
-       |first(appEndDurationEstimated) as `App Duration Estimated`
-       |from (${qualificationDurationSQL.stripLineEnd})
        |""".stripMargin
   }
 

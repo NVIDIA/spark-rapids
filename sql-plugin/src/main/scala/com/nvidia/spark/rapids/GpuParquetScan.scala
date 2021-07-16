@@ -16,26 +16,23 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{File, OutputStream}
-import java.net.{URI, URISyntaxException}
+import java.io.OutputStream
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
 import java.util.concurrent._
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.immutable.HashSet
-import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
+import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.DType.DTypeEnum
 import com.nvidia.spark.RebaseHelper
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -54,7 +51,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -372,7 +369,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           ParquetDataBlock(block),
           file.partitionValues,
           ParquetSchemaWrapper(singleFileInfo.schema),
-          singleFileInfo.isCorrectedRebaseMode))
+          ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode)))
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
@@ -746,9 +743,12 @@ private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase
 // Parquet BlockMetaData wrapper
 private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockBase {
   override def getRowCount: Long = dataBlock.getRowCount
-  override def getTotalUnCompressedByteSize: Long = dataBlock.getTotalByteSize
-  override def getFileBlockSize: Long = dataBlock.getColumns.asScala.map(_.getTotalSize).sum
+  override def getReadDataSize: Long = dataBlock.getTotalByteSize
+  override def getBlockSize: Long = dataBlock.getColumns.asScala.map(_.getTotalSize).sum
 }
+
+/** Parquet extra information containing isCorrectedRebaseMode */
+case class ParquetExtraInfo(isCorrectedRebaseMode: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
 private case class ParquetSingleDataBlockMeta(
@@ -756,7 +756,7 @@ private case class ParquetSingleDataBlockMeta(
   dataBlock: ParquetDataBlock,
   partitionValues: InternalRow,
   schema: ParquetSchemaWrapper,
-  isCorrectedRebaseMode: Boolean) extends SingleDataBlockInfo
+  extraInfo: ParquetExtraInfo) extends SingleDataBlockInfo
 
 /**
  * A PartitionReader that can read multiple Parquet files up to the certain size. It will
@@ -809,6 +809,9 @@ class MultiFileParquetPartitionReader(
   implicit def toBlockMetaDataSeq(blocks: Seq[DataBlockBase]): Seq[BlockMetaData] =
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 
+  implicit def ParquetSingleDataBlockMeta(in: ExtraInfo): ParquetExtraInfo =
+    in.asInstanceOf[ParquetExtraInfo]
+
   // The runner to copy blocks to offset of HostMemoryBuffer
   class ParquetCopyBlocksRunner(
       file: Path,
@@ -835,7 +838,8 @@ class MultiFileParquetPartitionReader(
       nextBlockInfo: SingleDataBlockInfo): Boolean = {
     // We need to ensure all files we are going to combine have the same datetime
     // rebase mode.
-    if (nextBlockInfo.isCorrectedRebaseMode != currentBlockInfo.isCorrectedRebaseMode) {
+    if (nextBlockInfo.extraInfo.isCorrectedRebaseMode !=
+        currentBlockInfo.extraInfo.isCorrectedRebaseMode) {
       logInfo(s"datetime rebase mode for the next file ${nextBlockInfo.filePath} is " +
         s"different then current file ${currentBlockInfo.filePath}, splitting into another batch.")
       return true
@@ -854,9 +858,11 @@ class MultiFileParquetPartitionReader(
     false
   }
 
-  override def calculateEstimatedBlocksOutputSize(currentChunkedBlocks: Seq[DataBlockBase],
+  override def calculateEstimatedBlocksOutputSize(
+      filesAndBlocks: LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
       schema: SchemaBase): Long = {
-    calculateParquetOutputSize(currentChunkedBlocks, schema, true)
+    val allBlocks = filesAndBlocks.values.flatten.toSeq
+    calculateParquetOutputSize(allBlocks, schema, true)
   }
 
   override def getThreadPool(numThreads: Int): ThreadPoolExecutor = {
@@ -874,7 +880,7 @@ class MultiFileParquetPartitionReader(
   override final def getFileFormatShortName: String = "Parquet"
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      isCorrectRebaseMode: Boolean, clippedSchema: SchemaBase): Table = {
+      clippedSchema: SchemaBase, extraInfo: ExtraInfo): Table = {
 
     // Dump parquet data into a file
     dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
@@ -893,7 +899,7 @@ class MultiFileParquetPartitionReader(
     }
 
     closeOnExcept(table) { _ =>
-      if (!isCorrectRebaseMode) {
+      if (!extraInfo.isCorrectedRebaseMode) {
         (0 until table.getNumberOfColumns).foreach { i =>
           if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
             throw RebaseHelper.newRebaseExceptionInRead("Parquet")
@@ -935,18 +941,6 @@ class MultiFileParquetPartitionReader(
       }
     }
     (buffer, finalSize)
-  }
-
-  private def reallocHostBufferAndCopy(
-      in: HostMemoryInputStream,
-      newSizeEstimate: Long): HostMemoryBuffer = {
-    // realloc memory and copy
-    closeOnExcept(HostMemoryBuffer.allocate(newSizeEstimate)) { newhmb =>
-      withResource(new HostMemoryOutputStream(newhmb)) { out =>
-        IOUtils.copy(in, out)
-      }
-      newhmb
-    }
   }
 }
 
@@ -1216,6 +1210,7 @@ class ParquetPartitionReader(
   with ParquetPartitionReaderBase {
 
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
+  private var isFirstBatch = true
 
   override def next(): Boolean = {
     batch.foreach(_.close())
@@ -1228,9 +1223,14 @@ class ParquetPartitionReader(
         batch = readBatch()
       }
     }
-    // This is odd, but some operators return data even when there is no input so we need to
-    // be sure that we grab the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    if (isFirstBatch) {
+      if (batch.isEmpty) {
+        // This is odd, but some operators return data even when there is no input so we need to
+        // be sure that we grab the GPU if there were no batches.
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      }
+      isFirstBatch = false
+    }
     batch.isDefined
   }
 

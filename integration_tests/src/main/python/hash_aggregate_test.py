@@ -27,6 +27,10 @@ _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
 
+_no_nans_float_smallbatch_conf = _no_nans_float_conf.copy()
+_no_nans_float_smallbatch_conf.update(
+    {'spark.rapids.sql.batchSizeBytes' : '1000'})
+
 _no_nans_float_conf_partial = _no_nans_float_conf.copy()
 _no_nans_float_conf_partial.update(
     {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
@@ -169,7 +173,7 @@ def get_params(init_list, marked_params=[]):
 
 # Run these tests with in 3 modes, all on the GPU, only partial aggregates on GPU and
 # only final aggregates on the GPU with conf for spark.rapids.sql.hasNans set to false/true
-_confs = [_no_nans_float_conf, _no_nans_float_conf_final, _no_nans_float_conf_partial]
+_confs = [_no_nans_float_conf, _no_nans_float_smallbatch_conf, _no_nans_float_conf_final, _no_nans_float_conf_partial]
 _confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf_final]
 
 # Pytest marker for list of operators allowed to run on the CPU,

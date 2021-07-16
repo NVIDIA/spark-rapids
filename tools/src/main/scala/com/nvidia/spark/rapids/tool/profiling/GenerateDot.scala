@@ -118,7 +118,7 @@ object GenerateDot {
     }
     for ((sqlID,  (planInfo, physicalPlan)) <- sqlPlansMap) {
       val dotFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"${app.appId}-query-$sqlID.dot")
+        s"${app.appId}-query-$sqlID.dot", "Dot file")
       try {
         val metrics = sqlIdToMaxMetric.getOrElse(sqlID, Seq.empty).toMap
         GenerateDot.writeDotGraph(
