@@ -632,7 +632,7 @@ class GpuHashAggregateIterator(
     // - PartialMerge with Partial mode: we use the inputProjections
     //   for Partial and non distinct merge expressions for PartialMerge.
     // - Final or PartialMerge-only mode: we pick the columns in the order as handed to us.
-    // - Partial or Complete mode: we use the inputProjections or distinct update expressions.
+    // - Partial or Complete mode: we use the inputProjections
     val boundInputReferences =
     if (modeInfo.hasPartialMergeMode && modeInfo.hasPartialMode) {
       // The 3rd stage of AggWithOneDistinct, which combines (partial) reduce-side
