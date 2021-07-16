@@ -73,17 +73,20 @@ class AppFilterImpl(
     val apps = appsForFiltering.asScala
 
     val filterAppName = appArgs.applicationName.getOrElse("")
-    if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
+    val appNameFiltered = if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
       val filtered = if (filterAppName.startsWith(NEGATE)) {
         // remove ~ before passing it into the containsAppName function
         apps.filterNot(app => containsAppName(app, filterAppName.substring(1)))
       } else {
         apps.filter(app => containsAppName(app, filterAppName))
       }
-      filtered.map(_.eventlog).toSeq
-    } else if (appArgs.startAppTime.isSupplied) {
+      filtered
+    } else {
+      apps
+    }
+    val appTimeFiltered = if (appArgs.startAppTime.isSupplied) {
       val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs)
-      val filtered = apps.filter { app =>
+      val filtered = appNameFiltered.filter { app =>
         val appStartOpt = app.appInfo.map(_.startTime)
         if (appStartOpt.isDefined) {
           appStartOpt.get >= msTimeToFilter
@@ -91,10 +94,11 @@ class AppFilterImpl(
           false
         }
       }
-      filtered.map(_.eventlog).toSeq
+      filtered
     } else {
-      apps.map(x => x.eventlog).toSeq
+      appNameFiltered
     }
+    appTimeFiltered.map(_.eventlog).toSeq
   }
 
   private def containsAppName(app: AppFilterReturnParameters, filterAppName: String): Boolean = {
