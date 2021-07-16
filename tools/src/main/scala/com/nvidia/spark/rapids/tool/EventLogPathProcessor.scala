@@ -170,7 +170,8 @@ object EventLogPathProcessor extends Logging {
       logsWithTimestamp.filterKeys(_.eventLog.getName.contains(strMatch))
     }.getOrElse(logsWithTimestamp)
 
-    val filteredLogs = if (!filterByAppName(filterNLogs)) {
+    //val filteredLogs = if (filterNLogs.nonEmpty && !filterByAppName(filterNLogs)) {
+    val filteredLogs = filterNLogs.map { filter =>
       val filteredInfo = filterNLogs.get.split("-")
       val numberofEventLogs = filteredInfo(0).toInt
       val criteria = filteredInfo(1)
@@ -183,9 +184,10 @@ object EventLogPathProcessor extends Logging {
         Map.empty[EventLogInfo, Long]
       }
       matched.take(numberofEventLogs)
-    } else {
+    }.getOrElse(matchedLogs)
+    /*} else {
       matchedLogs
-    }
+    }*/
     filteredLogs.keys.toSeq
   }
 
