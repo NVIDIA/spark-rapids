@@ -302,6 +302,36 @@ class AppFilterSuite extends FunSuite {
       "3w", 2)
   }
 
+  test("full app name exact and 2-oldest-overall no match from filename") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest-overall", "nds", "nomatch",
+      "3w", 0)
+  }
+
+  test("full app name exact and 2-oldest-overall") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest-overall", "nds", "nds",
+      "3w", 2)
+  }
+
+  test("full app name exact and 2-newest-overall") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-newest-overall", "ndsweeks2",
+      "nds", "3w", 1)
+  }
+
+  test("full app name exact and 1-newest-per-app-name") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "1-newest-per-app-name", "nds",
+      "nds", "3w", 3)
+  }
+
+  test("full app name exact and 10-newest-per-app-name") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "10-oldest-per-app-name", "nds",
+      "nds", "3w", 4)
+  }
+
+  test("full app name exact and 1-newest-per-app-name no match from filename") {
+    testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "1-newest-per-app-name", "nds",
+      "nomatch", "3w", 0)
+  }
+
   private def testFileSystemTimeAndStartAndAppFull(apps: Array[TestEventLogFSAndAppInfo],
       filterCriteria: String, filterAppName: String, matchFileName: String,
       startTimePeriod: String, expectedFilterSize: Int): Unit = {

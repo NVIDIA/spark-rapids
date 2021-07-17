@@ -106,12 +106,12 @@ class AppFilterImpl(
         val numberofEventLogs = filteredInfo(0).toInt
         val criteria = filteredInfo(1)
         val filtered = if (criteria.equals("oldest")) {
-          apps.toSeq.sortBy(_.appInfo.get.startTime).take(numberofEventLogs)
+          appTimeFiltered.toSeq.sortBy(_.appInfo.get.startTime).take(numberofEventLogs)
         } else {
-          apps.toSeq.sortBy(_.appInfo.get.startTime).reverse.take(numberofEventLogs)
+          appTimeFiltered.toSeq.sortBy(_.appInfo.get.startTime).reverse.take(numberofEventLogs)
         }
         filtered
-      } else {
+      } else if (filterCriteria.endsWith("-per-app-name")) {
         val distinctAppNameMap = apps.groupBy(_.appInfo.get.appName)
         val filteredInfo = filterCriteria.split("-")
         val numberofEventLogs = filteredInfo(0).toInt
@@ -125,6 +125,8 @@ class AppFilterImpl(
           (name, sortedApps)
         }
         filtered.values.flatMap(x => x)
+      } else {
+        appTimeFiltered
       }
     } else {
       appTimeFiltered

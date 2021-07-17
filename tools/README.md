@@ -199,13 +199,20 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on 
                                     timestamp of file for processing. eg: 100-newest 
                                     (for processing newest 100 event logs). eg: 100-oldest
-                                    (for processing oldest 100 event logs)
-                                    eg: 100-newest-overall (for processing newest 100 event 
+                                    (for processing oldest 100 event logs). Filesystem
+                                    based filtering happens before any application based filtering.
+                                    Application based filter-criteria are:
+                                    100-newest-overall (for processing newest 100 event
+                                    logs based on timestamp of the application inside the eventlog)
+                                    100-oldest-overall (for processing oldest 100 event
                                     logs based on timestamp inside the eventlog)
-                                    eg: 100-oldest-overall (for processing oldest 100 event 
-                                    logs based on timestamp inside the eventlog)
+                                    100-newest-per-app-name (select at most 100 newest log files for
+                                    each unique application name)
+                                    100-oldest-per-app-name (select at most 100 oldest log files for
+                                    each unique application name)
   -m, --match-event-logs  <arg>     Filter event logs whose filenames contain the
-                                    input string
+                                    input string. Filesystem based filtering happens before
+                                    any application based filtering.
   -n, --num-output-rows  <arg>      Number of output rows in the summary report.
                                     Default is 1000.
       --num-threads  <arg>          Number of thread to use for parallel
