@@ -32,7 +32,7 @@ trait ShuffleManagerShimBase {
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C]
 
-  def toGpu(x: ShufflePartitionSpec): GpuShufflePartitionSpec
+  def toGpu(shufflePartitionSpec: ShufflePartitionSpec): GpuShufflePartitionSpec
 }
 
 trait GpuShufflePartitionSpec

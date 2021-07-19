@@ -35,9 +35,11 @@ class ShuffleManagerShim extends ShuffleManagerShimBase {
       handle, startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
   }
 
-  override def toGpu(x: ShufflePartitionSpec): GpuShufflePartitionSpec = x match {
-    case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex) =>
-      GpuPartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex)
-    case _ => sys.error("Infeasible shuffle partition spec: " + x)
+  override def toGpu(shufflePartitionSpec: ShufflePartitionSpec): GpuShufflePartitionSpec = {
+    shufflePartitionSpec match {
+      case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex) =>
+        GpuPartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex)
+      case _ => sys.error("Infeasible shuffle partition spec: " + shufflePartitionSpec)
+    }
   }
 }
