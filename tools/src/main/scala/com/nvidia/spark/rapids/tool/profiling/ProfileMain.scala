@@ -123,6 +123,7 @@ object ProfileMain extends Logging {
       if (appArgs.compare()) { // Compare Applications
 
         textFileWriter.write("### A. Compare Information Collected ###")
+        /*
         val compare = new CompareApplications(apps, Some(textFileWriter))
         compare.compareAppInfo()
         compare.compareDataSourceInfo(sparkSession, numOutputRows)
@@ -130,21 +131,25 @@ object ProfileMain extends Logging {
         compare.findMatchingStages()
         compare.compareJobInfo()
         compare.compareRapidsProperties()
+        */
       } else {
         val collect = new CollectInformation(apps, Some(textFileWriter))
         textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
-        collect.printDataSourceInfo(sparkSession, numOutputRows)
-        collect.printExecutorInfo()
-        collect.printJobInfo()
+        // collect.printDataSourceInfo(sparkSession, numOutputRows)
+        // collect.printExecutorInfo()
+        // collect.printJobInfo()
         collect.printRapidsProperties()
-        collect.printRapidsJAR()
+        // collect.printRapidsJAR()
+        /*
         collect.printSQLPlanMetrics()
         if (printPlans) {
           collect.printSQLPlans(outputDirectory)
         }
+        */
       }
 
+      /*
       textFileWriter.write("\n### B. Analysis ###\n")
       val analysis = new Analysis(apps, Some(textFileWriter))
       analysis.jobAndStageMetricsAggregation()
@@ -185,6 +190,7 @@ object ProfileMain extends Logging {
               s"to $outputDirectory in $duration second(s)\n")
         }
       }
+      */
     }
 
     0

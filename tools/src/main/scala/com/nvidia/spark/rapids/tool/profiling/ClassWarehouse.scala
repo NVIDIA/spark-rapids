@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import org.apache.spark.scheduler.StageInfo
+
 /**
  * This is a warehouse to store all Case Classes
  * used to create Spark DataFrame.
@@ -38,8 +40,19 @@ case class PropertiesCase(
 case class ApplicationCase(
   appName: String, appId: Option[String], startTime: Long,
   sparkUser: String, endTime: Option[Long], duration: Option[Long],
-  durationStr: String, sparkVersion: String, gpuMode: Boolean,
-  endDurationEstimated: Boolean)
+  durationStr: String, sparkVersion: String, gpuMode: Boolean) {
+
+  /*
+  def textOutput: String = {
+    s"$appNameStr,$appIdStr,${appSum.score},$probStr," +
+      s"${appSum.sqlDataFrameDuration},${appSum.sqlDataframeTaskDuration}," +
+      s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
+      s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
+      s"${appSum.readScorePercent},${appSum.readFileFormatScore}," +
+      s"${readFormatNS}"
+  }
+  */
+}
 
 case class ExecutorCase(
   executorID: String, host: String, totalCores: Int, resourceProfileId: Int)
@@ -48,6 +61,18 @@ case class ExecutorRemovedCase(
     executorID: String,
     reason: String,
     time: Long)
+
+class SQLExecutionCaseInfo(
+    val sqlID: Long,
+    val description: String,
+    val details: String,
+    val startTime: Long,
+    var endTime: Option[Long],
+    var duration: Option[Long],
+    var durationStr: String,
+    var sqlQualDuration: Option[Long],
+    var hasDataset: Boolean,
+    var problematic: String = "")
 
 case class SQLExecutionCase(
     sqlID: Long,
@@ -88,6 +113,18 @@ case class TaskStageAccumCase(
     value: Option[Long],
     isInternal: Boolean)
 
+class JobCaseInfo(val jobID: Int,
+    val stageIds: Seq[Int],
+    val sqlID: Option[Long],
+    val properties: scala.collection.Map[String, String],
+    val startTime: Long,
+    var endTime: Option[Long],
+    var jobResult: Option[String],
+    var failedReason: Option[String],
+    var duration: Option[Long],
+    var durationStr: String,
+    var gpuMode: Boolean)
+
 case class JobCase(
     jobID: Int,
     stageIds: Seq[Int],
@@ -100,6 +137,15 @@ case class JobCase(
     duration: Option[Long],
     durationStr: String,
     gpuMode: Boolean)
+
+class StageCaseInfo(val info: StageInfo) {
+  var completionTime: Option[Long] = None
+  var failureReason: Option[String] = None
+  var duration: Option[Long] = None
+  var durationStr: String = ""
+  var gpuMode: Boolean = false
+  var properties: scala.collection.Map[String, String] = Map.empty[String, String]
+}
 
 case class StageCase(
     stageId: Int,

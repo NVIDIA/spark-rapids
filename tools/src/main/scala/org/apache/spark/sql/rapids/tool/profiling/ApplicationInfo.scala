@@ -19,13 +19,14 @@ package org.apache.spark.sql.rapids.tool.profiling
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.{immutable, mutable, Map}
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
+import org.apache.spark.resource.{ExecutorResourceRequest, TaskResourceRequest}
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
@@ -33,6 +34,7 @@ import org.apache.spark.sql.execution.metric.SQLMetricInfo
 import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
 import org.apache.spark.sql.rapids.tool.AppBase
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.status._
 import org.apache.spark.ui.UIUtils
 
 class SparkPlanInfoWithStage(
@@ -183,6 +185,12 @@ object SparkPlanInfoWithStage {
   }
 }
 
+class LiveResourceProfile(
+    val resourceProfileId: Int,
+    val executorResources: Map[String, ExecutorResourceRequest],
+    val taskResources: Map[String, TaskResourceRequest],
+    val maxTasksPerExecutor: Option[Int])
+
 /**
  * ApplicationInfo class saves all parsed events for future use.
  * Used only for Profiling.
@@ -193,6 +201,14 @@ class ApplicationInfo(
     eLogInfo: EventLogInfo,
     val index: Int)
   extends AppBase(numRows, eLogInfo, sparkSession.sparkContext.hadoopConfiguration) with Logging {
+
+  val executors = new HashMap[String, LiveExecutor]()
+  val resourceProfiles = new HashMap[Int, LiveResourceProfile]()
+
+  val liveStages = new HashMap[(Int, Int), StageCaseInfo]()
+  val liveJobs = new HashMap[Int, JobCaseInfo]()
+  val liveSQL = new HashMap[Long, SQLExecutionCaseInfo]()
+
 
   // allDataFrames is to store all the DataFrames
   // after event log parsing has completed.
@@ -210,13 +226,13 @@ class ApplicationInfo(
   val allDataFrames: mutable.HashMap[String, DataFrame] = mutable.HashMap.empty[String, DataFrame]
 
   // From SparkListenerResourceProfileAdded
-  var resourceProfiles: ArrayBuffer[ResourceProfileCase] = ArrayBuffer[ResourceProfileCase]()
+  // var resourceProfiles: ArrayBuffer[ResourceProfileCase] = ArrayBuffer[ResourceProfileCase]()
 
   // From SparkListenerBlockManagerAdded and SparkListenerBlockManagerRemoved
-  var blockManagers: ArrayBuffer[BlockManagerCase] =
-    ArrayBuffer[BlockManagerCase]()
+  // var blockManagers: ArrayBuffer[BlockManagerCase] =
+  //   ArrayBuffer[BlockManagerCase]()
   var blockManagersRemoved: ArrayBuffer[BlockManagerRemovedCase] =
-    ArrayBuffer[BlockManagerRemovedCase]()
+     ArrayBuffer[BlockManagerRemovedCase]()
 
   // From SparkListenerEnvironmentUpdate
   var sparkProperties = Map.empty[String, String]
@@ -228,12 +244,12 @@ class ApplicationInfo(
   var allProperties: ArrayBuffer[PropertiesCase] = ArrayBuffer[PropertiesCase]()
 
   // From SparkListenerApplicationStart and SparkListenerApplicationEnd
-  var appStart: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
+  var appInfo: ApplicationCase = null
   var appId: String = ""
 
   // From SparkListenerExecutorAdded and SparkListenerExecutorRemoved
-  var executors: ArrayBuffer[ExecutorCase] = ArrayBuffer[ExecutorCase]()
-  var executorsRemoved: ArrayBuffer[ExecutorRemovedCase] = ArrayBuffer[ExecutorRemovedCase]()
+  // var executors: ArrayBuffer[ExecutorCase] = ArrayBuffer[ExecutorCase]()
+  // var executorsRemoved: ArrayBuffer[ExecutorRemovedCase] = ArrayBuffer[ExecutorRemovedCase]()
 
   // From SparkListenerSQLExecutionStart and SparkListenerSQLExecutionEnd
   var sqlStart: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
@@ -269,89 +285,14 @@ class ApplicationInfo(
 
   // From SparkListenerStageSubmitted and SparkListenerStageCompleted
   // stageSubmitted contains mapping relationship for Stage -> RDD(s)
-  var stageSubmitted: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-  val stageCompletionTime: mutable.HashMap[Int, Option[Long]] =
+  // var stageSubmitted: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
+  /*val stageCompletionTime: mutable.HashMap[Int, Option[Long]] =
     mutable.HashMap.empty[Int, Option[Long]]
   val stageFailureReason: mutable.HashMap[Int, Option[String]] =
     mutable.HashMap.empty[Int, Option[String]]
+    */
 
-  // A cleaned up version of stageSubmitted
-  lazy val enhancedStage: ArrayBuffer[StageCase] = {
-    val ret: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-    for (res <- stageSubmitted) {
-      val thisEndTime = stageCompletionTime.getOrElse(res.stageId, None)
-      val thisFailureReason = stageFailureReason.getOrElse(res.stageId, None)
 
-      val durationResult =
-        ProfileUtils.optionLongMinusOptionLong(thisEndTime, res.submissionTime)
-      val durationString = durationResult match {
-        case Some(i) => UIUtils.formatDuration(i)
-        case None => ""
-      }
-
-      val stageNew = res.copy(completionTime = thisEndTime,
-        failureReason = thisFailureReason,
-        duration = durationResult,
-        durationStr = durationString)
-      ret += stageNew
-    }
-    ret
-  }
-
-  lazy val enhancedJob: ArrayBuffer[JobCase] = {
-    val ret = ArrayBuffer[JobCase]()
-    for (res <- jobStart) {
-      val thisEndTime = jobEndTime.get(res.jobID)
-      val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-      val durationString = durationResult match {
-        case Some(i) => UIUtils.formatDuration(i)
-        case None => ""
-      }
-
-      val jobNew = res.copy(endTime = thisEndTime,
-        duration = durationResult,
-        durationStr = durationString,
-        jobResult = jobEndResult.get(res.jobID),
-        failedReason = jobFailedReason.get(res.jobID)
-      )
-      ret += jobNew
-    }
-    ret
-  }
-
-  lazy val enhancedSql: ArrayBuffer[SQLExecutionCase] = {
-    val ret: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
-    for (res <- sqlStart) {
-      val thisEndTime = sqlEndTime.get(res.sqlID)
-      val durationResult = ProfileUtils.OptionLongMinusLong(thisEndTime, res.startTime)
-      val durationString = durationResult match {
-        case Some(i) => UIUtils.formatDuration(i)
-        case None => ""
-      }
-      val (containsDataset, sqlQDuration) = if (datasetSQL.exists(_.sqlID == res.sqlID)) {
-        (true, Some(0L))
-      } else {
-        (false, durationResult)
-      }
-      val potProbs = problematicSQL.filter { p =>
-        p.sqlID == res.sqlID && p.reason.nonEmpty
-      }.map(_.reason).mkString(",")
-      val finalPotProbs = if (potProbs.isEmpty) {
-        null
-      } else {
-        potProbs
-      }
-      val sqlExecutionNew = res.copy(endTime = thisEndTime,
-        duration = durationResult,
-        durationStr = durationString,
-        sqlQualDuration = sqlQDuration,
-        hasDataset = containsDataset,
-        problematic = finalPotProbs
-      )
-      ret += sqlExecutionNew
-    }
-    ret
-  }
 
   // From SparkListenerTaskStart & SparkListenerTaskEnd
   // taskStart was not used so comment out for now
@@ -360,14 +301,14 @@ class ApplicationInfo(
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
 
   // From SparkListenerTaskGettingResult
-  var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
-    ArrayBuffer[SparkListenerTaskGettingResult]()
+ //  var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
+  //   ArrayBuffer[SparkListenerTaskGettingResult]()
 
   // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
   // From all other events
-  var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
+  // var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
 
   // Generated warnings by predefined checks for this Application
   var warnings: ArrayBuffer[String] = ArrayBuffer[String]()
@@ -419,14 +360,26 @@ class ApplicationInfo(
   processAllProperties()
   // Process SQL Plan Metrics after all events are processed
   processSQLPlanMetrics()
-  // Create Spark DataFrame(s) based on ArrayBuffer(s)
-  arraybufferToDF()
+  aggregateAppInfo
+  // arraybufferToDF()
 
   private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
 
   override def processEvent(event: SparkListenerEvent) = {
     eventProcessor.processAnyEvent(this, event)
     false
+  }
+
+  def getOrCreateExecutor(executorId: String, addTime: Long): LiveExecutor = {
+    executors.getOrElseUpdate(executorId, {
+      new LiveExecutor(executorId, addTime)
+    })
+  }
+
+  def getOrCreateStage(info: StageInfo): StageCaseInfo = {
+    val stage = liveStages.getOrElseUpdate((info.stageId, info.attemptNumber),
+      new StageCaseInfo(info))
+    stage
   }
 
   /**
@@ -492,6 +445,40 @@ class ApplicationInfo(
     }
   }
 
+  private def aggregateAppInfo: Unit = {
+    if (this.appInfo != null) {
+      val appStartNew: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
+      val res = this.appInfo
+
+      val estimatedResult = this.appEndTime match {
+        case Some(t) => this.appEndTime
+        case None =>
+          if (this.sqlEndTime.isEmpty && this.jobEndTime.isEmpty) {
+            None
+          } else {
+            logWarning("Application End Time is unknown, estimating based on" +
+              " job and sql end times!")
+            // estimate the app end with job or sql end times
+            val sqlEndTime = if (this.sqlEndTime.isEmpty) 0L else this.sqlEndTime.values.max
+            val jobEndTime = if (this.jobEndTime.isEmpty) 0L else this.jobEndTime.values.max
+            val maxEndTime = math.max(sqlEndTime, jobEndTime)
+            if (maxEndTime == 0) None else Some(maxEndTime)
+          }
+
+          val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
+          val durationString = durationResult match {
+            case Some(i) => UIUtils.formatDuration(i.toLong)
+            case None => ""
+          }
+
+          val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
+            durationStr = durationString, sparkVersion = this.sparkVersion,
+            gpuMode = this.gpuMode)
+          appInfo = newApp
+      }
+    }
+  }
+
   /**
    * Functions to convert ArrayBuffer to DataFrame
    * and then create a view for each of them
@@ -500,57 +487,8 @@ class ApplicationInfo(
     import sparkSession.implicits._
 
     // For appDF
-    if (this.appStart.nonEmpty) {
-      val appStartNew: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
-      for (res <- this.appStart) {
+    // aggregateAppInfo
 
-        val estimatedResult =
-          this.appEndTime match {
-            case Some(t) => this.appEndTime
-            case None =>
-              if (this.sqlEndTime.isEmpty && this.jobEndTime.isEmpty) {
-                None
-              } else {
-                logWarning("Application End Time is unknown, estimating based on" +
-                  " job and sql end times!")
-                // estimate the app end with job or sql end times
-                val sqlEndTime = if (this.sqlEndTime.isEmpty) 0L else this.sqlEndTime.values.max
-                val jobEndTime = if (this.jobEndTime.isEmpty) 0L else this.jobEndTime.values.max
-                val maxEndTime = math.max(sqlEndTime, jobEndTime)
-                if (maxEndTime == 0) None else Some(maxEndTime)
-              }
-          }
-
-        val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
-        val durationString = durationResult match {
-          case Some(i) => UIUtils.formatDuration(i.toLong)
-          case None => ""
-        }
-
-        val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
-          durationStr = durationString, sparkVersion = this.sparkVersion,
-          gpuMode = this.gpuMode, endDurationEstimated = this.appEndTime.isEmpty)
-        appStartNew += newApp
-      }
-      this.allDataFrames += (s"appDF_$index" -> appStartNew.toDF)
-    }
-
-    // For sqlDF
-    if (sqlStart.nonEmpty) {
-      allDataFrames += (s"sqlDF_$index" -> enhancedSql.toDF)
-    } else {
-      logInfo("No SQL Execution Found. Skipping generating SQL Execution DataFrame.")
-    }
-
-    // For jobDF
-    if (jobStart.nonEmpty) {
-      allDataFrames += (s"jobDF_$index" -> enhancedJob.toDF)
-    }
-
-    // For stageDF
-    if (stageSubmitted.nonEmpty) {
-      allDataFrames += (s"stageDF_$index" -> enhancedStage.toDF)
-    }
 
     // For taskDF
     if (taskEnd.nonEmpty) {
@@ -565,44 +503,11 @@ class ApplicationInfo(
       logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
     }
 
-    // For resourceProfilesDF
-    if (this.resourceProfiles.nonEmpty) {
-      this.allDataFrames += (s"resourceProfilesDF_$index" -> this.resourceProfiles.toDF)
-    } else {
-      logWarning("resourceProfiles is empty!")
-    }
-
-    // For blockManagersDF
-    if (this.blockManagers.nonEmpty) {
-      this.allDataFrames += (s"blockManagersDF_$index" -> this.blockManagers.toDF)
-    } else {
-      logWarning("blockManagers is empty!")
-    }
-
-    // For blockManagersRemovedDF
-    if (this.blockManagersRemoved.nonEmpty) {
-      this.allDataFrames += (s"blockManagersRemovedDF_$index" -> this.blockManagersRemoved.toDF)
-      this.blockManagersRemoved.clear()
-    } else {
-      logDebug("blockManagersRemoved is empty!")
-    }
-
     // For propertiesDF
     if (this.allProperties.nonEmpty) {
       this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
     }
 
-    // For executorsDF
-    if (this.executors.nonEmpty) {
-      this.allDataFrames += (s"executorsDF_$index" -> this.executors.toDF)
-    }
-
-    // For executorsRemovedDF
-    if (this.executorsRemoved.nonEmpty) {
-      this.allDataFrames += (s"executorsRemovedDF_$index" -> this.executorsRemoved.toDF)
-    } else {
-      logDebug("executorsRemoved is empty!")
-    }
 
     // For driverAccumDF
     allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
@@ -679,6 +584,8 @@ class ApplicationInfo(
     val df = sparkSession.createDataFrame(data, schema)
     writeDF(df, messageHeader, writer, vertical = vertical)
   }
+
+  /*
 
   // Function to return a DataFrame based on query text
   def queryToDF(query: String): DataFrame = {
@@ -967,6 +874,7 @@ class ApplicationInfo(
        |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
        |""".stripMargin
   }
+  */
 }
 
 object ApplicationInfo extends Logging {

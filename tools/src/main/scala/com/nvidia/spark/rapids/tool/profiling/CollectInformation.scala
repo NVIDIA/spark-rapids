@@ -38,9 +38,17 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
     for (app <- apps) {
-      if (app.allDataFrames.contains(s"appDF_${app.index}")) {
-        app.runQuery(query = app.generateAppInfo, fileWriter = fileWriter,
-          messageHeader = messageHeader)
+      if (app.appInfo != null) {
+        // TODO - need to add app Index
+        // appIndex + ApplicationCase
+        // TODO - write format for text and csv
+        fileWriter.foreach(_.toString())
+
+        // select $index as appIndex, appName, appId, startTime, endTime, duration,
+        //durationStr, sparkVersion, gpuMode as pluginEnabled
+        //from appDF_$index
+
+
       } else {
         fileWriter.foreach(_.write("No Application Information Found!\n"))
       }
@@ -70,6 +78,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     apps.foreach { app =>
+      // TODO - just add appindex
       val dfWithApp = getDataSourceInfo(app, sparkSession)
       // don't check if dataframe empty because that runs a Spark job
       if (app.dataSourceInfo.nonEmpty) {
