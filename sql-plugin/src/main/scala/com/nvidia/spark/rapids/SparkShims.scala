@@ -22,6 +22,7 @@ import java.nio.ByteBuffer
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
+import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
@@ -40,9 +41,11 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.sources.BaseRelation
@@ -87,6 +90,16 @@ trait SparkShims {
   def parquetRebaseRead(conf: SQLConf): String
   def parquetRebaseWrite(conf: SQLConf): String
   def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
+
+  def getParquetFilters(
+    schema: MessageType,
+    pushDownDate: Boolean,
+    pushDownTimestamp: Boolean,
+    pushDownDecimal: Boolean,
+    pushDownStartWith: Boolean,
+    pushDownInFilterThreshold: Int,
+    caseSensitive: Boolean,
+    datetimeRebaseMode: LegacyBehaviorPolicy.Value): ParquetFilters
 
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
