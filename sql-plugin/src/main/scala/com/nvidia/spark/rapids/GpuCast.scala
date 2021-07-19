@@ -227,10 +227,8 @@ object GpuCast extends Arm {
           withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
             if (ansiEnabled) {
               withResource(isFloat.all()) { allMatch =>
-                // Check that all non-null values are valid floats. Note that isFloat will be false
-                // if all rows are null so we need to check for that condition.
-                if (!allMatch.getBoolean &&
-                    infWithoutPlus.getNullCount != infWithoutPlus.getRowCount) {
+                // Check that all non-null values are valid floats.
+                if (allMatch.isValid && !allMatch.getBoolean) {
                   throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
                 }
                 infWithoutPlus.incRefCount()
@@ -272,9 +270,8 @@ object GpuCast extends Arm {
       val regex = "^[+\\-]?[0-9]+$"
       withResource(sanitized.matchesRe(regex)) { isInt =>
         withResource(isInt.all()) { allInts =>
-          // Check that all non-null values are valid integers. Note that allInts will be false
-          // if all rows are null so we need to check for that condition.
-          if (!allInts.getBoolean && sanitized.getNullCount != sanitized.getRowCount) {
+          // Check that all non-null values are valid integers.
+          if (allInts.isValid && !allInts.getBoolean) {
             throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
           }
         }
@@ -796,7 +793,7 @@ case class GpuCast(
             // in ansi mode, fail if any values are not valid bool strings
             if (ansiEnabled) {
               withResource(validBools.all()) { isAllBool =>
-                if (!isAllBool.getBoolean) {
+                if (isAllBool.isValid && !isAllBool.getBoolean) {
                   throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
                 }
               }
@@ -825,9 +822,8 @@ case class GpuCast(
       withResource(sanitized.isInteger(dType)) { isInt =>
         if (ansiEnabled) {
           withResource(isInt.all()) { allInts =>
-            // Check that all non-null values are valid integers. Note that allInts will be false
-            // if all rows are null so we need to check for that condition.
-            if (!allInts.getBoolean && sanitized.getNullCount != sanitized.getRowCount) {
+            // Check that all non-null values are valid integers.
+            if (allInts.isValid && !allInts.getBoolean) {
               throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
@@ -867,10 +863,8 @@ case class GpuCast(
           if (ansiEnabled) {
             withResource(isNan.or(isFloat)) { nanOrFloat =>
               withResource(nanOrFloat.all()) { allNanOrFloat =>
-                // Check that all non-null values are valid floats or NaN. Note that
-                // allNanOrFloat will be false if all rows are null so we need to check
-                // for that condition.
-                if (!allNanOrFloat.getBoolean && sanitized.getNullCount != sanitized.getRowCount) {
+                // Check that all non-null values are valid floats or NaN.
+                if (allNanOrFloat.isValid && !allNanOrFloat.getBoolean) {
                   throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
                 }
               }
