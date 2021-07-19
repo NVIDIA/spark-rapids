@@ -55,7 +55,7 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           dotFileDir.getAbsolutePath,
           "--generate-dot",
           eventLog))
-        ProfileMain.mainInternal(spark2, appArgs)
+        ProfileMain.mainInternal(appArgs)
 
         val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
 

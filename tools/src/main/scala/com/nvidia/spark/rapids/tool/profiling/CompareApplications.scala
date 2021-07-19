@@ -128,6 +128,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
 
     val matchingType = StructType(outputAppIds.map(id => StructField(id, StringType)))
 
+    /*
     apps.head.writeAsDF(matchingSqlData,
       matchingType,
       "\n\nMatching SQL IDs Across Applications:\n",
@@ -143,6 +144,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       matchingType,
       "\n\nMatching Stage IDs Across Applications:\n",
       fileWriter)
+      */
   }
 
   /*

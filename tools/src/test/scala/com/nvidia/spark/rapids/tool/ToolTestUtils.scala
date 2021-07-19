@@ -103,7 +103,8 @@ object ToolTestUtils extends Logging {
       val eventLogInfo = EventLogPathProcessor
         .getEventLogInfo(path, sparkSession.sparkContext.hadoopConfiguration)
       assert(eventLogInfo.size >= 1, s"event log not parsed as expected $path")
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000),
+        sparkSession.sparkContext.hadoopConfiguration,
         eventLogInfo.head._1, index)
       index += 1
     }
