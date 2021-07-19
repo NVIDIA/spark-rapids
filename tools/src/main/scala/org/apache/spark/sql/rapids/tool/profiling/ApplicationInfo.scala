@@ -23,6 +23,7 @@ import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import com.nvidia.spark.rapids.tool.profiling._
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
@@ -197,10 +198,10 @@ class LiveResourceProfile(
  */
 class ApplicationInfo(
     numRows: Int,
-    val sparkSession: SparkSession,
+    hadoopConf: Configuration,
     eLogInfo: EventLogInfo,
     val index: Int)
-  extends AppBase(numRows, eLogInfo, sparkSession.sparkContext.hadoopConfiguration) with Logging {
+  extends AppBase(numRows, eLogInfo, hadoopConf) with Logging {
 
   val executors = new HashMap[String, LiveExecutor]()
   val resourceProfiles = new HashMap[Int, LiveResourceProfile]()
@@ -485,11 +486,12 @@ class ApplicationInfo(
    * and then create a view for each of them
    */
   def arraybufferToDF(): Unit = {
-    import sparkSession.implicits._
+    // import sparkSession.implicits._
 
     // For appDF
     // aggregateAppInfo
 
+    /*
 
     // For taskDF
     if (taskEnd.nonEmpty) {
@@ -546,8 +548,10 @@ class ApplicationInfo(
     for ((name, df) <- this.allDataFrames) {
       df.createOrReplaceTempView(name)
     }
+    */
   }
 
+  /*
   // Function to drop all temp views of this application.
   def dropAllTempViews(): Unit ={
     for ((name,_) <- this.allDataFrames) {
@@ -585,6 +589,7 @@ class ApplicationInfo(
     val df = sparkSession.createDataFrame(data, schema)
     writeDF(df, messageHeader, writer, vertical = vertical)
   }
+  */
 
   /*
 
@@ -882,14 +887,14 @@ object ApplicationInfo extends Logging {
   def createApps(
       allPaths: Seq[EventLogInfo],
       numRows: Int,
-      sparkSession: SparkSession,
+      hadoopConf: Configuration,
       startIndex: Int = 1): (Seq[ApplicationInfo], Int) = {
     var index: Int = startIndex
     var errorCode = 0
     val apps = allPaths.flatMap { path =>
       try {
         // This apps only contains 1 app in each loop.
-        val app = new ApplicationInfo(numRows, sparkSession, path, index)
+        val app = new ApplicationInfo(numRows, hadoopConf, path, index)
         EventLogPathProcessor.logApplicationInfo(app)
         index += 1
         Some(app)

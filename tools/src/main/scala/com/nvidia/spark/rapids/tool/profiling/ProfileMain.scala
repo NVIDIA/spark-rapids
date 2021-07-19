@@ -16,14 +16,12 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.util.concurrent.TimeUnit
-
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTextFileWriter}
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -34,8 +32,8 @@ object ProfileMain extends Logging {
    * Entry point from spark-submit running this as the driver.
    */
   def main(args: Array[String]) {
-    val sparkSession = ProfileUtils.createSparkSession
-    val exitCode = mainInternal(sparkSession, new ProfileArgs(args))
+    // val sparkSession = ProfileUtils.createSparkSession
+    val exitCode = mainInternal(new ProfileArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -46,7 +44,7 @@ object ProfileMain extends Logging {
   /**
    * Entry point for tests
    */
-  def mainInternal(sparkSession: SparkSession, appArgs: ProfileArgs): Int = {
+  def mainInternal(appArgs: ProfileArgs): Int = {
 
     // This tool's output log file name
     val logFileName = "rapids_4_spark_tools_output.log"
@@ -58,13 +56,14 @@ object ProfileMain extends Logging {
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/") +
       s"/$SUBDIR"
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
+    val hadoopConf = new Configuration()
 
     // Create the FileWriter and sparkSession used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName, "Profile summary")
     try {
       // Get the event logs required to process
       val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-        matchEventLogs.toOption, eventlogPaths, sparkSession.sparkContext.hadoopConfiguration)
+        matchEventLogs.toOption, eventlogPaths, hadoopConf)
       if (eventLogInfos.isEmpty) {
         logWarning("No event logs to process after checking paths, exiting!")
         return 0
@@ -75,7 +74,7 @@ object ProfileMain extends Logging {
       if (appArgs.compare()) {
         // Create an Array of Applications(with an index starting from 1)
         val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos,
-          numOutputRows, sparkSession)
+          numOutputRows, hadoopConf)
         if (errorCode > 0) {
           logError(s"Error parsing one of the event logs")
           return 1
@@ -93,7 +92,7 @@ object ProfileMain extends Logging {
         eventLogInfos.foreach { log =>
           // Only process 1 app at a time.
           val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(log), numOutputRows,
-            sparkSession, startIndex = index)
+            hadoopConf, startIndex = index)
           index += 1
           if (errorCode > 0) {
             logError(s"Error parsing ${log.eventLog}")
@@ -107,7 +106,7 @@ object ProfileMain extends Logging {
           // memory concerns. So the aggregation functions only aggregate single
           // application not across applications.
           processApps(apps, appArgs.printPlans())
-          apps.foreach(_.dropAllTempViews())
+          // apps.foreach(_.dropAllTempViews())
         }
       }
     } finally {
