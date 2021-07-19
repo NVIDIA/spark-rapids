@@ -42,6 +42,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
+  /*
   test("test single event") {
     testSqlCompression()
   }
@@ -493,4 +494,5 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(rows(1)(0).equals("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
     }
   }
+  */
 }

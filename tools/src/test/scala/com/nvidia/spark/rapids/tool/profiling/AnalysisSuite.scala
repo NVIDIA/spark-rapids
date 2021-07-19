@@ -37,6 +37,7 @@ class AnalysisSuite extends FunSuite {
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
+  /*
   test("test sqlMetricsAggregation simple") {
     testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog.zstd"),
       "rapids_join_eventlog_sqlmetricsagg_expectation.csv",
@@ -126,4 +127,5 @@ class AnalysisSuite extends FunSuite {
       assert(row.getBoolean(fieldIndex("Contains Dataset Op")) == false)
     }
   }
+  */
 }

@@ -39,6 +39,7 @@ class HealthCheckSuite extends FunSuite {
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
+  /*
   test("test task-stage-job-failures") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
@@ -132,4 +133,5 @@ class HealthCheckSuite extends FunSuite {
       ToolTestUtils.compareDataFrames(unsupportedPlanAccums, unSupportedPlanDfExpect)
     }
   }
+  */
 }
