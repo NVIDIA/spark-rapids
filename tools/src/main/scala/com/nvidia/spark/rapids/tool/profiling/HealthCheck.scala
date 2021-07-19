@@ -27,6 +27,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter
 
   require(apps.nonEmpty)
 
+  /*
   // Function to list all failed tasks , stages and jobs.
   def listFailedJobsStagesTasks(): Unit = {
     val tasksMessageHeader = s"\nFailed tasks:\n"
@@ -113,4 +114,5 @@ class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter
       apps.head.sparkSession.emptyDataFrame
     }
   }
+  */
 }

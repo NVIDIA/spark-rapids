@@ -29,6 +29,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
   require(apps.nonEmpty)
 
+  /*
   // Job Level TaskMetrics Aggregation
   def jobMetricsAggregation(): Unit = {
     val messageHeader = "\nJob level aggregated task metrics:\n"
@@ -225,4 +226,5 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       apps.head.sparkSession.emptyDataFrame
     }
   }
+  */
 }

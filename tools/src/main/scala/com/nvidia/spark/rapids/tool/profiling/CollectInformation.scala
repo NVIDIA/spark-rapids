@@ -97,7 +97,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     df.withColumn("appIndex", lit(app.index.toString))
       .select("appIndex", df.columns:_*)
   }
-
+/*
   // Print executor related information
   def printExecutorInfo(): Unit = {
     val messageHeader = "\nExecutor Information:\n"
@@ -167,4 +167,5 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       }
     }
   }
+  */
 }
