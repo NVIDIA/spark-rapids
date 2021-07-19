@@ -40,7 +40,7 @@ class Spark304Shims extends Spark303Shims {
       pushDownStartWith: Boolean,
       pushDownInFilterThreshold: Int,
       caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
+      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
 }
