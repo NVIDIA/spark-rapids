@@ -145,6 +145,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       fileWriter)
   }
 
+  /*
   // Compare the App Information.
   def compareAppInfo(): Unit = {
     val messageHeader = "\n\nCompare Application Information:\n"
@@ -263,4 +264,5 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     logDebug("Running query " + query)
     apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
   }
+  */
 }

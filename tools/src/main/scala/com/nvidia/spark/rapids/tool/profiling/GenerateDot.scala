@@ -84,6 +84,7 @@ object GenerateDot {
     fileWriter.write(str)
   }
 
+  /*
   def apply(app: ApplicationInfo, outputDirectory: String): Unit = {
     val accums = app.runQuery(app.generateSQLAccums)
 
@@ -129,6 +130,7 @@ object GenerateDot {
       }
     }
   }
+  */
 }
 
 /**

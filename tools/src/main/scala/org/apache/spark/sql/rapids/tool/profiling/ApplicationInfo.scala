@@ -464,18 +464,18 @@ class ApplicationInfo(
             val maxEndTime = math.max(sqlEndTime, jobEndTime)
             if (maxEndTime == 0) None else Some(maxEndTime)
           }
-
-          val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
-          val durationString = durationResult match {
-            case Some(i) => UIUtils.formatDuration(i.toLong)
-            case None => ""
-          }
-
-          val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
-            durationStr = durationString, sparkVersion = this.sparkVersion,
-            gpuMode = this.gpuMode)
-          appInfo = newApp
       }
+
+      val durationResult = ProfileUtils.OptionLongMinusLong(estimatedResult, res.startTime)
+      val durationString = durationResult match {
+        case Some(i) => UIUtils.formatDuration(i.toLong)
+        case None => ""
+      }
+
+      val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
+        durationStr = durationString, sparkVersion = this.sparkVersion,
+        gpuMode = this.gpuMode)
+      appInfo = newApp
     }
   }
 
