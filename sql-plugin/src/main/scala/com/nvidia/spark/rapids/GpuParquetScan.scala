@@ -51,7 +51,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -250,8 +250,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val pushDownDecimal = sqlConf.parquetFilterPushDownDecimal
   private val pushDownStringStartWith = sqlConf.parquetFilterPushDownStringStartWith
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
-  private val isCorrectedRebase =
-    "CORRECTED" == ShimLoader.getSparkShims.parquetRebaseRead(sqlConf)
+  private val rebaseMode = ShimLoader.getSparkShims.parquetRebaseRead(sqlConf)
+  private val isCorrectedRebase = "CORRECTED" == rebaseMode
 
   def filterBlocks(
       file: PartitionedFile,
@@ -265,8 +265,11 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       ParquetMetadataConverter.range(file.start, file.start + file.length))
     val fileSchema = footer.getFileMetaData.getSchema
     val pushedFilters = if (enableParquetFilterPushDown) {
-      val parquetFilters = new ParquetFilters(fileSchema, pushDownDate, pushDownTimestamp,
-        pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold, isCaseSensitive)
+      val datetimeRebaseMode = DataSourceUtils.datetimeRebaseMode(
+        footer.getFileMetaData.getKeyValueMetaData.get, rebaseMode)
+      val parquetFilters = ShimLoader.getSparkShims.getParquetFilters(fileSchema, pushDownDate,
+        pushDownTimestamp, pushDownDecimal, pushDownStringStartWith, pushDownInFilterThreshold,
+        isCaseSensitive, datetimeRebaseMode)
       filters.flatMap(parquetFilters.createFilter).reduceOption(FilterApi.and)
     } else {
       None
