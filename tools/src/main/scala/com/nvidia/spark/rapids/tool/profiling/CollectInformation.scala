@@ -37,6 +37,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   // Print Application Information
   def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
     for (app <- apps) {
       if (app.appInfo != null) {
         // TODO - need to add app Index
