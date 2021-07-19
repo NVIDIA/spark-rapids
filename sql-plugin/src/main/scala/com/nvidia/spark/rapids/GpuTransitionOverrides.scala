@@ -158,9 +158,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
-  private def isGpuShuffleLike(execNode: SparkPlan): Boolean =
-    execNode.isInstanceOf[GpuShuffleExchangeExecBase] ||
-      execNode.isInstanceOf[GpuCustomShuffleReaderExec]
+  private def isGpuShuffleLike(execNode: SparkPlan): Boolean = execNode match {
+    case _: GpuShuffleExchangeExecBase | _: GpuCustomShuffleReaderExec => true
+    case qs: ShuffleQueryStageExec => isGpuShuffleLike(qs.plan)
+    case _ => false
+  }
 
   /**
    * This optimizes the plan to remove [[GpuCoalesceBatches]] nodes that are unnecessary
