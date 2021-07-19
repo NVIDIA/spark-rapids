@@ -17,7 +17,8 @@ package org.apache.spark.sql.rapids.shims.spark311
 
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
-import org.apache.spark.sql.rapids.ShuffleManagerShimBase
+import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, ShufflePartitionSpec}
+import org.apache.spark.sql.rapids.{GpuPartialReducerPartitionSpec, GpuShufflePartitionSpec, ShuffleManagerShimBase}
 
 class ShuffleManagerShim extends ShuffleManagerShimBase {
 
@@ -32,5 +33,11 @@ class ShuffleManagerShim extends ShuffleManagerShimBase {
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     shuffleManager.getReader(
       handle, startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
+  }
+
+  override def toGpu(x: ShufflePartitionSpec): GpuShufflePartitionSpec = x match {
+    case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex, _) =>
+      GpuPartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex)
+    case _ => sys.error("Infeasible shuffle partition spec")
   }
 }

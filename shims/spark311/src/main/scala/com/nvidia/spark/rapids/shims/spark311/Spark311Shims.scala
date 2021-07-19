@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashJoin, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.{GpuElementAt, GpuFileSourceScanExec, GpuGetArrayItem, GpuGetArrayItemMeta, GpuGetMapValue, GpuGetMapValueMeta, GpuStringReplace, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.{GpuElementAt, GpuFileSourceScanExec, GpuGetArrayItem, GpuGetArrayItemMeta, GpuGetMapValue, GpuGetMapValueMeta, GpuStringReplace, GpuUnaryMinus, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.spark311._
 import org.apache.spark.sql.sources.BaseRelation
@@ -561,4 +561,11 @@ class Spark311Shims extends Spark301Shims {
 
   /** matches SPARK-33008 fix in 3.1.1 */
   override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
+
+  override def toGpuExpression(exp: Expression): Expression = {
+    exp match {
+      case UnaryMinus(child, _) => GpuUnaryMinus(child)
+      case _ => exp
+    }
+  }
 }

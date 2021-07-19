@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
+import org.apache.spark.sql.execution.ShufflePartitionSpec
 
 trait ShuffleManagerShimBase {
 
@@ -30,4 +31,11 @@ trait ShuffleManagerShimBase {
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C]
+
+  def toGpu(x: ShufflePartitionSpec): GpuShufflePartitionSpec
 }
+
+trait GpuShufflePartitionSpec
+case class GpuPartialReducerPartitionSpec(
+    reducerIndex: Int, startMapIndex: Int, endMapIndex: Int
+) extends GpuShufflePartitionSpec
