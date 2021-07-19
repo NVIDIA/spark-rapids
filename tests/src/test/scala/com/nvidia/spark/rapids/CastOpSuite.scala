@@ -176,7 +176,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       prefix: Option[String] = None): Seq[String] = {
     val randomValueCount = 8192
 
-    val random = new Random()
+    val random = new Random(0)
     val r = new EnhancedRandom(random,
       FuzzerOptions(validChars, maxStringLen))
 
