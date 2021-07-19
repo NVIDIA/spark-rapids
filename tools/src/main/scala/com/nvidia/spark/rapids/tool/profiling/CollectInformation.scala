@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.ToolUtils
@@ -30,7 +31,7 @@ case class StageMetrics(numTasks: Int, duration: String)
  * Such as executors, parameters, etc.
  */
 class CollectInformation(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter]) {
+    fileWriter: Option[ToolTextFileWriter]) extends Logging {
 
   require(apps.nonEmpty)
 
@@ -43,7 +44,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         // TODO - need to add app Index
         // appIndex + ApplicationCase
         // TODO - write format for text and csv
-        fileWriter.foreach(_.toString())
+        fileWriter.foreach(_.write(app.appInfo.toString()))
 
         // select $index as appIndex, appName, appId, startTime, endTime, duration,
         //durationStr, sparkVersion, gpuMode as pluginEnabled
