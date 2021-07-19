@@ -1,2 +1,2 @@
 App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types
-Spark shell,local-1626104300434,1211.93,"DECIMAL",2429,1469,131104,88.35,false,160,"",20,12.5,Parquet[decimal];ORC[map:array:struct:decimal]
+Spark shell,local-1626104300434,1322.1,DECIMAL,2429,1469,131104,88.35,false,160,"",20,50.0,Parquet[decimal];ORC[map:struct:decimal]
