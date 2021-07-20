@@ -70,7 +70,7 @@ object ProfileUtils {
     inst.getClass.getDeclaredFields.map(_.getName).toList
   }
 
-  def getMethods[T: TypeTag]: List[String] =
+  def getMethods[T: TypeTag]: Seq[String] =
     typeOf[T].members.sorted.collect {
       case m: MethodSymbol if m.isCaseAccessor => m.name.toString
     }

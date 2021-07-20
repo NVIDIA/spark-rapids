@@ -42,11 +42,11 @@ case class ApplicationCase(
   sparkUser: String, endTime: Option[Long], duration: Option[Long],
   durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
 
-  val outputHeaders: List[String] = {
+  val outputHeaders: Seq[String] = {
     ProfileUtils.getMethods[ApplicationCase]
   }
 
-  def fieldsToPrint(index: Int): List[String] = {
+  def fieldsToPrint(index: Int): Seq[String] = {
     val endTimeStr = endTime match {
       case Some(t) => t.toString
       case None => ""
@@ -55,7 +55,7 @@ case class ApplicationCase(
       case Some(t) => t.toString
       case None => ""
     }
-    List(index.toString, appName, appId.getOrElse(""), startTime.toString,
+    Seq(index.toString, appName, appId.getOrElse(""), startTime.toString,
       sparkUser, endTimeStr, durStr, durationStr, sparkVersion,
       pluginEnabled.toString)
   }

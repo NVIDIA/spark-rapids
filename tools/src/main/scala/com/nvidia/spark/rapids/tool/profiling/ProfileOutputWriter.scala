@@ -49,11 +49,21 @@ object ProfileOutputWriter {
     if (str == null) 0 else str.length + fullWidthRegex.findAllIn(str).size
   }
 
+  def escapeMetaCharacters(str: String): String = {
+    str.replaceAll("\n", "\\\\n")
+      .replaceAll("\r", "\\\\r")
+      .replaceAll("\t", "\\\\t")
+      .replaceAll("\f", "\\\\f")
+      .replaceAll("\b", "\\\\b")
+      .replaceAll("\u000B", "\\\\v")
+      .replaceAll("\u0007", "\\\\a")
+  }
+
   def showString(
       _numRows: Int,
       truncate: Int = 20,
-      schema: List[String],
-      rows: List[List[String]]): String = {
+      schema: Seq[String],
+      rows: Seq[Seq [String]]): String = {
     val numRows = _numRows.max(0).min(2147483632 - 1)
     val hasMoreData = rows.length - 1 > numRows
 
@@ -65,14 +75,34 @@ object ProfileOutputWriter {
     // Initialise the width of each column to a minimum value
     val colWidths = Array.fill(numCols)(minimumColWidth)
 
+    val escapedSchema = schema.map(escapeMetaCharacters)
+
+    val schemaAndData = escapedSchema +: rows.map { row =>
+      row.map { cell =>
+        val str = cell match {
+          case null => "null"
+          case _ =>
+            // Escapes meta-characters not to break the `showString` format
+            escapeMetaCharacters(cell.toString)
+        }
+        if (truncate > 0 && str.length > truncate) {
+          // do not show ellipses for strings shorter than 4 characters.
+          if (truncate < 4) str.substring(0, truncate)
+          else str.substring(0, truncate - 3) + "..."
+        } else {
+          str
+        }
+      }: Seq[String]
+    }
+
     // Compute the width of each column
-    for (row <- rows) {
+    for (row <- schemaAndData) {
       for ((cell, i) <- row.zipWithIndex) {
         colWidths(i) = math.max(colWidths(i), stringHalfWidth(cell))
       }
     }
 
-    val paddedRows = rows.map { row =>
+    val paddedRows = schemaAndData.map { row =>
       row.zipWithIndex.map { case (cell, i) =>
         if (truncate > 0) {
           StringUtils.leftPad(cell, colWidths(i) - stringHalfWidth(cell) + cell.length)
