@@ -131,7 +131,7 @@ object ProfileMain extends Logging {
         compare.compareRapidsProperties()
         */
       } else {
-        val collect = new CollectInformation(apps, Some(textFileWriter))
+        val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
         textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
         // collect.printDataSourceInfo(sparkSession, numOutputRows)

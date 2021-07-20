@@ -31,7 +31,7 @@ case class StageMetrics(numTasks: Int, duration: String)
  * Such as executors, parameters, etc.
  */
 class CollectInformation(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter]) extends Logging {
+    fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
 
   require(apps.nonEmpty)
 
@@ -39,13 +39,12 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    val allRows = apps.map( a => a.appInfo.fieldsToPrint(a.index)).toList
+    val allRows = apps.map(a => a.appInfo.fieldsToPrint(a.index)).toList
     if (apps.size > 0) {
       val headerNames = Seq("appIndex") ++ apps.head.appInfo.outputHeaders
-      val outStr = ProfileOutputWriter.showString(1000, 0,
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headerNames, allRows)
       fileWriter.foreach(_.write(outStr))
-
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
     }
@@ -53,19 +52,25 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
   // Print rapids-4-spark and cuDF jar if CPU Mode is on.
   def printRapidsJAR(): Unit = {
-    for (app <- apps) {
+    val headers = Seq("appIndex", "Rapids4Spark jars")
+    val allRows = apps.map { app =>
       if (app.gpuMode) {
         fileWriter.foreach(_.write("\nRapids Accelerator Jar and cuDF Jar:\n"))
         // Look for rapids-4-spark and cuDF jar
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
-        if (rapidsJar.nonEmpty) {
-          rapidsJar.keys.foreach(k => fileWriter.foreach(_.write(s"$k\n")))
-        }
-        if (cuDFJar.nonEmpty) {
-          cuDFJar.keys.foreach(k => fileWriter.foreach(_.write(s"$k\n")))
-        }
+        val rows = (Seq(app.index.toString) ++ rapidsJar.keys ++ cuDFJar.keys).toSeq
+        rows
+      } else {
+        Seq.empty
       }
+    }
+    if (allRows.size > 0) {
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        headers, allRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Rapids 4 Spark Jars Found!\n"))
     }
   }
 
