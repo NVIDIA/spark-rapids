@@ -475,7 +475,7 @@ class ApplicationInfo(
 
       val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
         durationStr = durationString, sparkVersion = this.sparkVersion,
-        gpuMode = this.gpuMode)
+        pluginEnabled = this.gpuMode)
       logWarning("aggregate app start: " + newApp)
       appInfo = newApp
     }

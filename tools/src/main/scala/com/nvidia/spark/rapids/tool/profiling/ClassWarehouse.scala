@@ -40,7 +40,26 @@ case class PropertiesCase(
 case class ApplicationCase(
   appName: String, appId: Option[String], startTime: Long,
   sparkUser: String, endTime: Option[Long], duration: Option[Long],
-  durationStr: String, sparkVersion: String, gpuMode: Boolean) {
+  durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
+
+  val outputHeaders: List[String] = {
+    ProfileUtils.getMethods[ApplicationCase]
+  }
+
+  def fieldsToPrint(index: Int): List[String] = {
+    val endTimeStr = endTime match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+    val durStr = duration match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+    List(index.toString, appName, appId.getOrElse(""), startTime.toString,
+      sparkUser, endTimeStr, durStr, durationStr, sparkVersion,
+      pluginEnabled.toString)
+  }
+
 
   /*
   def textOutput: String = {

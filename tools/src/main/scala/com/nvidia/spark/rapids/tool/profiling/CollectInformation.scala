@@ -39,21 +39,15 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    for (app <- apps) {
-      if (app.appInfo != null) {
-        // TODO - need to add app Index
-        // appIndex + ApplicationCase
-        // TODO - write format for text and csv
-        fileWriter.foreach(_.write(app.appInfo.toString()))
+    val allRows = apps.map( a => a.appInfo.fieldsToPrint(a.index)).toList
+    if (apps.size > 0) {
+      val headerNames = apps.head.appInfo.getClass.getDeclaredFields.map(_.getName).toList
+      val outStr = ProfileOutputWriter.showString(1000, 0,
+        headerNames, allRows)
+      fileWriter.foreach(_.write(outStr))
 
-        // select $index as appIndex, appName, appId, startTime, endTime, duration,
-        //durationStr, sparkVersion, gpuMode as pluginEnabled
-        //from appDF_$index
-
-
-      } else {
-        fileWriter.foreach(_.write("No Application Information Found!\n"))
-      }
+    } else {
+      fileWriter.foreach(_.write("No Application Information Found!\n"))
     }
   }
 

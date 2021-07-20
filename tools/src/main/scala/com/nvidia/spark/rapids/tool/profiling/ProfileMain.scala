@@ -32,7 +32,6 @@ object ProfileMain extends Logging {
    * Entry point from spark-submit running this as the driver.
    */
   def main(args: Array[String]) {
-    // val sparkSession = ProfileUtils.createSparkSession
     val exitCode = mainInternal(new ProfileArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
@@ -58,7 +57,7 @@ object ProfileMain extends Logging {
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
     val hadoopConf = new Configuration()
 
-    // Create the FileWriter and sparkSession used for ALL Applications.
+    // Create the FileWriter used for ALL Applications.
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName, "Profile summary")
     try {
       // Get the event logs required to process

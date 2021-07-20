@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import scala.reflect.runtime.universe._
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.ToolUtils
 
@@ -62,5 +64,14 @@ object ProfileUtils {
   def OptionLongMinusLong(a: Option[Long], b: Long): Option[Long] =
     try Some(a.get - b) catch {
       case _: NoSuchElementException => None
+    }
+
+  def getCaseClassFields(inst: Any): List[String] = {
+    inst.getClass.getDeclaredFields.map(_.getName).toList
+  }
+
+  def getMethods[T: TypeTag]: List[String] =
+    typeOf[T].members.sorted.collect {
+      case m: MethodSymbol if m.isCaseAccessor => m.name.toString
     }
 }
