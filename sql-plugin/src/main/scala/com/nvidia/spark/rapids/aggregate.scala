@@ -17,15 +17,14 @@
 package com.nvidia.spark.rapids
 
 import java.util
-
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, Scalar}
+import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -773,20 +772,25 @@ class GpuHashAggregateIterator(
           // later. Cast here to the type that the aggregate expects (e.g. Long in case of count)
           val dataTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
 
-          val resCols = new mutable.ArrayBuffer[ColumnVector](result.getNumberOfColumns)
-          for (i <- 0 until result.getNumberOfColumns) {
-            val rapidsType = dataTypes(i) match {
-              // TODO: implement GpuColumnVector.getRapidsType
-              // add the support of ArrayType for collect_list and collect_set
-              case _: ArrayType => ai.rapids.cudf.DType.LIST
-              case dt => GpuColumnVector.getNonNestedRapidsType(dt)
+          val resCols = mutable.ArrayBuffer.empty[ColumnVector]
+          closeOnExcept(resCols) { resCols =>
+            (0 until result.getNumberOfColumns).foldLeft(resCols) { case (ret, i) =>
+              val column = result.getColumn(i)
+              val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
+              // extra type conversion check for nested types
+              if ((rapidsType.equals(DType.LIST) || rapidsType.equals(DType.STRUCT)) &&
+                  !GpuColumnVector.typeConversionAllowed(column, dataTypes(i))) {
+                throw new IllegalArgumentException(
+                  s"Can NOT convert ${column.toString} to data type ${dataTypes(i)}.")
+              }
+              // cast will be cheap if type matches, only does refCount++ in that case
+              withResource(column.castTo(rapidsType)) { castedCol =>
+                ret += GpuColumnVector.from(castedCol.incRefCount(), dataTypes(i))
+              }
+              ret
             }
-            // cast will be cheap if type matches, only does refCount++ in that case
-            closeOnExcept(result.getColumn(i).castTo(rapidsType)) { castedCol =>
-              resCols += GpuColumnVector.from(castedCol, dataTypes(i))
-            }
+            new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
           }
-          new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
         }
       } else {
         // Reduction aggregate
