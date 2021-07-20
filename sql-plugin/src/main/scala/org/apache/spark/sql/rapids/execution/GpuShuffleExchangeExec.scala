@@ -49,6 +49,10 @@ class GpuShuffleMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(shuffle.outputPartitioning, conf, Some(this)))
 
+  // propagate potential type conversions on the output attributes of map-side plans to
+  // reduce-side counterparts
+  override def outputAttributes: Seq[Attribute] = childPlans.head.outputAttributes
+
   override def tagPlanForGpu(): Unit = {
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this exchange can run on GPU

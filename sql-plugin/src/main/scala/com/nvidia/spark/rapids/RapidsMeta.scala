@@ -21,7 +21,7 @@ import java.time.ZoneId
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
@@ -699,7 +699,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   /**
    * Overrides this method to implement custom conversions for specific plans.
    */
-  protected def outputTypeMetas: Option[Seq[DataTypeMeta]] = None
+  protected lazy val outputTypeMetas: Option[Seq[DataTypeMeta]] = None
 }
 
 /**
@@ -818,13 +818,13 @@ object DataTypeMeta {
   /**
    * create DataTypeMeta from Expression
    */
-  def apply(expr: Expression): DataTypeMeta = {
+  def apply(expr: Expression, overrideType: Option[DataType]): DataTypeMeta = {
     val wrapped = try {
       Some(expr.dataType)
     } catch {
       case _: java.lang.UnsupportedOperationException => None
     }
-    new DataTypeMeta(wrapped)
+    new DataTypeMeta(wrapped, overrideType)
   }
 }
 
@@ -857,9 +857,20 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * tag methods of expression-level type checks.
    *
    * By default, it simply returns the data type of wrapped expression. But for specific
-   * expressions, they can override this method to apply custom transitions on the data type.
+   * expressions, they can easily override data type for type checking through calling the
+   * method `overrideDataType`.
    */
-  def typeMeta: DataTypeMeta = DataTypeMeta(wrapped.asInstanceOf[Expression])
+  def typeMeta: DataTypeMeta = DataTypeMeta(wrapped.asInstanceOf[Expression], overrideType)
+
+  /**
+   * Overrides the data type of the wrapped expression during type checking.
+   *
+   * NOTICE: This method will NOT modify the wrapped expression itself. Therefore, the actual
+   * transition on data type is still necessary when converting this expression to GPU.
+   */
+  def overrideDataType(dt: DataType): Unit = overrideType = Some(dt)
+
+  private var overrideType: Option[DataType] = None
 
   lazy val context: ExpressionContext = expr match {
     case _: LambdaFunction => LambdaExprContext
@@ -942,6 +953,19 @@ abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
+}
+
+/**
+ * Base class for metadata around `TypedImperativeAggregate`.
+ */
+abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends ImperativeAggExprMeta[INPUT](expr, conf, parent, rule) {
+
+  def aggBufferAttribute: AttributeReference
 }
 
 /**

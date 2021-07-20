@@ -573,6 +573,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_TYPED_IMPERATIVE_AGGREGATE = conf("spark.rapids.sql.typedImperativeAggregate.enabled")
+      .doc("Allow running TypedImperativeAggregate functions on the GPU, which may cause " +
+          "unexpected crash if parts of aggregate fall back to CPU while other stages running " +
+          "on the GPU.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
     .doc("Whether sorts should be inserted after some hashed operations to improve " +
       "output ordering. This can improve output file sizes when saving to columnar formats.")
@@ -1473,6 +1480,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val partialMergeDistinctEnabled: Boolean = get(PARTIAL_MERGE_DISTINCT_ENABLED)
 
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
+
+  lazy val enableTypedImperativeAggregate: Boolean = get(ENABLE_TYPED_IMPERATIVE_AGGREGATE)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 

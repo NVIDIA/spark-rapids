@@ -45,6 +45,12 @@ class GpuSortMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[SortExec](sort, conf, parent, rule) {
+
+  // Uses output attributes of child plan because SortExec will not change the attributes,
+  // and we need to propagate potential type conversions on the output attributes of
+  // GpuSortAggregateExec.
+  override def outputAttributes: Seq[Attribute] = childPlans.head.outputAttributes
+
   override def convertToGpu(): GpuExec = {
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
