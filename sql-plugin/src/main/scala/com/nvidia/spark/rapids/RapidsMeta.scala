@@ -965,6 +965,11 @@ abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
     rule: DataFromReplacementRule)
     extends ImperativeAggExprMeta[INPUT](expr, conf, parent, rule) {
 
+  /**
+   * Returns aggregation buffer with the actual data type under GPU runtime. This method is
+   * called to override the data types of typed imperative aggregation buffers during GPU
+   * overriding.
+   */
   def aggBufferAttribute: AttributeReference
 }
 
