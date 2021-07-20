@@ -53,14 +53,16 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   // Print rapids-4-spark and cuDF jar if CPU Mode is on.
   def printRapidsJAR(): Unit = {
     val headers = Seq("appIndex", "Rapids4Spark jars")
-    val allRows = apps.map { app =>
+    val allRows = apps.flatMap { app =>
       if (app.gpuMode) {
         fileWriter.foreach(_.write("\nRapids Accelerator Jar and cuDF Jar:\n"))
         // Look for rapids-4-spark and cuDF jar
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
-        val rows = (Seq(app.index.toString) ++ rapidsJar.keys ++ cuDFJar.keys).toSeq
-        rows
+
+        val cols = (rapidsJar.keys ++ cuDFJar.keys).toSeq
+        val rowsWithAppindex = cols.map(jar => Seq(app.index.toString, jar))
+        rowsWithAppindex
       } else {
         Seq.empty
       }
