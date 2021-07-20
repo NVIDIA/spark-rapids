@@ -196,15 +196,17 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     of a selection criterion. i.e Select all
                                     event logs except the ones which have
                                     application name as the input string.
-  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on filesystem
-                                    timestamp, application start timestamp or unique application
-                                    name. eg: 100-newest-filesystem (for processing newest 100 event
-                                    logs based on filesystem timestamp). eg: 100-oldest-filesystem
-                                    (for processing oldest 100 event logs  based on filesystem
-                                    timestamp). Filesystem based filtering happens before any
+  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on application start
+                                    timestamp, unique application name or filesystem
+                                    timestamp. Filesystem based filtering happens before any
                                     application based filtering.
                                     For application based filtering, the order in which filters are
-                                    applied is: application-name, start-app-time, filter-criteria
+                                    applied is: application-name, start-app-time, filter-criteria.
+                                    Filesystem based filter criteria are:
+                                    100-newest-filesystem (for processing newest 100 event
+                                    logs based on filesystem timestamp).
+                                    100-oldest-filesystem (for processing oldest 100 event logs
+                                    based on filesystem timestamp).
                                     Application based filter-criteria are:
                                     100-newest (for processing newest 100 event logs based on
                                     timestamp of the application inside the eventlog i.e application

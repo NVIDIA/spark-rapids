@@ -42,20 +42,24 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           " eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val filterCriteria: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter newest or oldest N eventlogs based on filesystem timestamp, application " +
-          "start timestamp or unique application name." +
-          "eg: 100-newest-filesystem (for processing newest 100 event logs based on filesystem " +
+      descr = "Filter newest or oldest N eventlogs based on application start timestamp, " +
+          "unique application name or filesystem timestamp. Filesystem based filtering " +
+          "happens before any application based filtering." +
+          "For application based filtering, the order in which filters are" +
+          "applied is: application-name, start-app-time, filter-criteria." +
+          "Filesystem based filter criteria are:" +
+          "100-newest-filesystem (for processing newest 100 event logs based on filesystem " +
           "timestamp). " +
-          "eg: 100-oldest-filesystem (for processing oldest 100 event logsbased on filesystem " +
+          "100-oldest-filesystem (for processing oldest 100 event logsbased on filesystem " +
           "timestamp). " +
-          "Filesystem based filtering happens before any application based filtering." +
-          "eg: 100-newest (for processing newest 100 event logs based on timestamp inside" +
+          "Application based filter-criteria are:" +
+          "100-newest (for processing newest 100 event logs based on timestamp inside" +
           "the eventlog) i.e application start time)  " +
-          "eg: 100-oldest (for processing oldest 100 event logs based on timestamp inside" +
+          "100-oldest (for processing oldest 100 event logs based on timestamp inside" +
           "the eventlog) i.e application start time)  " +
-          "eg: 100-newest-per-app-name (select at most 100 newest log files for each unique " +
+          "100-newest-per-app-name (select at most 100 newest log files for each unique " +
           "application name) " +
-          "eg: 100-oldest-per-app-name (select at most 100 oldest log files for each unique " +
+          "100-oldest-per-app-name (select at most 100 oldest log files for each unique " +
           "application name)")
   val applicationName: ScallopOption[String] =
     opt[String](required = false,
@@ -108,10 +112,11 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   }
 
   validate(filterCriteria) {
-    case crit if (crit.endsWith("-filesystem") || crit.endsWith("-oldest")
-        || crit.endsWith("-newest") || crit.endsWith("-per-app-name")) => Right(Unit)
-    case _ => Left("Error, the filter criteria must end with -newest, -oldest, -filesystem or " +
-        "per-app-name")
+    case crit if (crit.endsWith("-newest-filesystem") || crit.endsWith("-oldest-filesystem")
+        || crit.endsWith("-newest-per-app-name") || crit.endsWith("-oldest-per-app-name")
+        || crit.endsWith("-oldest") || crit.endsWith("-newest")) => Right(Unit)
+    case _ => Left("Error, the filter criteria must end with -newest, -oldest, " +
+        "-newest-filesystem, -oldest-filesystem, -newest-per-app-name or -oldest-per-app-name")
   }
 
   validate(timeout) {

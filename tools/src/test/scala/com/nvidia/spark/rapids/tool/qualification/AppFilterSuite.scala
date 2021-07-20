@@ -302,32 +302,32 @@ class AppFilterSuite extends FunSuite {
       "nds86", "app-nds86", "3w", 2)
   }
 
-  test("full app name exact and 2-oldest by app time no match from filename") {
+  test("app name and 2-oldest by app time no match from filename") {
     testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest",
       "nds", "nomatch", "3w", 0)
   }
 
-  test("full app name exact and 2-oldest by app time") {
+  test("app name and 2-oldest by app time") {
     testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-oldest",
       "nds", "nds", "3w", 2)
   }
 
-  test("full app name exact and 2-newest by app time") {
+  test("app name and 2-newest by app time") {
     testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "2-newest",
       "ndsweeks2", "nds", "3w", 1)
   }
 
-  test("full app name exact and 1-newest-per-app-name") {
+  test("app name and 1-newest-per-app-name") {
     testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "1-newest-per-app-name",
       "nds", "nds", "3w", 3)
   }
 
-  test("full app name exact and 10-newest-per-app-name") {
+  test("app name and 10-newest-per-app-name") {
     testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "10-oldest-per-app-name",
       "nds", "nds", "3w", 4)
   }
 
-  test("full app name exact and 1-newest-per-app-name no match from filename") {
+  test("app name and 1-newest-per-app-name no match from filename") {
     testFileSystemTimeAndStartAndAppFull(appsFullWithFsToTest, "1-newest-per-app-name", "nds",
       "nomatch", "3w", 0)
   }
@@ -370,34 +370,46 @@ class AppFilterSuite extends FunSuite {
     }
   }
 
+  private val appsWithAppNameCriteriaToTest = Array(
+    TestEventLogFSAndAppInfo("app-ndshours18", msHoursAgo(16), "ndshours18", msHoursAgo(18), 1),
+    TestEventLogFSAndAppInfo("app-ndsweeks-1", msWeeksAgo(1), "ndsweeks", msWeeksAgo(1), 1),
+    TestEventLogFSAndAppInfo("app-ndsweeks-2", msWeeksAgo(2), "ndsweeks", msWeeksAgo(2), 2),
+    TestEventLogFSAndAppInfo("app-nds86-1", msDaysAgo(3), "nds86", msDaysAgo(4), 1),
+    TestEventLogFSAndAppInfo("app-nds86-2", msDaysAgo(13), "nds86", msWeeksAgo(2), 2),
+    TestEventLogFSAndAppInfo("app-nds86-3", msDaysAgo(18), "nds86", msWeeksAgo(3), 3))
+
   test("standalone 1-oldest-per-app-name") {
-    val expected = Array("ndshours18", "ndsweeks2", "nds86")
-    testAppStartTimeAndPerAppName(appsFullWithFsToTest, "1-oldest-per-app-name", 3, expected)
+    val expected = Array(("ndshours18", "local-162610430031"), ("ndsweeks", "local-162610430032"),
+      ("nds86", "local-162610430033"))
+    testAppFilterCriteriaAndPerAppName(appsWithAppNameCriteriaToTest, "1-oldest-per-app-name",
+      3, expected)
   }
 
   test("standalone 2-newest-per-app-name") {
-    val expected = Array("ndshours18", "ndsweeks2", "nds86", "nds86")
-    testAppStartTimeAndPerAppName(appsFullWithFsToTest, "2-newest-per-app-name", 4, expected)
+    val expected = Array(("ndshours18", "local-162610430031"), ("ndsweeks", "local-162610430031"),
+      ("ndsweeks", "local-162610430032"), ("nds86", "local-162610430031"),
+      ("nds86", "local-162610430032"))
+    testAppFilterCriteriaAndPerAppName(appsWithAppNameCriteriaToTest, "2-newest-per-app-name",
+      5, expected)
   }
 
   test("standalone 2-newest based on app time") {
-    val expected = Array("ndshours18", "nds86")
-    testAppStartTimeAndPerAppName(appsFullWithFsToTest, "2-newest", 2, expected)
-  }
-
-  test("standalone 3-oldest based on app time") {
-    val expected = Array("nds86", "nds86", "ndsweeks2")
-    testAppStartTimeAndPerAppName(appsFullWithFsToTest, "3-oldest", 3, expected)
+    val expected = Array(("ndshours18", "local-162610430031"), ("nds86", "local-162610430031"))
+    testAppFilterCriteriaAndPerAppName(appsWithAppNameCriteriaToTest,
+      "2-newest", 2, expected)
   }
 
   test("standalone 10-oldest based on app time") {
-    val expected = Array("ndshours18", "nds86", "nds86", "ndsweeks2")
-    testAppStartTimeAndPerAppName(appsFullWithFsToTest, "10-oldest", 4, expected)
+    val expected = Array(("nds86", "local-162610430031"), ("nds86", "local-162610430032"),
+      ("nds86", "local-162610430033"), ("ndsweeks", "local-162610430031"),
+      ("ndsweeks", "local-162610430032"), ("ndshours18", "local-162610430031"))
+    testAppFilterCriteriaAndPerAppName(appsWithAppNameCriteriaToTest, "10-oldest", 6, expected)
   }
 
-  private def testAppStartTimeAndPerAppName(
+  private def testAppFilterCriteriaAndPerAppName(
       apps: Array[TestEventLogFSAndAppInfo],
-      filterCriteria: String, expectedFilterSize: Int, expectedAppName: Array[String]): Unit = {
+      filterCriteria: String, expectedFilterSize: Int,
+      expectedAppName: Array[(String, String)]): Unit = {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
 
@@ -421,7 +433,7 @@ class AppFilterSuite extends FunSuite {
         )
         val appArgs = new QualificationArgs(allArgs ++ fileNames)
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
-        val resultAppName = appSum.map(x => x.appName).toArray
+        val resultAppName = appSum.map(x => (x.appName, x.appId)).toArray
 
         assert(exit == 0)
         assert(appSum.size == expectedFilterSize)
