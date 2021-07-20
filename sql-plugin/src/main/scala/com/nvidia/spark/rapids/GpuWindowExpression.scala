@@ -28,7 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuUnaryMinus}
+import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -532,13 +532,10 @@ case class GpuSpecifiedWindowFrame(
     case _ => false
   }
 
-  private def boundarySql(expr: Expression): String = {
-    val gpuExp = ShimLoader.getSparkShims.toGpuExpression(expr)
-    gpuExp match {
-      case e: GpuSpecialFrameBoundary => e.sql
-      case GpuUnaryMinus(n) => n.sql + " PRECEDING"
-      case e: Expression => e.sql + " FOLLOWING"
-    }
+  private def boundarySql(expr: Expression): String = expr match {
+    case e: GpuSpecialFrameBoundary => e.sql
+    case u: UnaryMinus => u.child.sql + " PRECEDING"
+    case e: Expression => e.sql + " FOLLOWING"
   }
 
   // Check whether the left boundary value is greater than the right boundary value. It's required

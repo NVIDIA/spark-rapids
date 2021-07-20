@@ -237,6 +237,4 @@ trait SparkShims {
   def hasAliasQuoteFix: Boolean
 
   def hasCastFloatTimestampUpcast: Boolean
-
-  def toGpuExpression(exp: Expression): Expression
 }

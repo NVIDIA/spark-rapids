@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids
 
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
-import org.apache.spark.sql.execution.ShufflePartitionSpec
 
 trait ShuffleManagerShimBase {
 
@@ -31,11 +30,4 @@ trait ShuffleManagerShimBase {
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C]
-
-  def toGpu(shufflePartitionSpec: ShufflePartitionSpec): GpuShufflePartitionSpec
 }
-
-trait GpuShufflePartitionSpec
-case class GpuPartialReducerPartitionSpec(
-    reducerIndex: Int, startMapIndex: Int, endMapIndex: Int
-) extends GpuShufflePartitionSpec

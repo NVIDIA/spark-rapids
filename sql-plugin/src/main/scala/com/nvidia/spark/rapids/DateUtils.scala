@@ -27,8 +27,6 @@ import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
  * Class for helper functions for Date
  */
 object DateUtils {
-  type RapidsSQLDate = Int
-
   val unsupportedCharacter = Set(
     'k', 'K','z', 'V', 'c', 'F', 'W', 'Q', 'q', 'G', 'A', 'n', 'N',
     'O', 'X', 'p', '\'', '[', ']', '#', '{', '}', 'Z', 'w', 'e', 'E', 'x', 'Z', 'Y')
@@ -94,7 +92,7 @@ object DateUtils {
     )
   }
 
-  def currentDate(): RapidsSQLDate = localDateToDays(LocalDate.now())
+  def currentDate(): Int = localDateToDays(LocalDate.now())
 
   case class FormatKeywordToReplace(word: String, startIndex: Int, endIndex: Int)
 
