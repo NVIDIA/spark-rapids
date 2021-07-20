@@ -75,6 +75,9 @@ object ProfileOutputWriter {
     // Initialise the width of each column to a minimum value
     val colWidths = Array.fill(numCols)(minimumColWidth)
 
+    if (rows.nonEmpty && schema.size != rows.head.size) {
+      throw new IllegalArgumentException("schema must be same size as data!")
+    }
     val escapedSchema = schema.map(escapeMetaCharacters)
 
     val schemaAndData = escapedSchema +: rows.map { row =>
