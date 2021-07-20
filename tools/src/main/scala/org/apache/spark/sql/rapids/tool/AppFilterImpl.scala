@@ -18,15 +18,15 @@ package org.apache.spark.sql.rapids.tool
 
 import java.util.Calendar
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecutor, TimeUnit}
+
 import scala.collection.JavaConverters._
+
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.EventLogInfo
-import com.nvidia.spark.rapids.tool.EventLogPathProcessor.logError
 import com.nvidia.spark.rapids.tool.qualification.QualificationArgs
 import org.apache.hadoop.conf.Configuration
-import org.apache.spark.internal.Logging
 
-import scala.collection.mutable.LinkedHashMap
+import org.apache.spark.internal.Logging
 
 class AppFilterImpl(
     numRows: Int,
@@ -101,7 +101,7 @@ class AppFilterImpl(
       appNameFiltered
     }
     val appCriteriaFiltered = if (appArgs.filterCriteria.isSupplied && filterCriteria.nonEmpty) {
-      if (filterCriteria.endsWith("-overall")) {
+      if (filterCriteria.endsWith("-newest") || filterCriteria.endsWith("-oldest")) {
         val filteredInfo = filterCriteria.split("-")
         val numberofEventLogs = filteredInfo(0).toInt
         val criteria = filteredInfo(1)
@@ -112,7 +112,7 @@ class AppFilterImpl(
         }
         filtered
       } else if (filterCriteria.endsWith("-per-app-name")) {
-        val distinctAppNameMap = apps.groupBy(_.appInfo.get.appName)
+        val distinctAppNameMap = appTimeFiltered.groupBy(_.appInfo.get.appName)
         val filteredInfo = filterCriteria.split("-")
         val numberofEventLogs = filteredInfo(0).toInt
         val criteria = filteredInfo(1)

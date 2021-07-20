@@ -89,7 +89,7 @@ Filter event logs to be processed. 10 newest file with filenames containing "loc
 ```bash
 $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
 rapids-4-spark-tools_2.12-<version>.jar \
--m "local" -f "10-newest" \
+-m "local" -f "10-newest-filesystem" \
 /directory/with/eventlogs/
 ```
 
@@ -196,16 +196,22 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     of a selection criterion. i.e Select all
                                     event logs except the ones which have
                                     application name as the input string.
-  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on 
-                                    timestamp of file for processing. eg: 100-newest 
-                                    (for processing newest 100 event logs). eg: 100-oldest
-                                    (for processing oldest 100 event logs). Filesystem
-                                    based filtering happens before any application based filtering.
+  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on filesystem
+                                    timestamp, application start timestamp or unique application
+                                    name. eg: 100-newest-filesystem (for processing newest 100 event
+                                    logs based on filesystem timestamp). eg: 100-oldest-filesystem
+                                    (for processing oldest 100 event logs  based on filesystem
+                                    timestamp). Filesystem based filtering happens before any
+                                    application based filtering.
+                                    For application based filtering, the order in which filters are
+                                    applied is: application-name, start-app-time, filter-criteria
                                     Application based filter-criteria are:
-                                    100-newest-overall (for processing newest 100 event
-                                    logs based on timestamp of the application inside the eventlog)
-                                    100-oldest-overall (for processing oldest 100 event
-                                    logs based on timestamp inside the eventlog)
+                                    100-newest (for processing newest 100 event logs based on
+                                    timestamp of the application inside the eventlog i.e application
+                                    start time)
+                                    100-oldest (for processing oldest 100 event logs based on
+                                    timestamp of the application inside the eventlog i.e application
+                                    start time)
                                     100-newest-per-app-name (select at most 100 newest log files for
                                     each unique application name)
                                     100-oldest-per-app-name (select at most 100 oldest log files for
@@ -235,6 +241,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       --report-read-schema          Whether to output the read formats and
                                     datatypes to the CSV file. This can be very
                                     long. Default is false.
+  -s, --start-app-time  <arg>       Filter event logs whose application start
+                                    occurred within the past specified time
+                                    period. Valid time periods are
+                                    min(minute),h(hours),d(days),w(weeks),m(months).
+                                    If a period is not specified it defaults to
+                                    days.
   -t, --timeout  <arg>              Maximum time in seconds to wait for the event
                                     logs to be processed. Default is 24 hours
                                     (86400 seconds) and must be greater than 3
@@ -603,8 +615,8 @@ For usage see below:
                                   less than 10 applications). Default is false
   -f, --filter-criteria  <arg>    Filter newest or oldest N event logs for processing.
                                   Supported formats are:
-                                  To process 10 recent event logs: --filter-criteria "10-newest"
-                                  To process 10 oldest event logs: --filter-criteria "10-oldest"
+                                  To process 10 recent event logs: --filter-criteria "10-newest-timestamp"
+                                  To process 10 oldest event logs: --filter-criteria "10-oldest-timestamp"
   -g, --generate-dot              Generate query visualizations in DOT format.
                                   Default is false
   -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
