@@ -41,7 +41,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter.foreach(_.write(messageHeader))
     val allRows = apps.map( a => a.appInfo.fieldsToPrint(a.index)).toList
     if (apps.size > 0) {
-      val headerNames = apps.head.appInfo.outputHeaders
+      val headerNames = Seq("appIndex") ++ apps.head.appInfo.outputHeaders
       val outStr = ProfileOutputWriter.showString(1000, 0,
         headerNames, allRows)
       fileWriter.foreach(_.write(outStr))
