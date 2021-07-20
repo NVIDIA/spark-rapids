@@ -202,11 +202,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     application based filtering.
                                     For application based filtering, the order in which filters are
                                     applied is: application-name, start-app-time, filter-criteria.
-                                    Filesystem based filter criteria are:
-                                    100-newest-filesystem (for processing newest 100 event
-                                    logs based on filesystem timestamp).
-                                    100-oldest-filesystem (for processing oldest 100 event logs
-                                    based on filesystem timestamp).
                                     Application based filter-criteria are:
                                     100-newest (for processing newest 100 event logs based on
                                     timestamp of the application inside the eventlog i.e application
@@ -218,6 +213,11 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     each unique application name)
                                     100-oldest-per-app-name (select at most 100 oldest log files for
                                     each unique application name)
+                                    Filesystem based filter criteria are:
+                                    100-newest-filesystem (for processing newest 100 event
+                                    logs based on filesystem timestamp).
+                                    100-oldest-filesystem (for processing oldest 100 event logs
+                                    based on filesystem timestamp).
   -m, --match-event-logs  <arg>     Filter event logs whose filenames contain the
                                     input string. Filesystem based filtering happens before
                                     any application based filtering.

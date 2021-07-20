@@ -47,11 +47,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           "happens before any application based filtering." +
           "For application based filtering, the order in which filters are" +
           "applied is: application-name, start-app-time, filter-criteria." +
-          "Filesystem based filter criteria are:" +
-          "100-newest-filesystem (for processing newest 100 event logs based on filesystem " +
-          "timestamp). " +
-          "100-oldest-filesystem (for processing oldest 100 event logsbased on filesystem " +
-          "timestamp). " +
           "Application based filter-criteria are:" +
           "100-newest (for processing newest 100 event logs based on timestamp inside" +
           "the eventlog) i.e application start time)  " +
@@ -60,7 +55,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           "100-newest-per-app-name (select at most 100 newest log files for each unique " +
           "application name) " +
           "100-oldest-per-app-name (select at most 100 oldest log files for each unique " +
-          "application name)")
+          "application name)" +
+          "Filesystem based filter criteria are:" +
+          "100-newest-filesystem (for processing newest 100 event logs based on filesystem " +
+          "timestamp). " +
+          "100-oldest-filesystem (for processing oldest 100 event logsbased on filesystem " +
+          "timestamp).")
   val applicationName: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose application name matches " +
