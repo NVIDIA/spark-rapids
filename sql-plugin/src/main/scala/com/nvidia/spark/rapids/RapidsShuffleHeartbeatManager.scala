@@ -96,7 +96,7 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
   def registerExecutor(id: BlockManagerId): RapidsExecutorUpdateMsg = synchronized {
     logDebug(s"Registration from RAPIDS executor at $id")
     require(!executorRegistrations.containsKey(id), s"Executor $id already registered")
-    removeDeadExecutors(getCurrentTimeMillis, None)
+    removeDeadExecutors(getCurrentTimeMillis)
     val allExecutors = executors.map(e => e.id).toArray
     val newReg = ExecutorRegistration(id,
       registrationOrder,
@@ -115,40 +115,40 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
    * @return `RapidsExecutorUpdateMsg` with new executors, since the last heartbeat was received.
    */
   def executorHeartbeat(id: BlockManagerId): RapidsExecutorUpdateMsg = synchronized {
+    removeDeadExecutors(getCurrentTimeMillis)
     val lastRegistration = executorRegistrations.get(id)
     if (lastRegistration == null) {
-      throw new IllegalStateException(s"Heartbeat from unknown executor $id")
-    }
+      logDebug(s"Heartbeat from unknown executor $id")
+      registerExecutor(id)
+    } else {
+      val newExecutors = new ArrayBuffer[BlockManagerId]
+      val iter = executors.reverseIterator
+      var done = false
+      while (iter.hasNext && !done) {
+        val entry = iter.next()
 
-    removeDeadExecutors(getCurrentTimeMillis, Option(id))
-
-    val newExecutors = new ArrayBuffer[BlockManagerId]
-    val iter = executors.reverseIterator
-    var done = false
-    while (iter.hasNext && !done) {
-      val entry = iter.next()
-
-      if (entry.registrationOrder >= lastRegistration.lastRegistrationOrderSeen.getValue) {
-        if (entry.id != id) {
-          logDebug(s"Found new executor (to $id): $entry while handling a heartbeat.")
-          newExecutors += entry.id
+        if (entry.registrationOrder >= lastRegistration.lastRegistrationOrderSeen.getValue) {
+          if (entry.id != id) {
+            logDebug(s"Found new executor (to $id): $entry while handling a heartbeat.")
+            newExecutors += entry.id
+          }
+        } else {
+          // We are iterating backwards and have found the last previously inspected executor
+          // since `registrationOrder` monotonically increases and follows insertion order.
+          // We can stop since all peers below this have been sent to the heartbeating peer.
+          done = true
         }
-      } else {
-        // We are iterating backwards and have found the last previously inspected executor
-        // since `registrationOrder` monotonically increases and follows insertion order.
-        // We can stop since all peers below this have been sent to the heartbeating peer.
-        done = true
       }
+
+      // update this executor's registration with a new heartbeat time, and that last order
+      // from the executors list, indicating the order we should stop at next time
+      lastRegistration.lastHeartbeatMillis.setValue(getCurrentTimeMillis)
+      lastRegistration.lastRegistrationOrderSeen.setValue(registrationOrder)
+
+      // since we updated our heartbeat, update our min-heap
+      leastRecentHeartbeat.priorityUpdated(lastRegistration.id)
+      RapidsExecutorUpdateMsg(newExecutors.toArray)
     }
-
-    // update this executor's registration with a new heartbeat time, and that last order
-    // from the executors list, indicating the order we should stop at next time
-    lastRegistration.lastHeartbeatMillis.setValue(getCurrentTimeMillis)
-    lastRegistration.lastRegistrationOrderSeen.setValue(registrationOrder)
-
-    // since we updated our heartbeat, update our min-heap
-    leastRecentHeartbeat.priorityUpdated(lastRegistration.id)
-    RapidsExecutorUpdateMsg(newExecutors.toArray)
   }
 
   // the timeout amount has elapsed, assume this executor is dead
@@ -157,18 +157,15 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
   }
 
   // must be called holding the object lock
-  private def removeDeadExecutors(currentTime: Long,
-                                  heartbeatingExec: Option[BlockManagerId]): Unit = {
+  private def removeDeadExecutors(currentTime: Long): Unit = {
     val leastRecentHb = leastRecentHeartbeat.peek() // look at the executor that is lagging most
     if (leastRecentHb != null &&
         isStaleHeartbeat(
-          executorRegistrations.get(leastRecentHb).lastHeartbeatMillis.getValue, currentTime) &&
-        !heartbeatingExec.contains(leastRecentHb)) {
+          executorRegistrations.get(leastRecentHb).lastHeartbeatMillis.getValue, currentTime)) {
       // make a new buffer of alive executors and replace the old one
       val aliveExecutors = new ArrayBuffer[ExecutorRegistration]()
       executors.foreach { e =>
-        if (isStaleHeartbeat(e.lastHeartbeatMillis.getValue, currentTime) &&
-          !heartbeatingExec.contains(e.id)) {
+        if (isStaleHeartbeat(e.lastHeartbeatMillis.getValue, currentTime)) {
           logDebug(s"Stale exec, removing $e")
           executorRegistrations.remove(e.id)
           leastRecentHeartbeat.remove(e.id)
