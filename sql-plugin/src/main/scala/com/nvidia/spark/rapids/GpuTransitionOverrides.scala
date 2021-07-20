@@ -113,7 +113,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
         parent match {
-          case Some(_: GpuCustomShuffleReaderExec) =>
+          case Some(_: GpuCustomShuffleReaderExec | _: CustomShuffleReaderExec) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
