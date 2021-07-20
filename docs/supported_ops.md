@@ -9,7 +9,7 @@ support all data types. The RAPIDS Accelerator for Apache Spark has further
 restrictions on what types are supported for processing. This tries
 to document what operations are supported and what data types each operation supports.
 Because Apache Spark is under active development too and this document was generated
-against version 3.1.1 of Spark. Most of this should still
+against version 3.0.1 of Spark. Most of this should still
 apply to other versions of Spark, but there may be slight changes.
 
 # General limitations
@@ -518,29 +518,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>InMemoryTableScanExec</td>
-<td>Implementation of InMemoryTableScanExec to use GPU accelerated Caching</td>
-<td>None</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S*</td>
-<td>S</td>
-<td>S*</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS* (missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
 <td>DataWritingCommandExec</td>
 <td>Writing data</td>
 <td>None</td>
@@ -840,29 +817,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<th>Executor</th>
-<th>Description</th>
-<th>Notes</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td>WindowInPandasExec</td>
 <td>The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled. For now it only supports row based window frame.</td>
 <td>This is disabled by default because it only supports row based frame for now</td>
@@ -884,6 +838,29 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+</tr>
+<tr>
+<th>Executor</th>
+<th>Description</th>
+<th>Notes</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td>WindowExec</td>
@@ -12281,74 +12258,11 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="10">RegExpReplace</td>
-<td rowSpan="10">`regexp_replace`</td>
-<td rowSpan="10">RegExpReplace support for string literal input patterns</td>
-<td rowSpan="10">None</td>
-<td rowSpan="5">project</td>
-<td>regex</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><em>PS (very limited regex support; Literal value only)</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>pos</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><em>PS (only a value of 1 is supported)</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
+<td rowSpan="8">RegExpReplace</td>
+<td rowSpan="8">`regexp_replace`</td>
+<td rowSpan="8">RegExpReplace support for string literal input patterns</td>
+<td rowSpan="8">None</td>
+<td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>
 <td> </td>
@@ -12360,6 +12274,27 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>regex</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS (very limited regex support; Literal value only)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12391,28 +12326,6 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="5">lambda</td>
-<td>regex</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
 <td>result</td>
 <td> </td>
 <td> </td>
@@ -12423,7 +12336,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12434,27 +12347,7 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
-<td>pos</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
+<td rowSpan="4">lambda</td>
 <td>str</td>
 <td> </td>
 <td> </td>
@@ -12476,7 +12369,49 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<td>regex</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td>rep</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16674,6 +16609,138 @@ Accelerator support is described below.
 <th>UDT</th>
 </tr>
 <tr>
+<td rowSpan="6">TimeSub</td>
+<td rowSpan="6"> </td>
+<td rowSpan="6">Subtracts interval from timestamp</td>
+<td rowSpan="6">None</td>
+<td rowSpan="3">project</td>
+<td>start</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S*</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>interval</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS (months not supported; Literal value only)</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S*</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="3">lambda</td>
+<td>start</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>interval</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="4">ToDegrees</td>
 <td rowSpan="4">`degrees`</td>
 <td rowSpan="4">Converts radians to degrees</td>
@@ -16986,6 +17053,32 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="4">UnaryMinus</td>
 <td rowSpan="4">`negative`</td>
 <td rowSpan="4">Negate a numeric value</td>
@@ -17074,32 +17167,6 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">UnaryPositive</td>
@@ -17376,6 +17443,32 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="2">UnscaledValue</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Convert a Decimal to an unscaled long value for some aggregation optimizations</td>
@@ -17511,32 +17604,6 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">WeekDay</td>
@@ -17763,6 +17830,32 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
 <td><b>NS</b></td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">Year</td>
@@ -18051,32 +18144,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td rowSpan="6">Average</td>
 <td rowSpan="6">`avg`, `mean`</td>
 <td rowSpan="6">Average aggregate operator</td>
@@ -18208,6 +18275,32 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="6">CollectList</td>
@@ -18476,32 +18569,6 @@ Accelerator support is described below.
 <td> </td>
 </tr>
 <tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td rowSpan="6">Count</td>
 <td rowSpan="6">`count`</td>
 <td rowSpan="6">Count aggregate operator</td>
@@ -18633,6 +18700,32 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="6">First</td>
@@ -18901,32 +18994,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td rowSpan="6">Max</td>
 <td rowSpan="6">`max`</td>
 <td rowSpan="6">Max aggregate operator</td>
@@ -19058,6 +19125,32 @@ Accelerator support is described below.
 <td> </td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="6">Min</td>
@@ -19325,32 +19418,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td rowSpan="6">Sum</td>
 <td rowSpan="6">`sum`</td>
 <td rowSpan="6">Sum aggregate operator</td>
@@ -19482,6 +19549,32 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
+<tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">NormalizeNaNAndZero</td>
@@ -19690,32 +19783,6 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
 <td rowSpan="4">HiveSimpleUDF</td>
 <td rowSpan="4"> </td>
 <td rowSpan="4">Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface</td>
@@ -19859,7 +19926,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td> </td>
@@ -19880,11 +19947,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
 <td>S*</td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -19901,11 +19968,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
 <td>S*</td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -19922,11 +19989,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
 <td>S*</td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -19943,11 +20010,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
 <td>S*</td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -19964,7 +20031,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
 <td>S*</td>
 <td> </td>
@@ -19985,7 +20052,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td>S*</td>
 <td>S</td>
 <td>S*</td>
 <td> </td>
@@ -19998,17 +20065,17 @@ and the accelerator produces the same result.
 </tr>
 <tr>
 <th>DATE</th>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20019,17 +20086,17 @@ and the accelerator produces the same result.
 </tr>
 <tr>
 <th>TIMESTAMP</th>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td>S*</td>
 <td>S</td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20069,7 +20136,7 @@ and the accelerator produces the same result.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td>S</td>
 <td>S*</td>
 <td> </td>
@@ -20154,12 +20221,12 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS (missing nested BOOLEAN, BYTE, SHORT, LONG, DATE, TIMESTAMP, STRING, DECIMAL, NULL, BINARY, CALENDAR, MAP, STRUCT, UDT)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20175,7 +20242,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20196,7 +20263,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><em>PS (the struct's children must also support being cast to string)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -20217,7 +20284,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
