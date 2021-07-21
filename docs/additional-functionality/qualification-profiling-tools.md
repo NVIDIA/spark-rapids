@@ -18,19 +18,19 @@ GPU generated event logs.
 This document covers below topics:
 
 * [Prerequisites](#Prerequisites)
-* [Download the tools jar or compile it](#Download the tools jar or compile it)
-* [Qualification Tool](#Qualification Tool)
-    * [Qualification tool functions](#Qualification tool functions)
-    * [Download the Spark 3.x distribution](#Download the Spark 3.x distribution)
-    * [How to use qualification tool](#How to use qualification tool)
-    * [Qualification tool options](#Qualification tool options)
-    * [Qualification tool output](#Qualification tool output)
-* [Profiling Tool](#Profiling Tool)
-    * [Profiling tool functions](#Profiling tool functions)
-    * [Profiling tool metrics definitions](#Profiling tool metrics definitions)
-    * [How to use profiling tool](#How to use profiling tool)
-    * [Profiling tool options](#Profiling tool options)
-    * [Profiling tool output](#Profiling tool output)
+* [Download the tools jar or compile it](#Download-the-tools-jar-or-compile-it)
+* [Qualification Tool](#Qualification-Tool)
+    * [Qualification tool functions](#Qualification-tool-functions)
+    * [Download the Spark 3.x distribution](#Download-the-Spark-3.x-distribution)
+    * [How to use qualification tool](#How-to-use-qualification-tool)
+    * [Qualification tool options](#Qualification-tool-options)
+    * [Qualification tool output](#Qualification-tool-output)
+* [Profiling Tool](#Profiling-Tool)
+    * [Profiling tool functions](#Profiling-tool-functions)
+    * [Profiling tool metrics definitions](#Profiling-tool-metrics-definitions)
+    * [How to use profiling tool](#How-to-use-profiling-tool)
+    * [Profiling tool options](#Profiling-tool-options)
+    * [Profiling tool output](#Profiling-tool-output)
       
 ## Prerequisites
 - Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
@@ -161,7 +161,7 @@ in the classpath.
 2. Extract the Spark distribution into a local directory.
 3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
    `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool. See the
-   [How to use qualification tool](#How to use qualification tool) section below.
+   [How to use qualification tool](#How-to-use-qualification-tool) section below.
 
 ### How to use qualification tool
 This tool parses the Spark CPU event log(s) and creates an output report.
