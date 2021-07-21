@@ -360,6 +360,14 @@ different because of compression. Users can turn on
 the GPU try to replicate more closely what the output ordering would have been if sort were used,
 like on the CPU.
 
+### Why am I getting the error `Failed to open the timezone file` when reading files?
+
+When reading from a file that contains data referring to a particular timezone, e.g.: reading
+timestamps from an ORC file, the system's timezone database at `/usr/share/zoneinfo/` must contain
+the timezone in order to process the data properly. This error often indicates the system is
+missing the timezone database. On Ubuntu systems, the timezone database is provided by the
+`tzdata` package.
+
 ### Why am I getting an error when trying to use pinned memory?
 
 ```
