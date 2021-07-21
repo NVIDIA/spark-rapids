@@ -1251,6 +1251,9 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       override def getIterator: Iterator[InternalRow] = {
 
         new Iterator[InternalRow] {
+          // We have to check for null context because of the unit test
+          Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => hostBatch.close()))
+
           val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
           val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
             withResource(batch) { batch =>
@@ -1266,14 +1269,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
 
           override def hasNext: Boolean = rowIterator.hasNext
 
-          // We have to check for null context because of the unit test
-          if (TaskContext.get() != null) {
-            TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
-              if (hostBatch != null) {
-                hostBatch.close()
-              }
-            })
-          }
         }
       }
     }

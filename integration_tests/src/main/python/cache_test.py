@@ -279,3 +279,15 @@ def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
 
     # NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
     assert_equal(reg_result, cached_result)
+
+@pytest.mark.parametrize('enable_vectorized', enable_vectorized_confs, ids=idfn)
+def test_cache_array(enable_vectorized):
+    def helper(spark):
+        data = [("aaa", "123 456 789"), ("bbb", "444 555 666"), ("ccc", "777 888 999")]
+        columns = ["a","b"]
+        df = spark.createDataFrame(data).toDF(*columns)
+        newdf = df.withColumn('newb', f.split(f.col('b'),' '))
+        newdf.persist()
+        return newdf.count()
+
+    with_gpu_session(helper, conf = enable_vectorized)
