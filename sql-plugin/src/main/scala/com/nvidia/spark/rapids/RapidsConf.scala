@@ -1003,7 +1003,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.transport.earlyStart.heartbeatTimeout")
       .doc(s"Shuffle early start heartbeat timeout (milliseconds). " +
         s"Executors that don't heartbeat within this timeout will be considered stale. " +
-        s"This timeout must be set higher than: " +
+        s"This timeout must be higher than the value for " +
         s"${SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL.key}")
       .integerConf
       .createWithDefault(10000)
