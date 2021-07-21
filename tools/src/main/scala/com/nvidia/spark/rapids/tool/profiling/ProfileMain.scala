@@ -159,7 +159,9 @@ object ProfileMain extends Logging {
       textFileWriter.write("\n### C. Health Check###\n")
       */
       val healthCheck=new HealthCheck(apps, Some(textFileWriter), numOutputRows)
-      healthCheck.listFailedJobsStagesTasks()
+      healthCheck.listFailedTasks()
+      healthCheck.listFailedStages()
+      healthCheck.listFailedJobs()
       /*
       healthCheck.listRemovedBlockManager()
       healthCheck.listRemovedExecutors()

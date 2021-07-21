@@ -26,8 +26,12 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter],
     numOutputRows: Int) {
 
+  def truncateFailureStr(failureStr: String): String = {
+    failureStr.substring(0, Math.min(0, Math.min(failureStr.size - 1, 100)))
+  }
+
   // Function to list all failed tasks , stages and jobs.
-  def listFailedJobsStagesTasks(): Unit = {
+  def listFailedTasks(): Unit = {
     val tasksMessageHeader = s"\nFailed tasks:\n"
     fileWriter.foreach(_.write(tasksMessageHeader))
     val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId",
@@ -37,46 +41,68 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       tasksFailed.map { t =>
         Seq(app.index.toString, t.stageId.toString, t.stageAttemptId.toString,
           t.taskId.toString, t.attempt.toString,
-          t.endReason.substring(0, Math.min(t.endReason.size - 1, 100)))
+          truncateFailureStr(t.endReason))
       }
     }
     if (failed.size > 0) {
-      val sortedRows = failed.sortBy(cols => (cols(0).toLong))
+      val sortedRows = failed.sortBy(cols =>
+        (cols(0).toLong, cols(1).toLong, cols(2).toLong, cols(3).toLong, cols(4).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))
     } else {
-      fileWriter.foreach(_.write("No Job Information Found!\n"))
+      fileWriter.foreach(_.write("No Failed Tasks Found!\n"))
     }
+  }
 
-
-/*
+  def listFailedStages(): Unit = {
     val stagesMessageHeader = s"\nFailed stages:\n"
-    val stagesQuery = apps
-        .filter { p =>
-          p.allDataFrames.contains(s"stageDF_${p.index}")
-        }.map(app => "(" + app.getFailedStages + ")")
-        .mkString(" union ")
-    if (stagesQuery.nonEmpty) {
-      apps.head.runQuery(stagesQuery + "order by appIndex", false,
-        fileWriter = Some(textFileWriter), messageHeader = stagesMessageHeader)
-    } else {
-      apps.head.sparkSession.emptyDataFrame
+    fileWriter.foreach(_.write(stagesMessageHeader))
+    val outputHeaders = Seq("appIndex", "stageId", "attemptId", "name",
+      "numTasks", "failureReason")
+    val failed = apps.flatMap { app =>
+      val stagesFailed = app.liveStages.filter { case (_, sc) =>
+        sc.failureReason.nonEmpty
+      }
+      stagesFailed.map { case ((id, attId), sc) =>
+        val failureStr = sc.failureReason.getOrElse("")
+        Seq(app.index.toString, id.toString, attId.toString,
+          sc.info.name, sc.info.numTasks.toString,
+          truncateFailureStr(failureStr))
+      }
     }
+    if (failed.size > 0) {
+      val sortedRows = failed.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Failed Stages Found!\n"))
+    }
+  }
 
+  def listFailedJobs(): Unit = {
     val jobsMessageHeader = s"\nFailed jobs:\n"
-    val jobsQuery = apps
-        .filter { p =>
-          p.allDataFrames.contains(s"jobDF_${p.index}")
-        }.map(app => "(" + app.getFailedJobs + ")")
-        .mkString(" union ")
-    if (jobsQuery.nonEmpty) {
-      apps.head.runQuery(jobsQuery + "order by appIndex", false,
-        fileWriter = Some(textFileWriter), messageHeader = jobsMessageHeader)
-    } else {
-      apps.head.sparkSession.emptyDataFrame
+    fileWriter.foreach(_.write(jobsMessageHeader))
+    val outputHeaders = Seq("appIndex", "jobId", "jobResult", "failureReason")
+    val failed = apps.flatMap { app =>
+      val jobsFailed = app.liveJobs.filter { case (_, jc) =>
+        jc.jobResult.nonEmpty && !jc.jobResult.get.equals("JobSucceeded")
+      }
+      jobsFailed.map { case (id, jc) =>
+        val failureStr = jc.failedReason.getOrElse("")
+        Seq(app.index.toString, id.toString, jc.jobResult.getOrElse("Unknown"),
+          truncateFailureStr(failureStr))
+      }
     }
-    */
+    if (failed.size > 0) {
+      val sortedRows = failed.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Failed Jobs Found!\n"))
+    }
   }
 
   /*
