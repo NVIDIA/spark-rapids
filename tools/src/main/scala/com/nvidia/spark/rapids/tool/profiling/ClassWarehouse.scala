@@ -24,23 +24,23 @@ import org.apache.spark.scheduler.StageInfo
  */
 
 case class ResourceProfileCase(
-  id: Int, executorCores: Int, executorMemory: Long, numGpusPerExecutor: Int,
-  executorOffHeap: Long, taskCpu: Int, taskGpu: Double)
+    id: Int, executorCores: Int, executorMemory: Long, numGpusPerExecutor: Int,
+    executorOffHeap: Long, taskCpu: Int, taskGpu: Double)
 
 case class BlockManagerCase(
-  executorID: String, host: String, port: Int,
-  maxMem: Long, maxOnHeapMem: Long, maxOffHeapMem: Long)
+    executorID: String, host: String, port: Int,
+    maxMem: Long, maxOnHeapMem: Long, maxOffHeapMem: Long)
 
 case class BlockManagerRemovedCase(
-  executorID: String, host: String, port: Int, time: Long)
+    executorID: String, host: String, port: Int, time: Long)
 
 case class PropertiesCase(
-  source: String, key: String, value: String)
+    source: String, key: String, value: String)
 
 case class ApplicationCase(
-  appName: String, appId: Option[String], startTime: Long,
-  sparkUser: String, endTime: Option[Long], duration: Option[Long],
-  durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
+    appName: String, appId: Option[String], sparkUser: String,
+    startTime: Long, endTime: Option[Long], duration: Option[Long],
+    durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
 
   val outputHeaders: Seq[String] = {
     Seq("appIndex") ++ ProfileUtils.getMethods[ApplicationCase]
@@ -55,14 +55,14 @@ case class ApplicationCase(
       case Some(t) => t.toString
       case None => ""
     }
-    Seq(index.toString, appName, appId.getOrElse(""), startTime.toString,
-      sparkUser, endTimeStr, durStr, durationStr, sparkVersion,
+    Seq(index.toString, appName, appId.getOrElse(""), sparkUser,
+      startTime.toString, endTimeStr, durStr, durationStr, sparkVersion,
       pluginEnabled.toString)
   }
 }
 
 case class ExecutorCase(
-  executorID: String, host: String, totalCores: Int, resourceProfileId: Int)
+    executorID: String, host: String, totalCores: Int, resourceProfileId: Int)
 
 case class ExecutorRemovedCase(
     executorID: String,
@@ -102,7 +102,7 @@ case class SQLPlanMetricsCase(
 case class PlanNodeAccumCase(
     sqlID: Long,
     nodeID: Long,
-    nodeName:String,
+    nodeName: String,
     nodeDesc: String,
     accumulatorId: Long)
 

@@ -137,7 +137,7 @@ object ProfileMain extends Logging {
         collect.printDataSourceInfo()
         collect.printExecutorInfo()
         collect.printJobInfo()
-        // collect.printRapidsProperties()
+        collect.printRapidsProperties()
         collect.printRapidsJAR()
         /*
         collect.printSQLPlanMetrics()

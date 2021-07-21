@@ -273,7 +273,6 @@ class ApplicationInfo(
   var jvmInfo = Map.empty[String, String]
   var classpathEntries = Map.empty[String, String]
   var gpuMode = false
-  var allProperties: ArrayBuffer[PropertiesCase] = ArrayBuffer[PropertiesCase]()
 
   // From SparkListenerApplicationStart and SparkListenerApplicationEnd
   var appInfo: ApplicationCase = null
@@ -389,7 +388,7 @@ class ApplicationInfo(
   // Process all events
   processEvents()
   // Process all properties after all events are processed
-  processAllProperties()
+  // processAllProperties()
   // Process SQL Plan Metrics after all events are processed
   processSQLPlanMetrics()
   aggregateAppInfo
@@ -413,33 +412,6 @@ class ApplicationInfo(
       new StageCaseInfo(info))
     stage
   }
-
-  /**
-   * Functions to process all properties after all events are processed
-   */
-  def processAllProperties(): Unit = {
-    for ((k, v) <- sparkProperties) {
-      val thisProperty = PropertiesCase("spark", k, v)
-      allProperties += thisProperty
-    }
-    for ((k, v) <- hadoopProperties) {
-      val thisProperty = PropertiesCase("hadoop", k, v)
-      allProperties += thisProperty
-    }
-    for ((k, v) <- systemProperties) {
-      val thisProperty = PropertiesCase("system", k, v)
-      allProperties += thisProperty
-    }
-    for ((k, v) <- jvmInfo) {
-      val thisProperty = PropertiesCase("jvm", k, v)
-      allProperties += thisProperty
-    }
-    for ((k, v) <- classpathEntries) {
-      val thisProperty = PropertiesCase("classpath", k, v)
-      allProperties += thisProperty
-    }
-  }
-
 
   /**
    * Function to process SQL Plan Metrics after all events are processed

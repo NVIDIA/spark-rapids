@@ -205,8 +205,8 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     val thisAppStart = ApplicationCase(
       event.appName,
       event.appId,
-      event.time,
       event.sparkUser,
+      event.time,
       None,
       None,
       "",

@@ -16,13 +16,14 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import scala.collection.mutable.{ArrayBuffer, HashMap}
+
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 case class StageMetrics(numTasks: Int, duration: String)
@@ -45,7 +46,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val headerNames = apps.head.appInfo.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headerNames, allRows)
-      fileWriter.foreach(_.write(outStr + "\n"))
+      fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
     }
@@ -98,7 +99,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(3), cols(5)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
-      fileWriter.foreach(_.write(outStr + "\n"))
+      fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Data Source Information Found!\n"))
     }
@@ -159,7 +160,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(2).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
-      fileWriter.foreach(_.write(outStr + "\n"))
+      fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Executor Information Found!\n"))
     }
@@ -186,25 +187,67 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
-      fileWriter.foreach(_.write(outStr + "\n"))
+      fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Job Information Found!\n"))
     }
   }
-  /*
-    // Print Rapids related Spark Properties
-    def printRapidsProperties(): Unit = {
-      val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
-      for (app <- apps) {
-        if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-          app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
-            fileWriter = fileWriter, messageHeader = messageHeader)
-        } else {
-          fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+
+  // Print Rapids related Spark Properties
+  def printRapidsProperties(): Unit = {
+    val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    val outputHeaders = ArrayBuffer("propertyName")
+    val props = HashMap[String, ArrayBuffer[String]]()
+    var numApps = 0
+    apps.foreach { app =>
+      if (app.sparkProperties.size > 0) {
+        numApps += 1
+        outputHeaders += s"appIndex_${app.index}"
+        val rapidsRelated = app.sparkProperties.filterKeys { key =>
+          key.contains("spark.rapids") || key.contains("spark.executorEnv.UCX") ||
+          key.contains("spark.shuffle.manager") || key.contains("spark.shuffle.server.enabled")
         }
+        val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
+        val existDiff = props.keys.toSeq.diff(inter)
+        val newDiff = rapidsRelated.keys.toSeq.diff(inter)
+
+        // first update intersecting
+        inter.foreach { k =>
+          val appVals = props.getOrElse(k, ArrayBuffer[String]())
+          appVals += rapidsRelated.getOrElse(k, "na")
+        }
+
+        // this app doesn't contain a key that was in another app
+        existDiff.foreach { k =>
+          val appVals = props.getOrElse(k, ArrayBuffer[String]())
+          appVals += "na"
+        }
+
+        // this app contains a key not in other apps
+        newDiff.foreach { k =>
+          // we need to fill if some apps didn't have it
+          val appVals = ArrayBuffer[String]()
+          appVals ++ Seq.fill(numApps)("na")
+          appVals += rapidsRelated.getOrElse(k, "na")
+          props.put(k, appVals)
+        }
+      } else {
+        // Seq.empty
       }
     }
+    if (apps.size > 0) {
+      val allRows = props.map { case(k, v) => Seq(k) ++ v }.toSeq
+      val sortedRows = allRows.sortBy(cols => (cols(0)))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+    }
+  }
 
+  /*
     def printSQLPlans(outputDirectory: String): Unit = {
       for (app <- apps) {
         val planFileWriter = new ToolTextFileWriter(outputDirectory,
