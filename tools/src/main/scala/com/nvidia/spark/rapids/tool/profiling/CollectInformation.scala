@@ -205,8 +205,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         numApps += 1
         outputHeaders += s"appIndex_${app.index}"
         val rapidsRelated = app.sparkProperties.filterKeys { key =>
-          key.contains("spark.rapids") || key.contains("spark.executorEnv.UCX") ||
-          key.contains("spark.shuffle.manager") || key.contains("spark.shuffle.server.enabled")
+          key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
+          key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.server.enabled")
         }
         val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
         val existDiff = props.keys.toSeq.diff(inter)
