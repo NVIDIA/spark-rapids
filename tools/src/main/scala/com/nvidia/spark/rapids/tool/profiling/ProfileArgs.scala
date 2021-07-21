@@ -58,8 +58,8 @@ For usage see below:
   val filterCriteria: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter newest or oldest N eventlogs for processing." +
-          "eg: 100-newest (for processing newest 100 event logs). " +
-          "eg: 100-oldest (for processing oldest 100 event logs)")
+          "eg: 100-newest-filesystem (for processing newest 100 event logs). " +
+          "eg: 100-oldest-filesystem (for processing oldest 100 event logs)")
   val matchEventLogs: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose filenames contain the input string")
@@ -81,8 +81,10 @@ For usage see below:
       descr = "Write an SVG graph out for the full application timeline.")
 
   validate(filterCriteria) {
-    case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)
-    case _ => Left("Error, the filter criteria must end with either -newest or -oldest")
+    case crit if (crit.endsWith("-newest-filesystem") ||
+        crit.endsWith("-oldest-filesystem")) => Right(Unit)
+    case _ => Left("Error, the filter criteria must end with either -newest-filesystem " +
+        "or -oldest-filesystem")
   }
 
   verify()

@@ -324,6 +324,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       conf: SQLConf): RDD[CachedBatch] = {
 
     val rapidsConf = new RapidsConf(conf)
+    val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
     val structSchema = schemaWithUnambiguousNames.toStructType
     if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schema)) {
@@ -343,7 +344,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           List(ParquetCachedBatch(batch.numRows(), new Array[Byte](0)))
         } else {
           withResource(putOnGpuIfNeeded(batch)) { gpuCB =>
-            compressColumnarBatchWithParquet(gpuCB, structSchema, schema.toStructType)
+            compressColumnarBatchWithParquet(gpuCB, structSchema, schema.toStructType,
+              bytesAllowedPerBatch)
           }
         }
       })
@@ -357,14 +359,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
     }
   }
 
-  val _2GB: Long = 2L * 1024 * 1024 * 1024
-  val APPROX_PAR_META_DATA: Int = 10 * 1024 * 1024 // we are estimating 10MB
-  val BYTES_ALLOWED_PER_BATCH: Long = _2GB - APPROX_PAR_META_DATA
-
   private[rapids] def compressColumnarBatchWithParquet(
       oldGpuCB: ColumnarBatch,
       schema: StructType,
-      origSchema: StructType): List[ParquetCachedBatch] = {
+      origSchema: StructType,
+      bytesAllowedPerBatch: Long): List[ParquetCachedBatch] = {
     val estimatedRowSize = scala.Range(0, oldGpuCB.numCols()).map { idx =>
       oldGpuCB.column(idx).asInstanceOf[GpuColumnVector]
           .getBase.getDeviceMemorySize / oldGpuCB.numRows()
@@ -391,7 +390,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       GpuColumnVector.from(v, schema(i).dataType)
     }
     withResource(new ColumnarBatch(columns.toArray, oldGpuCB.numRows())) { gpuCB =>
-      val rowsAllowedInBatch = (BYTES_ALLOWED_PER_BATCH / estimatedRowSize).toInt
+      val rowsAllowedInBatch = (bytesAllowedPerBatch / estimatedRowSize).toInt
       val splitIndices = scala.Range(rowsAllowedInBatch, gpuCB.numRows(), rowsAllowedInBatch)
       val buffers = new ListBuffer[ParquetCachedBatch]
       if (splitIndices.nonEmpty) {
@@ -462,18 +461,18 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
     // optimize
-    if (selectedAttributes.isEmpty) {
-      return input.map { _ =>
-        new ColumnarBatch(Array())
-      }
+    val newSelectedAttributes = if (selectedAttributes.isEmpty) {
+      cacheAttributes
+    } else {
+      selectedAttributes
     }
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
+      getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
     convertCachedBatchToColumnarInternal(
       input,
       cachedSchemaWithNames,
       selectedSchemaWithNames,
-      selectedAttributes)
+      newSelectedAttributes)
   }
 
   private def convertCachedBatchToColumnarInternal(
@@ -545,18 +544,18 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
     // optimize
-    if (selectedAttributes.isEmpty) {
-      return input.map { _ =>
-        new ColumnarBatch(Array())
-      }
+    val newSelectedAttributes = if (selectedAttributes.isEmpty) {
+      cacheAttributes
+    } else {
+      selectedAttributes
     }
     val rapidsConf = new RapidsConf(conf)
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
+      getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
     if (rapidsConf.isSqlEnabled &&
         isSchemaSupportedByCudf(cachedSchemaWithNames)) {
       val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
-        selectedSchemaWithNames, selectedAttributes)
+        selectedSchemaWithNames, newSelectedAttributes)
       val cbRdd = batches.map(batch => {
         withResource(batch) { gpuBatch =>
           val cols = GpuColumnVector.extractColumns(gpuBatch)
@@ -569,7 +568,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       input.mapPartitions {
         cbIter => {
           new CachedBatchIteratorConsumer(cbIter, cachedSchemaWithNames, selectedSchemaWithNames,
-            cacheAttributes, selectedAttributes, broadcastedConf).getColumnBatchIterator
+            cacheAttributes, newSelectedAttributes, broadcastedConf).getColumnBatchIterator
         }
       }
     }
@@ -590,12 +589,6 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[InternalRow] = {
-    // optimize
-    if (selectedAttributes.isEmpty) {
-      return input.map { _ =>
-        InternalRow.empty
-      }
-    }
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
       getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
     val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
@@ -742,170 +735,162 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         private def convertCachedBatchToInternalRowIter: Iterator[InternalRow] = {
           val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
           val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
-          val parquetFileReader = ParquetFileReader.open(inputFile, options)
-          val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
-          val hasUnsupportedType = origCacheSchema.exists { field =>
-            !isTypeSupportedByParquet(field.dataType)
-          }
-
-          val unsafeRows = new ArrayBuffer[InternalRow]
-          import org.apache.parquet.io.ColumnIOFactory
-          var pages = parquetFileReader.readNextRowGroup()
-          while (pages != null) {
-            val rows = pages.getRowCount
-            val columnIO = new ColumnIOFactory().getColumnIO(parquetSchema)
-            val recordReader =
-              columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
-                cacheAttributes.toStructType,
-                new ParquetToSparkSchemaConverter(hadoopConf), None /*convertTz*/ ,
-                LegacyBehaviorPolicy.CORRECTED))
-            for (_ <- 0 until rows.toInt) {
-              val row = recordReader.read
-              unsafeRows += row.copy()
+          withResource(ParquetFileReader.open(inputFile, options)) { parquetFileReader =>
+            val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
+            val hasUnsupportedType = origCacheSchema.exists { field =>
+              !isTypeSupportedByParquet(field.dataType)
             }
-            pages = parquetFileReader.readNextRowGroup()
-          }
-          parquetFileReader.close()
-          val iter = unsafeRows.iterator
-          val unsafeProjection =
-            GenerateUnsafeProjection.generate(selectedAttributes, cacheAttributes)
-          if (hasUnsupportedType) {
-            new UnsupportedDataHandlerIterator() {
-              val wrappedIter: Iterator[InternalRow] = iter
-              val newRow = new GenericInternalRow(cacheAttributes.length)
 
-              override def hasNext: Boolean = wrappedIter.hasNext
-
-              override def next(): InternalRow = {
-                //read a row and convert it to what the caller is expecting
-                val row = wrappedIter.next()
-                handleInternalRow(origCacheSchema, row, newRow)
-                val unsafeProjection =
-                  GenerateUnsafeProjection.generate(origRequestedSchema, origCacheSchema)
-                unsafeProjection.apply(newRow)
+            val unsafeRows = new ArrayBuffer[InternalRow]
+            import org.apache.parquet.io.ColumnIOFactory
+            var pages = parquetFileReader.readNextRowGroup()
+            while (pages != null) {
+              val rows = pages.getRowCount
+              val columnIO = new ColumnIOFactory().getColumnIO(parquetSchema)
+              val recordReader =
+                columnIO.getRecordReader(pages, new ParquetRecordMaterializer(parquetSchema,
+                  cacheAttributes.toStructType,
+                  new ParquetToSparkSchemaConverter(hadoopConf), None /*convertTz*/ ,
+                  LegacyBehaviorPolicy.CORRECTED))
+              for (_ <- 0 until rows.toInt) {
+                val row = recordReader.read
+                unsafeRows += row.copy()
               }
+              pages = parquetFileReader.readNextRowGroup()
+            }
 
-              override def handleInterval(
-                  data: SpecializedGetters,
-                  index: Int): CalendarInterval = {
-                if (data.isNullAt(index)) {
-                  null
-                } else {
-                  val structData = data.getStruct(index, 3)
-                  new CalendarInterval(structData.getInt(0),
-                    structData.getInt(1), structData.getLong(2))
+            val iter = unsafeRows.iterator
+            val unsafeProjection =
+              GenerateUnsafeProjection.generate(selectedAttributes, cacheAttributes)
+            if (hasUnsupportedType) {
+              new UnsupportedDataHandlerIterator() {
+                val wrappedIter: Iterator[InternalRow] = iter
+                val newRow = new GenericInternalRow(cacheAttributes.length)
+
+                override def hasNext: Boolean = wrappedIter.hasNext
+
+                override def next(): InternalRow = {
+                  //read a row and convert it to what the caller is expecting
+                  val row = wrappedIter.next()
+                  handleInternalRow(origCacheSchema, row, newRow)
+                  val unsafeProjection =
+                    GenerateUnsafeProjection.generate(origRequestedSchema, origCacheSchema)
+                  unsafeProjection.apply(newRow)
                 }
-              }
 
-              override def handleInternalRow(
-                  schema: Seq[Attribute],
-                  row: InternalRow,
-                  newRow: InternalRow): Unit = {
-                schema.indices.foreach { index =>
-                  val dataType = schema(index).dataType
-                  if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
-                      dataType == NullType ||
-                      (dataType.isInstanceOf[DecimalType]
-                          && dataType.asInstanceOf[DecimalType].scale < 0)) {
-                    if (row.isNullAt(index)) {
-                      newRow.setNullAt(index)
-                    } else {
-                      dataType match {
-                        case s@StructType(_) =>
-                          val supportedSchema = mapping(dataType)
-                              .asInstanceOf[StructType]
-                          val structRow =
-                            handleStruct(row.getStruct(index, supportedSchema.size), s, s)
-                          newRow.update(index, structRow)
-
-                        case a@ArrayType(_, _) =>
-                          val arrayData = row.getArray(index)
-                          newRow.update(index, handleArray(a.elementType, arrayData))
-
-                        case MapType(keyType, valueType, _) =>
-                          val mapData = row.getMap(index)
-                          newRow.update(index, handleMap(keyType, valueType, mapData))
-
-                        case CalendarIntervalType =>
-                          val interval = handleInterval(row, index)
-                          if (interval == null) {
-                            newRow.setNullAt(index)
-                          } else {
-                            newRow.setInterval(index, interval)
-                          }
-                        case d: DecimalType =>
-                          if (row.isNullAt(index)) {
-                            newRow.setDecimal(index, null, d.precision)
-                          } else {
-                            val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
-                              Decimal(row.getInt(index).toLong, d.precision, d.scale)
-                            } else {
-                              Decimal(row.getLong(index), d.precision, d.scale)
-                            }
-                            newRow.update(index, dec)
-                          }
-                        case NullType =>
-                          newRow.setNullAt(index)
-                        case _ =>
-                          newRow.update(index, row.get(index, dataType))
-                      }
-                    }
+                override def handleInterval(
+                    data: SpecializedGetters,
+                    index: Int): CalendarInterval = {
+                  if (data.isNullAt(index)) {
+                    null
                   } else {
-                    newRow.update(index, row.get(index, dataType))
+                    val structData = data.getStruct(index, 3)
+                    new CalendarInterval(structData.getInt(0),
+                      structData.getInt(1), structData.getLong(2))
+                  }
+                }
+
+                override def handleInternalRow(
+                    schema: Seq[Attribute],
+                    row: InternalRow,
+                    newRow: InternalRow): Unit = {
+                  schema.indices.foreach { index =>
+                    val dataType = schema(index).dataType
+                    if (mapping.contains(dataType) || dataType == CalendarIntervalType ||
+                        dataType == NullType ||
+                        (dataType.isInstanceOf[DecimalType]
+                            && dataType.asInstanceOf[DecimalType].scale < 0)) {
+                      if (row.isNullAt(index)) {
+                        newRow.setNullAt(index)
+                      } else {
+                        dataType match {
+                          case s@StructType(_) =>
+                            val supportedSchema = mapping(dataType)
+                                .asInstanceOf[StructType]
+                            val structRow =
+                              handleStruct(row.getStruct(index, supportedSchema.size), s, s)
+                            newRow.update(index, structRow)
+
+                          case a@ArrayType(_, _) =>
+                            val arrayData = row.getArray(index)
+                            newRow.update(index, handleArray(a.elementType, arrayData))
+
+                          case MapType(keyType, valueType, _) =>
+                            val mapData = row.getMap(index)
+                            newRow.update(index, handleMap(keyType, valueType, mapData))
+
+                          case CalendarIntervalType =>
+                            val interval = handleInterval(row, index)
+                            if (interval == null) {
+                              newRow.setNullAt(index)
+                            } else {
+                              newRow.setInterval(index, interval)
+                            }
+                          case d: DecimalType =>
+                            if (row.isNullAt(index)) {
+                              newRow.setDecimal(index, null, d.precision)
+                            } else {
+                              val dec = if (d.precision <= Decimal.MAX_INT_DIGITS) {
+                                Decimal(row.getInt(index).toLong, d.precision, d.scale)
+                              } else {
+                                Decimal(row.getLong(index), d.precision, d.scale)
+                              }
+                              newRow.update(index, dec)
+                            }
+                          case NullType =>
+                            newRow.setNullAt(index)
+                          case _ =>
+                            newRow.update(index, row.get(index, dataType))
+                        }
+                      }
+                    } else {
+                      newRow.update(index, row.get(index, dataType))
+                    }
                   }
                 }
               }
+            } else {
+              iter.map(unsafeProjection)
             }
-          } else {
-            iter.map(unsafeProjection)
           }
         }
       }
     }
 
-    /**
-     * This method returns a ColumnarBatch iterator over a CachedBatch.
-     * Each CachedBatch => ColumnarBatch is a 1-1 conversion so its pretty straight forward
-     */
-    def getColumnBatchIterator: Iterator[ColumnarBatch] = {
-      if (!cbIter.hasNext) return Iterator.empty
+    private class CurrentBatchIterator(val parquetCachedBatch: ParquetCachedBatch)
+        extends Iterator[ColumnarBatch] with AutoCloseable {
+
       val capacity = conf.parquetVectorizedReaderBatchSize
-      val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
-      val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
-      val parquetFileReader = ParquetFileReader.open(inputFile, options)
-      val inMemCacheParquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
+      var columnReaders: Array[VectorizedColumnReader] = _
+      val columnVectors: Array[OffHeapColumnVector] =
+        OffHeapColumnVector.allocateColumns(capacity, selectedAttributes.toStructType)
+      val columnarBatch = new ColumnarBatch(columnVectors
+          .asInstanceOf[Array[vectorized.ColumnVector]])
+      var rowsReturned: Long = 0L
+      var numBatched = 0
+      var batchIdx = 0
+      var totalCountLoadedSoFar: Long = 0
+      val parquetFileReader =
+        ParquetFileReader.open(new ByteArrayInputFile(parquetCachedBatch.buffer), options)
+      val (totalRowCount, columnsRequested, cacheSchemaToReqSchemaMap, missingColumns,
+      columnsInCache, typesInCache) = {
+        val parquetToSparkSchemaConverter = new ParquetToSparkSchemaConverter(hadoopConf)
+        // we are getting parquet schema and then converting it to catalyst schema
+        // because catalyst schema that we get from Spark doesn't have the exact schema expected
+        // by the columnar parquet reader
+        val inMemCacheParquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
+        val inMemCacheSparkSchema = parquetToSparkSchemaConverter.convert(inMemCacheParquetSchema)
 
-      // we are getting parquet schema and then converting it to catalyst schema
-      // because catalyst schema that we get from Spark doesn't have the exact schema expected by
-      // the columnar parquet reader
-      val parquetToSparkSchemaConverter = new ParquetToSparkSchemaConverter(hadoopConf)
-      val inMemCacheSparkSchema = parquetToSparkSchemaConverter.convert(inMemCacheParquetSchema)
-      val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(hadoopConf)
+        val totalRowCount = parquetFileReader.getRowGroups.asScala.map(_.getRowCount).sum
+        val sparkToParquetSchemaConverter = new SparkToParquetSchemaConverter(hadoopConf)
+        val inMemReqSparkSchema = StructType(selectedAttributes.toStructType.map { field =>
+          inMemCacheSparkSchema.fields(inMemCacheSparkSchema.fieldIndex(field.name))
+        })
+        val inMemReqParquetSchema = sparkToParquetSchemaConverter.convert(inMemReqSparkSchema)
+        val columnsRequested: util.List[ColumnDescriptor] = inMemReqParquetSchema.getColumns
 
-      val inMemReqSparkSchema = StructType(selectedAttributes.toStructType.map { field =>
-        inMemCacheSparkSchema.fields(inMemCacheSparkSchema.fieldIndex(field.name))
-      })
-
-      val reqSparkSchemaInCacheOrder = StructType(inMemCacheSparkSchema.filter(f =>
-        inMemReqSparkSchema.fields.exists(f0 => f0.name.equals(f.name))))
-
-      val reqParquetSchemaInCacheOrder =
-        sparkToParquetSchemaConverter.convert(reqSparkSchemaInCacheOrder)
-
-      val inMemReqParquetSchema = sparkToParquetSchemaConverter.convert(inMemReqSparkSchema)
-
-      // reset spark schema calculated from parquet schema
-      hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, inMemReqSparkSchema.json)
-      hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, inMemReqSparkSchema.json)
-
-      /**
-       * Read the next RowGroup and read each column and return the columnarBatch
-       */
-      new Iterator[ColumnarBatch] {
-        val columnVectors: Array[OffHeapColumnVector] =
-          OffHeapColumnVector.allocateColumns(capacity, selectedAttributes.toStructType)
-        val columnarBatch = new ColumnarBatch(columnVectors
-            .asInstanceOf[Array[vectorized.ColumnVector]])
+        val reqSparkSchemaInCacheOrder = StructType(inMemCacheSparkSchema.filter(f =>
+          inMemReqSparkSchema.fields.exists(f0 => f0.name.equals(f.name))))
 
         // There could be a case especially in a distributed environment where the requestedSchema
         // and cacheSchema are not in the same order. We need to create a map so we can guarantee
@@ -915,35 +900,29 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           index -> inMemReqSparkSchema.fields.indexOf(reqSparkSchemaInCacheOrder.fields(index))
         }.toMap
 
+        val reqParquetSchemaInCacheOrder =
+          sparkToParquetSchemaConverter.convert(reqSparkSchemaInCacheOrder)
+
+        // reset spark schema calculated from parquet schema
+        hadoopConf.set(ParquetReadSupport.SPARK_ROW_REQUESTED_SCHEMA, inMemReqSparkSchema.json)
+        hadoopConf.set(ParquetWriteSupport.SPARK_ROW_SCHEMA, inMemReqSparkSchema.json)
+
+        val columnsInCache: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
+        val typesInCache: util.List[Type] = reqParquetSchemaInCacheOrder.asGroupType.getFields
         val missingColumns = new Array[Boolean](inMemReqParquetSchema.getFieldCount)
-        var columnReaders: Array[VectorizedColumnReader] = _
-
-        var rowsReturned: Long = 0L
-        var totalRowCount: Long = 0L
-        var totalCountLoadedSoFar: Long = 0
-        var batchIdx = 0
-        var numBatched = 0
-
-        for (block <- parquetFileReader.getRowGroups.asScala) {
-          this.totalRowCount += block.getRowCount
-        }
 
         // initialize missingColumns to cover the case where requested column isn't present in the
         // cache, which should never happen but just in case it does
-        val columnsRequested: util.List[ColumnDescriptor] = inMemReqParquetSchema.getColumns
         val paths: util.List[Array[String]] = inMemReqParquetSchema.getPaths
-        val columnsInCache: util.List[ColumnDescriptor] = reqParquetSchemaInCacheOrder.getColumns
-        val fileSchema: MessageType = parquetFileReader.getFooter.getFileMetaData.getSchema
-        val typesRequested: util.List[Type] = inMemReqParquetSchema.asGroupType.getFields
-        val typesInCache: util.List[Type] = reqParquetSchemaInCacheOrder.asGroupType.getFields
+
         for (i <- 0 until inMemReqParquetSchema.getFieldCount) {
           val t = inMemReqParquetSchema.getFields.get(i)
           if (!t.isPrimitive || t.isRepetition(Type.Repetition.REPEATED)) {
             throw new UnsupportedOperationException("Complex types not supported.")
           }
           val colPath = paths.get(i)
-          if (fileSchema.containsPath(colPath)) {
-            val fd = fileSchema.getColumnDescription(colPath)
+          if (inMemCacheParquetSchema.containsPath(colPath)) {
+            val fd = inMemCacheParquetSchema.getColumnDescription(colPath)
             if (!(fd == columnsRequested.get(i))) {
               throw new UnsupportedOperationException("Schema evolution not supported.")
             }
@@ -965,64 +944,112 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           }
         }
 
-        @throws[IOException]
-        def checkEndOfRowGroup(): Unit = {
-          if (rowsReturned != totalCountLoadedSoFar) return
-          val pages = parquetFileReader.readNextRowGroup
-          if (pages == null) {
-            throw new IOException("expecting more rows but reached last" +
-                " block. Read " + rowsReturned + " out of " + totalRowCount)
-          }
-          columnReaders = new Array[VectorizedColumnReader](columnsRequested.size)
-          for (i <- 0 until columnsRequested.size) {
-            if (!missingColumns(i)) {
-              columnReaders(i) =
-                  new VectorizedColumnReader(
-                    columnsInCache.get(i),
-                    typesInCache.get(i).getOriginalType,
-                    pages.getPageReader(columnsInCache.get(i)),
-                    null /*convertTz*/ ,
-                    LegacyBehaviorPolicy.CORRECTED.toString,
-                    LegacyBehaviorPolicy.EXCEPTION.toString)
-            }
-          }
-          totalCountLoadedSoFar += pages.getRowCount
+        (totalRowCount, columnsRequested, cacheSchemaToReqSchemaMap, missingColumns,
+            columnsInCache, typesInCache)
+      }
+
+      @throws[IOException]
+      def checkEndOfRowGroup(): Unit = {
+        if (rowsReturned != totalCountLoadedSoFar) return
+        val pages = parquetFileReader.readNextRowGroup
+        if (pages == null) {
+          throw new IOException("expecting more rows but reached last" +
+              " block. Read " + rowsReturned + " out of " + totalRowCount)
         }
-
-        def nextBatch: Boolean = {
-          for (vector <- columnVectors) {
-            vector.reset()
+        columnReaders = new Array[VectorizedColumnReader](columnsRequested.size)
+        for (i <- 0 until columnsRequested.size) {
+          if (!missingColumns(i)) {
+            columnReaders(i) =
+                new VectorizedColumnReader(
+                  columnsInCache.get(i),
+                  typesInCache.get(i).getOriginalType,
+                  pages.getPageReader(columnsInCache.get(i)),
+                  null /*convertTz*/ ,
+                  LegacyBehaviorPolicy.CORRECTED.toString,
+                  LegacyBehaviorPolicy.EXCEPTION.toString)
           }
-          columnarBatch.setNumRows(0)
-          if (rowsReturned >= totalRowCount) return false
-          checkEndOfRowGroup()
-          val num = Math.min(capacity.toLong, totalCountLoadedSoFar - rowsReturned).toInt
-          for (i <- columnReaders.indices) {
-            if (columnReaders(i) != null) {
-              readBatchMethod.invoke(columnReaders(i), num.asInstanceOf[AnyRef],
-                columnVectors(cacheSchemaToReqSchemaMap(i)).asInstanceOf[AnyRef])
-            }
-          }
-          rowsReturned += num
-          columnarBatch.setNumRows(num)
-          numBatched = num
-          batchIdx = 0
-          true
         }
+        totalCountLoadedSoFar += pages.getRowCount
+      }
 
-        override def hasNext: Boolean = rowsReturned < totalRowCount
-
-        override def next(): ColumnarBatch = {
-          if (nextBatch) {
-            // FYI, A very IMPORTANT thing to note is that we are returning the columnar batch
-            // as-is i.e. this batch has NullTypes saved as IntegerTypes with null values. The
-            // way Spark optimizes the read of NullTypes makes this work without having to rip out
-            // the IntegerType column to be replaced by a NullType column. This could change in
-            // future and will affect this code.
-            columnarBatch
-          } else {
-            throw new NoSuchElementException("no elements found")
+      /**
+       * Read the next RowGroup and read each column and return the columnarBatch
+       */
+      def nextBatch: Boolean = {
+        for (vector <- columnVectors) {
+          vector.reset()
+        }
+        columnarBatch.setNumRows(0)
+        if (rowsReturned >= totalRowCount) return false
+        checkEndOfRowGroup()
+        val num = Math.min(capacity.toLong, totalCountLoadedSoFar - rowsReturned).toInt
+        for (i <- columnReaders.indices) {
+          if (columnReaders(i) != null) {
+            readBatchMethod.invoke(columnReaders(i), num.asInstanceOf[AnyRef],
+              columnVectors(cacheSchemaToReqSchemaMap(i)).asInstanceOf[AnyRef])
           }
+        }
+        rowsReturned += num
+        columnarBatch.setNumRows(num)
+        numBatched = num
+        batchIdx = 0
+        true
+      }
+
+      override def hasNext: Boolean = rowsReturned < totalRowCount
+
+      override def next(): ColumnarBatch = {
+        if (nextBatch) {
+          // FYI, A very IMPORTANT thing to note is that we are returning the columnar batch
+          // as-is i.e. this batch has NullTypes saved as IntegerTypes with null values. The
+          // way Spark optimizes the read of NullTypes makes this work without having to rip out
+          // the IntegerType column to be replaced by a NullType column. This could change in
+          // future and will affect this code.
+          columnarBatch
+        } else {
+          throw new NoSuchElementException("no elements found")
+        }
+      }
+
+      TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
+        close()
+      })
+
+      override def close(): Unit = {
+        parquetFileReader.close()
+      }
+    }
+
+    /**
+     * This method returns a ColumnarBatch iterator over a CachedBatch.
+     * Each CachedBatch => ColumnarBatch is a 1-1 conversion so its pretty straight forward
+     */
+    def getColumnBatchIterator: Iterator[ColumnarBatch] = new Iterator[ColumnarBatch] {
+      var iter = getIterator
+
+      def getIterator: Iterator[ColumnarBatch] = {
+        if (!cbIter.hasNext) {
+          Iterator.empty
+        } else {
+            new CurrentBatchIterator(cbIter.next().asInstanceOf[ParquetCachedBatch])
+        }
+      }
+
+      override def hasNext: Boolean = {
+        // go over the batch and get the next non-degenerate iterator
+        // and return if it hasNext
+        while ((iter == null || !iter.hasNext) && cbIter.hasNext) {
+          iter = getIterator
+        }
+        iter != null && iter.hasNext
+      }
+
+      override def next(): ColumnarBatch = {
+        // will return the next ColumnarBatch if hasNext() is true, otherwise throw
+        if (hasNext) {
+          iter.next()
+        } else {
+          throw new NoSuchElementException("no elements found")
         }
       }
     }
@@ -1038,6 +1065,13 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       .add("_days", IntegerType)
       .add("_months", IntegerType)
       .add("_ms", LongType)
+
+  def getBytesAllowedPerBatch(conf: SQLConf): Long = {
+    val gpuBatchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    // we are rough estimating 0.5% as meta_data_size. we can do better estimation in future
+    val approxMetaDataSizeBytes = gpuBatchSize * 0.5/100
+    (gpuBatchSize - approxMetaDataSizeBytes).toLong
+  }
 
   /**
    * This is a private helper class to return Iterator to convert InternalRow or ColumnarBatch to
@@ -1056,6 +1090,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       sharedConf: Broadcast[Map[String, String]]) {
 
     val conf: SQLConf = getConfFromMap(sharedConf)
+    val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val hadoopConf: Configuration = getHadoopConf(cachedAttributes.toStructType, conf)
 
     def getInternalRowToCachedBatchIterator: Iterator[CachedBatch] = {
@@ -1193,7 +1228,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           // we will put it in the next CachedBatch
           var leftOverRow: Option[InternalRow] = None
           val rowIterator = getIterator
-          while (rowIterator.hasNext) {
+          while (rowIterator.hasNext || leftOverRow.nonEmpty) {
             // Each partition will be a single parquet file
             var rows = 0
             // at least a single block
@@ -1205,7 +1240,8 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
               parquetOutputFileFormat.getRecordWriter(outputFile, hadoopConf)
             }
             var totalSize = 0
-            while (rowIterator.hasNext && totalSize < BYTES_ALLOWED_PER_BATCH) {
+            while ((rowIterator.hasNext || leftOverRow.nonEmpty)
+                && totalSize < bytesAllowedPerBatch) {
 
               val row = if (leftOverRow.nonEmpty) {
                 val a = leftOverRow.get
@@ -1222,7 +1258,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                     estimatedSize
                 }
               }
-              if (totalSize <= BYTES_ALLOWED_PER_BATCH) {
+              if (totalSize <= bytesAllowedPerBatch) {
                 rows += 1
                 if (rows < 0) {
                   throw new IllegalStateException("CachedBatch doesn't support rows larger " +
@@ -1230,7 +1266,11 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
                 }
                 recordWriter.write(null, row)
               } else {
-                leftOverRow = Some(row)
+                leftOverRow = Some(if (row.isInstanceOf[UnsafeRow]) {
+                  row.copy()
+                } else {
+                  row
+                })
               }
             }
             // passing null as context isn't used in this method
@@ -1398,6 +1438,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       conf: SQLConf): RDD[CachedBatch] = {
 
     val rapidsConf = new RapidsConf(conf)
+    val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
     if (rapidsConf.isSqlEnabled && isSchemaSupportedByCudf(schema)) {
       val structSchema = schemaWithUnambiguousNames.toStructType
@@ -1407,7 +1448,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
       })
       columnarBatchRdd.flatMap(cb => {
         withResource(cb)(cb => compressColumnarBatchWithParquet(cb, structSchema,
-          schema.toStructType))
+          schema.toStructType, bytesAllowedPerBatch))
       })
     } else {
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
