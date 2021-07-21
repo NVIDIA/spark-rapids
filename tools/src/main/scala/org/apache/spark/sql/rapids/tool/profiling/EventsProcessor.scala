@@ -213,7 +213,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       "",
       pluginEnabled = false
     )
-    logWarning("found app start" + thisAppStart)
     app.appInfo = thisAppStart
     app.appId = event.appId.getOrElse("")
   }
