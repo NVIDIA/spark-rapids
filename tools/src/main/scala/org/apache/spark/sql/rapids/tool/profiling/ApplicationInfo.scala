@@ -196,7 +196,6 @@ class LiveResourceProfile(
     val maxTasksPerExecutor: Option[Int])
 
 class LiveExecutor(val executorId: String, _addTime: Long) {
-
   var hostPort: String = null
   var host: String = null
   var isActive = true
@@ -205,27 +204,8 @@ class LiveExecutor(val executorId: String, _addTime: Long) {
   val addTime = new Date(_addTime)
   var removeTime: Date = null
   var removeReason: String = null
-
-  var rddBlocks = 0
-  var memoryUsed = 0L
-  var diskUsed = 0L
-  var maxTasks = 0
   var maxMemory = 0L
 
-  var totalTasks = 0
-  var activeTasks = 0
-  var completedTasks = 0
-  var failedTasks = 0
-  var totalDuration = 0L
-  var totalGcTime = 0L
-  var totalInputBytes = 0L
-  var totalShuffleRead = 0L
-  var totalShuffleWrite = 0L
-  var isExcluded = false
-  var excludedInStages: Set[Int] = TreeSet()
-
-  var executorLogs = Map[String, String]()
-  var attributes = Map[String, String]()
   var resources = Map[String, ResourceInformation]()
 
   // Memory metrics. They may not be recorded (e.g. old event logs) so if totalOnHeap is not
@@ -237,13 +217,10 @@ class LiveExecutor(val executorId: String, _addTime: Long) {
 
   var resourceProfileId = ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
 
-  def hasMemoryInfo: Boolean = totalOnHeap >= 0L
-
   // peak values for executor level metrics
   val peakExecutorMetrics = new ExecutorMetrics()
 
   def hostname: String = if (host != null) host else Utils.parseHostPort(hostPort)._1
-
 }
 
 /**
@@ -278,7 +255,7 @@ class ApplicationInfo(
   // 8. jobDF (Must exist, otherwise fail!)
   // 9. stageDF (Must exist, otherwise fail!)
   // 10. taskDF (Must exist, otherwise fail!)
-  val allDataFrames: mutable.HashMap[String, DataFrame] = mutable.HashMap.empty[String, DataFrame]
+  // val allDataFrames: mutable.HashMap[String, DataFrame] = mutable.HashMap.empty[String, DataFrame]
 
   // From SparkListenerResourceProfileAdded
   // var resourceProfiles: ArrayBuffer[ResourceProfileCase] = ArrayBuffer[ResourceProfileCase]()

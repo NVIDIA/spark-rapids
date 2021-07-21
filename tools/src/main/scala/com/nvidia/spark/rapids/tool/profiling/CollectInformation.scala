@@ -45,7 +45,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val headerNames = apps.head.appInfo.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headerNames, allRows)
-      fileWriter.foreach(_.write(outStr))
+      fileWriter.foreach(_.write(outStr + "\n"))
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
     }
@@ -71,7 +71,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     if (allRows.size > 0) {
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headers, allRows)
-      fileWriter.foreach(_.write(outStr))
+      fileWriter.foreach(_.write(outStr + "\n"))
     } else {
       fileWriter.foreach(_.write("No Rapids 4 Spark Jars Found!\n"))
     }
@@ -129,6 +129,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
             val numExecutors = execs.size
             val exec = execs.head._2
+            // We could print a lot more information here if we decided, more like the Spark UI
+            // per executor info.
             Seq(app.index.toString, rpId.toString, numExecutors.toString,
               exec.totalCores.toString, exec.maxMemory.toString, exec.totalOnHeap.toString,
               exec.totalOffHeap.toString,
@@ -147,68 +149,80 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, allRows)
-      fileWriter.foreach(_.write(outStr))
+      fileWriter.foreach(_.write(outStr + "\n"))
     } else {
       fileWriter.foreach(_.write("No Executor Information Found!\n"))
     }
   }
 
-  /*
   // Print job related information
   def printJobInfo(): Unit = {
     val messageHeader = "\nJob Information:\n"
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
-        app.runQuery(query = app.jobtoStagesSQL,
-        fileWriter = fileWriter, messageHeader = messageHeader)
-      } else {
-        fileWriter.foreach(_.write("No Job Information Found!\n"))
-      }
-    }
-  }
-
-  // Print Rapids related Spark Properties
-  def printRapidsProperties(): Unit = {
-    val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
-          fileWriter = fileWriter, messageHeader = messageHeader)
-      } else {
-        fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
-      }
-    }
-  }
-
-  def printSQLPlans(outputDirectory: String): Unit = {
-    for (app <- apps) {
-      val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"planDescriptions-${app.appId}", "SQL Plan")
-      try {
-        for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
-          planFileWriter.write("\n=============================\n")
-          planFileWriter.write(s"Plan for SQL ID : $sqlID")
-          planFileWriter.write("\n=============================\n")
-          planFileWriter.write(planDesc)
+    fileWriter.foreach(_.write(messageHeader))
+    val outputHeaders =
+      Seq("appIndex", "jobID", "stageIds", "sqlID")
+    val allRows = apps.flatMap { app =>
+      if (app.liveJobs.size > 0) {
+        app.liveJobs.map { case (jobId, j) =>
+          Seq(app.index.toString, j.jobID.toString,
+            s"[${j.stageIds.mkString(",")}]",
+            j.sqlID.map(_.toString).getOrElse(null))
         }
-      } finally {
-        planFileWriter.close()
+      } else {
+        Seq.empty
       }
     }
+    if (apps.size > 0) {
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, allRows)
+      fileWriter.foreach(_.write(outStr + "\n"))
+    } else {
+      fileWriter.foreach(_.write("No Job Information Found!\n"))
+    }
   }
+  /*
+    // Print Rapids related Spark Properties
+    def printRapidsProperties(): Unit = {
+      val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
+      for (app <- apps) {
+        if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
+          app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
+            fileWriter = fileWriter, messageHeader = messageHeader)
+        } else {
+          fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+        }
+      }
+    }
 
-  // Print SQL Plan Metrics
-  def printSQLPlanMetrics(): Unit = {
-    for (app <- apps){
-      if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
-        app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"jobDF_${app.index}") &&
-        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-        val messageHeader = "\nSQL Plan Metrics for Application:\n"
-        app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader=messageHeader)
+    def printSQLPlans(outputDirectory: String): Unit = {
+      for (app <- apps) {
+        val planFileWriter = new ToolTextFileWriter(outputDirectory,
+          s"planDescriptions-${app.appId}", "SQL Plan")
+        try {
+          for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
+            planFileWriter.write("\n=============================\n")
+            planFileWriter.write(s"Plan for SQL ID : $sqlID")
+            planFileWriter.write("\n=============================\n")
+            planFileWriter.write(planDesc)
+          }
+        } finally {
+          planFileWriter.close()
+        }
       }
     }
-  }
-  */
+
+    // Print SQL Plan Metrics
+    def printSQLPlanMetrics(): Unit = {
+      for (app <- apps){
+        if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
+          app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
+          app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
+          app.allDataFrames.contains(s"jobDF_${app.index}") &&
+          app.allDataFrames.contains(s"sqlDF_${app.index}")) {
+          val messageHeader = "\nSQL Plan Metrics for Application:\n"
+          app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader=messageHeader)
+        }
+      }
+    }
+    */
 }

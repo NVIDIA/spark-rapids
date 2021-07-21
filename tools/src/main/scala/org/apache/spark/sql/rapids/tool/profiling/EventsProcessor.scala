@@ -235,14 +235,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     exec.isActive = true
     exec.totalCores = event.executorInfo.totalCores
     val rpId = event.executorInfo.resourceProfileId
-    val liveRP = app.resourceProfiles.get(rpId)
-    // TODO - default cpus per task could be in sparkProperties
-    val cpusPerTask = liveRP.flatMap(_.taskResources.get(CPUS))
-      .map(_.amount.toInt).getOrElse(1)
-    val maxTasksPerExec = liveRP.flatMap(_.maxTasksPerExecutor)
-    exec.maxTasks = maxTasksPerExec.getOrElse(event.executorInfo.totalCores / cpusPerTask)
     exec.resources = event.executorInfo.resourcesInfo
-    exec.attributes = event.executorInfo.attributes
     exec.resourceProfileId = rpId
   }
 

@@ -59,18 +59,6 @@ case class ApplicationCase(
       sparkUser, endTimeStr, durStr, durationStr, sparkVersion,
       pluginEnabled.toString)
   }
-
-
-  /*
-  def textOutput: String = {
-    s"$appNameStr,$appIdStr,${appSum.score},$probStr," +
-      s"${appSum.sqlDataFrameDuration},${appSum.sqlDataframeTaskDuration}," +
-      s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
-      s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readScorePercent},${appSum.readFileFormatScore}," +
-      s"${readFormatNS}"
-  }
-  */
 }
 
 case class ExecutorCase(
@@ -142,7 +130,26 @@ class JobCaseInfo(val jobID: Int,
     var failedReason: Option[String],
     var duration: Option[Long],
     var durationStr: String,
-    var gpuMode: Boolean)
+    var gpuMode: Boolean) {
+
+  val outputHeaders: Seq[String] = {
+    Seq("appIndex") ++ ProfileUtils.getMethods[ApplicationCase]
+  }
+
+  def fieldsToPrint(index: Int): Seq[String] = {
+    val endTimeStr = endTime match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+    val durStr = duration match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+    Seq(index.toString, appName, appId.getOrElse(""), startTime.toString,
+      sparkUser, endTimeStr, durStr, durationStr, sparkVersion,
+      pluginEnabled.toString)
+  }
+}
 
 case class JobCase(
     jobID: Int,
