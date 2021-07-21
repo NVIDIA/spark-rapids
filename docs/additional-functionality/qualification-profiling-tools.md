@@ -196,7 +196,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   -a, --application-name  <arg>     Filter event logs whose application name
                                     matches exactly or is a substring of input
                                     string. Regular expressions not
-                                    supported.For filtering based on complement
+                                    supported. For filtering based on complement
                                     of application name, use ~APPLICATION_NAME.
                                     i.e Select all event logs except the ones
                                     which have application name as the input
