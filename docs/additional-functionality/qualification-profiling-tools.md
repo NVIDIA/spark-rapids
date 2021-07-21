@@ -273,6 +273,23 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                         /path/to/eventlog2
 ```
 
+Example commands:
+- Process the 10 newest logs, and only output the top 3 in the output:
+```bash
+java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+ com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 10-newest -n 3 /eventlogDir
+```
+- Process last 100 days' logs:
+```bash
+java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+ com.nvidia.spark.rapids.tool.qualification.QualificationMain -s 100d /eventlogDir
+```
+- Process only the newest log with the same application name: 
+```bash
+java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+ com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 1-newest-per-app-name /eventlogDir
+```
+
 ### Qualification tool output
 The summary report goes to STDOUT and by default it outputs 2 files under sub-directory
 `./rapids_4_spark_qualification_output/` that contain the processed applications. The output will
@@ -655,6 +672,22 @@ For usage see below:
   eventlog (required)   Event log filenames(space separated) or directories
                         containing event logs. eg: s3a://<BUCKET>/eventlog1
                         /path/to/eventlog2
+```
+
+Example commands:
+- Process 10 newest logs with filenames containing "local":
+```bash
+$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
+rapids-4-spark-tools_2.12-<version>.jar \
+-m "local" -f "10-newest-filesystem" \
+/directory/with/eventlogs/
+```
+- Print SQL plans, generate dot files and also generate timeline(SVG graph):
+```bash
+$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
+rapids-4-spark-tools_2.12-<version>.jar \
+-p -g --generate-timeline \
+/directory/with/eventlogs/
 ```
 
 ### Profiling tool output
