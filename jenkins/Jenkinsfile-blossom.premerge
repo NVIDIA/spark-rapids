@@ -52,6 +52,7 @@ pipeline {
     environment {
         JENKINS_ROOT = 'jenkins'
         PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
+        PREMERGE_UT_SCRIPT = '$JENKINS_ROOT/spark-premerge-build-ut.sh'
         MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
         ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
@@ -116,6 +117,8 @@ pipeline {
                             ]
                     )
 
+                    stash(name: "source_tree", includes: "**")
+
                     container('docker-build') {
                         // check if pre-merge dockerfile modified
                         def dockerfileModified = sh(returnStdout: true,
@@ -151,37 +154,72 @@ pipeline {
                     !skipped
                 }
             }
-            options {
-                // We have to use params to pass the resource label in options block,
-                // this is a limitation of declarative pipeline. And we need to lock resource before agent start
-                lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
-            }
-            agent {
-                kubernetes {
-                    label "premerge-test-${BUILD_TAG}"
-                    cloud 'sc-ipp-blossom-prod'
-                    yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
-                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
-                    customWorkspace "${CUSTOM_WORKSPACE}"
-                }
-            }
 
-            steps {
-                script {
-                    container('gpu') {
-                        // TODO: improve resource management
-                        timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
-                            sh "$PREMERGE_SCRIPT"
-                            step([$class                : 'JacocoPublisher',
-                                  execPattern           : '**/target/jacoco.exec',
-                                  classPattern          : 'target/jacoco_classes/',
-                                  sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
-                                  sourceInclusionPattern: '**/*.java,**/*.scala'
-                            ])
+            failFast true
+            parallel {
+                stage('Integration Test') {
+                    options {
+                        // We have to use params to pass the resource label in options block,
+                        // this is a limitation of declarative pipeline. And we need to lock resource before agent start
+                        lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
+                    }
+                    agent {
+                        kubernetes {
+                            label "premerge-test-it-${BUILD_TAG}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
+                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            customWorkspace "${CUSTOM_WORKSPACE}"
                         }
                     }
-                }
-            }
+
+                    steps {
+                        script {
+                            container('gpu') {
+                                // TODO: improve resource management
+                                timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
+                                    sh "$PREMERGE_SCRIPT"
+                                    step([$class                : 'JacocoPublisher',
+                                          execPattern           : '**/target/jacoco.exec',
+                                          classPattern          : 'target/jacoco_classes/',
+                                          sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
+                                          sourceInclusionPattern: '**/*.java,**/*.scala'
+                                    ])
+                                }
+                            }
+                        }
+                    }
+                } // end of Integration Test stage
+
+                stage('Unit Test') {
+                    options {
+                        // We have to use params to pass the resource label in options block,
+                        // this is a limitation of declarative pipeline. And we need to lock resource before agent start
+                        lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
+                    }
+                    agent {
+                        kubernetes {
+                            label "premerge-test-ut-${BUILD_TAG}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
+                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            customWorkspace "${CUSTOM_WORKSPACE}-ut" // Use different workspace to avoid conflict with IT
+                        }
+                    }
+
+                    steps {
+                        script {
+                            unstash "source_tree"
+
+                            container('gpu') {
+                                timeout(time: 2, unit: 'HOURS') {
+                                    sh "$PREMERGE_UT_SCRIPT"
+                                }
+                            }
+                        }
+                    }
+                } // end of Unit Test stage
+            } // end of parallel
         } // end of Premerge Test
     } // end of stages
 
@@ -197,9 +235,9 @@ pipeline {
                 } else {
                     // upload log only in case of build failure
                     def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com"]
-                    def logPattern = "### BEGIN OF TEST LOG ###.*### END OF TEST LOG ###"
+                    guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
 
-                    githubHelper.uploadPartialLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords, logPattern)
+                    githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
                     githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
                 }
