@@ -481,6 +481,32 @@ def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
         conf=dict(_conf_to_enable_typed_imp_agg))
 
 @approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
+               'HashPartitioning', 'SortArray', 'Alias', 'Literal',
+               'Count', 'CollectList', 'CollectSet', 'AggregateExpression')
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
+def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf):
+    conf.update({'spark.rapids.sql.typedImperativeAggregate.enabled': 'true'})
+    # test without Distinct
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
+        conf=conf)
+    # test with single Distinct
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')),
+                 f.sort_array(f.collect_set('b')),
+                 f.countDistinct('c'),
+                 f.count('c')),
+        conf=conf)
+
+@approximate_float
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)

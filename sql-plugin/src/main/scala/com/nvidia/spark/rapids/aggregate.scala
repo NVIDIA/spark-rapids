@@ -955,7 +955,11 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
           (expr.mode == Partial || expr.mode == PartialMerge)
     }
 
+  // overriding data types of Aggregation Buffers if necessary
   if (mayNeedAggBufferConversion) overrideAggBufTypes()
+
+  // registering current AggregateMeta for possible associated fallback on AggregateExecs
+  GpuNoHashAggregateMeta.registerAggregateMeta(this)
 
   override protected lazy val outputTypeMetas: Option[Seq[DataTypeMeta]] =
     if (mayNeedAggBufferConversion) {
@@ -971,10 +975,17 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
       willNotWorkOnGpu(s"Not enabling TypedImperativeAggregate functions, " +
           s"see ${RapidsConf.ENABLE_TYPED_IMPERATIVE_AGGREGATE.key}")
     }
+
     super.tagPlanForGpu()
+
+    // Fallback associated AggregateExecs if current AggregateExec which contains
+    // TypedImperativeAggregate functions fell back to CPU.
+    if (hasTypedImperativeAgg && !canThisBeReplaced) {
+      GpuNoHashAggregateMeta.fallBackPlansOfAllStages(this)
+    }
   }
 
-  override def convertToGpu(): GpuExec =
+  override def convertToGpu(): GpuExec = {
     if (mayNeedAggBufferConversion) {
       // transforms the data types of aggregate attributes with typeMeta
       val aggAttributes = aggregateAttributes.map {
@@ -1005,6 +1016,7 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
     } else {
       super.convertToGpu()
     }
+  }
 
   /**
    * The method replaces data types of aggregation buffers created by TypedImperativeAggregate
@@ -1053,6 +1065,42 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
         case ar: AttributeReference if desiredInputAggBufTypes.contains(ar.exprId) =>
           retMeta.overrideDataType(desiredInputAggBufTypes(ar.exprId))
         case _ =>
+      }
+    }
+  }
+}
+
+object GpuNoHashAggregateMeta {
+  private val logicalIdToMetas =
+    mutable.HashMap.empty[String, mutable.ListBuffer[GpuNoHashAggregateMeta[_]]]
+
+  /**
+   * Register `GpuNoHashAggregateMeta` with its logical ID.
+   */
+  private def registerAggregateMeta(meta: GpuNoHashAggregateMeta[_]): Unit = {
+    meta.agg.logicalLink.foreach { plan =>
+      val verboseStringID = plan.verboseStringWithOperatorId
+      val metas = logicalIdToMetas.getOrElseUpdate(verboseStringID,
+        mutable.ListBuffer.empty[GpuNoHashAggregateMeta[_]])
+      metas += meta
+    }
+  }
+
+  /**
+   * Fall back other stages of AggregateExecs which share the same LogicalPlan as input AggMeta.
+   */
+  private def fallBackPlansOfAllStages(meta: GpuNoHashAggregateMeta[_]): Unit = {
+    meta.agg.logicalLink.foreach { plan =>
+      val verboseStringID = plan.verboseStringWithOperatorId
+      logicalIdToMetas.get(verboseStringID).foreach { metas =>
+        metas.foreach {
+          case m if m.canThisBeReplaced =>
+            m.willNotWorkOnGpu(
+              s"AggregateExec ${m.agg.nodeName} can NOT run on the GPU, because another stage " +
+                  s"${meta.agg.nodeName} fall back to the CPU and there exists " +
+                  s"TypedImperativeAggregate functions in current Aggregate.")
+          case _ =>
+        }
       }
     }
   }
