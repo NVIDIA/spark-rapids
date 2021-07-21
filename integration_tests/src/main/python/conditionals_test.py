@@ -14,9 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import incompat, approximate_float, allow_non_gpu
+from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
@@ -45,8 +45,8 @@ def test_if_else(data_gen):
 # for the 'If' function so far, so the tests can only cover column cases for nested types.
 #
 # However it should be OK because GpuIf and GpuCaseWhen use the same backend 'copy_if' from
-# cudf, and the support for literals of nested types had been verified already by the tests
-# for GpuCaseWhen.
+# cudf, whose abiliy of supporting literals of nested types had been verified already by the
+# tests for GpuCaseWhen.
 @pytest.mark.parametrize('data_gen', all_nested_gens, ids=idfn)
 def test_if_else_nested(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -85,7 +85,8 @@ def test_case_when(data_gen):
                 f.when(f.col('_b0'), s1).when(f.lit(False), f.col('_c0')),
                 f.when(f.col('_b0'), s1).when(f.lit(True), f.col('_c0')),
                 f.when(f.col('_b0'), f.lit(None).cast(data_type)).otherwise(f.col('_c0')),
-                f.when(f.lit(False), f.col('_c0'))))
+                f.when(f.lit(False), f.col('_c0'))),
+            conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_nanvl(data_gen):
@@ -111,9 +112,10 @@ def test_nvl(data_gen):
                 'nvl(a, {})'.format(null_lit)))
 
 #nvl is translated into a 2 param version of coalesce
-#Exclude the empty struct gen 'Struct()' because it leads to an error as below.
-#     E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
-#        at least one `BoundReference`
+# Exclude the empty struct gen 'Struct()' because it leads to an error as below
+# in both cpu and gpu runs.
+#      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
+#         at least one `BoundReference`
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
@@ -171,25 +173,3 @@ def test_ifnull(data_gen):
                 'ifnull({}, b)'.format(s1),
                 'ifnull({}, b)'.format(null_lit),
                 'ifnull(a, {})'.format(null_lit)))
-
-# TODO Merge this with the test `test_case_when` above once https://github.com/NVIDIA/spark-rapids/issues/2445
-# is done
-@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
-def test_case_when_array(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : three_col_df(spark,
-            int_gen,
-            data_gen,
-            data_gen).selectExpr('CASE WHEN a > 10 THEN b ELSE c END'))
-
-# TODO delete this test when https://github.com/NVIDIA/spark-rapids/issues/2445 is done
-@allow_non_gpu('ProjectExec', 'Alias', 'CaseWhen', 'Literal', 'Cast')
-@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
-def test_case_when_array_lit_fallback(data_gen):
-    l = gen_scalar(data_gen)
-    def do_it(spark):
-        return two_col_df(spark,
-                boolean_gen,
-                data_gen).select(f.when(f.col('a'), f.lit(l)).otherwise(f.col('b')))
-
-    assert_gpu_fallback_collect(do_it, 'CaseWhen')

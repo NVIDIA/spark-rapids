@@ -219,7 +219,8 @@ class CompareApplications(apps: Seq[ApplicationInfo],
           ds.pushedFilters, ds.schema)
       }
     }
-    val df = allAppsDs.toDF.sort(asc("appIndex"), asc("sqlID"), asc("location"))
+    val df = allAppsDs.toDF.sort(asc("appIndex"), asc("sqlID"), asc("location"),
+      asc("schema"), asc("pushedFilters"))
     if (allAppsDs.nonEmpty) {
       fileWriter.foreach { writer =>
         writer.write(ToolUtils.showString(df, numRows))
