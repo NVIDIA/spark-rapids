@@ -69,8 +69,9 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       }
     }
     if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        headers, allRows)
+        headers, sortedRows)
       fileWriter.foreach(_.write(outStr + "\n"))
     } else {
       fileWriter.foreach(_.write("No Rapids 4 Spark Jars Found!\n"))
@@ -147,8 +148,9 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           "maxMem", "maxOnHeapMem", "maxOffHeapMem", "executorMemory", "numGpusPerExecutor",
           "executorOffHeap", "taskCpu", "taskGpu")
 
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(2).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, allRows)
+        outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr + "\n"))
     } else {
       fileWriter.foreach(_.write("No Executor Information Found!\n"))
@@ -173,8 +175,9 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       }
     }
     if (apps.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, allRows)
+        outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr + "\n"))
     } else {
       fileWriter.foreach(_.write("No Job Information Found!\n"))
