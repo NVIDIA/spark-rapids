@@ -264,19 +264,23 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         }
       }
     }
+      */
 
-    // Print SQL Plan Metrics
-    def printSQLPlanMetrics(): Unit = {
-      for (app <- apps){
-        if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
-          app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
-          app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
-          app.allDataFrames.contains(s"jobDF_${app.index}") &&
-          app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-          val messageHeader = "\nSQL Plan Metrics for Application:\n"
-          app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader=messageHeader)
-        }
+  // Print SQL Plan Metrics
+  /*
+  def printSQLPlanMetrics(): Unit = {
+    // |appIndex|sqlID|nodeID|nodeName           |accumulatorId|name                   |max_value|metricType|
+    for (app <- apps) {
+      if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
+        app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
+        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
+        app.allDataFrames.contains(s"jobDF_${app.index}") &&
+        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
+        val messageHeader = "\nSQL Plan Metrics for Application:\n"
+        app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader = messageHeader)
       }
     }
-    */
+  }
+  */
+
 }

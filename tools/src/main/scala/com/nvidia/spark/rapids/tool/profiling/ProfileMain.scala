@@ -139,8 +139,8 @@ object ProfileMain extends Logging {
         collect.printJobInfo()
         collect.printRapidsProperties()
         collect.printRapidsJAR()
+        // collect.printSQLPlanMetrics()
         /*
-        collect.printSQLPlanMetrics()
         if (printPlans) {
           collect.printSQLPlans(outputDirectory)
         }
@@ -157,8 +157,10 @@ object ProfileMain extends Logging {
       analysis.shuffleSkewCheck()
 
       textFileWriter.write("\n### C. Health Check###\n")
-      val healthCheck=new HealthCheck(apps, textFileWriter)
+      */
+      val healthCheck=new HealthCheck(apps, Some(textFileWriter), numOutputRows)
       healthCheck.listFailedJobsStagesTasks()
+      /*
       healthCheck.listRemovedBlockManager()
       healthCheck.listRemovedExecutors()
       healthCheck.listPossibleUnsupportedSQLPlan()

@@ -323,6 +323,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       event.taskMetrics.outputMetrics.bytesWritten,
       event.taskMetrics.outputMetrics.recordsWritten
     )
+    // TODO - can we summarize vs keeping all tasks?
     app.taskEnd += thisTask
   }
 
