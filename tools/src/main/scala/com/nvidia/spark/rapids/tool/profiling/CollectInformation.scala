@@ -69,7 +69,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       }
     }
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong))
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headers, sortedRows)
       fileWriter.foreach(_.write(outStr + "\n"))
