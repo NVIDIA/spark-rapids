@@ -173,7 +173,6 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
           aliveExecutors.append(e)
         }
       }
-      executors.clear()
       executors = aliveExecutors
     }
   }
