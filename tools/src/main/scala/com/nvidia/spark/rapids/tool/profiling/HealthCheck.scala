@@ -27,7 +27,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     numOutputRows: Int) {
 
   def truncateFailureStr(failureStr: String): String = {
-    failureStr.substring(0, Math.min(0, Math.min(failureStr.size - 1, 100)))
+    failureStr.substring(0, Math.max(0, Math.min(failureStr.size - 1, 100)))
   }
 
   // Function to list all failed tasks , stages and jobs.
