@@ -21,7 +21,7 @@ This document covers below topics:
 * [Download the tools jar or compile it](#Download-the-tools-jar-or-compile-it)
 * [Qualification Tool](#Qualification-Tool)
     * [Qualification tool functions](#Qualification-tool-functions)
-    * [Download the Spark 3.x distribution](#Download-the-Spark-3.x-distribution)
+    * [Download the Spark 3 distribution](#Download-the-Spark-3-distribution)
     * [How to use qualification tool](#How-to-use-qualification-tool)
     * [Qualification tool options](#Qualification-tool-options)
     * [Qualification tool output](#Qualification-tool-output)
@@ -152,7 +152,7 @@ Sample output in text:
 |app-20210507174503-1704|       83738|           6760|                   0|
 ```
 
-### Download the Spark 3.x distribution
+### Download the Spark 3 distribution
 The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
 Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
 in the classpath.
