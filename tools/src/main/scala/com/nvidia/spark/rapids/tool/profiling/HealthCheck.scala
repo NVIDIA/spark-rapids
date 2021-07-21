@@ -105,35 +105,50 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     }
   }
 
-  /*
-  //Function to list all SparkListenerBlockManagerRemoved
+
   def listRemovedBlockManager(): Unit = {
     val header = "\nRemoved BlockManager(s):\n"
-    val query = apps
-      .filter { p =>
-        (p.allDataFrames.contains(s"blockManagersRemovedDF_${p.index}"))
-      }.map(app => "(" + app.getblockManagersRemoved + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex, executorID", false,
-        fileWriter = Some(textFileWriter), messageHeader = header)
+    fileWriter.foreach(_.write(header))
+    val outputHeaders = Seq("appIndex", "executorId", "time")
+    val res = apps.flatMap { app =>
+      app.blockManagersRemoved.map { bm =>
+        Seq(app.index.toString, bm.executorID.toString, bm.time.toString)
+      }
+    }
+    if (res.size > 0) {
+      val sortedRows = res.sortBy(cols => (cols(0).toLong, cols(1).toLong))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Removed BlockManagers Found!\n"))
     }
   }
 
-  //Function to list all SparkListenerExecutorRemoved
+
   def listRemovedExecutors(): Unit = {
     val header = "\nRemoved Executors(s):\n"
-    val query = apps
-      .filter { p =>
-        (p.allDataFrames.contains(s"executorsRemovedDF_${p.index}"))
-      }.map(app => "(" + app.getExecutorsRemoved + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex, executorID", false,
-        fileWriter = Some(textFileWriter), messageHeader = header)
+    fileWriter.foreach(_.write(header))
+    val outputHeaders = Seq("appIndex", "executorId", "time", "reason")
+    val res = apps.flatMap { app =>
+      val execsRemoved = app.executors.filter { case (_, exec) =>
+          exec.isActive == false
+      }
+      execsRemoved.map { case (id, exec) =>
+        Seq(app.index.toString, id, exec.removeTime.toString, exec.removeReason)
+      }
+    }
+    if (res.size > 0) {
+      val sortedRows = res.sortBy(cols => (cols(0).toLong, cols(1).toLong))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Removed Executors Found!\n"))
     }
   }
 
+  /*
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
   def listPossibleUnsupportedSQLPlan(): Unit = {
     textFileWriter.write("\nSQL Plan HealthCheck:\n")
