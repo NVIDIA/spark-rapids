@@ -221,7 +221,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     newest log files for each unique application
                                     name) 100-oldest-per-app-name (select at
                                     most 100 oldest log files for each unique
-                                    application name)Filesystem based filter
+                                    application name). Filesystem based filter
                                     criteria are:100-newest-filesystem (for
                                     processing newest 100 event logs based on
                                     filesystem timestamp). 100-oldest-filesystem
