@@ -175,6 +175,138 @@ object GpuCast extends Arm {
       cv.stringReplaceWithBackrefs(rule.search, rule.replace)
     })
   }
+
+  def sanitizeStringToFloat(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
+
+    // This regex gets applied after the transformation to normalize use of Inf and is
+    // just strict enough to filter out known edge cases that would result in incorrect
+    // values. We further filter out invalid values using the cuDF isFloat method.
+    val VALID_FLOAT_REGEX =
+      "^" +                         // start of line
+      "[+\\-]?" +                   // optional + or - at start of string
+      "(" +
+        "(" +
+          "(" +
+            "([0-9]+)|" +           // digits, OR
+            "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
+            "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
+          ")" +
+          "([eE][+\\-]?[0-9]+)?" +  // exponent
+          "[fFdD]?" +               // floating-point designator
+        ")" +
+        "|Inf" +                    // Infinity
+        "|[nN][aA][nN]" +           // NaN
+      ")" +
+      "$"                           // end of line
+
+    withResource(input.lstrip()) { stripped =>
+      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+        // filter out strings containing breaking whitespace
+        val withoutWhitespace = withResource(ColumnVector.fromStrings("\r", "\n")) {
+            verticalWhitespace =>
+          withResource(stripped.contains(verticalWhitespace)) {
+            _.ifElse(nullString, stripped)
+          }
+        }
+        // replace all possible versions of "Inf" and "Infinity" with "Inf"
+        val inf = withResource(withoutWhitespace) { _ =>
+            withoutWhitespace.stringReplaceWithBackrefs(
+          "(?:[iI][nN][fF])" + "(?:[iI][nN][iI][tT][yY])?", "Inf")
+        }
+        // replace "+Inf" with "Inf" because cuDF only supports "Inf" and "-Inf"
+        val infWithoutPlus = withResource(inf) { _ =>
+          withResource(GpuScalar.from("+Inf", DataTypes.StringType)) { search =>
+            withResource(GpuScalar.from("Inf", DataTypes.StringType)) { replace =>
+              inf.stringReplace(search, replace)
+            }
+          }
+        }
+        // filter out any strings that are not valid floating point numbers according
+        // to the regex pattern
+        val floatOrNull = withResource(infWithoutPlus) { _ =>
+          withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
+            if (ansiEnabled) {
+              withResource(isFloat.all()) { allMatch =>
+                // Check that all non-null values are valid floats.
+                if (allMatch.isValid && !allMatch.getBoolean) {
+                  throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+                }
+                infWithoutPlus.incRefCount()
+              }
+            } else {
+              isFloat.ifElse(infWithoutPlus, nullString)
+            }
+          }
+        }
+        // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
+        withResource(floatOrNull) {
+          _.stringReplaceWithBackrefs("([^n])[fFdD]$", "\\1")
+        }
+      }
+    }
+  }
+
+  def sanitizeStringToIntegralType(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
+    // Convert any strings containing whitespace to null values. The input is assumed to already
+    // have been stripped of leading and trailing whitespace
+    val sanitized = withResource(input.containsRe("\\s")) { hasWhitespace =>
+      withResource(hasWhitespace.any()) { any =>
+        if (any.getBoolean) {
+          if (ansiEnabled) {
+            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+          } else {
+            withResource(GpuScalar.from(null, DataTypes.StringType)) { nullVal =>
+              hasWhitespace.ifElse(nullVal, input)
+            }
+          }
+        } else {
+          input.incRefCount()
+        }
+      }
+    }
+
+    if (ansiEnabled) {
+      // ansi mode only supports simple integers, so no exponents or decimal places
+      val regex = "^[+\\-]?[0-9]+$"
+      withResource(sanitized.matchesRe(regex)) { isInt =>
+        withResource(isInt.all()) { allInts =>
+          // Check that all non-null values are valid integers.
+          if (allInts.isValid && !allInts.getBoolean) {
+            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        sanitized
+      }
+    } else {
+      // truncate strings that represent decimals, so that we just look at the string before the dot
+      withResource(sanitized) { _ =>
+        withResource(Scalar.fromString(".")) { dot =>
+          withResource(sanitized.stringContains(dot)) { hasDot =>
+            // only do the decimal sanitization if any strings do contain dot
+            withResource(hasDot.any(DType.BOOL8)) { anyDot =>
+              if (anyDot.getBoolean) {
+                // Special handling for strings that have no numeric value before the dot, such
+                // as "." and ".1" because extractsRe returns null for the capture group
+                // for these values and it also returns null for invalid inputs so we need this
+                // explicit check
+                withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
+                  withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.[0-9]*$")) { table =>
+                    withResource(Scalar.fromString("0")) { zero =>
+                      withResource(startsWithDot.ifElse(zero, table.getColumn(0))) {
+                        decimal => hasDot.ifElse(decimal, sanitized)
+                      }
+                    }
+                  }
+                }
+              } else {
+                sanitized.incRefCount()
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -661,7 +793,7 @@ case class GpuCast(
             // in ansi mode, fail if any values are not valid bool strings
             if (ansiEnabled) {
               withResource(validBools.all()) { isAllBool =>
-                if (!isAllBool.getBoolean) {
+                if (isAllBool.isValid && !isAllBool.getBoolean) {
                   throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
                 }
               }
@@ -685,47 +817,20 @@ case class GpuCast(
       input: ColumnVector,
       ansiEnabled: Boolean,
       dType: DType): ColumnVector = {
-    val cleaned = if (!ansiEnabled) {
-      // TODO would be great to get rid of this regex, but the overflow checks don't work
-      //  on the more lenient pattern.
-      // To avoid doing the expensive regex all the time, we will first check to see if we need
-      // to do it. The only time we do need to do it is when we have a '.' in any of the strings.
-      val data = input.getData
-      val hasDot = if (data != null) {
-        withResource(
-          ColumnView.fromDeviceBuffer(data, 0, DType.INT8, data.getLength.toInt)) { childData =>
-          withResource(GpuScalar.from('.'.toByte, ByteType)) { dot =>
-            childData.contains(dot)
-          }
-        }
-      } else {
-        false
-      }
 
-      if (hasDot) {
-        withResource(input.extractRe("^([+\\-]?[0-9]+)(?:\\.[0-9]*)?$")) { table =>
-          table.getColumn(0).incRefCount()
-        }
-      } else {
-        input.incRefCount()
-      }
-    } else {
-      input.incRefCount()
-    }
-    withResource(cleaned) { cleaned =>
-      withResource(cleaned.isInteger(dType)) { isInt =>
+    withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
+      withResource(sanitized.isInteger(dType)) { isInt =>
         if (ansiEnabled) {
           withResource(isInt.all()) { allInts =>
-            if (!allInts.getBoolean) {
-              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            // Check that all non-null values are valid integers.
+            if (allInts.isValid && !allInts.getBoolean) {
+              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
-          cleaned.castTo(dType)
-        } else {
-          withResource(cleaned.castTo(dType)) { parsedInt =>
-            withResource(GpuScalar.from(null, dataType)) { nullVal =>
-              isInt.ifElse(parsedInt, nullVal)
-            }
+        }
+        withResource(sanitized.castTo(dType)) { parsedInt =>
+          withResource(GpuScalar.from(null, dataType)) { nullVal =>
+            isInt.ifElse(parsedInt, nullVal)
           }
         }
       }
@@ -737,59 +842,35 @@ case class GpuCast(
       ansiEnabled: Boolean,
       dType: DType): ColumnVector = {
 
-    // TODO: since cudf doesn't support case-insensitive regex, we have to generate all
-    //  possible strings. But these should cover most of the cases
-    val POS_INF_REGEX = "^[+]?(?:infinity|inf|Infinity|Inf|INF|INFINITY)$"
-    val NEG_INF_REGEX = "^[\\-](?:infinity|inf|Infinity|Inf|INF|INFINITY)$"
-    val NAN_REGEX = "^(?:nan|NaN|NAN)$"
+    // 1. convert the different infinities to "Inf"/"-Inf" which is the only variation cudf
+    // understands
+    // 2. identify the nans
+    // 3. identify the floats. "nan", "null" and letters are not considered floats
+    // 4. if ansi is enabled we want to throw and exception if the string is neither float nor nan
+    // 5. convert everything thats not floats to null
+    // 6. set the indices where we originally had nans to Float.NaN
+    //
+    // NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
+    // Inf even though Spark does
 
+    val NAN_REGEX = "^[nN][aA][nN]$"
 
-//      1. convert the different infinities to "Inf"/"-Inf" which is the only variation cudf
-//         understands
-//      2. identify the nans
-//      3. identify the floats. "nan", "null" and letters are not considered floats
-//      4. if ansi is enabled we want to throw and exception if the string is neither float nor nan
-//      5. convert everything thats not floats to null
-//      6. set the indices where we originally had nans to Float.NaN
-//
-//      NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
-//      Inf even though spark does
-
-    if (ansiEnabled && input.hasNulls()) {
-      throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
-    }
-    // First replace different spellings/cases of infinity with Inf and -Infinity with -Inf
-    val posInfReplaced = withResource(input.matchesRe(POS_INF_REGEX)) { containsInf =>
-      withResource(Scalar.fromString("Inf")) { inf =>
-        containsInf.ifElse(inf, input)
-      }
-    }
-    val withPosNegInfinityReplaced = withResource(posInfReplaced) { withPositiveInfinityReplaced =>
-      withResource(withPositiveInfinityReplaced.matchesRe(NEG_INF_REGEX)) { containsNegInf =>
-        withResource(Scalar.fromString("-Inf")) { negInf =>
-          containsNegInf.ifElse(negInf, withPositiveInfinityReplaced)
-        }
-      }
-    }
-    withResource(withPosNegInfinityReplaced) { withPosNegInfinityReplaced =>
+    withResource(GpuCast.sanitizeStringToFloat(input, ansiEnabled)) { sanitized =>
       //Now identify the different variations of nans
-      withResource(withPosNegInfinityReplaced.matchesRe(NAN_REGEX)) { isNan =>
+      withResource(sanitized.matchesRe(NAN_REGEX)) { isNan =>
         // now check if the values are floats
-        withResource(withPosNegInfinityReplaced.isFloat()) { isFloat =>
+        withResource(sanitized.isFloat) { isFloat =>
           if (ansiEnabled) {
-            withResource(isNan.not()) { notNan =>
-              withResource(isFloat.not()) { notFloat =>
-                withResource(notFloat.and(notNan)) { notFloatAndNotNan =>
-                  withResource(notFloatAndNotNan.any()) { notNanAndNotFloat =>
-                    if (notNanAndNotFloat.getBoolean()) {
-                      throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
-                    }
-                  }
+            withResource(isNan.or(isFloat)) { nanOrFloat =>
+              withResource(nanOrFloat.all()) { allNanOrFloat =>
+                // Check that all non-null values are valid floats or NaN.
+                if (allNanOrFloat.isValid && !allNanOrFloat.getBoolean) {
+                  throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
                 }
               }
             }
           }
-          withResource(withPosNegInfinityReplaced.castTo(dType)) { casted =>
+          withResource(sanitized.castTo(dType)) { casted =>
             withResource(Scalar.fromNull(dType)) { nulls =>
               withResource(isFloat.ifElse(casted, nulls)) { floatsOnly =>
                 withResource(FloatUtils.getNanScalar(dType)) { nan =>

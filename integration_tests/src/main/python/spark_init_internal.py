@@ -75,6 +75,7 @@ def _handle_event_log_dir(sb, wid):
                                 spark_conf.get("spark.master", 'local'))
     event_log_config = os.environ.get('PYSP_TEST_spark_eventLog_enabled',
                                       spark_conf.get('spark.eventLog.enabled', str(False).lower()))
+    event_log_codec = os.environ.get('PYSP_TEST_spark_eventLog_compression_codec', 'zstd')
 
     if not master_url.startswith('local') or event_log_config != str(False).lower():
         print("SPARK_EVENTLOG_ENABLED is ignored for non-local Spark master and when "
@@ -90,7 +91,8 @@ def _handle_event_log_dir(sb, wid):
     sb\
         .config('spark.eventLog.dir', "file://{}".format(os.path.abspath(d))) \
         .config('spark.eventLog.compress', True) \
-        .config('spark.eventLog.enabled', True)
+        .config('spark.eventLog.enabled', True) \
+        .config('spark.eventLog.compression.codec', event_log_codec)
 
 
 _spark = _spark__init()
