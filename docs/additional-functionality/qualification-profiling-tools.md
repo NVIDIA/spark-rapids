@@ -205,7 +205,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     application start timestamp, unique
                                     application name or filesystem timestamp.
                                     Filesystem based filtering happens before
-                                    any application based filtering.For
+                                    any application based filtering. For
                                     application based filtering, the order in
                                     which filters areapplied is:
                                     application-name, start-app-time,
