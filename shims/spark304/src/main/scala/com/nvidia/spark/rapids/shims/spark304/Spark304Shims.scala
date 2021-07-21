@@ -19,6 +19,10 @@ package com.nvidia.spark.rapids.shims.spark304
 import com.nvidia.spark.rapids.ShimVersion
 import com.nvidia.spark.rapids.shims.spark303.Spark303Shims
 import com.nvidia.spark.rapids.spark303.RapidsShuffleManager
+import org.apache.parquet.schema.MessageType
+
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.internal.SQLConf
 
 class Spark304Shims extends Spark303Shims {
 
@@ -27,4 +31,16 @@ class Spark304Shims extends Spark303Shims {
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
   }
+
+  override def getParquetFilters(
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
 }

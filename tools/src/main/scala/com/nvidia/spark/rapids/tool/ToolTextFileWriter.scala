@@ -25,7 +25,8 @@ import org.apache.spark.sql.rapids.tool.ToolUtils
 /**
  * Class for writing local files, allows writing to distributed file systems.
  */
-class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Logging {
+class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
+    finalLocationText: String) extends Logging {
 
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
   private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
@@ -42,7 +43,7 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Lo
 
   def close(): Unit = {
     outFile.foreach { file =>
-      logInfo(s"Output location: $textOutputPath")
+      logInfo(s"$finalLocationText output location: $textOutputPath")
       file.flush()
       file.close()
       outFile = None

@@ -17,6 +17,8 @@ package com.nvidia.spark.rapids.tool.qualification
 
 import org.rogach.scallop.{ScallopConf, ScallopOption}
 
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
+
 class QualificationArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
 
   banner("""
@@ -40,15 +42,44 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           " eg: s3a://<BUCKET>/eventlog1 /path/to/eventlog2")
   val filterCriteria: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter newest or oldest N eventlogs for processing." +
-          "eg: 100-newest (for processing newest 100 event logs). " +
-          "eg: 100-oldest (for processing oldest 100 event logs)")
+      descr = "Filter newest or oldest N eventlogs based on application start timestamp, " +
+          "unique application name or filesystem timestamp. Filesystem based filtering " +
+          "happens before any application based filtering." +
+          "For application based filtering, the order in which filters are" +
+          "applied is: application-name, start-app-time, filter-criteria." +
+          "Application based filter-criteria are:" +
+          "100-newest (for processing newest 100 event logs based on timestamp inside" +
+          "the eventlog) i.e application start time)  " +
+          "100-oldest (for processing oldest 100 event logs based on timestamp inside" +
+          "the eventlog) i.e application start time)  " +
+          "100-newest-per-app-name (select at most 100 newest log files for each unique " +
+          "application name) " +
+          "100-oldest-per-app-name (select at most 100 oldest log files for each unique " +
+          "application name)" +
+          "Filesystem based filter criteria are:" +
+          "100-newest-filesystem (for processing newest 100 event logs based on filesystem " +
+          "timestamp). " +
+          "100-oldest-filesystem (for processing oldest 100 event logsbased on filesystem " +
+          "timestamp).")
+  val applicationName: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Filter event logs whose application name matches " +
+          "exactly or is a substring of input string. Regular expressions not supported." +
+          "For filtering based on complement of application name, use ~APPLICATION_NAME. i.e " +
+          "Select all event logs except the ones which have application name as the input string.")
+  val startAppTime: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Filter event logs whose application start occurred within the past specified " +
+        "time period. Valid time periods are min(minute),h(hours),d(days),w(weeks)," +
+        "m(months). If a period is not specified it defaults to days.")
   val matchEventLogs: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter event logs whose filenames contain the input string")
+      descr = "Filter event logs whose filenames contain the input string. Filesystem " +
+              "based filtering happens before any application based filtering.")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
-      descr = "Number of output rows in the summary report. Default is 1000.")
+      descr = "Number of output rows in the summary report. Default is 1000.",
+      default = Some(1000))
   val order: ScallopOption[String] =
     opt[String](required = false,
       descr = "Specify the sort order of the report. desc or asc, desc is the default. " +
@@ -58,11 +89,22 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[Int](required = false,
       descr = "Number of thread to use for parallel processing. The default is the " +
         "number of cores on host divided by 4.")
+  val readScorePercent: ScallopOption[Int] =
+    opt[Int](required = false,
+      descr = "The percent the read format and datatypes apply to the score. Default is " +
+        "20 percent.",
+      default = Some(20))
+  val reportReadSchema: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Whether to output the read formats and datatypes to the CSV file. This can " +
+        "be very long. Default is false.",
+      default = Some(false))
   val timeout: ScallopOption[Long] =
     opt[Long](required = false,
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +
         "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
-        "times out, it will report what it was able to process up until the timeout.")
+        "times out, it will report what it was able to process up until the timeout.",
+      default = Some(86400))
 
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)
@@ -70,13 +112,27 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   }
 
   validate(filterCriteria) {
-    case crit if (crit.endsWith("-newest") || crit.endsWith("-oldest")) => Right(Unit)
-    case _ => Left("Error, the filter criteria must end with either -newest or -oldest")
+    case crit if (crit.endsWith("-newest-filesystem") || crit.endsWith("-oldest-filesystem")
+        || crit.endsWith("-newest-per-app-name") || crit.endsWith("-oldest-per-app-name")
+        || crit.endsWith("-oldest") || crit.endsWith("-newest")) => Right(Unit)
+    case _ => Left("Error, the filter criteria must end with -newest, -oldest, " +
+        "-newest-filesystem, -oldest-filesystem, -newest-per-app-name or -oldest-per-app-name")
   }
 
   validate(timeout) {
     case timeout if (timeout > 3) => Right(Unit)
     case _ => Left("Error, timeout must be greater than 3 seconds.")
+  }
+
+  validate(readScorePercent) {
+    case percent if (percent >= 0) && (percent <= 100) => Right(Unit)
+    case _ => Left("Error, read score percent must be between 0 and 100.")
+  }
+
+  validate(startAppTime) {
+    case time if (AppFilterImpl.parseAppTimePeriod(time) > 0L) => Right(Unit)
+    case _ => Left("Time period specified, must be greater than 0 and valid periods " +
+      "are min(minute),h(hours),d(days),w(weeks),m(months).")
   }
 
   verify()

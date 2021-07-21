@@ -30,6 +30,7 @@ import org.apache.spark.sql.types._
  */
 sealed abstract class SupportLevel {
   def htmlTag: String
+  def text: String
 }
 
 /**
@@ -37,13 +38,15 @@ sealed abstract class SupportLevel {
  */
 object NotApplicable extends SupportLevel {
   override def htmlTag: String = "<td> </td>"
+  override def text: String = "NA"
 }
 
 /**
  * Spark supports this but the plugin does not.
  */
 object NotSupported extends SupportLevel {
-  override def htmlTag: String = "<td><b>NS</b></td>"
+  override def htmlTag: String = s"<td><b>$text</b></td>"
+  override def text: String = "NS"
 }
 
 /**
@@ -52,12 +55,14 @@ object NotSupported extends SupportLevel {
  *                  types because they are not 100% supported.
  */
 class Supported(val asterisks: Boolean = false) extends SupportLevel {
-  override def htmlTag: String =
+  override def htmlTag: String = s"<td>$text</td>"
+  override def text: String = {
     if (asterisks) {
-      "<td>S*</td>"
+      "S*"
     } else {
-      "<td>S</td>"
+      "S"
     }
+  }
 }
 
 /**
@@ -86,10 +91,17 @@ class PartiallySupported(
       None
     }
     val extraInfo = (note.toSeq ++ litOnly.toSeq ++ typeStr.toSeq).mkString("; ")
+    val allText = s"$text ($extraInfo)"
+    s"<td><em>$allText</em></td>"
+  }
+
+  // don't include the extra info in the supported text field for now
+  // as the qualification tool doesn't use it
+  override def text: String = {
     if (asterisks) {
-      "<td><em>PS* (" + extraInfo + ")</em></td>"
+      "PS*"
     } else {
-      "<td><em>PS (" + extraInfo + ")</em></td>"
+      "PS"
     }
   }
 }
@@ -1638,6 +1650,73 @@ object SupportedOpsDocs {
     Console.withOut(out) {
       Console.withErr(out) {
         SupportedOpsDocs.help()
+      }
+    }
+  }
+}
+
+object SupportedOpsForTools {
+
+  private def outputSupportIO() {
+    // Look at what we have for defaults for some configs because if the configs are off
+    // it likely means something isn't completely compatible.
+    val conf = new RapidsConf(Map.empty[String, String])
+    val types = TypeEnum.values.toSeq
+    val header = Seq("Format", "Direction") ++ types
+    println(header.mkString(","))
+    GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
+      case (format, ioMap) =>
+        val formatEnabled = format.toString.toLowerCase match {
+          case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+          case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
+          case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
+          case _ =>
+            throw new IllegalArgumentException("Format is unknown we need to add it here!")
+        }
+        val read = ioMap(ReadFileOp)
+        // we have lots of configs for various operations, just try to get the main ones
+        val readOps = types.map { t =>
+          val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
+            t.toString() match {
+              case "BOOLEAN" => conf.isCsvBoolReadEnabled
+              case "BYTE" => conf.isCsvByteReadEnabled
+              case "SHORT" => conf.isCsvShortReadEnabled
+              case "INT" => conf.isCsvIntReadEnabled
+              case "LONG" => conf.isCsvLongReadEnabled
+              case "FLOAT" => conf.isCsvFloatReadEnabled
+              case "DOUBLE" => conf.isCsvDoubleReadEnabled
+              case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
+              case "DATE" => conf.isCsvDateReadEnabled
+              case "DECIMAL" => conf.decimalTypeEnabled
+              case _ => true
+            }
+          } else {
+            t.toString() match {
+              case "DECIMAL" => conf.decimalTypeEnabled
+              case _ => true
+            }
+          }
+          if (!formatEnabled || !typeEnabled) {
+            // indicate configured off by default
+            "CO"
+          } else {
+            read.support(t).text
+          }
+        }
+        // only support reads for now
+        println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
+    }
+  }
+
+  def help(): Unit = {
+    outputSupportIO()
+  }
+
+  def main(args: Array[String]): Unit = {
+    val out = new FileOutputStream(new File(args(0)))
+    Console.withOut(out) {
+      Console.withErr(out) {
+        SupportedOpsForTools.help()
       }
     }
   }

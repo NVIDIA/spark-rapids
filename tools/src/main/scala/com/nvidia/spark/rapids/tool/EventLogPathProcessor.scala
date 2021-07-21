@@ -27,7 +27,6 @@ import org.apache.hadoop.fs.{FileStatus, FileSystem, Path, PathFilter}
 
 import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 sealed trait EventLogInfo {
@@ -137,8 +136,11 @@ object EventLogPathProcessor extends Logging {
         }.toMap
       }
     } catch {
-      case e: FileNotFoundException =>
+      case fe: FileNotFoundException =>
         logWarning(s"$pathString not found, skipping!")
+        Map.empty[EventLogInfo, Long]
+      case e: Exception =>
+        logWarning(s"Unexpected exception occurred reading $pathString, skipping!", e)
         Map.empty[EventLogInfo, Long]
     }
   }
@@ -168,7 +170,7 @@ object EventLogPathProcessor extends Logging {
       logsWithTimestamp.filterKeys(_.eventLog.getName.contains(strMatch))
     }.getOrElse(logsWithTimestamp)
 
-    val filteredLogs = filterNLogs.map { filter =>
+    val filteredLogs = if (filterNLogs.nonEmpty && !filterByAppCriteria(filterNLogs)) {
       val filteredInfo = filterNLogs.get.split("-")
       val numberofEventLogs = filteredInfo(0).toInt
       val criteria = filteredInfo(1)
@@ -177,13 +179,19 @@ object EventLogPathProcessor extends Logging {
       } else if (criteria.equals("oldest")) {
         LinkedHashMap(matchedLogs.toSeq.sortWith(_._2 < _._2): _*)
       } else {
-        logError("Criteria should be either newest or oldest")
+        logError("Criteria should be either newest-filesystem or oldest-filesystem")
         Map.empty[EventLogInfo, Long]
       }
       matched.take(numberofEventLogs)
-    }.getOrElse(matchedLogs)
-
+    } else {
+      matchedLogs
+    }
     filteredLogs.keys.toSeq
+  }
+
+  def filterByAppCriteria(filterNLogs: Option[String]): Boolean = {
+    filterNLogs.get.endsWith("-oldest") || filterNLogs.get.endsWith("-newest") ||
+        filterNLogs.get.endsWith("per-app-name")
   }
 
   def logApplicationInfo(app: ApplicationInfo) = {

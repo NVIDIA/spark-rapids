@@ -30,7 +30,8 @@ def read_orc_sql(data_path):
 # test with original orc file reader, the multi-file parallel reader for cloud
 original_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'PERFILE'}
 multithreaded_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'MULTITHREADED'}
-reader_opt_confs = [original_orc_file_reader_conf, multithreaded_orc_file_reader_conf]
+coalescing_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'COALESCING'}
+reader_opt_confs = [original_orc_file_reader_conf, multithreaded_orc_file_reader_conf, coalescing_orc_file_reader_conf]
 
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
@@ -45,9 +46,17 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
             read_func(std_input_path + '/' + name),
             conf=all_confs)
 
-orc_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))],
+    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+
+# Some array gens, but not all because of nesting
+orc_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens] + [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)]
+
+orc_gens_list = [orc_basic_gens,
+    orc_array_gens_sample,
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
 
@@ -115,6 +124,25 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
 # The following need extra jars 'lzo'
 # https://github.com/NVIDIA/spark-rapids/issues/143
+
+# Test the different compress combinations
+@ignore_order
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_mixed_compress_read(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_pathes = []
+    for compress in orc_compress_options:
+        data_path = spark_tmp_path + '/ORC_DATA' + compress
+        with_cpu_session(
+                lambda spark : binary_op_df(spark, long_gen).write.orc(data_path),
+                conf={'spark.sql.orc.compression.codec': compress})
+        data_pathes.append(data_path)
+
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc(data_pathes),
+            conf=all_confs)
 
 @pytest.mark.parametrize('compress', orc_compress_options)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])

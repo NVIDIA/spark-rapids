@@ -176,6 +176,24 @@
               </launchers>
             </configuration>
           </execution>
+          <execution>
+            <id>update_supported_tools</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <launchers>
+                <launcher>
+                  <id>update_rapids_support_tools</id>
+                  <mainClass>com.nvidia.spark.rapids.SupportedOpsForTools</mainClass>
+                  <args>
+                      <arg>${project.basedir}/../tools/src/main/resources/supportedDataSource.csv</arg>
+                  </args>
+                </launcher>
+              </launchers>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>

@@ -260,6 +260,10 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   private lazy val localBlockManagerId = blockManager.blockManagerId
 
+  // Used to prevent stopping multiple times RAPIDS Shuffle Manager internals.
+  // see the `stop` method
+  private var stopped: Boolean = false
+
   // Code that expects the shuffle catalog to be initialized gets it this way,
   // with error checking in case we are in a bad state.
   private def getCatalogOrThrow: ShuffleBufferCatalog =
@@ -404,9 +408,12 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   override def shuffleBlockResolver: ShuffleBlockResolver = resolver
 
-  override def stop(): Unit = {
+  override def stop(): Unit = synchronized {
     wrapped.stop()
-    server.foreach(_.close())
-    transport.foreach(_.close())
+    if (!stopped) {
+      stopped = true
+      server.foreach(_.close())
+      transport.foreach(_.close())
+    }
   }
 }
