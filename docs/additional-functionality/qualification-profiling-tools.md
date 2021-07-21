@@ -10,7 +10,7 @@ The qualification tool analyzes applications to determine if the RAPIDS Accelera
 might be a good fit for those applications.
 
 The profiling tool generates information which can be used for debugging and profiling applications.
-Information such as Spark version, executor information, properties and so on. This runs on either CPU or
+The information contains the Spark version, executor details, properties, etc. This runs on either CPU or
 GPU generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
