@@ -132,7 +132,8 @@ def test_repartition_df(data_gen, num_parts, length):
         ('a_1_2', float_gen),
         ('a_1_3', double_gen)
       ])),
-      ('b_1', long_gen)
+      ('b_1', long_gen),
+      ('c_1', int_gen)
     ]))],
     [('a', simple_string_to_string_map_gen)]], ids=idfn)
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
