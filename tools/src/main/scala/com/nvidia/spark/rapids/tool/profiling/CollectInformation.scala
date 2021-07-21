@@ -79,20 +79,28 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 
   // Print read data schema information
-  def printDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+  def printDataSourceInfo(): Unit = {
     val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    apps.foreach { app =>
-      // TODO - just add appindex
-      val dfWithApp = getDataSourceInfo(app, sparkSession)
-      // don't check if dataframe empty because that runs a Spark job
-      if (app.dataSourceInfo.nonEmpty) {
-        fileWriter.foreach { writer =>
-          writer.write(ToolUtils.showString(dfWithApp, numRows))
+    val outputHeaders =
+      Seq("appIndex", "sqlID", "format", "location", "pushedFilters", "schema")
+    val allRows = apps.flatMap { app =>
+      if (app.dataSourceInfo.size > 0) {
+        app.dataSourceInfo.map { ds =>
+          Seq(app.index.toString, ds.sqlID.toString, ds.format, ds.location,
+            ds.pushedFilters, ds.schema)
         }
       } else {
-        fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+        Seq.empty
       }
+    }
+    if (apps.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(3), cols(5)))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr + "\n"))
+    } else {
+      fileWriter.foreach(_.write("No Data Source Information Found!\n"))
     }
   }
 

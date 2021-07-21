@@ -134,7 +134,7 @@ object ProfileMain extends Logging {
         val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
         textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
-        // collect.printDataSourceInfo(sparkSession, numOutputRows)
+        collect.printDataSourceInfo()
         collect.printExecutorInfo()
         collect.printJobInfo()
         // collect.printRapidsProperties()
