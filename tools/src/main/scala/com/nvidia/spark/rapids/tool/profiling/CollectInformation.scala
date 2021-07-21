@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.tool.profiling
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.ToolUtils
@@ -41,7 +42,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter.foreach(_.write(messageHeader))
     val allRows = apps.map(a => a.appInfo.fieldsToPrint(a.index)).toList
     if (apps.size > 0) {
-      val headerNames = Seq("appIndex") ++ apps.head.appInfo.outputHeaders
+      val headerNames = apps.head.appInfo.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headerNames, allRows)
       fileWriter.foreach(_.write(outStr))
@@ -100,20 +101,59 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     df.withColumn("appIndex", lit(app.index.toString))
       .select("appIndex", df.columns:_*)
   }
-/*
+
   // Print executor related information
   def printExecutorInfo(): Unit = {
     val messageHeader = "\nExecutor Information:\n"
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
-        app.runQuery(query = app.generateExecutorInfo + " order by cast(numExecutors as long)",
-          fileWriter = fileWriter, messageHeader = messageHeader)
-      } else {
-        fileWriter.foreach(_.write("No Executor Information Found!\n"))
+    fileWriter.foreach(_.write(messageHeader))
+    if (apps.size > 0) {
+
+      val allRows = apps.flatMap { app =>
+        if (app.executors.size > 0) {
+          // first see if any executors have different resourceProfile ids
+          val groupedExecs = app.executors.groupBy(_._2.resourceProfileId)
+
+          groupedExecs.map { case (rpId, execs) =>
+            val rp = app.resourceProfiles.get(rpId)
+            val execMem = rp.map(_.executorResources.get(ResourceProfile.MEMORY)
+              .map(_.amount).getOrElse(0))
+            val execCores = rp.map(_.executorResources.get(ResourceProfile.CORES)
+              .map(_.amount).getOrElse(0))
+            val execGpus = rp.map(_.executorResources.get(ResourceProfile.CORES)
+              .map(_.amount).getOrElse(0))
+            val taskCpus = rp.map(_.taskResources.get(ResourceProfile.CPUS)
+              .map(_.amount).getOrElse(0))
+            val taskGpus = rp.map(_.taskResources.get("gpu").map(_.amount).getOrElse(0))
+            val execOffHeap = rp.map(_.executorResources.get(ResourceProfile.OFFHEAP_MEM)
+              .map(_.amount).getOrElse(0))
+
+            val numExecutors = execs.size
+            val exec = execs.head._2
+            Seq(app.index.toString, rpId.toString, numExecutors.toString,
+              exec.totalCores.toString, exec.maxMemory.toString, exec.totalOnHeap.toString,
+              exec.totalOffHeap.toString,
+              execMem.map(_.toString).getOrElse(null), execGpus.map(_.toString).getOrElse(null),
+              execOffHeap.map(_.toString).getOrElse(null), taskCpus.map(_.toString).getOrElse(null),
+              taskGpus.map(_.toString).getOrElse(null))
+          }
+        } else {
+          Seq.empty
+        }
       }
+      val outputHeaders =
+        Seq("appIndex", "resourceProfileId", "numExecutors", "executorCores",
+          "maxMem", "maxOnHeapMem", "maxOffHeapMem", "executorMemory", "numGpusPerExecutor",
+          "executorOffHeap", "taskCpu", "taskGpu")
+
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, allRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Executor Information Found!\n"))
     }
   }
 
+  /*
   // Print job related information
   def printJobInfo(): Unit = {
     val messageHeader = "\nJob Information:\n"

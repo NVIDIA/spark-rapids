@@ -43,7 +43,7 @@ case class ApplicationCase(
   durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
 
   val outputHeaders: Seq[String] = {
-    ProfileUtils.getMethods[ApplicationCase]
+    Seq("appIndex") ++ ProfileUtils.getMethods[ApplicationCase]
   }
 
   def fieldsToPrint(index: Int): Seq[String] = {

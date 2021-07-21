@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.tool.profiling._
+
 import org.apache.spark.internal.Logging
-import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.resource.ResourceProfile.CPUS
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}

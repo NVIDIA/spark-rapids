@@ -16,27 +16,30 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
+import java.util.Date
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.{immutable, mutable, Map}
+import scala.collection.immutable.TreeSet
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
-import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 
+import org.apache.spark.executor.ExecutorMetrics
 import org.apache.spark.internal.Logging
 import org.apache.spark.io.CompressionCodec
-import org.apache.spark.resource.{ExecutorResourceRequest, TaskResourceRequest}
+import org.apache.spark.resource.{ExecutorResourceRequest, ResourceInformation, ResourceProfile, TaskResourceRequest}
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
 import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
 import org.apache.spark.sql.rapids.tool.AppBase
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.status._
 import org.apache.spark.ui.UIUtils
+import org.apache.spark.util.Utils
+
 
 class SparkPlanInfoWithStage(
     nodeName: String,
@@ -191,6 +194,57 @@ class LiveResourceProfile(
     val executorResources: Map[String, ExecutorResourceRequest],
     val taskResources: Map[String, TaskResourceRequest],
     val maxTasksPerExecutor: Option[Int])
+
+class LiveExecutor(val executorId: String, _addTime: Long) {
+
+  var hostPort: String = null
+  var host: String = null
+  var isActive = true
+  var totalCores = 0
+
+  val addTime = new Date(_addTime)
+  var removeTime: Date = null
+  var removeReason: String = null
+
+  var rddBlocks = 0
+  var memoryUsed = 0L
+  var diskUsed = 0L
+  var maxTasks = 0
+  var maxMemory = 0L
+
+  var totalTasks = 0
+  var activeTasks = 0
+  var completedTasks = 0
+  var failedTasks = 0
+  var totalDuration = 0L
+  var totalGcTime = 0L
+  var totalInputBytes = 0L
+  var totalShuffleRead = 0L
+  var totalShuffleWrite = 0L
+  var isExcluded = false
+  var excludedInStages: Set[Int] = TreeSet()
+
+  var executorLogs = Map[String, String]()
+  var attributes = Map[String, String]()
+  var resources = Map[String, ResourceInformation]()
+
+  // Memory metrics. They may not be recorded (e.g. old event logs) so if totalOnHeap is not
+  // initialized, the store will not contain this information.
+  var totalOnHeap = -1L
+  var totalOffHeap = 0L
+  var usedOnHeap = 0L
+  var usedOffHeap = 0L
+
+  var resourceProfileId = ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
+
+  def hasMemoryInfo: Boolean = totalOnHeap >= 0L
+
+  // peak values for executor level metrics
+  val peakExecutorMetrics = new ExecutorMetrics()
+
+  def hostname: String = if (host != null) host else Utils.parseHostPort(hostPort)._1
+
+}
 
 /**
  * ApplicationInfo class saves all parsed events for future use.

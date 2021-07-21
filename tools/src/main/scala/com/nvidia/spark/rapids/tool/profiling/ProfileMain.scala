@@ -135,7 +135,7 @@ object ProfileMain extends Logging {
         textFileWriter.write("### A. Information Collected ###")
         collect.printAppInfo()
         // collect.printDataSourceInfo(sparkSession, numOutputRows)
-        // collect.printExecutorInfo()
+        collect.printExecutorInfo()
         // collect.printJobInfo()
         // collect.printRapidsProperties()
         collect.printRapidsJAR()
