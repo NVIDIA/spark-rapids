@@ -207,7 +207,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     Filesystem based filtering happens before
                                     any application based filtering. For
                                     application based filtering, the order in
-                                    which filters areapplied is:
+                                    which filters are applied is:
                                     application-name, start-app-time,
                                     filter-criteria. Application based
                                     filter-criteria are: 100-newest (for
