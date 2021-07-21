@@ -162,9 +162,9 @@ object ProfileMain extends Logging {
       healthCheck.listFailedTasks()
       healthCheck.listFailedStages()
       healthCheck.listFailedJobs()
-      /*
       healthCheck.listRemovedBlockManager()
       healthCheck.listRemovedExecutors()
+      /*
       healthCheck.listPossibleUnsupportedSQLPlan()
 
       if (appArgs.generateDot()) {
