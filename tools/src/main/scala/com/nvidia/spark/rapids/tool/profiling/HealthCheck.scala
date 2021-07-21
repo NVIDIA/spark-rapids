@@ -36,7 +36,8 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       val tasksFailed = app.taskEnd.filter(_.successful == false)
       tasksFailed.map { t =>
         Seq(app.index.toString, t.stageId.toString, t.stageAttemptId.toString,
-          t.taskId.toString, t.attempt.toString, t.endReason.substring(0, 100))
+          t.taskId.toString, t.attempt.toString,
+          t.endReason.substring(0, Math.min(t.endReason.size - 1, 100)))
       }
     }
     if (failed.size > 0) {
