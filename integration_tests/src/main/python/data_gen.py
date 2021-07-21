@@ -639,7 +639,7 @@ def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
         SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
         src.data_type)
 
-def _mark_as_lit(data, data_type = None):
+def _mark_as_lit(data, data_type):
     # To support nested types, 'data_type' is required.
     assert data_type is not None
 
