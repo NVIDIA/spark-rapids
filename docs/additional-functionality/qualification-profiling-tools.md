@@ -54,7 +54,7 @@ Optional:
   (only if any input event log is from S3)
   
 ## Download the tools jar or compile it
-You do not need to compile the jar yourself because you can download it from maven repository directly.
+You do not need to compile the jar yourself because you can download it from the Maven repository directly.
 
 Here are 2 options:
 1. Download the jar file from [maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.06.0/)
