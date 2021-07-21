@@ -209,7 +209,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     application based filtering, the order in
                                     which filters areapplied is:
                                     application-name, start-app-time,
-                                    filter-criteria.Application based
+                                    filter-criteria. Application based
                                     filter-criteria are:100-newest (for
                                     processing newest 100 event logs based on
                                     timestamp insidethe eventlog) i.e
