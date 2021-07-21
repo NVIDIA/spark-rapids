@@ -210,7 +210,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     which filters areapplied is:
                                     application-name, start-app-time,
                                     filter-criteria. Application based
-                                    filter-criteria are:100-newest (for
+                                    filter-criteria are: 100-newest (for
                                     processing newest 100 event logs based on
                                     timestamp insidethe eventlog) i.e
                                     application start time)  100-oldest (for
