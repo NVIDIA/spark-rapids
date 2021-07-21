@@ -13,8 +13,6 @@ The profiling tool generates information which can be used for debugging and pro
 The information contains the Spark version, executor details, properties, etc. This runs on either CPU or
 GPU generated event logs.
 
-(The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
-
 This document covers below topics:
 
 * [Prerequisites](#Prerequisites)
