@@ -48,7 +48,7 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 more information.
 
 Optional:
-- maven installed 
+- Maven installed 
   (only if you want to compile the jar yourself)
 - hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar 
   (only if any input event log is from S3)
