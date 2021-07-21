@@ -202,7 +202,7 @@ class LiveExecutor(val executorId: String, _addTime: Long) {
   var totalCores = 0
 
   val addTime = new Date(_addTime)
-  var removeTime: Long = null
+  var removeTime: Long = 0L
   var removeReason: String = null
   var maxMemory = 0L
 
