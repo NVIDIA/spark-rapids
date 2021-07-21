@@ -148,22 +148,25 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     }
   }
 
-  /*
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
   def listPossibleUnsupportedSQLPlan(): Unit = {
-    textFileWriter.write("\nSQL Plan HealthCheck:\n")
-    val query = apps
-        .filter { p =>
-          (p.allDataFrames.contains(s"sqlDF_${p.index}") && p.sqlPlan.nonEmpty)
-        }.map(app => "(" + app.unsupportedSQLPlan + ")")
-        .mkString(" union ")
-
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex", false,
-        fileWriter = Some(textFileWriter), messageHeader = s"\nUnsupported SQL Plan\n")
+    val header = "\nSQL Plan HealthCheck:\n"
+    fileWriter.foreach(_.write(header))
+    // sqlID|nodeID|nodeName|nodeDescription|
+    val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "nodeDescription")
+    val res = apps.flatMap { app =>
+      app.unsupportedSQLplan.map { unsup =>
+        Seq(app.index.toString, unsup.sqlID.toString, unsup.nodeID.toString, unsup.nodeName,
+          unsup.nodeDesc)
+      }
+    }
+    if (res.size > 0) {
+      val sortedRows = res.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      fileWriter.foreach(_.write("No Unsupported SQL Ops Found!\n"))
     }
   }
-  */
 }

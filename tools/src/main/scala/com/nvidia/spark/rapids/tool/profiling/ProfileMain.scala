@@ -164,9 +164,9 @@ object ProfileMain extends Logging {
       healthCheck.listFailedJobs()
       healthCheck.listRemovedBlockManager()
       healthCheck.listRemovedExecutors()
-      /*
       healthCheck.listPossibleUnsupportedSQLPlan()
 
+      /*
       if (appArgs.generateDot()) {
         if (appArgs.compare()) {
           logWarning("Dot graph does not compare apps")
