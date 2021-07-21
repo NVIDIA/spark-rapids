@@ -6,7 +6,7 @@ nav_order: 7
 ---
 # Spark Qualification and Profiling tools
 
-The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark 
+The qualification tool analyzes applications to determine if the RAPIDS Accelerator for Apache Spark 
 might be a good fit for those applications.
 
 The profiling tool generates information which can be used for debugging and profiling applications.
