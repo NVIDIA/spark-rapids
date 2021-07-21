@@ -1,3 +1,9 @@
+---
+layout: page
+title: Qualification and Profiling tools
+parent: Additional Functionality
+nav_order: 7
+---
 # Spark Qualification and Profiling tools
 
 The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark 
@@ -9,6 +15,23 @@ GPU generated event logs.
 
 (The code is based on Apache Spark 3.1.1 source code, and tested using Spark 3.0.x and 3.1.1 event logs)
 
+This document covers below topics:
+
+* [Prerequisites](#Prerequisites)
+* [Download the tools jar or compile it](#Download the tools jar or compile it)
+* [Qualification Tool](#Qualification Tool)
+    * [Qualification tool functions](#Qualification tool functions)
+    * [Download the Spark 3.x distribution](#Download the Spark 3.x distribution)
+    * [How to use qualification tool](#How to use qualification tool)
+    * [Qualification tool options](#Qualification tool options)
+    * [Qualification tool output](#Qualification tool output)
+* [Profiling Tool](#Profiling Tool)
+    * [Profiling tool functions](#Profiling tool functions)
+    * [Profiling tool metrics definitions](#Profiling tool metrics definitions)
+    * [How to use profiling tool](#How to use profiling tool)
+    * [Profiling tool options](#Profiling tool options)
+    * [Profiling tool output](#Profiling tool output)
+      
 ## Prerequisites
 - Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
   runs a Spark application so needs the Spark runtime.
@@ -72,31 +95,9 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
 more options about integrating hadoop-aws module with S3.
 
-## Filter input event logs
-Both of the qualification tool and profiling tool have this function which is to filter event logs.
-Here are 2 filter options:
-1. N newest or oldest event logs. (-f option)
-
-This is based on timestamp of the event log files.
-
-2. Event log file names match the string. (-m option)
-
-This is based on the event log file name.
-
-Below is an example of profiling tool:
-
-Filter event logs to be processed. 10 newest file with filenames containing "local":
-```bash
-$SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
-rapids-4-spark-tools_2.12-<version>.jar \
--m "local" -f "10-newest-filesystem" \
-/directory/with/eventlogs/
-```
-
-
 ## Qualification Tool
 
-### Functions
+### Qualification tool functions
 
 The qualification tool is used to look at a set of applications to determine if the RAPIDS Accelerator for Apache Spark
 might be a good fit for those applications. The tool works by processing the CPU generated event logs from Spark.
@@ -121,7 +122,7 @@ The other file is a CSV file that contains more information and can be used for 
 
 Note, potential problems are reported in the CSV file in a separate column, which is not included in the score. This
 currently includes some UDFs and some decimal operations. The tool won't catch all UDFs, and some of the UDFs can be
-handled with additional steps. Please refer to [supported_ops.md](../docs/supported_ops.md) for more details on UDF.
+handled with additional steps. Please refer to [supported_ops.md](../supported_ops.md) for more details on UDF.
 For decimals, it tries to recognize decimal operations but it may not catch them all.
 
 The CSV output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
@@ -151,7 +152,7 @@ Sample output in text:
 |app-20210507174503-1704|       83738|           6760|                   0|
 ```
 
-## Download the Spark 3.x distribution
+### Download the Spark 3.x distribution
 The Qualification tool requires the Spark 3.x jars to be able to run. If you do not already have
 Spark 3.x installed, you can download the Spark distribution to any machine and include the jars
 in the classpath.
@@ -160,9 +161,9 @@ in the classpath.
 2. Extract the Spark distribution into a local directory.
 3. Either set `SPARK_HOME` to point to that directory or just put the path inside of the classpath
    `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool. See the
-   [How to use this tool](#how-to-use-this-tool) section below.
+   [How to use qualification tool](#How to use qualification tool) section below.
 
-### How to use this tool
+### How to use qualification tool
 This tool parses the Spark CPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
 in the local filesystem, HDFS, S3 or mixed.
@@ -179,65 +180,74 @@ java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP
  com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
 ```
 
-### Options (`--help` output)
+### Qualification tool options
 
   Note: `--help` should be before the trailing event logs.
 ```bash
+java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+ com.nvidia.spark.rapids.tool.qualification.QualificationMain --help
+
 RAPIDS Accelerator for Apache Spark qualification tool
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
        <eventlogs | eventlog directories ...>
 
-  -a, --application-name <arg>      Filter event logs whose application name
-                                    matches exactly or is a substring of input 
-                                    string. Regular expressions not supported.
-      --application-name ~<arg>     Filter event logs based on the complement
-                                    of a selection criterion. i.e Select all
-                                    event logs except the ones which have
-                                    application name as the input string.
-  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on application start
-                                    timestamp, unique application name or filesystem
-                                    timestamp. Filesystem based filtering happens before any
-                                    application based filtering.
-                                    For application based filtering, the order in which filters are
-                                    applied is: application-name, start-app-time, filter-criteria.
-                                    Application based filter-criteria are:
-                                    100-newest (for processing newest 100 event logs based on
-                                    timestamp of the application inside the eventlog i.e application
-                                    start time)
-                                    100-oldest (for processing oldest 100 event logs based on
-                                    timestamp of the application inside the eventlog i.e application
-                                    start time)
-                                    100-newest-per-app-name (select at most 100 newest log files for
-                                    each unique application name)
-                                    100-oldest-per-app-name (select at most 100 oldest log files for
-                                    each unique application name)
-                                    Filesystem based filter criteria are:
-                                    100-newest-filesystem (for processing newest 100 event
-                                    logs based on filesystem timestamp).
-                                    100-oldest-filesystem (for processing oldest 100 event logs
-                                    based on filesystem timestamp).
-  -m, --match-event-logs  <arg>     Filter event logs whose filenames contain the
-                                    input string. Filesystem based filtering happens before
-                                    any application based filtering.
+  -a, --application-name  <arg>     Filter event logs whose application name
+                                    matches exactly or is a substring of input
+                                    string. Regular expressions not
+                                    supported.For filtering based on complement
+                                    of application name, use ~APPLICATION_NAME.
+                                    i.e Select all event logs except the ones
+                                    which have application name as the input
+                                    string.
+  -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on
+                                    application start timestamp, unique
+                                    application name or filesystem timestamp.
+                                    Filesystem based filtering happens before
+                                    any application based filtering.For
+                                    application based filtering, the order in
+                                    which filters areapplied is:
+                                    application-name, start-app-time,
+                                    filter-criteria.Application based
+                                    filter-criteria are:100-newest (for
+                                    processing newest 100 event logs based on
+                                    timestamp insidethe eventlog) i.e
+                                    application start time)  100-oldest (for
+                                    processing oldest 100 event logs based on
+                                    timestamp insidethe eventlog) i.e
+                                    application start time)
+                                    100-newest-per-app-name (select at most 100
+                                    newest log files for each unique application
+                                    name) 100-oldest-per-app-name (select at
+                                    most 100 oldest log files for each unique
+                                    application name)Filesystem based filter
+                                    criteria are:100-newest-filesystem (for
+                                    processing newest 100 event logs based on
+                                    filesystem timestamp). 100-oldest-filesystem
+                                    (for processing oldest 100 event logsbased
+                                    on filesystem timestamp).
+  -m, --match-event-logs  <arg>     Filter event logs whose filenames contain
+                                    the input string. Filesystem based filtering
+                                    happens before any application based
+                                    filtering.
   -n, --num-output-rows  <arg>      Number of output rows in the summary report.
                                     Default is 1000.
       --num-threads  <arg>          Number of thread to use for parallel
-                                    processing. The default is the number of cores
-                                    on host divided by 4.
-      --order  <arg>                Specify the sort order of the report. desc or
-                                    asc, desc is the default. desc (descending)
-                                    would report applications most likely to be
-                                    accelerated at the top and asc (ascending)
-                                    would show the least likely to be accelerated
-                                    at the top.
+                                    processing. The default is the number of
+                                    cores on host divided by 4.
+      --order  <arg>                Specify the sort order of the report. desc
+                                    or asc, desc is the default. desc
+                                    (descending) would report applications most
+                                    likely to be accelerated at the top and asc
+                                    (ascending) would show the least likely to
+                                    be accelerated at the top.
   -o, --output-directory  <arg>     Base output directory. Default is current
                                     directory for the default filesystem. The
                                     final output will go into a subdirectory
-                                    called rapids_4_spark_qualification_output. It
-                                    will overwrite any existing directory with the
-                                    same name.
+                                    called rapids_4_spark_qualification_output.
+                                    It will overwrite any existing directory
+                                    with the same name.
   -r, --read-score-percent  <arg>   The percent the read format and datatypes
                                     apply to the score. Default is 20 percent.
       --report-read-schema          Whether to output the read formats and
@@ -249,11 +259,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     min(minute),h(hours),d(days),w(weeks),m(months).
                                     If a period is not specified it defaults to
                                     days.
-  -t, --timeout  <arg>              Maximum time in seconds to wait for the event
-                                    logs to be processed. Default is 24 hours
-                                    (86400 seconds) and must be greater than 3
-                                    seconds. If it times out, it will report what
-                                    it was able to process up until the timeout.
+  -t, --timeout  <arg>              Maximum time in seconds to wait for the
+                                    event logs to be processed. Default is 24
+                                    hours (86400 seconds) and must be greater
+                                    than 3 seconds. If it times out, it will
+                                    report what it was able to process up until
+                                    the timeout.
   -h, --help                        Show help message
 
  trailing arguments:
@@ -262,7 +273,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                         /path/to/eventlog2
 ```
 
-### Output
+### Qualification tool output
 The summary report goes to STDOUT and by default it outputs 2 files under sub-directory
 `./rapids_4_spark_qualification_output/` that contain the processed applications. The output will
 go into your default filesystem, it supports local filesystem or HDFS.
@@ -279,7 +290,8 @@ It will run a Spark application so requires Spark to be installed and setup. If 
 you can run it on that, or you can simply run it in local mode as well. See the Apache Spark documentation
 for [Downloading Apache Spark 3.x](http://spark.apache.org/downloads.html)
 
-### Functions
+### Profiling tool functions
+
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
 - Application information
 - Executors information
@@ -573,15 +585,15 @@ Failed jobs:
 +--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
 ```
 
-### Metrics Definitions
+### Profiling tool metrics definitions
 All the metrics definitions can be found in the [executor task metrics doc](https://spark.apache.org/docs/latest/monitoring.html#executor-task-metrics) / [executor metrics doc](https://spark.apache.org/docs/latest/monitoring.html#executor-metrics) or the [SPARK webUI doc](https://spark.apache.org/docs/latest/web-ui.html#content).
 
-### How to use this tool
+### How to use profiling tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
 in the local filesystem, HDFS, S3 or mixed.
 
-### Use from spark-shell
+#### Use from spark-shell
 1. Include `rapids-4-spark-tools_2.12-<version>.jar` in the '--jars' option to spark-shell or spark-submit
 2. After starting spark-shell:
 
@@ -595,14 +607,14 @@ For multiple event logs comparison and analysis:
 com.nvidia.spark.rapids.tool.profiling.ProfileMain.main(Array("/path/to/eventlog1", "/path/to/eventlog2"))
 ```
 
-### Use from spark-submit
+#### Use from spark-submit
 ```bash
 $SPARK_HOME/bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain \
 rapids-4-spark-tools_2.12-<version>.jar \
 /path/to/eventlog1 /path/to/eventlog2 /directory/with/eventlogs
 ```
 
-### Options (`--help` output)
+### Profiling tool options
   
   Note: `--help` should be before the trailing event logs.
 ```bash
@@ -613,23 +625,28 @@ rapids-4-spark-tools_2.12-<version>.jar \
 
 
 For usage see below:
+
   -c, --compare                   Compare Applications (Recommended to compare
                                   less than 10 applications). Default is false
-  -f, --filter-criteria  <arg>    Filter newest or oldest N event logs for processing.
-                                  Supported formats are:
-                                  To process 10 recent event logs: --filter-criteria "10-newest-timestamp"
-                                  To process 10 oldest event logs: --filter-criteria "10-oldest-timestamp"
+  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
+                                  processing.eg: 100-newest-filesystem (for
+                                  processing newest 100 event logs). eg:
+                                  100-oldest-filesystem (for processing oldest
+                                  100 event logs)
   -g, --generate-dot              Generate query visualizations in DOT format.
                                   Default is false
-  -m, --match-event-logs  <arg>   Filter event logs filenames which contains the input string.
+      --generate-timeline         Write an SVG graph out for the full
+                                  application timeline.
+  -m, --match-event-logs  <arg>   Filter event logs whose filenames contain the
+                                  input string
   -n, --num-output-rows  <arg>    Number of output rows for each Application.
                                   Default is 1000
   -o, --output-directory  <arg>   Base output directory. Default is current
                                   directory for the default filesystem. The
                                   final output will go into a subdirectory
-                                  called rapids_4_spark_profile.
-                                  It will overwrite any existing files with
-                                  the same name.
+                                  called rapids_4_spark_profile. It will
+                                  overwrite any existing files with the same
+                                  name.
   -p, --print-plans               Print the SQL plans to a file starting with
                                   'planDescriptions-'. Default is false
   -h, --help                      Show help message
@@ -640,7 +657,7 @@ For usage see below:
                         /path/to/eventlog2
 ```
 
-### Output
+### Profiling tool output
 By default this outputs a log file under sub-directory `./rapids_4_spark_profile` named
 `rapids_4_spark_tools_output.log` that contains the processed applications. The output will go into your
 default filesystem, it supports local filesystem or HDFS. There are separate files that are generated
