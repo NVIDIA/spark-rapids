@@ -245,7 +245,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
 
     val exec = app.getOrCreateExecutor(event.executorId, event.time)
     exec.isActive = false
-    exec.removeTime = new Date(event.time)
+    exec.removeTime = event.time
     exec.removeReason = event.reason
   }
 
