@@ -976,6 +976,10 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
           s"see ${RapidsConf.ENABLE_TYPED_IMPERATIVE_AGGREGATE.key}")
     }
 
+    // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
+    // previously stored on the spark plan to determine whether this plan can run on GPU
+    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
+
     super.tagPlanForGpu()
 
     // Fallback associated AggregateExecs if current AggregateExec which contains
@@ -1072,7 +1076,7 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
 
 object GpuNoHashAggregateMeta {
   private val logicalIdToMetas =
-    mutable.HashMap.empty[String, mutable.ListBuffer[GpuNoHashAggregateMeta[_]]]
+    mutable.HashMap.empty[String, mutable.HashSet[GpuNoHashAggregateMeta[_]]]
 
   /**
    * Register `GpuNoHashAggregateMeta` with its logical ID.
@@ -1081,7 +1085,7 @@ object GpuNoHashAggregateMeta {
     meta.agg.logicalLink.foreach { plan =>
       val verboseStringID = plan.verboseStringWithOperatorId
       val metas = logicalIdToMetas.getOrElseUpdate(verboseStringID,
-        mutable.ListBuffer.empty[GpuNoHashAggregateMeta[_]])
+        mutable.HashSet.empty[GpuNoHashAggregateMeta[_]])
       metas += meta
     }
   }

@@ -488,8 +488,10 @@ def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
-def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf):
-    conf.update({'spark.rapids.sql.typedImperativeAggregate.enabled': 'true'})
+@pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
+def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled):
+    conf.update({'spark.rapids.sql.typedImperativeAggregate.enabled': 'true',
+                 'spark.sql.adaptive.enabled': aqe_enabled})
     # test without Distinct
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
