@@ -8,4 +8,4 @@ Information such as Spark version, executor information, properties and so on. T
 GPU generated event logs.
 
 Please refer to [this documentation](../docs/additional-functionality/qualification-profiling-tools.md) 
-for more details on how to use the 2 tools.
+for more details on how to use the tools.
