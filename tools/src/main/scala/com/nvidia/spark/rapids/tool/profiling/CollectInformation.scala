@@ -283,12 +283,15 @@ class CollectInformation(apps: Seq[ApplicationInfo],
               acc.map(_.value).max
             case None => 0
           }
+          logWarning("driver max is: " + driverMax + " accum: " + metric.accumulatorId)
           val taskMax = accums match {
             case Some(acc) =>
               acc.map(_.value.getOrElse(0L)).max
             case None =>
               0
           }
+          logWarning("task max is: " + taskMax + " accum: " + metric.accumulatorId)
+
           val max = Math.max(driverMax, taskMax)
           Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
             metric.nodeName, metric.accumulatorId.toString, metric.name,
