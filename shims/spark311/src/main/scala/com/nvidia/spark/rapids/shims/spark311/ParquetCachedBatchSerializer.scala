@@ -1289,7 +1289,27 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
      */
     class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator {
       override def getIterator: Iterator[InternalRow] = {
-        iter.asInstanceOf[Iterator[ColumnarBatch]].next.rowIterator().asScala
+
+        new Iterator[InternalRow] {
+          // We have to check for null context because of the unit test
+          Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => hostBatch.close()))
+
+          val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
+          val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
+            withResource(batch) { batch =>
+              new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
+            }
+          } else {
+            batch
+          }
+
+          val rowIterator = hostBatch.rowIterator().asScala
+
+          override def next: InternalRow = rowIterator.next
+
+          override def hasNext: Boolean = rowIterator.hasNext
+
+        }
       }
     }
 
