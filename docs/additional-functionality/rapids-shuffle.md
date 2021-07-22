@@ -294,19 +294,36 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
     | 3.1.3      | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
 
-2. Recommended settings for UCX 1.10.1+
-```shell
-...
---conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
---conf spark.shuffle.service.enabled=false \
---conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
---conf spark.executorEnv.UCX_ERROR_SIGNALS= \
---conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
---conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
---conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
---conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
---conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
-```
+2. Settings for UCX 1.10.1+:
+
+    Minimum configuration:
+
+    ```shell
+    ...
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
+    --conf spark.shuffle.service.enabled=false \
+    --conf spark.dynamicAllocation.enabled=false \
+    --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
+    --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
+    --conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
+    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
+    ```
+
+    Recommended configuration:
+
+    ```shell
+    ...
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
+    --conf spark.shuffle.service.enabled=false \
+    --conf spark.dynamicAllocation.enabled=false \
+    --conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
+    --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
+    --conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
+    --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
+    --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
+    --conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
+    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
+    ```
 
 Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.
