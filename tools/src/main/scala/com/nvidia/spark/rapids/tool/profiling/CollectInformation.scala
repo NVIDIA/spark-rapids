@@ -273,7 +273,9 @@ class CollectInformation(apps: Seq[ApplicationInfo],
      val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
        "name", "max_value", "metricType")
     val allRows = apps.flatMap { app =>
-      if (app.taskStageAccumMap.size > 0 && app.allSQLMetrics.size > 0) {
+      // todo - update conditional
+      if ((app.taskStageAccumMap.size > 0 || app.driverAccum.size > 0)
+        && app.allSQLMetrics.size > 0) {
         app.allSQLMetrics.map { metric =>
           val accums = app.taskStageAccumMap.get(metric.accumulatorId)
           val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
@@ -281,13 +283,17 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           val driverMax = driverAccums match {
             case Some(acc) =>
               acc.map(_.value).max
-            case None => 0
+            case None =>
+              logWarning("no driver accum values for: " + metric)
+              0
           }
           logWarning("driver max is: " + driverMax + " accum: " + metric.accumulatorId)
           val taskMax = accums match {
             case Some(acc) =>
               acc.map(_.value.getOrElse(0L)).max
             case None =>
+              logWarning("no task accum values for: " + metric)
+
               0
           }
           logWarning("task max is: " + taskMax + " accum: " + metric.accumulatorId)
