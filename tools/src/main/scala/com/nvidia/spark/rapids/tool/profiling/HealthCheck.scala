@@ -152,7 +152,6 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
   def listPossibleUnsupportedSQLPlan(): Unit = {
     val header = "\nSQL Plan HealthCheck:\n"
     fileWriter.foreach(_.write(header))
-    // sqlID|nodeID|nodeName|nodeDescription|
     val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "nodeDescription")
     val res = apps.flatMap { app =>
       app.unsupportedSQLplan.map { unsup =>

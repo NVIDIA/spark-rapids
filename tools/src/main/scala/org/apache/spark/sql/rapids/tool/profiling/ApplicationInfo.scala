@@ -428,6 +428,7 @@ class ApplicationInfo(
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {
+            // TODO - add in what problem is
             val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc)
             unsupportedSQLplan += thisPlan
           }
