@@ -140,17 +140,17 @@ object ProfileMain extends Logging {
         collect.printRapidsProperties()
         collect.printRapidsJAR()
         collect.printSQLPlanMetrics()
-        /*
+
         if (printPlans) {
           collect.printSQLPlans(outputDirectory)
         }
-        */
       }
 
-      /*
+
       textFileWriter.write("\n### B. Analysis ###\n")
-      val analysis = new Analysis(apps, Some(textFileWriter))
+      val analysis = new Analysis(apps, Some(textFileWriter), numOutputRows)
       analysis.jobAndStageMetricsAggregation()
+      /*
       val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
       sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
       analysis.sqlMetricsAggregationDurationAndCpuTime()

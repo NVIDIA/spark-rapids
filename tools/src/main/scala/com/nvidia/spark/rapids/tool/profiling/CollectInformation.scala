@@ -247,24 +247,23 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }
   }
 
-  /*
-    def printSQLPlans(outputDirectory: String): Unit = {
-      for (app <- apps) {
-        val planFileWriter = new ToolTextFileWriter(outputDirectory,
-          s"planDescriptions-${app.appId}", "SQL Plan")
-        try {
-          for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
-            planFileWriter.write("\n=============================\n")
-            planFileWriter.write(s"Plan for SQL ID : $sqlID")
-            planFileWriter.write("\n=============================\n")
-            planFileWriter.write(planDesc)
-          }
-        } finally {
-          planFileWriter.close()
+  def printSQLPlans(outputDirectory: String): Unit = {
+    for (app <- apps) {
+      val planFileWriter = new ToolTextFileWriter(outputDirectory,
+        s"planDescriptions-${app.appId}", "SQL Plan")
+      try {
+        for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
+          planFileWriter.write("\n=============================\n")
+          planFileWriter.write(s"Plan for SQL ID : $sqlID")
+          planFileWriter.write("\n=============================\n")
+          planFileWriter.write(planDesc)
         }
+      } finally {
+        planFileWriter.close()
       }
     }
-      */
+  }
+
 
   // Print SQL Plan Metrics
   def printSQLPlanMetrics(): Unit = {
@@ -279,23 +278,18 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         app.allSQLMetrics.map { metric =>
           val accums = app.taskStageAccumMap.get(metric.accumulatorId)
           val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
-          logWarning("processing metrics: " + metric)
           val driverMax = driverAccums match {
             case Some(acc) =>
               Some(acc.map(_.value).max)
             case None =>
-              logWarning("no driver accum values for: " + metric)
               None
           }
-          logWarning("driver max is: " + driverMax + " accum: " + metric.accumulatorId)
           val taskMax = accums match {
             case Some(acc) =>
               Some(acc.map(_.value.getOrElse(0L)).max)
             case None =>
-              logWarning("no task accum values for: " + metric)
               None
           }
-          logWarning("task max is: " + taskMax + " accum: " + metric.accumulatorId)
 
           if (driverMax.isDefined || taskMax.isDefined) {
             val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))

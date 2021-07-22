@@ -25,54 +25,38 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
-class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter]) {
-
-  require(apps.nonEmpty)
-
-  /*
-  // Job Level TaskMetrics Aggregation
-  def jobMetricsAggregation(): Unit = {
-    val messageHeader = "\nJob level aggregated task metrics:\n"
-    if (apps.size == 1) {
-      apps.head.runQuery(apps.head.jobMetricsAggregationSQL + " order by Duration desc",
-        false, fileWriter, messageHeader)
-    } else {
-      var query = ""
-      for (app <- apps) {
-        if (query.isEmpty) {
-          query += app.jobMetricsAggregationSQL
-        } else {
-          query += " union " + app.jobMetricsAggregationSQL
-        }
-      }
-      apps.head.runQuery(query + " order by appIndex, Duration desc",
-        false, fileWriter, messageHeader)
-    }
-  }
-
-  // Stage Level TaskMetrics Aggregation
-  def stageMetricsAggregation(): Unit = {
-    val messageHeader = "\nStage level aggregated task metrics:\n"
-    if (apps.size == 1) {
-      apps.head.runQuery(apps.head.stageMetricsAggregationSQL + " order by Duration desc",
-        false, fileWriter, messageHeader)
-    } else {
-      var query = ""
-      for (app <- apps) {
-        if (query.isEmpty) {
-          query += app.stageMetricsAggregationSQL
-        } else {
-          query += " union " + app.stageMetricsAggregationSQL
-        }
-      }
-      apps.head.runQuery(query + " order by appIndex, Duration desc",
-        false, fileWriter, messageHeader)
-    }
-  }
+class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter],
+    numOutputRows: Int) {
 
   // Job + Stage Level TaskMetrics Aggregation
-  def jobAndStageMetricsAggregation(): DataFrame = {
+  def jobAndStageMetricsAggregation(): Unit = {
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
+
+    fileWriter.foreach(_.write(messageHeader))
+    /*
+    val outputHeaders =
+      Seq("appIndex", "jobID", "stageIds", "sqlID")
+    val allRows = apps.flatMap { app =>
+      if (app.liveJobs.size > 0) {
+        app.liveJobs.map { case (jobId, j) =>
+          Seq(app.index.toString, j.jobID.toString,
+            s"[${j.stageIds.mkString(",")}]",
+            j.sqlID.map(_.toString).getOrElse(null))
+        }
+      } else {
+        Seq.empty
+      }
+    }
+    if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No Job Information Found!\n"))
+    }
+
+
     if (apps.size == 1) {
       val app = apps.head
       if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
@@ -104,8 +88,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         apps.head.sparkSession.emptyDataFrame
       }
     }
+    */
   }
 
+  /*
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
   def sqlMetricsAggregation(): DataFrame = {
     val messageHeader = "\nSQL level aggregated task metrics:\n"
