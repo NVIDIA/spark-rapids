@@ -300,7 +300,7 @@ In this section, we are using a docker container built using the sample dockerfi
 
     ```shell
     ...
-    --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -312,7 +312,7 @@ In this section, we are using a docker container built using the sample dockerfi
 
     ```shell
     ...
-    --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -323,6 +323,9 @@ In this section, we are using a docker container built using the sample dockerfi
     --conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
     --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1
     ```
+
+Please replace `[shim package]` with the appropriate value. For example, the full class name for
+Apache Spark 3.1.3 is: `com.nvidia.spark.rapids.spark313.RapidsShuffleManager`.
 
 Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.
