@@ -274,15 +274,14 @@ class CollectInformation(apps: Seq[ApplicationInfo],
        "name", "max_value", "metricType")
     val allRows = apps.flatMap { app =>
       if (app.taskStageAccumMap.size > 0 && app.allSQLMetrics.size > 0) {
-
         app.allSQLMetrics.map { metric =>
           val accums = app.taskStageAccumMap.get(metric.accumulatorId)
           accums match {
             case Some(acc) =>
-              val maxValue = acc.map(_.value.getOrElse(0)).max.toString
+              val maxAccum = acc.map(_.value.getOrElse(0)).max
               Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
                 metric.nodeName, metric.accumulatorId.toString, metric.name,
-                maxValue, metric.metricType)
+                maxAccum.toString, metric.metricType)
 
             case None =>
               Seq.empty
@@ -292,10 +291,11 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         Seq.empty
       }
     }
+    val filtered = allRows.filter(_.nonEmpty)
     if (allRows.size > 0) {
       // appIndex, sqlID, nodeID, nodeName, accumulatorId, name, metricType
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong,
-        cols(3), cols(4).toLong, cols(7)))
+      val sortedRows = filtered.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong,
+        cols(3), cols(4).toLong, cols(6)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))
