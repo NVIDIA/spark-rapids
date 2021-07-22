@@ -267,7 +267,6 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       */
 
   // Print SQL Plan Metrics
-  /*
   def printSQLPlanMetrics(): Unit = {
     // |appIndex|sqlID|nodeID|nodeName           |accumulatorId|name                   |max_value|metricType|
     for (app <- apps) {
@@ -281,6 +280,4 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       }
     }
   }
-  */
-
 }

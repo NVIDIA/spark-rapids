@@ -434,7 +434,8 @@ class ApplicationInfo(
           }
         }
         // Then process SQL plan metric type
-        for (metric <- node.metrics){
+        for (metric <- node.metrics) {
+          logWarning("metrics is: " + metric + " sqlid: " + sqlID)
           val thisMetric = SQLPlanMetricsCase(sqlID, metric.name,
             metric.accumulatorId, metric.metricType)
           sqlPlanMetrics += thisMetric
