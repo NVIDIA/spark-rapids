@@ -282,26 +282,29 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           logWarning("processing metrics: " + metric)
           val driverMax = driverAccums match {
             case Some(acc) =>
-              acc.map(_.value).max
+              Some(acc.map(_.value).max)
             case None =>
               logWarning("no driver accum values for: " + metric)
-              0
+              None
           }
           logWarning("driver max is: " + driverMax + " accum: " + metric.accumulatorId)
           val taskMax = accums match {
             case Some(acc) =>
-              acc.map(_.value.getOrElse(0L)).max
+              Some(acc.map(_.value.getOrElse(0L)).max)
             case None =>
               logWarning("no task accum values for: " + metric)
-
-              0
+              None
           }
           logWarning("task max is: " + taskMax + " accum: " + metric.accumulatorId)
 
-          val max = Math.max(driverMax, taskMax)
-          Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
-            metric.nodeName, metric.accumulatorId.toString, metric.name,
-            max.toString, metric.metricType)
+          if (driverMax.isDefined || taskMax.isDefined) {
+            val max = Math.max(driverMax.getOrElse(0), taskMax.getOrElse(0))
+            Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
+              metric.nodeName, metric.accumulatorId.toString, metric.name,
+              max.toString, metric.metricType)
+          } else {
+            Seq.empty
+          }
         }
       } else {
         Seq.empty
