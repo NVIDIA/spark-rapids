@@ -365,8 +365,8 @@ like on the CPU.
 When reading from a file that contains data referring to a particular timezone, e.g.: reading
 timestamps from an ORC file, the system's timezone database at `/usr/share/zoneinfo/` must contain
 the timezone in order to process the data properly. This error often indicates the system is
-missing the timezone database. On Ubuntu systems, the timezone database is provided by the
-`tzdata` package.
+missing the timezone database. The timezone database is provided by the `tzdata` package on many
+Linux distributions.
 
 ### Why am I getting an error when trying to use pinned memory?
 
