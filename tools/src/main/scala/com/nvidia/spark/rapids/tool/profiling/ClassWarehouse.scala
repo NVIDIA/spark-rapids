@@ -106,6 +106,15 @@ case class PlanNodeAccumCase(
     nodeDesc: String,
     accumulatorId: Long)
 
+case class SQLMetricInfoCase(
+    sqlID: Long,
+    name: String,
+    accumulatorId: Long,
+    metricType: String,
+    nodeID: Long,
+    nodeName: String,
+    nodeDesc: String)
+
 case class DriverAccumCase(
     sqlID: Long,
     accumulatorId: Long,

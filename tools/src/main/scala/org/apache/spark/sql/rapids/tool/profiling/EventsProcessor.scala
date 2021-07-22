@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.tool.profiling
 import java.util.Date
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.mutable.ArrayBuffer
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.tool.profiling._
@@ -270,6 +271,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
           event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
           res.id, res.name, Some(value), res.internal)
         app.taskStageAccum += thisMetric
+        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
+          ArrayBuffer[TaskStageAccumCase]())
+        arrBuf += thisMetric
       } catch {
         case e: ClassCastException =>
           logWarning("ClassCastException when parsing accumulables for task "
@@ -478,6 +482,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
           event.stageInfo.stageId, event.stageInfo.attemptNumber(),
           None, res._2.id, res._2.name, Some(value), res._2.internal)
         app.taskStageAccum += thisMetric
+        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res._2.id,
+          ArrayBuffer[TaskStageAccumCase]())
+        arrBuf += thisMetric
       } catch {
         case e: ClassCastException =>
           logWarning("ClassCastException when parsing accumulables for task " +

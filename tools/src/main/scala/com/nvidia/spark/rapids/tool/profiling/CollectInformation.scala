@@ -95,7 +95,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         Seq.empty
       }
     }
-    if (apps.size > 0) {
+    if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(3), cols(5)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
@@ -183,7 +183,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         Seq.empty
       }
     }
-    if (apps.size > 0) {
+    if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
@@ -268,16 +268,39 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
   // Print SQL Plan Metrics
   def printSQLPlanMetrics(): Unit = {
-    // |appIndex|sqlID|nodeID|nodeName           |accumulatorId|name                   |max_value|metricType|
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
-        app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"jobDF_${app.index}") &&
-        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-        val messageHeader = "\nSQL Plan Metrics for Application:\n"
-        app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader = messageHeader)
+    val messageHeader = "\nSQL Plan Metrics for Application:\n"
+    fileWriter.foreach(_.write(messageHeader))
+     val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
+       "name", "max_value", "metricType")
+    val allRows = apps.flatMap { app =>
+      if (app.taskStageAccumMap.size > 0 && app.allSQLMetrics.size > 0) {
+
+        app.allSQLMetrics.map { metric =>
+          val accums = app.taskStageAccumMap.get(metric.accumulatorId)
+          accums match {
+            case Some(acc) =>
+              val maxValue = acc.map(_.value.getOrElse(0)).max.toString
+              Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
+                metric.nodeName, metric.accumulatorId.toString, metric.name,
+                maxValue, metric.metricType)
+
+            case None =>
+              Seq.empty
+          }
+        }
+      } else {
+        Seq.empty
       }
+    }
+    if (allRows.size > 0) {
+      // appIndex, sqlID, nodeID, nodeName, accumulatorId, name, metricType
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong,
+        cols(3), cols(4).toLong, cols(7)))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No SQL Plan Metrics Found!\n"))
     }
   }
 }

@@ -296,6 +296,7 @@ class ApplicationInfo(
   // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
   var sqlPlanMetrics: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
   var planNodeAccum: ArrayBuffer[PlanNodeAccumCase] = ArrayBuffer[PlanNodeAccumCase]()
+  var allSQLMetrics: ArrayBuffer[SQLMetricInfoCase] = ArrayBuffer[SQLMetricInfoCase]()
   // From SparkListenerSQLAdaptiveSQLMetricUpdates
   var sqlPlanMetricsAdaptive: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
 
@@ -303,6 +304,9 @@ class ApplicationInfo(
   var driverAccum: ArrayBuffer[DriverAccumCase] = ArrayBuffer[DriverAccumCase]()
   // From SparkListenerTaskEnd and SparkListenerTaskEnd
   var taskStageAccum: ArrayBuffer[TaskStageAccumCase] = ArrayBuffer[TaskStageAccumCase]()
+  var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
+    mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
+
 
   lazy val accumIdToStageId: immutable.Map[Long, Int] =
     taskStageAccum.map(accum => (accum.accumulatorId, accum.stageId)).toMap
@@ -435,13 +439,18 @@ class ApplicationInfo(
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
-          logWarning("metrics is: " + metric + " sqlid: " + sqlID)
+          logWarning("metrics is: " + metric + " sqlid: " + sqlID + " node: " + node)
           val thisMetric = SQLPlanMetricsCase(sqlID, metric.name,
             metric.accumulatorId, metric.metricType)
           sqlPlanMetrics += thisMetric
           val thisNode = PlanNodeAccumCase(sqlID, node.id,
             node.name, node.desc, metric.accumulatorId)
           planNodeAccum += thisNode
+
+          val allMetric = SQLMetricInfoCase(sqlID, metric.name,
+            metric.accumulatorId, metric.metricType, node.id,
+            node.name, node.desc)
+          allSQLMetrics += allMetric
         }
       }
     }
