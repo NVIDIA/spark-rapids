@@ -276,14 +276,16 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       if (app.taskStageAccumMap.size > 0 && app.allSQLMetrics.size > 0) {
         app.allSQLMetrics.map { metric =>
           val accums = app.taskStageAccumMap.get(metric.accumulatorId)
+          logWarning("processing metrics: " + metric)
           accums match {
             case Some(acc) =>
-              val maxAccum = acc.map(_.value.getOrElse(0)).max
+              val maxAccum = acc.map(_.value.getOrElse(0L)).max
               Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
                 metric.nodeName, metric.accumulatorId.toString, metric.name,
                 maxAccum.toString, metric.metricType)
 
             case None =>
+              logWarning("no accums found for metric: " + metric)
               Seq.empty
           }
         }
