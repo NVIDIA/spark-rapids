@@ -298,7 +298,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           logWarning("task max is: " + taskMax + " accum: " + metric.accumulatorId)
 
           if (driverMax.isDefined || taskMax.isDefined) {
-            val max = Math.max(driverMax.getOrElse(0), taskMax.getOrElse(0))
+            val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
             Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
               metric.nodeName, metric.accumulatorId.toString, metric.name,
               max.toString, metric.metricType)
