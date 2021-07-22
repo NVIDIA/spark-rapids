@@ -763,6 +763,11 @@ def to_cast_string(spark_type):
         return 'STRING'
     elif isinstance(spark_type, DecimalType):
         return 'DECIMAL({}, {})'.format(spark_type.precision, spark_type.scale)
+    elif isinstance(spark_type, ArrayType):
+        return 'ARRAY<{}>'.format(to_cast_string(spark_type.elementType))
+    elif isinstance(spark_type, StructType):
+        children = [fd.name + ':' + to_cast_string(fd.dataType) for fd in spark_type.fields]
+        return 'STRUCT<{}>'.format(','.join(children))
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
@@ -773,17 +778,32 @@ def get_null_lit_string(spark_type):
         string_type = to_cast_string(spark_type)
         return 'CAST(null as {})'.format(string_type)
 
-def _convert_to_sql(t, data):
+def _convert_to_sql(spark_type, data):
     if isinstance(data, str):
         d = "'" + data.replace("'", "\\'") + "'"
     elif isinstance(data, datetime):
         d = "'" + data.strftime('%Y-%m-%d T%H:%M:%S.%f').zfill(26) + "'"
     elif isinstance(data, date):
         d = "'" + data.strftime('%Y-%m-%d').zfill(10) + "'"
+    elif isinstance(data, list):
+        assert isinstance(spark_type, ArrayType)
+        d = "array({})".format(",".join([_convert_to_sql(spark_type.elementType, x) for x in data]))
+    elif isinstance(data, tuple):
+        assert isinstance(spark_type, StructType) and len(data) == len(spark_type.fields)
+        # Format of each child: 'name',data
+        children = ["'{}'".format(fd.name) + ',' + _convert_to_sql(fd.dataType, x)
+                for fd, x in zip(spark_type.fields, data)]
+        d = "named_struct({})".format(','.join(children))
+    elif not data:
+        # data is None
+        d = "null"
     else:
-        d = str(data)
+        d = "'{}'".format(str(data))
 
-    return 'CAST({} as {})'.format(d, t)
+    if isinstance(spark_type, NullType):
+        return d
+    else:
+        return 'CAST({} as {})'.format(d, to_cast_string(spark_type))
 
 def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
@@ -791,8 +811,8 @@ def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
     if isinstance(data_gen, NullGen):
         assert not force_no_nulls
         return ('null' for i in range(0, count))
-    string_type = to_cast_string(data_gen.data_type)
-    return (_convert_to_sql(string_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+    spark_type = data_gen.data_type
+    return (_convert_to_sql(spark_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
 byte_gen = ByteGen()
 short_gen = ShortGen()

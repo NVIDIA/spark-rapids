@@ -24,8 +24,23 @@ all_gens = all_gen + [NullGen()]
 all_nested_gens = array_gens_sample + struct_gens_sample
 all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
 
-@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
-def test_if_else(data_gen):
+# Create dedicated data gens of nested type for 'if' tests here with two exclusions:
+#   1) Excludes the nested 'NullGen' because it seems to be impossible to convert the
+#      'NullType' to a SQL type string. But the top level NullGen is handled specially
+#      in 'gen_scalars_for_sql'.
+#   2) Excludes the empty struct gen 'Struct()' because it leads to an error as below
+#      in both cpu and gpu runs.
+#      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
+#         at least one `BoundReference`
+if_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in all_gen] + nested_array_gens_sample
+if_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_gen)])
+if_struct_gens_sample = [if_struct_gen,
+        StructGen([['child0', byte_gen], ['child1', if_struct_gen]]),
+        StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+if_nested_gens = if_array_gens_sample + if_struct_gens_sample
+
+@pytest.mark.parametrize('data_gen', all_gens + if_nested_gens, ids=idfn)
+def test_if_else_llc(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -38,23 +53,7 @@ def test_if_else(data_gen):
                 'IF(a, b, {})'.format(s2),
                 'IF(a, {}, {})'.format(s1, s2),
                 'IF(a, b, {})'.format(null_lit),
-                'IF(a, {}, c)'.format(null_lit)))
-
-# Sadly you can not create literals for nested types in the form of sql string, according to
-# https://spark.apache.org/docs/latest/sql-ref-literals.html, and there is no API in Spark
-# for the 'If' function so far, so the tests can only cover column cases for nested types.
-#
-# However it should be OK because GpuIf and GpuCaseWhen use the same backend 'copy_if' from
-# cudf, whose abiliy of supporting literals of nested types had been verified already by the
-# tests for GpuCaseWhen.
-@pytest.mark.parametrize('data_gen', all_nested_gens, ids=idfn)
-def test_if_else_nested(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
-                'IF(TRUE, b, c)',
-                'IF(a, b, c)',
-                'IF(a, b, NULL)',
-                'IF(a, NULL, c)'),
+                'IF(a, {}, c)'.format(null_lit)),
             conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
