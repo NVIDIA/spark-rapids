@@ -390,9 +390,13 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     logDebug("Processing event: " + event.getClass)
 
     val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
-    accumUpdates.foreach(accum =>
-      app.driverAccum += DriverAccumCase(sqlID, accum._1, accum._2)
-    )
+    accumUpdates.foreach { accum =>
+      val driverAccum = DriverAccumCase(sqlID, accum._1, accum._2)
+      app.driverAccum += driverAccum
+      val arrBuf =  app.driverAccumMap.getOrElseUpdate(accum._1,
+        ArrayBuffer[DriverAccumCase]())
+      arrBuf += driverAccum
+    }
     logDebug("Current driverAccum has " + app.driverAccum.size + " accums.")
   }
 
