@@ -276,19 +276,23 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       if (app.taskStageAccumMap.size > 0 && app.allSQLMetrics.size > 0) {
         app.allSQLMetrics.map { metric =>
           val accums = app.taskStageAccumMap.get(metric.accumulatorId)
+          val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
           logWarning("processing metrics: " + metric)
-          accums match {
+          val driverMax = driverAccums match {
             case Some(acc) =>
-              val maxAccum = acc.map(_.value.getOrElse(0L)).max
-              Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
-                metric.nodeName, metric.accumulatorId.toString, metric.name,
-                maxAccum.toString, metric.metricType)
-
-            case None =>
-              logWarning("all task stage accuM: " + app.taskStageAccum)
-              logWarning("no accums found for metric: " + metric)
-              Seq.empty
+              acc.map(_.value).max
+            case None => 0
           }
+          val taskMax = accums match {
+            case Some(acc) =>
+              acc.map(_.value.getOrElse(0L)).max
+            case None =>
+              0
+          }
+          val max = Math.max(driverMax, taskMax)
+          Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
+            metric.nodeName, metric.accumulatorId.toString, metric.name,
+            max.toString, metric.metricType)
         }
       } else {
         Seq.empty

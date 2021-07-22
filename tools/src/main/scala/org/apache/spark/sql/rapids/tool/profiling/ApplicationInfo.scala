@@ -302,6 +302,9 @@ class ApplicationInfo(
 
   // From SparkListenerDriverAccumUpdates
   var driverAccum: ArrayBuffer[DriverAccumCase] = ArrayBuffer[DriverAccumCase]()
+  var driverAccumMap: mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]] =
+    mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]]()
+
   // From SparkListenerTaskEnd and SparkListenerTaskEnd
   var taskStageAccum: ArrayBuffer[TaskStageAccumCase] = ArrayBuffer[TaskStageAccumCase]()
   var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
