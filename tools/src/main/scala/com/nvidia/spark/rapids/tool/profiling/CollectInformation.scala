@@ -285,6 +285,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
                 maxAccum.toString, metric.metricType)
 
             case None =>
+              logWarning("all task stage accuM: " + app.taskStageAccum)
               logWarning("no accums found for metric: " + metric)
               Seq.empty
           }
