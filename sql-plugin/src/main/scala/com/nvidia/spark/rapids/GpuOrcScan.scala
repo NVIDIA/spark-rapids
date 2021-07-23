@@ -1122,7 +1122,7 @@ private case class GpuOrcFileFilterHandler(
             readSchema.getChildren.asScala.forall(rc =>
               fileSchema.getChildren.asScala.exists(fc => isSchemaCompatible(fc, rc)))
           } else {
-            true
+            false
           }
         }
     }
