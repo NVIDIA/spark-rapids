@@ -677,7 +677,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * By default, it simply returns the output of wrapped plan. For specific plans, they can
    * override outputTypeMetas to apply custom conversions on the output of wrapped plan. For plans
    * which just pass through the schema of childPlan, they can set useOutputAttributesOfChild to
-   * true, in order to propagate the custom conversions of childPlan if exists.
+   * true, in order to propagate the custom conversions of childPlan if they exist.
    */
   def outputAttributes: Seq[Attribute] = outputTypeMetas match {
     case Some(typeMetas) =>
@@ -698,12 +698,12 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         throw new IllegalArgumentException("useOutputAttributesOfChild ONLY works on UnaryPlan")
       }
       // We will check whether the child plan can be replaced or not. We only pass through the
-      // outputAttributes of child plan when it is GPU enabled. Otherwise, we should fetch the
-      // outputAttributes from wrapped plan, because type overriding of RapidsMeta is specialized
+      // outputAttributes of the child plan when it is GPU enabled. Otherwise, we should fetch the
+      // outputAttributes from the wrapped plan, because type overriding of RapidsMeta is specialized
       // for the GPU runtime.
       //
       // We can safely call childPlan.canThisBeReplaced here, because outputAttributes is called
-      // when tagSelfForGpu. And the tagging of child plan has been done in the moment.
+      // via tagSelfForGpu. At this point, tagging of the child plan has already happened.
       if (childPlans.head.canThisBeReplaced) {
         childPlans.head.outputAttributes
       } else {

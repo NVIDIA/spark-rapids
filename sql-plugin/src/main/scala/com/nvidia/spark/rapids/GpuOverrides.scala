@@ -2654,7 +2654,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
-      "Collect a list of non-unique elements, NOT yet supported in reduction.",
+      "Collect a list of non-unique elements, not supported in reduction.",
       // GpuCollectList is not yet supported in Reduction context.
       ExprChecks.aggNotReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
