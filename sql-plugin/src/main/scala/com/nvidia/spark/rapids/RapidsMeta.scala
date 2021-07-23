@@ -161,6 +161,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param because why it should not be replaced.
    */
   final def willNotWorkOnGpu(because: String): Unit = {
+    println(s"[${this.getClass.getSimpleName}] $because")
     cannotBeReplacedReasons.get.add(because)
     // annotate the real spark plan with the reason as well so that the information is available
     // during query stage planning when AQE is on

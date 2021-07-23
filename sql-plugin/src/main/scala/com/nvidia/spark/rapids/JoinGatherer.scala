@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
-import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, DataType, DateType, DecimalType, IntegerType, LongType, NullType, NumericType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, DataType, DateType, DecimalType, IntegerType, LongType, MapType, NullType, NumericType, StringType, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -465,7 +465,8 @@ object JoinGathererImpl {
       }
     case _: NumericType | DateType | TimestampType | BooleanType | NullType =>
       Some(GpuColumnVector.getNonNestedRapidsType(dt).getSizeInBytes * 8 + 1)
-    case StringType | BinaryType | ArrayType(_, _) if nullValueCalc =>
+//    case StringType | BinaryType | ArrayType(_, _) if nullValueCalc =>
+    case StringType | BinaryType | ArrayType(_, _) | MapType(_, _, _) if nullValueCalc =>
       // Single offset value and a validity value
       Some((DType.INT32.getSizeInBytes * 8) + 1)
     case x if nullValueCalc =>
