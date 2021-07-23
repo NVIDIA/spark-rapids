@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -107,7 +109,16 @@ object GpuExpressionsUtils extends Arm {
  * An Expression that cannot be evaluated in the traditional row-by-row sense (hence Unevaluable)
  * but instead can be evaluated on an entire column batch at once.
  */
-trait GpuExpression extends Expression with Unevaluable with Arm {
+trait GpuExpression extends Expression with Arm {
+
+  // copied from Unevaluable to avoid inheriting  final foldable
+  //
+  final override def eval(input: InternalRow = null): Any =
+    throw new UnsupportedOperationException(s"Cannot evaluate expression: $this")
+
+  final override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode =
+    throw new UnsupportedOperationException(s"Cannot generate code for expression: $this")
+
   /**
    * Override this if your expression cannot allow combining of data from multiple files
    * into a single batch before it operates on them. These are for things like getting
