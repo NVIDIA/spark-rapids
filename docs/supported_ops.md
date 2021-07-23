@@ -3391,9 +3391,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -3412,9 +3412,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -7594,7 +7594,7 @@ Accelerator support is described below.
 <td rowSpan="8">None</td>
 <td rowSpan="4">project</td>
 <td>predicate</td>
-<td><em>PS (literal values are not supported)</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -7629,9 +7629,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -7650,9 +7650,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -7671,9 +7671,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>

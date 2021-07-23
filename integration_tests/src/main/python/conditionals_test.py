@@ -22,8 +22,24 @@ import pyspark.sql.functions as f
 
 all_gens = all_gen + [NullGen()]
 all_nested_gens = array_gens_sample + struct_gens_sample
+all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
 
-@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
+# Create dedicated data gens of nested type for 'if' tests here with two exclusions:
+#   1) Excludes the nested 'NullGen' because it seems to be impossible to convert the
+#      'NullType' to a SQL type string. But the top level NullGen is handled specially
+#      in 'gen_scalars_for_sql'.
+#   2) Excludes the empty struct gen 'Struct()' because it leads to an error as below
+#      in both cpu and gpu runs.
+#      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
+#         at least one `BoundReference`
+if_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in all_gen] + nested_array_gens_sample
+if_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_gen)])
+if_struct_gens_sample = [if_struct_gen,
+        StructGen([['child0', byte_gen], ['child1', if_struct_gen]]),
+        StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+if_nested_gens = if_array_gens_sample + if_struct_gens_sample
+
+@pytest.mark.parametrize('data_gen', all_gens + if_nested_gens, ids=idfn)
 def test_if_else(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     null_lit = get_null_lit_string(data_gen.data_type)
@@ -37,7 +53,8 @@ def test_if_else(data_gen):
                 'IF(a, b, {})'.format(s2),
                 'IF(a, {}, {})'.format(s1, s2),
                 'IF(a, b, {})'.format(null_lit),
-                'IF(a, {}, c)'.format(null_lit)))
+                'IF(a, {}, c)'.format(null_lit)),
+            conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
 def test_case_when(data_gen):
@@ -94,7 +111,11 @@ def test_nvl(data_gen):
                 'nvl(a, {})'.format(null_lit)))
 
 #nvl is translated into a 2 param version of coalesce
-@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
+# Exclude the empty struct gen 'Struct()' because it leads to an error as below
+# in both cpu and gpu runs.
+#      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
+#         at least one `BoundReference`
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -106,7 +127,8 @@ def test_coalesce(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
-                f.coalesce(*command_args)))
+                f.coalesce(*command_args)),
+            conf = allow_negative_scale_of_decimal_conf)
 
 def test_coalesce_constant_output():
     # Coalesce can allow a constant value as output. Technically Spark should mark this
