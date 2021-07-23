@@ -629,14 +629,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
-    .doc("When set to true, enables casting from strings to integer types (byte, short, " +
-      "int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
-      "results when the string represents a number larger than Long.MaxValue or smaller than " +
-      "Long.MinValue.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
       .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
         "does NOT produce exact same string as spark produces, but producing strings which are " +
