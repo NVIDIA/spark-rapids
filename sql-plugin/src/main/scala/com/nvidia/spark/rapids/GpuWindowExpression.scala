@@ -534,7 +534,7 @@ case class GpuSpecifiedWindowFrame(
 
   private def boundarySql(expr: Expression): String = expr match {
     case e: GpuSpecialFrameBoundary => e.sql
-    case UnaryMinus(n) => n.sql + " PRECEDING"
+    case u: UnaryMinus => u.child.sql + " PRECEDING"
     case e: Expression => e.sql + " FOLLOWING"
   }
 

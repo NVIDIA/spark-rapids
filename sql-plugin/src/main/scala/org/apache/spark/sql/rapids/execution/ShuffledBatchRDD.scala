@@ -19,10 +19,9 @@ package org.apache.spark.sql.rapids.execution
 
 import java.util
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{GpuMetric, NvtxWithMetrics, ShimLoader}
+import com.nvidia.spark.rapids.{GpuMetric, ShimLoader}
 
-import org.apache.spark._
+import org.apache.spark.{MapOutputTrackerMaster, Partition, Partitioner, ShuffleDependency, SparkEnv, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsReporter}
@@ -146,8 +145,8 @@ class ShuffledBatchRDD(
           tracker.getPreferredLocationsForShuffle(dependency, reducerIndex)
         }
 
-      case PartialReducerPartitionSpec(_, startMapIndex, endMapIndex) =>
-        tracker.getMapLocation(dependency, startMapIndex, endMapIndex)
+      case prps: PartialReducerPartitionSpec =>
+        tracker.getMapLocation(dependency, prps.startMapIndex, prps.endMapIndex)
 
       case PartialMapperPartitionSpec(mapIndex, _, _) =>
         tracker.getMapLocation(dependency, mapIndex, mapIndex + 1)
@@ -175,20 +174,21 @@ class ShuffledBatchRDD(
         val partitionSize = blocksByAddress.flatMap(_._2).map(_._2).sum
         (reader, partitionSize)
 
-      case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex) =>
+      case prps: PartialReducerPartitionSpec =>
         val reader = shuffleManagerShims.getReader(
           SparkEnv.get.shuffleManager,
           dependency.shuffleHandle,
-          startMapIndex,
-          endMapIndex,
-          reducerIndex,
-          reducerIndex + 1,
+          prps.startMapIndex,
+          prps.endMapIndex,
+          prps.reducerIndex,
+          prps.reducerIndex + 1,
           context,
           sqlMetricsReporter)
         val blocksByAddress = shim.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, reducerIndex, reducerIndex + 1)
+          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, prps.reducerIndex,
+          prps.reducerIndex + 1)
         val partitionSize = blocksByAddress.flatMap(_._2)
-            .filter(tuple => tuple._3 >= startMapIndex && tuple._3 < endMapIndex)
+            .filter(tuple => tuple._3 >= prps.startMapIndex && tuple._3 < prps.endMapIndex)
             .map(_._2).sum
         (reader, partitionSize)
 
