@@ -18328,7 +18328,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="6">CollectList</td>
 <td rowSpan="6">`collect_list`</td>
-<td rowSpan="6">Collect a list of non-unique elements, NOT yet supported in reduction.</td>
+<td rowSpan="6">Collect a list of non-unique elements, not supported in reduction.</td>
 <td rowSpan="6">None</td>
 <td rowSpan="2">reduction</td>
 <td>input</td>
@@ -18461,7 +18461,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="6">CollectSet</td>
 <td rowSpan="6">`collect_set`</td>
-<td rowSpan="6">Collect a set of unique elements, NOT yet supported in reduction.</td>
+<td rowSpan="6">Collect a set of unique elements, not supported in reduction.</td>
 <td rowSpan="6">None</td>
 <td rowSpan="2">reduction</td>
 <td>input</td>

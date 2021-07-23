@@ -32,7 +32,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
@@ -958,9 +960,6 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
   // overriding data types of Aggregation Buffers if necessary
   if (mayNeedAggBufferConversion) overrideAggBufTypes()
 
-  // registering current AggregateMeta for possible associated fallback on AggregateExecs
-  GpuNoHashAggregateMeta.registerAggregateMeta(this)
-
   override protected lazy val outputTypeMetas: Option[Seq[DataTypeMeta]] =
     if (mayNeedAggBufferConversion) {
       Some(resultExpressions.map(_.typeMeta))
@@ -982,11 +981,11 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
 
     super.tagPlanForGpu()
 
-    // Fallback associated AggregateExecs if current AggregateExec which contains
-    // TypedImperativeAggregate functions fell back to CPU.
-    if (hasTypedImperativeAgg && !canThisBeReplaced) {
-      GpuNoHashAggregateMeta.fallBackPlansOfAllStages(this)
-    }
+    // We can not run part of TypedImperativeAggregate functions on GPU, because GPU buffers
+    // are inconsistent with CPU buffers. Therefore, we have to fall back all Aggregate stages
+    // to CPU once any of them did fallback, in order to guarantee no partial-accelerated
+    // TypedImperativeAggregate function.
+    GpuNoHashAggregateMeta.checkAndFallbackEntirely(this)
   }
 
   override def convertToGpu(): GpuExec = {
@@ -1024,8 +1023,7 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
 
   /**
    * The method replaces data types of aggregation buffers created by TypedImperativeAggregate
-   * functions with the actual data types used in the GPU runtime. And this method can adapt all
-   * Aggregation modes, including PartialMerge.
+   * functions with the actual data types used in the GPU runtime.
    *
    * Firstly, this method traverses aggregateFunctions, to search attributes referring to
    * aggregation buffers of TypedImperativeAggregate functions.
@@ -1075,37 +1073,53 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
 }
 
 object GpuNoHashAggregateMeta {
-  private val logicalIdToMetas =
-    mutable.HashMap.empty[String, mutable.HashSet[GpuNoHashAggregateMeta[_]]]
 
-  /**
-   * Register `GpuNoHashAggregateMeta` with its logical ID.
-   */
-  private def registerAggregateMeta(meta: GpuNoHashAggregateMeta[_]): Unit = {
-    meta.agg.logicalLink.foreach { plan =>
-      val verboseStringID = plan.verboseStringWithOperatorId
-      val metas = logicalIdToMetas.getOrElseUpdate(verboseStringID,
-        mutable.HashSet.empty[GpuNoHashAggregateMeta[_]])
-      metas += meta
+  private val entireAggFallbackCheck = TreeNodeTag[Boolean](
+    "rapids.gpu.checkAndFallbackAggregateExecEntirely")
+
+  private def checkAndFallbackEntirely(meta: GpuNoHashAggregateMeta[_]): Unit = {
+    // We only run the check for final stages which contain TypedImperativeAggregate.
+    val needToCheck = meta.agg.aggregateExpressions.exists(e =>
+      (e.mode == Final || e.mode == Complete) &&
+          e.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]])
+    if (!needToCheck) return
+    // Avoid duplicated check and fallback.
+    val checked = meta.agg.getTagValue[Boolean](entireAggFallbackCheck).contains(true)
+    if (checked) return
+
+    meta.agg.setTagValue(entireAggFallbackCheck, true)
+    val logicalPlan = meta.agg.logicalLink.get
+    val stageMetas = mutable.ListBuffer[GpuBaseAggregateMeta[_]]()
+    // Go through all Aggregate stages to check whether all stages is GPU supported. If not,
+    // we fall back all GPU supported stages to CPU.
+    if (recursiveCheckForFallback(meta, logicalPlan, stageMetas)) {
+      stageMetas.foreach {
+        case aggMeta if aggMeta.canThisBeReplaced =>
+          aggMeta.willNotWorkOnGpu("Associated fallback for TypedImperativeAggregate")
+        case _ =>
+      }
     }
   }
 
   /**
-   * Fall back other stages of AggregateExecs which share the same LogicalPlan as input AggMeta.
+   * Recursively collect all PlanMetas of input LogicalPlan. At the same time, and check whether
+   * existing plans which can NOT be replaced among them. If any, return true as the label of
+   * the entire fallback.
    */
-  private def fallBackPlansOfAllStages(meta: GpuNoHashAggregateMeta[_]): Unit = {
-    meta.agg.logicalLink.foreach { plan =>
-      val verboseStringID = plan.verboseStringWithOperatorId
-      logicalIdToMetas.get(verboseStringID).foreach { metas =>
-        metas.foreach {
-          case m if m.canThisBeReplaced =>
-            m.willNotWorkOnGpu(
-              s"AggregateExec ${m.agg.nodeName} can NOT run on the GPU, because another stage " +
-                  s"${meta.agg.nodeName} fall back to the CPU and there exists " +
-                  s"TypedImperativeAggregate functions in current Aggregate.")
-          case _ =>
-        }
-      }
+  private def recursiveCheckForFallback(
+      currentMeta: SparkPlanMeta[_],
+      logical: LogicalPlan,
+      metaOfAllStages: mutable.ListBuffer[GpuBaseAggregateMeta[_]]): Boolean = {
+    currentMeta match {
+      case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
+        metaOfAllStages += aggMeta
+        val childCheck = recursiveCheckForFallback(aggMeta.childPlans.head,
+          logical, metaOfAllStages)
+        !aggMeta.canThisBeReplaced || childCheck
+      case unaryMeta: SparkPlanMeta[_] if unaryMeta.childPlans.length == 1 =>
+        recursiveCheckForFallback(unaryMeta.childPlans.head, logical, metaOfAllStages)
+      case _ =>
+        false
     }
   }
 }

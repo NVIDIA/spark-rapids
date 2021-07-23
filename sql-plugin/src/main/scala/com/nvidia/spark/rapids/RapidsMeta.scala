@@ -681,10 +681,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    */
   def outputAttributes: Seq[Attribute] = outputTypeMetas match {
     case Some(typeMetas) =>
-      if (typeMetas.length != wrapped.output.length) {
-        throw new IllegalArgumentException(
-          "The length of outputTypeMetas doesn't match to the length of plan's output")
-      }
+      require(typeMetas.length == wrapped.output.length,
+        "The length of outputTypeMetas doesn't match to the length of plan's output")
       wrapped.output.zip(typeMetas).map {
         case (ar, meta) if meta.typeConverted =>
           addConvertedDataType(ar.name, meta)
@@ -694,13 +692,12 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
           ar
       }
     case None if useOutputAttributesOfChild =>
-      if (wrapped.children.length != 1) {
-        throw new IllegalArgumentException("useOutputAttributesOfChild ONLY works on UnaryPlan")
-      }
+      require(wrapped.children.length == 1,
+        "useOutputAttributesOfChild ONLY works on UnaryPlan")
       // We will check whether the child plan can be replaced or not. We only pass through the
       // outputAttributes of the child plan when it is GPU enabled. Otherwise, we should fetch the
-      // outputAttributes from the wrapped plan, because type overriding of RapidsMeta is specialized
-      // for the GPU runtime.
+      // outputAttributes from the wrapped plan, because type overriding of RapidsMeta is
+      // specialized for the GPU runtime.
       //
       // We can safely call childPlan.canThisBeReplaced here, because outputAttributes is called
       // via tagSelfForGpu. At this point, tagging of the child plan has already happened.

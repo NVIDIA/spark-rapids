@@ -574,9 +574,9 @@ object RapidsConf {
     .createWithDefault(true)
 
   val ENABLE_TYPED_IMPERATIVE_AGGREGATE = conf("spark.rapids.sql.typedImperativeAggregate.enabled")
-      .doc("Allow running TypedImperativeAggregate functions on the GPU. In current, we doesn't " +
-          "support running part of TypedImperativeAggregate on GPU (while another part on CPU). " +
-          "To avoid the partial run, we will fall back the entire Aggregate stack to CPU.")
+      .doc("Allow running TypedImperativeAggregate functions on the GPU. " +
+          "Note that TypedImperativeAggregate will fallback to run entirely on the CPU " +
+          "if part of the aggregate can't be accelerated.")
       .booleanConf
       .createWithDefault(false)
 
