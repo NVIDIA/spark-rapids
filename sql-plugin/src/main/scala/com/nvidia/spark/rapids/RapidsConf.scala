@@ -1001,9 +1001,19 @@ object RapidsConf {
 
   val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL =
     conf("spark.rapids.shuffle.transport.earlyStart.heartbeatInterval")
-      .doc("Shuffle early start heartbeat interval (milliseconds)")
+      .doc("Shuffle early start heartbeat interval (milliseconds). " +
+        "Executors will send a heartbeat RPC message to the driver at this interval")
       .integerConf
       .createWithDefault(5000)
+
+  val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_TIMEOUT =
+    conf("spark.rapids.shuffle.transport.earlyStart.heartbeatTimeout")
+      .doc(s"Shuffle early start heartbeat timeout (milliseconds). " +
+        s"Executors that don't heartbeat within this timeout will be considered stale. " +
+        s"This timeout must be higher than the value for " +
+        s"${SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL.key}")
+      .integerConf
+      .createWithDefault(10000)
 
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
@@ -1587,6 +1597,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleTransportEarlyStartHeartbeatInterval: Int = get(
     SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL)
+
+  lazy val shuffleTransportEarlyStartHeartbeatTimeout: Int = get(
+    SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_TIMEOUT)
 
   lazy val shuffleTransportEarlyStart: Boolean = get(SHUFFLE_TRANSPORT_EARLY_START)
 

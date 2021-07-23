@@ -73,17 +73,22 @@ class AppFilterImpl(
     val apps = appsForFiltering.asScala
 
     val filterAppName = appArgs.applicationName.getOrElse("")
-    if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
+    val filterCriteria = appArgs.filterCriteria.getOrElse("")
+
+    val appNameFiltered = if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
       val filtered = if (filterAppName.startsWith(NEGATE)) {
         // remove ~ before passing it into the containsAppName function
         apps.filterNot(app => containsAppName(app, filterAppName.substring(1)))
       } else {
         apps.filter(app => containsAppName(app, filterAppName))
       }
-      filtered.map(_.eventlog).toSeq
-    } else if (appArgs.startAppTime.isSupplied) {
+      filtered
+    } else {
+      apps
+    }
+    val appTimeFiltered = if (appArgs.startAppTime.isSupplied) {
       val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs)
-      val filtered = apps.filter { app =>
+      val filtered = appNameFiltered.filter { app =>
         val appStartOpt = app.appInfo.map(_.startTime)
         if (appStartOpt.isDefined) {
           appStartOpt.get >= msTimeToFilter
@@ -91,10 +96,42 @@ class AppFilterImpl(
           false
         }
       }
-      filtered.map(_.eventlog).toSeq
+      filtered
     } else {
-      apps.map(x => x.eventlog).toSeq
+      appNameFiltered
     }
+    val appCriteriaFiltered = if (appArgs.filterCriteria.isSupplied && filterCriteria.nonEmpty) {
+      if (filterCriteria.endsWith("-newest") || filterCriteria.endsWith("-oldest")) {
+        val filteredInfo = filterCriteria.split("-")
+        val numberofEventLogs = filteredInfo(0).toInt
+        val criteria = filteredInfo(1)
+        val filtered = if (criteria.equals("oldest")) {
+          appTimeFiltered.toSeq.sortBy(_.appInfo.get.startTime).take(numberofEventLogs)
+        } else {
+          appTimeFiltered.toSeq.sortBy(_.appInfo.get.startTime).reverse.take(numberofEventLogs)
+        }
+        filtered
+      } else if (filterCriteria.endsWith("-per-app-name")) {
+        val distinctAppNameMap = appTimeFiltered.groupBy(_.appInfo.get.appName)
+        val filteredInfo = filterCriteria.split("-")
+        val numberofEventLogs = filteredInfo(0).toInt
+        val criteria = filteredInfo(1)
+        val filtered = distinctAppNameMap.map { case (name, apps) =>
+          val sortedApps = if (criteria.equals("oldest")) {
+            apps.toSeq.sortBy(_.appInfo.get.startTime).take(numberofEventLogs)
+          } else {
+            apps.toSeq.sortBy(_.appInfo.get.startTime).reverse.take(numberofEventLogs)
+          }
+          (name, sortedApps)
+        }
+        filtered.values.flatMap(x => x)
+      } else {
+        appTimeFiltered
+      }
+    } else {
+      appTimeFiltered
+    }
+    appCriteriaFiltered.map(_.eventlog).toSeq
   }
 
   private def containsAppName(app: AppFilterReturnParameters, filterAppName: String): Boolean = {

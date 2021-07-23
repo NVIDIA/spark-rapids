@@ -85,15 +85,13 @@ abstract class AppBase(
       logFiles.foreach { file =>
         Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
           val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-          var i = 0
-          var done = false
-          val linesSize = lines.size
-          while (i < linesSize && !done) {
-            try {
-              val line = lines(i)
+          // Using find as foreach with conditional to exit early if we are done.
+          // Do NOT use a while loop as it is much much slower.
+          lines.find { line =>
+            val isDone = try {
               totalNumEvents += 1
               val event = JsonProtocol.sparkEventFromJson(parse(line))
-              done = processEvent(event)
+              processEvent(event)
             }
             catch {
               case e: ClassNotFoundException =>
@@ -102,8 +100,9 @@ abstract class AppBase(
                 if (!e.getMessage.contains("SparkListenerResourceProfileAdded")) {
                   logWarning(s"ClassNotFoundException: ${e.getMessage}")
                 }
+                false
             }
-            i += 1
+            isDone
           }
         }
       }

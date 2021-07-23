@@ -768,7 +768,8 @@ object GpuOverrides {
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
-      cudfReadWrite = TypeSig.commonCudfTypes,
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(),
+      cudfWrite = TypeSig.commonCudfTypes,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
@@ -1201,9 +1202,10 @@ object GpuOverrides {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1722,19 +1724,6 @@ object GpuOverrides {
       "CASE WHEN expression",
       CaseWhenCheck,
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (typeMeta.dataType.exists(_.isInstanceOf[ArrayType])) {
-            // We don't support literal arrays yet
-            if (a.elseValue.map(isLit).getOrElse(false)) {
-              willNotWorkOnGpu("literal arrays are not currently supported")
-            } else {
-              val anyLit = a.branches.exists { case (_, value) => isLit(value) }
-              if (anyLit) {
-                willNotWorkOnGpu("literal arrays are not currently supported")
-              }
-            }
-          }
-        }
         override def convertToGpu(): GpuExpression = {
           val branches = childExprs.grouped(2).flatMap {
             case Seq(cond, value) => Some((cond.convertToGpu(), value.convertToGpu()))
@@ -1750,13 +1739,15 @@ object GpuOverrides {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectNotLambda(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+      ExprChecks.projectNotLambda(
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
-        Seq(ParamCheck("predicate", TypeSig.psNote(TypeEnum.BOOLEAN,
-          "literal values are not supported"), TypeSig.BOOLEAN),
-          ParamCheck("trueValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+          ParamCheck("trueValue",
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
-          ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          ParamCheck("falseValue",
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
@@ -3073,7 +3064,7 @@ object GpuOverrides {
     exec[CustomShuffleReaderExec](
       "A wrapper of shuffle query stage",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
+        TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (exec, conf, p, r) =>
       new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
         override def tagPlanForGpu(): Unit = {
