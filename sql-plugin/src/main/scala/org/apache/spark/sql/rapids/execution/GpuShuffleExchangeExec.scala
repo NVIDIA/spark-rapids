@@ -49,8 +49,26 @@ class GpuShuffleMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(shuffle.outputPartitioning, conf, Some(this)))
 
-  // propagate possible type conversions on the output attributes of map-side plans to
-  // reduce-side counterparts
+  // Propagate possible type conversions on the output attributes of map-side plans to
+  // reduce-side counterparts. We can pass through the outputs of child because Shuffle will
+  // not change the data schema. And we need to pass through because Shuffle itself and
+  // reduce-side plans may failed to pass the type check for tagging CPU data types rather
+  // than their GPU counterparts.
+  //
+  // Taking AggregateExec with TypedImperativeAggregate function as example:
+  //    Assume I have a query: SELECT a, COLLECT_LIST(b) FROM table GROUP BY a, which physical plan
+  //    looks like:
+  //    ObjectHashAggregate(keys=[a#10], functions=[collect_list(b#11, 0, 0)],
+  //                        output=[a#10, collect_list(b)#17])
+  //      +- Exchange hashpartitioning(a#10, 200), true, [id=#13]
+  //        +- ObjectHashAggregate(keys=[a#10], functions=[partial_collect_list(b#11, 0, 0)],
+  //                               output=[a#10, buf#21])
+  //          +- LocalTableScan [a#10, b#11]
+  //
+  //    We will override the data type of buf#21 in GpuNoHashAggregateMeta. Otherwise, the partial
+  //    Aggregate will fall back to CPU because buf#21 produce a GPU-unsupported type: BinaryType.
+  //    Just like the partial Aggregate, the ShuffleExchange will also fall back to CPU unless we
+  //    apply the same type overriding as its child plan: the partial Aggregate.
   override protected val useOutputAttributesOfChild: Boolean = true
 
   override def tagPlanForGpu(): Unit = {
