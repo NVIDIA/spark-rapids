@@ -897,7 +897,7 @@ private case class GpuOrcFileFilterHandler(
         s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
       val stripes = buildOutputStripes(splitStripes, evolution,
         sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
-        orcReader.getWriterVersion)
+        orcReader.getWriterVersion, updatedReadSchema)
       OrcPartitionReaderContext(filePath, conf, orcReader.getSchema, updatedReadSchema, evolution,
         orcReader.getFileTail, orcReader.getCompressionSize, orcReader.getCompressionKind,
         readerOpts, stripes.iterator.buffered, requestedMapping)
@@ -909,20 +909,66 @@ private case class GpuOrcFileFilterHandler(
      * the memory file will have a mapping of -1.
      *
      * @param fileIncluded indicator per column in the ORC file whether it should be included
-     * @return column mapping array
+     * @param fileSchema   ORC file schema
+     * @param readerSchema ORC schema for what will be read
+     * @return new column id mapping array and new column id -> old column id mapping array
      */
-    private def columnRemap(fileIncluded: Array[Boolean]): Array[Int] = {
-      var nextOutputColumnId = 0
-      val result = new Array[Int](fileIncluded.length)
-      fileIncluded.indices.foreach { i =>
-        if (fileIncluded(i)) {
-          result(i) = nextOutputColumnId
+    private def columnRemap(
+        fileIncluded: Array[Boolean],
+        fileSchema: TypeDescription,
+        readerSchema: TypeDescription): (Array[Int], Array[Int]) = {
+
+      // A column mapping for the new column id in the new re-constructing orc
+      val columnMapping = Array.fill[Int](fileIncluded.length)(-1)
+      // The first column is the top-level schema struct, always set it to 0
+      columnMapping(0) = 0
+      // The mapping for the new column id to the old column id which is used to get the encodings
+      val idMapping = Array.fill[Int](fileIncluded.length)(-1)
+      // The first column is the top-level schema struct, always set it to 0
+      idMapping(0) = 0
+
+      // the new column sequential id for the in-coming re-constructing orc
+      var nextOutputColumnId = 1
+
+      def setMapping(id: Int) = {
+        if (fileIncluded(id)) {
+          idMapping(nextOutputColumnId) = id
+          // change the column id for the new orc file
+          columnMapping(id) = nextOutputColumnId
           nextOutputColumnId += 1
-        } else {
-          result(i) = -1
         }
       }
-      result
+
+      //  Recursively update columnMapping and idMapping according to the TypeDescription id
+      // For now, we are only supporting struct and list nested type
+      def updateMapping(prefix: String, schema: TypeDescription, isRoot: Boolean = false): Unit = {
+        // The first level must be STRUCT type
+        if (schema.getCategory == TypeDescription.Category.STRUCT) {
+          val fieldNames = schema.getFieldNames.asScala
+          val children = schema.getChildren.asScala
+          for (i <- 0 until children.size) {
+            val prefixNew = if (isRoot) {
+              fieldNames(i)
+            } else {
+              prefix + "." + fieldNames(i)
+            }
+            // We need to set the parent mapping
+            val id = fileSchema.findSubtype(prefixNew).getId
+            setMapping(id)
+            updateMapping(prefixNew, children(i))
+          }
+        } else if (schema.getCategory == TypeDescription.Category.LIST) {
+          val children = schema.getChildren.asScala
+          for (i <- 0 until children.size) {
+            val prefixNew = prefix + "._elem"
+            val id = fileSchema.findSubtype(prefixNew).getId
+            setMapping(id)
+            updateMapping(prefixNew, children(i))
+          }
+        }
+      }
+      updateMapping("", readerSchema, true)
+      (columnMapping, idMapping)
     }
 
     /**
@@ -964,6 +1010,7 @@ private case class GpuOrcFileFilterHandler(
      * @param sargColumns mapping of ORC search argument columns
      * @param ignoreNonUtf8BloomFilter true if bloom filters other than UTF8 should be ignored
      * @param writerVersion writer version from the original ORC input file
+     * @param updatedReadSchema the read schema
      * @return output stripes descriptors
      */
     private def buildOutputStripes(
@@ -972,9 +1019,11 @@ private case class GpuOrcFileFilterHandler(
         sargApp: SargApplier,
         sargColumns: Array[Boolean],
         ignoreNonUtf8BloomFilter: Boolean,
-        writerVersion: OrcFile.WriterVersion): Seq[OrcOutputStripe] = {
+        writerVersion: OrcFile.WriterVersion,
+        updatedReadSchema: TypeDescription): Seq[OrcOutputStripe] = {
       val fileIncluded = calcOrcFileIncluded(evolution)
-      val columnMapping = columnRemap(fileIncluded)
+      val (columnMapping, idMapping) = columnRemap(fileIncluded, evolution.getFileSchema,
+        updatedReadSchema)
       val result = new ArrayBuffer[OrcOutputStripe](stripes.length)
       stripes.foreach { stripe =>
         val stripeFooter = dataReader.readStripeFooter(stripe)
@@ -993,7 +1042,7 @@ private case class GpuOrcFileFilterHandler(
         }
 
         if (needStripe) {
-          result.append(buildOutputStripe(stripe, stripeFooter, columnMapping))
+          result.append(buildOutputStripe(stripe, stripeFooter, columnMapping, idMapping))
         }
       }
 
@@ -1007,12 +1056,15 @@ private case class GpuOrcFileFilterHandler(
      * @param inputStripe input stripe descriptor
      * @param inputFooter input stripe footer
      * @param columnMapping mapping of input column IDs to output column IDs
+     * @param idMapping mapping for the new column id of the new file and
+     *                  the old column id of original file
      * @return output stripe descriptor
      */
     private def buildOutputStripe(
         inputStripe: StripeInformation,
         inputFooter: OrcProto.StripeFooter,
-        columnMapping: Array[Int]): OrcOutputStripe = {
+        columnMapping: Array[Int],
+        idMapping: Array[Int]): OrcOutputStripe = {
       val rangeCreator = new DiskRangeList.CreateHelper
       val footerBuilder = OrcProto.StripeFooter.newBuilder()
       var inputFileOffset = inputStripe.getOffset
@@ -1038,9 +1090,9 @@ private case class GpuOrcFileFilterHandler(
       }
 
       // add the column encodings that are relevant
-      for (i <- 0 until inputFooter.getColumnsCount) {
-        if (columnMapping(i) >= 0) {
-          footerBuilder.addColumns(inputFooter.getColumns(i))
+      idMapping.foreach { id =>
+        if (id >= 0) {
+          footerBuilder.addColumns(inputFooter.getColumns(id))
         }
       }
 
