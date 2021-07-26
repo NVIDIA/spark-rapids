@@ -64,9 +64,10 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val applicationName: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose application name matches " +
-          "exactly or is a substring of input string. Regular expressions not supported." +
-          "For filtering based on complement of application name, use ~APPLICATION_NAME. i.e " +
-          "Select all event logs except the ones which have application name as the input string.")
+          "exactly or is a substring of input string. Application name as regular expression " +
+          "is supported as well. For filtering based on complement of application name, " +
+          "use ~APPLICATION_NAME. i.e Select all event logs except the ones which have" +
+          "application name as the input string.")
   val startAppTime: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose application start occurred within the past specified " +
@@ -105,6 +106,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
         "times out, it will report what it was able to process up until the timeout.",
       default = Some(86400))
+  val userName: ScallopOption[String] =
+    opt[String](required = false,
+      descr = "Applications which a particular user has submitted." )
 
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)

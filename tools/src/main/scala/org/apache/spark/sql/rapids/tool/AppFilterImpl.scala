@@ -74,6 +74,7 @@ class AppFilterImpl(
 
     val filterAppName = appArgs.applicationName.getOrElse("")
     val filterCriteria = appArgs.filterCriteria.getOrElse("")
+    val userName = appArgs.userName.getOrElse("")
 
     val appNameFiltered = if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
       val filtered = if (filterAppName.startsWith(NEGATE)) {
@@ -86,9 +87,21 @@ class AppFilterImpl(
     } else {
       apps
     }
+    val userNameFiltered = if (appArgs.userName.isSupplied && userName.nonEmpty) {
+      val filtered = appNameFiltered.filter { app =>
+        if (app.appInfo.isDefined) {
+          app.appInfo.get.userName.contains(userName)
+        } else {
+          false
+        }
+      }
+      filtered
+    } else {
+      appNameFiltered
+    }
     val appTimeFiltered = if (appArgs.startAppTime.isSupplied) {
       val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs)
-      val filtered = appNameFiltered.filter { app =>
+      val filtered = userNameFiltered.filter { app =>
         val appStartOpt = app.appInfo.map(_.startTime)
         if (appStartOpt.isDefined) {
           appStartOpt.get >= msTimeToFilter
@@ -98,7 +111,7 @@ class AppFilterImpl(
       }
       filtered
     } else {
-      appNameFiltered
+      userNameFiltered
     }
     val appCriteriaFiltered = if (appArgs.filterCriteria.isSupplied && filterCriteria.nonEmpty) {
       if (filterCriteria.endsWith("-newest") || filterCriteria.endsWith("-oldest")) {
@@ -137,7 +150,11 @@ class AppFilterImpl(
   private def containsAppName(app: AppFilterReturnParameters, filterAppName: String): Boolean = {
     val appNameOpt = app.appInfo.map(_.appName)
     if (appNameOpt.isDefined) {
-      appNameOpt.get.contains(filterAppName)
+      if (appNameOpt.get.contains(filterAppName) || appNameOpt.get.matches(filterAppName)) {
+        true
+      } else {
+        false
+      }
     } else {
       // in complete log file
       false
