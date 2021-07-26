@@ -215,7 +215,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
 
     val tryGpu = Try(withGpuSparkSession(castDf, gpuConf)
       .sortBy(_.getInt(INDEX_ID)))

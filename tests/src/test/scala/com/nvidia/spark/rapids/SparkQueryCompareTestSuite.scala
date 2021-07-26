@@ -447,11 +447,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       df: SparkSession => DataFrame,
       execsAllowedNonGpu: Seq[String],
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+      sortBeforeRepart: Boolean = false,
+      skipCanonicalizationCheck: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       execsAllowedNonGpu=execsAllowedNonGpu,
-      sortBeforeRepart = sortBeforeRepart)(fun)
+      sortBeforeRepart = sortBeforeRepart,
+      skipCanonicalizationCheck = skipCanonicalizationCheck)(fun)
   }
 
   def ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
