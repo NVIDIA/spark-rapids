@@ -140,7 +140,6 @@ object GpuOrcScanBase {
   }
 }
 
-
 /**
  * The multi-file partition reader factory for creating cloud reading or coalescing reading for
  * ORC file format.

@@ -102,7 +102,7 @@ else
     RUN_TESTS_COMMAND=("$SCRIPTPATH"/runtests.py
       --rootdir
       "$LOCAL_ROOTDIR"
-      "$LOCAL_ROOTDIR"/src/main/python)
+      "$LOCAL_ROOTDIR"/src/main/python/orc_test.py)
 
     TEST_COMMON_OPTS=(-v
           -rfExXs
