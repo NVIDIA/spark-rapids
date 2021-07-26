@@ -277,6 +277,10 @@ def test_window_aggs_for_rows(data_gen, batch_size):
         '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_c, '
         ' avg(c) over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as avg_c, '
+        ' rank() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as rank_val, '
+        ' dense_rank() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as dense_rank_val, '
         ' row_number() over '
         '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
         'from window_agg_table ',
@@ -293,6 +297,8 @@ def test_window_running_no_part(b_gen, batch_size):
             'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     query_parts = ['row_number() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
+            'rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val',
+            'dense_rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
             'max(b) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
@@ -319,7 +325,7 @@ def test_running_float_sum_no_part(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
-    query_parts = ['a', 
+    query_parts = ['a',
             'sum(cast(b as double)) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as shrt_dbl_sum',
             'sum(abs(dbl)) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dbl_sum',
             'sum(cast(b as float)) over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as shrt_flt_sum',
@@ -328,6 +334,57 @@ def test_running_float_sum_no_part(batch_size):
     gen = StructGen([('a', LongRangeGen()),('b', short_gen),('flt', float_gen),('dbl', double_gen)], nullable=False)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, gen, length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
+        conf = conf)
+
+# Rank aggregations are running window aggregations but they care about the ordering. In most tests we don't
+# allow duplicate ordering, because that makes the results ambiguous. If two rows end up being switched even
+# if the order-by column is the same then we can get different results for say a running sum. Here we are going
+# to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
+# rows it does not matter because the only time rows are switched is when the rows are exactly the same.
+@pytest.mark.parametrize('data_gen', all_basic_gens_no_nans + [decimal_gen_scale_precision], ids=meta_idfn('data:'))
+def test_window_running_rank_no_part(data_gen):
+    # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
+    # testing the fixup operation.
+    conf = {'spark.rapids.sql.batchSizeBytes': 1000}
+    query_parts = ['a',
+            'rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val',
+            'dense_rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val']
+
+    # When generating the ordering try really hard to have duplicate values
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : unary_op_df(spark, RepeatSeqGen(data_gen, length=500), length=1024 * 14),
+        "window_agg_table",
+        'select ' +
+        ', '.join(query_parts) +
+        ' from window_agg_table ',
+        validate_execs_in_gpu_plan = ['GpuRunningWindowExec'],
+        conf = conf)
+
+# Rank aggregations are running window aggregations but they care about the ordering. In most tests we don't
+# allow duplicate ordering, because that makes the results ambiguous. If two rows end up being switched even
+# if the order-by column is the same then we can get different results for say a running sum. Here we are going
+# to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
+# rows it does not matter because the only time rows are switched is when the rows are exactly the same.
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
+# but small batch sizes can make sort very slow, so do the final order by locally
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_scale_precision], ids=idfn)
+def test_window_running_rank(data_gen):
+    # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
+    # testing the fixup operation.
+    conf = {'spark.rapids.sql.batchSizeBytes': 1000}
+    query_parts = ['b', 'a',
+            'rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val',
+            'dense_rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val']
+
+    # When generating the ordering try really hard to have duplicate values
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : two_col_df(spark, RepeatSeqGen(data_gen, length=500), RepeatSeqGen(data_gen, length=100), length=1024 * 14),
         "window_agg_table",
         'select ' +
         ', '.join(query_parts) +
@@ -348,7 +405,9 @@ def test_window_running(b_gen, c_gen, batch_size):
             'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
-    query_parts = ['row_number() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
+    query_parts = ['b', 'a', 'row_number() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
+            'rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val',
+            'dense_rank() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dense_rank_val',
             'count(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_col',
             'min(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as min_col',
             'max(c) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as max_col']
@@ -379,7 +438,6 @@ def test_window_running_float_decimal_sum(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
-    # TODO need a way to insert NaNs...
     query_parts = ['b', 'a', 
             'sum(cast(c as double)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dbl_sum',
             'sum(abs(dbl)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dbl_sum',
@@ -460,12 +518,10 @@ lead_lag_struct_with_arrays_gen = [struct_with_arrays,
 
 @ignore_order(local=True)
 @approximate_float
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn)  # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('struct_gen', lead_lag_struct_with_arrays_gen, ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
-def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen, batch_size):
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.hasNans': False}
+def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen):
+    conf = {'spark.rapids.sql.hasNans': False}
     data_gen = [
         ('a', RepeatSeqGen(a_b_gen, length=20)),
         ('b', IntegerGen(nullable=False, special_cases=[])),
@@ -494,13 +550,11 @@ lead_lag_array_data_gens =\
 
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('d_gen', lead_lag_array_data_gens, ids=meta_idfn('agg:'))
 @pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
-def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen, batch_size):
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
+def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen):
     data_gen = [
             ('a', RepeatSeqGen(a_gen, length=20)),
             ('b', b_gen),
@@ -518,8 +572,7 @@ def test_window_aggs_for_rows_lead_lag_on_arrays(a_gen, b_gen, c_gen, d_gen, bat
             LAG(d, 5) OVER (PARTITION by a ORDER BY b,c) lag_d_5,
             LAG(d, 2, d_default) OVER (PARTITION by a ORDER BY b,c) lag_d_2_default
         FROM window_agg_table
-        ''',
-        conf = conf)
+        ''')
 
 
 # lead and lag don't currently work for string columns, so redo the tests, but just for strings
@@ -550,6 +603,8 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
                 .withColumn('inc_count_c', f.count('c').over(inclusiveWindowSpec)) \
                 .withColumn('inc_max_c', f.max('c').over(inclusiveWindowSpec)) \
                 .withColumn('inc_min_c', f.min('c').over(inclusiveWindowSpec)) \
+                .withColumn('rank_val', f.rank().over(baseWindowSpec)) \
+                .withColumn('dense_rank_val', f.dense_rank().over(baseWindowSpec)) \
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
@@ -680,6 +735,10 @@ def test_running_window_function_exec_for_all_aggs():
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as count_star,
           row_number() over
             (partition by a order by b,c_int) as row_num,
+          rank() over
+            (partition by a order by b,c_int) as rank_val,
+          dense_rank() over
+            (partition by a order by b,c_int) as dense_rank_val,
           collect_list(c_float) over
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_float,
           collect_list(c_decimal) over

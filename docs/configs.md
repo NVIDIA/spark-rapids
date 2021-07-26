@@ -178,6 +178,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.DayOfMonth"></a>spark.rapids.sql.expression.DayOfMonth|`dayofmonth`, `day`|Returns the day of the month from a date or timestamp|true|None|
 <a name="sql.expression.DayOfWeek"></a>spark.rapids.sql.expression.DayOfWeek|`dayofweek`|Returns the day of the week (1 = Sunday...7=Saturday)|true|None|
 <a name="sql.expression.DayOfYear"></a>spark.rapids.sql.expression.DayOfYear|`dayofyear`|Returns the day of the year from a date or timestamp|true|None|
+<a name="sql.expression.DenseRank"></a>spark.rapids.sql.expression.DenseRank|`dense_rank`|Window function that returns the dense rank value within the aggregation window|true|None|
 <a name="sql.expression.Divide"></a>spark.rapids.sql.expression.Divide|`/`|Division|true|None|
 <a name="sql.expression.ElementAt"></a>spark.rapids.sql.expression.ElementAt|`element_at`|Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map.|true|None|
 <a name="sql.expression.EndsWith"></a>spark.rapids.sql.expression.EndsWith| |Ends with|true|None|
@@ -242,6 +243,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.PythonUDF"></a>spark.rapids.sql.expression.PythonUDF| |UDF run in an external python process. Does not actually run on the GPU, but the transfer of data to/from it can be accelerated.|true|None|
 <a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|`quarter`|Returns the quarter of the year for date, in the range 1 to 4|true|None|
 <a name="sql.expression.Rand"></a>spark.rapids.sql.expression.Rand|`random`, `rand`|Generate a random column with i.i.d. uniformly distributed values in [0, 1)|true|None|
+<a name="sql.expression.Rank"></a>spark.rapids.sql.expression.Rank|`rank`|Window function that returns the rank value within the aggregation window|true|None|
 <a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|`regexp_replace`|RegExpReplace support for string literal input patterns|true|None|
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|`%`, `mod`|Remainder or modulo|true|None|
 <a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|`rint`|Rounds up a double value to the nearest double equal to an integer|true|None|
