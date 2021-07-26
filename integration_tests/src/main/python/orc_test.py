@@ -58,7 +58,13 @@ orc_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens] + [
     ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
 
-# Some struct gens, but not all because of nesting
+# Some struct gens, but not all because of nesting.
+# No empty struct gen because it leads to an error as below.
+#   '''
+#     E               pyspark.sql.utils.AnalysisException:
+#     E               Datasource does not support writing empty or nested empty schemas.
+#     E               Please make sure the data schema has at least one or more column(s).
+#   '''
 orc_struct_gens_sample = [orc_basic_struct_gen,
     StructGen([['child0', byte_gen], ['child1', orc_basic_struct_gen]]),
     StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
@@ -98,7 +104,9 @@ def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_e
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.orc(data_path))
     all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    # Nested schema pruning is not supported yet for orc read.
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+       'spark.sql.optimizer.nestedSchemaPruning.enabled': "false"})
     assert_gpu_and_cpu_are_equal_collect(
             read_func(data_path),
             conf=all_confs)

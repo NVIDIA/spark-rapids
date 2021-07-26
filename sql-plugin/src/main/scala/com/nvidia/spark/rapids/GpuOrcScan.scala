@@ -127,7 +127,7 @@ object GpuOrcScanBase {
 
     if (sparkSession.conf
       .getOption("spark.sql.optimizer.nestedSchemaPruning.enabled").exists(_.toBoolean)) {
-      meta.willNotWorkOnGpu("nested schema pruning is not supported yet for ORC")
+      meta.willNotWorkOnGpu("nested schema pruning is not supported yet")
     }
   }
 }
