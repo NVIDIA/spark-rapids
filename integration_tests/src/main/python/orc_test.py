@@ -20,7 +20,6 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_spark_session
-from parquet_test import _nested_pruning_schemas
 
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
@@ -282,21 +281,3 @@ def test_missing_column_names_filter(spark_tmp_table_factory, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT _col3,_col2 FROM {} WHERE _col2 = '155'".format(table_name)),
         all_confs)
-
-
-@pytest.mark.parametrize('data_gen,read_schema', _nested_pruning_schemas, ids=idfn)
-@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
-@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
-@pytest.mark.parametrize('nested_enabled', ["true", "false"])
-def test_read_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_enabled_list, nested_enabled):
-    data_path = spark_tmp_path + '/ORC_DATA'
-    with_cpu_session(
-            lambda spark : gen_df(spark, data_gen).write.orc(data_path))
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        'spark.sql.optimizer.nestedSchemaPruning.enabled': nested_enabled})
-    # This is a hack to get the type in a slightly less verbose way
-    rs = StructGen(read_schema, nullable=False).data_type
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.read.schema(rs).orc(data_path),
-            conf=all_confs)

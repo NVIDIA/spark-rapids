@@ -124,6 +124,11 @@ object GpuOrcScanBase {
       .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
+
+    if (sparkSession.conf
+      .getOption("spark.sql.optimizer.nestedSchemaPruning.enabled").exists(_.toBoolean)) {
+      meta.willNotWorkOnGpu("nested schema pruning is not supported yet for ORC")
+    }
   }
 }
 
@@ -1087,11 +1092,7 @@ private case class GpuOrcFileFilterHandler(
       val newReadSchema = TypeDescription.createStruct()
       readerFieldNames.zip(readerChildren).foreach { case (readField, readType) =>
         val (fileType, fileFieldName) = fileTypesMap.getOrElse(readField, (null, null))
-        // When column pruning is enabled, the readType is not always equal to the fileType,
-        // may be part of the fileType. e.g.
-        //     read type: struct<c_1:string>
-        //     file type: struct<c_1:string,c_2:bigint,c_3:smallint>
-        if (!isSchemaCompatible(fileType, readType)) {
+        if (readType != fileType) {
           throw new QueryExecutionException("Incompatible schemas for ORC file" +
             s" at ${partFile.filePath}\n" +
             s" file schema: $fileSchema\n" +
@@ -1101,30 +1102,6 @@ private case class GpuOrcFileFilterHandler(
       }
 
       newReadSchema
-    }
-
-    /**
-     * The read schema is compatible with the file schema only when
-     *   1) They are equal to each other
-     *   2) The read schema is part of the file schema for struct types.
-     *
-     * @param fileSchema input file's ORC schema
-     * @param readSchema ORC schema for what will be read
-     * @return true if they are compatible, otherwise false
-     */
-    private def isSchemaCompatible(
-        fileSchema: TypeDescription,
-        readSchema: TypeDescription): Boolean = {
-      fileSchema == readSchema ||
-        fileSchema != null && readSchema != null &&
-          fileSchema.getCategory == readSchema.getCategory && {
-          if (readSchema.getChildren != null) {
-            readSchema.getChildren.asScala.forall(rc =>
-              fileSchema.getChildren.asScala.exists(fc => isSchemaCompatible(fc, rc)))
-          } else {
-            false
-          }
-        }
     }
 
     /**
