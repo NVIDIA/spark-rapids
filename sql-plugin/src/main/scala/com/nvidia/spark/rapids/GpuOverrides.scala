@@ -1202,9 +1202,10 @@ object GpuOverrides {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1723,19 +1724,6 @@ object GpuOverrides {
       "CASE WHEN expression",
       CaseWhenCheck,
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (typeMeta.dataType.exists(_.isInstanceOf[ArrayType])) {
-            // We don't support literal arrays yet
-            if (a.elseValue.map(isLit).getOrElse(false)) {
-              willNotWorkOnGpu("literal arrays are not currently supported")
-            } else {
-              val anyLit = a.branches.exists { case (_, value) => isLit(value) }
-              if (anyLit) {
-                willNotWorkOnGpu("literal arrays are not currently supported")
-              }
-            }
-          }
-        }
         override def convertToGpu(): GpuExpression = {
           val branches = childExprs.grouped(2).flatMap {
             case Seq(cond, value) => Some((cond.convertToGpu(), value.convertToGpu()))
@@ -1751,13 +1739,15 @@ object GpuOverrides {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectNotLambda(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+      ExprChecks.projectNotLambda(
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
-        Seq(ParamCheck("predicate", TypeSig.psNote(TypeEnum.BOOLEAN,
-          "literal values are not supported"), TypeSig.BOOLEAN),
-          ParamCheck("trueValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+          ParamCheck("trueValue",
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
-          ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          ParamCheck("falseValue",
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
@@ -2986,11 +2976,15 @@ object GpuOverrides {
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        TypeSig.all),
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        TypeSig.all),
       (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
         val condition: Option[BaseExprMeta[_]] =
           join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))

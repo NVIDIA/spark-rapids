@@ -76,6 +76,24 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  test("sorted partitioned write") {
+    val conf = new SparkConf().set(RapidsConf.SQL_ENABLED.key, "true")
+    val tempFile = File.createTempFile("partitioned", ".parquet")
+    try {
+      SparkSessionHolder.withSparkSession(conf, spark => {
+        import spark.implicits._
+        val df = spark.sparkContext.parallelize((1L to 10000000L))
+            .map{i => ("a", f"$i%010d", i)}.toDF("partkey", "val", "val2")
+        df.repartition(1, $"partkey").sortWithinPartitions($"partkey", $"val", $"val2")
+            .write.mode("overwrite").partitionBy("partkey").parquet(tempFile.getAbsolutePath)
+        val firstRow = spark.read.parquet(tempFile.getAbsolutePath).head
+        assertResult("0000000001")(firstRow.getString(0))
+      })
+    } finally {
+      tempFile.delete()
+    }
+  }
+
   testExpectedGpuException(
     "Old dates in EXCEPTION mode",
     classOf[SparkException],
