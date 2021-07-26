@@ -263,6 +263,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     than 3 seconds. If it times out, it will
                                     report what it was able to process up until
                                     the timeout.
+  -u, --user-name <arg>             Applications which a particular user has submitted.
   -h, --help                        Show help message
 
  trailing arguments:
