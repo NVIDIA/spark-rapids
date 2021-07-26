@@ -272,7 +272,7 @@ from the main [columnar batch size](#columnar-batch-size) setting.  Some transco
 load CSV files then write Parquet files) need to lower this setting when using large task input
 partition sizes to avoid GPU out of memory errors.
 
-### Enable Incompatible Operations
+## Enable Incompatible Operations
 Configuration key: 
 [`spark.rapids.sql.incompatibleOps.enabled`](configs.md#sql.incompatibleOps.enabled)
 
@@ -332,3 +332,50 @@ Custom Spark SQL Metrics are available which can help identify performance bottl
 Not all metrics are enabled by default. The configuration setting `spark.rapids.sql.metrics.level` can be set
 to `DEBUG`, `MODERATE`, or `ESSENTIAL`, with `MODERATE` being the default value. More information about this
 configuration option is available in the <a href="configs.md#sql.metrics.level">configuration</a> documentation.
+
+## Window Operations
+
+Apache Spark supports a few optimizations for different windows patterns. Generally Spark
+buffers all the data for a partition by key in memory and then loops through the rows looking for
+boundaries. When it finds a boundary change, it will then calculate the aggregation on that window.
+This ends up being `O(N^2)` where N is the size of the window. In a few cases in can improve on
+that.  These optimizations include.
+
+  * Lead/Lag. In this case Spark keeps an offset pointer and can output the result from the
+    buffered data in linear time.
+  * Unbounded Preceding to Unbounded Following. In this case Spark will do a single aggregation
+    and duplicate the result multiple times.
+  * Unbounded Preceding to some specific bound. For this case Spark keeps running state as it
+    walks through each row and outputs an updated result each time.
+  * Some specific bound to Unbounded Following. For this case Spark will still recalculate
+    aggregations for each window group. The complexity of this is `O(N^2)` but it only has to
+    check lower bounds when doing the aggregation.
+
+Some proprietary implementations have further optimizations. For example Databricks has a special
+case for running windows (rows between unbounded preceding to current row) which allows it to
+avoid caching the entire window in memory and just cache the running state in between rows.
+
+CUDF and the RAPIDS Accelerator do not have these same set of optimizations yet and so the
+performance can be different based off of the window sizes and the aggregation operations. Most
+of the time the window size is small enough that the parallelism of the GPU can offset the
+difference in the complexity of the algorithm and beat the CPU. In the general case if `N` is
+the size of the window and `G` is the parallelism of the GPU then the complexity of a window
+operations is `O(N^2/G)`. The main optimization currently supported by the RAPIDS Accelerator
+is for running window (rows between unbounded preceding and current row). This is only for a
+specific set of aggregations.
+
+  * MIN
+  * MAX
+  * SUM
+  * COUNT
+  * ROW_NUMBER
+  * RANK
+  * DENSE_RANK
+
+For these operations the GPU can use specialized hardware to do the computation in approximately
+`O(N/G * LOG(N))` time. Some aggregations can be done in constant time like count on a non-nullable
+column/value, lead or lag. These allow us to compute the result in approximately `O(N/G)` time.
+For all other cases large windows, including skewed value in partition by and order by data, can
+result in slow performance. If you do run into one of these situations please file an
+[issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) so we can properly prioritize
+how to support more optimizations.
