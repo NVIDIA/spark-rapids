@@ -106,7 +106,7 @@ def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_e
     all_confs = reader_confs.copy()
     # Nested schema pruning is not supported yet for orc read.
     all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-       'spark.sql.optimizer.nestedSchemaPruning.enabled': "false"})
+        'spark.sql.optimizer.nestedSchemaPruning.enabled': "false"})
     assert_gpu_and_cpu_are_equal_collect(
             read_func(data_path),
             conf=all_confs)
@@ -127,15 +127,19 @@ orc_pred_push_gens = [
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/ORC_DATA'
-    gen_list = [('a', RepeatSeqGen(orc_gen, 100)), ('b', orc_gen)]
+    # Append two struct columns to verify nested predicate pushdown.
+    gen_list = [('a', RepeatSeqGen(orc_gen, 100)), ('b', orc_gen),
+        ('s1', StructGen([['sa', orc_gen]])),
+        ('s2', StructGen([['sa', StructGen([['ssa', orc_gen]])]]))]
     s0 = gen_scalar(orc_gen, force_no_nulls=True)
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).orderBy('a').write.orc(data_path))
     all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.optimizer.nestedSchemaPruning.enabled': "false"})
     rf = read_func(data_path)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: rf(spark).select(f.col('a') >= s0),
+            lambda spark: rf(spark).select(f.col('a') >= s0, f.col('s1.sa') >= s0, f.col('s2.sa.ssa') >= s0),
             conf=all_confs)
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
