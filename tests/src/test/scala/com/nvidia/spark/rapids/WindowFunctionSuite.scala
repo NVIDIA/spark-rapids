@@ -41,6 +41,8 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       min("dollars").over(windowSpec).as("min_dollars"),
       max("dollars").over(windowSpec).as("max_dollars"),
       row_number().over(windowSpec).as("row_num"),
+      rank().over(windowSpec).as("rank_in_order"),
+      dense_rank().over(windowSpec).as("dense_rank_in_order"),
       count("*").over(windowSpec).as("count_all")
     ).orderBy("sum_dollars", "min_dollars", "max_dollars",
               "row_num", "count_all")

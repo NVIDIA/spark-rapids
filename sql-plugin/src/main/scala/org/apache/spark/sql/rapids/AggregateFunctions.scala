@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, NullPolicy, ReplacePolicy, ReplacePolicyWithColumn, RollingAggregation}
+import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, NullPolicy, ReplacePolicy, RollingAggregation}
 import ai.rapids.cudf.Aggregation.{CollectListAggregation, CollectSetAggregation, CountAggregation, MaxAggregation, MeanAggregation, MinAggregation, SumAggregation}
 import com.nvidia.spark.rapids._
 
@@ -317,26 +317,22 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MIN, "min")
 
-  override lazy val groupByScanInputProjection: Seq[Expression] = inputProjection
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    inputProjection
 
-  override def groupByScanAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MinAggregation] =
-    windowAggregation(inputs)
-
-  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] =
-    Some(ReplacePolicy.PRECEDING.onColumn(index))
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    Seq(AggAndReplace(Aggregation.min(), Some(ReplacePolicy.PRECEDING)))
 
   override def isGroupByScanSupported: Boolean = child.dataType match {
     case StringType | TimestampType | DateType => false
     case _ => true
   }
 
-  override lazy val scanInputProjection: Expression = inputProjection.head
-  override def scanAggregation: MinAggregation = Aggregation.min()
-  override val scanReplaceNulls: Option[ReplacePolicy] = Some(ReplacePolicy.PRECEDING)
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    groupByScanAggregation(isRunningBatched)
 
   override def isScanSupported: Boolean  = child.dataType match {
-    // String type does not work because of https://github.com/rapidsai/cudf/issues/8684
     case TimestampType | DateType => false
     case _ => true
   }
@@ -375,26 +371,22 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.NULL_MAX, "max")
 
-  override lazy val groupByScanInputProjection: Seq[Expression] = inputProjection
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    inputProjection
 
-  override def groupByScanAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MaxAggregation] =
-    windowAggregation(inputs)
-
-  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] =
-    Some(ReplacePolicy.PRECEDING.onColumn(index))
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    Seq(AggAndReplace(Aggregation.max(), Some(ReplacePolicy.PRECEDING)))
 
   override def isGroupByScanSupported: Boolean = child.dataType match {
     case StringType | TimestampType | DateType => false
     case _ => true
   }
 
-  override lazy val scanInputProjection: Expression = inputProjection.head
-  override def scanAggregation: MaxAggregation = Aggregation.max()
-  override val scanReplaceNulls: Option[ReplacePolicy] = Some(ReplacePolicy.PRECEDING)
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    groupByScanAggregation(isRunningBatched)
 
   override def isScanSupported: Boolean = child.dataType match {
-    // String type does not work because of https://github.com/rapidsai/cudf/issues/8684
     case TimestampType | DateType => false
     case _ => true
   }
@@ -435,15 +427,14 @@ case class GpuSum(child: Expression, resultType: DataType)
   override def newFixer(): BatchedRunningWindowFixer =
     new SumBinaryFixer()
 
-  override def groupByScanInputProjection: Seq[Expression] = inputProjection
-  override def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_] =
-    Aggregation.sum().onColumn(inputs.head._2)
-  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] =
-    Some(ReplacePolicy.PRECEDING.onColumn(index))
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    inputProjection
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    Seq(AggAndReplace(Aggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
-  override def scanInputProjection: Expression = child
-  override def scanAggregation: Aggregation = Aggregation.sum()
-  override def scanReplaceNulls: Option[ReplacePolicy] = Some(ReplacePolicy.PRECEDING)
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    groupByScanAggregation(isRunningBatched)
 }
 
 /*
@@ -572,28 +563,25 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
   // Scan and group by scan do not support COUNT with nulls excluded.
   // one of them does not even support count at all, so we are going to SUM
   // ones and zeros based off of the validity
-  override def groupByScanInputProjection: Seq[Expression] = Seq(scanInputProjection)
-
-  override def groupByScanAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[_] = {
-    Aggregation.sum().onColumn(inputs.head._2)
-  }
-
-  override def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] = None
-
-  override def scanInputProjection: Expression = {
+  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
     // There can be only one child according to requirements for count right now
     require(children.length == 1)
     val child = children.head
     if (child.nullable) {
-      GpuIf(GpuIsNull(child), GpuLiteral(0, IntegerType), GpuLiteral(1, IntegerType))
+      Seq(GpuIf(GpuIsNull(child), GpuLiteral(0, IntegerType), GpuLiteral(1, IntegerType)))
     } else {
-      GpuLiteral(1, IntegerType)
+      Seq(GpuLiteral(1, IntegerType))
     }
   }
 
-  override def scanAggregation: Aggregation = Aggregation.sum()
+  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    Seq(AggAndReplace(Aggregation.sum(), None))
 
-  override val scanReplaceNulls: Option[ReplacePolicy] = None
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    groupByScanInputProjection(isRunningBatched)
+
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
+    groupByScanAggregation(isRunningBatched)
 }
 
 case class GpuAverage(child: Expression) extends GpuAggregateFunction
