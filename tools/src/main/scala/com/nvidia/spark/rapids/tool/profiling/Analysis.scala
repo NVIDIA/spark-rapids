@@ -345,7 +345,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           val execCpuTimePercent = if (sqlCase.sqlCpuTimePercent == -1) {
             "null"
           } else {
-            sqlCase.sqlCpuTimePercent
+            sqlCase.sqlCpuTimePercent.toString
           }
           Seq(app.index.toString, app.appId, s"$sqlId", sqlDuration,
             sqlCase.hasDataset.toString, appDuration, sqlCase.problematic,
