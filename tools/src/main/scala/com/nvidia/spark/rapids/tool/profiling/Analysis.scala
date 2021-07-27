@@ -393,7 +393,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
 
         val tasksWithSkew = app.taskEnd.filter { tc =>
-          val avgShuffleDur = avgsStageInfos.get(tc.stageId, tc.stageAttemptId)
+          val avgShuffleDur = avgsStageInfos.get((tc.stageId, tc.stageAttemptId))
           avgShuffleDur match {
             case Some(avg) =>
               (tc.sr_totalBytesRead > 3 * avg.avgShuffleReadBytes) &&

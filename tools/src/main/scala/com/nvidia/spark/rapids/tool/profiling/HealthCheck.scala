@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-import com.nvidia.spark.rapids.tool.profiling.ProfileUtils
 
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
