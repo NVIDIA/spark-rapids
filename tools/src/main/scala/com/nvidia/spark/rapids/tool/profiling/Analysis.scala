@@ -413,7 +413,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               Seq(app.index.toString, tc.stageId.toString, tc.stageAttemptId.toString,
                 tc.taskId.toString, tc.attempt.toString,
                 f"${tc.duration.toDouble / 1000}%1.2f".toString,
-                f"${avg.avgDuration / 1000}%1.2f".toString,
+                f"${avg.avgDuration / 1000}%1.1f".toString,
                 f"${tc.sr_totalBytesRead.toDouble / 1024 / 1024}%1.2f".toString,
                 f"${avg.avgShuffleReadBytes / 1024 / 1024}%1.2f".toString,
                 f"${tc.peakExecutionMemory.toDouble / 1024 / 1024}%1.2f".toString,
