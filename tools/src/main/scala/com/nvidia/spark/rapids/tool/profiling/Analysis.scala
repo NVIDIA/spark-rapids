@@ -230,7 +230,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
         // TODO - how to deal with attempts?
         app.liveSQL.map { case (sqlId, sqlCase) =>
-
           logWarning("sqlid for live is: " + sqlId)
           val jcs = app.liveJobs.filter { case (_, jc) =>
             val jcid = jc.sqlID.getOrElse(-1)
@@ -312,8 +311,9 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         Seq.empty
       }
     }
-    if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, -(cols(5).toLong), cols(2)))
+    val allNonEmptyRows = allRows.filter(!_.isEmpty)
+    if (allNonEmptyRows.size > 0) {
+      val sortedRows = allNonEmptyRows.sortBy(cols => (cols(0).toLong, -(cols(5).toLong), cols(2)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))
