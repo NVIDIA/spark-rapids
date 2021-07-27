@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import com.nvidia.spark.rapids.tool.profiling.ProfileUtils
 
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
@@ -25,10 +26,6 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
  */
 class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter],
     numOutputRows: Int) {
-
-  def truncateFailureStr(failureStr: String): String = {
-    failureStr.substring(0, Math.min(failureStr.size, 100))
-  }
 
   // Function to list all failed tasks , stages and jobs.
   def listFailedTasks(): Unit = {
@@ -41,7 +38,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       tasksFailed.map { t =>
         Seq(app.index.toString, t.stageId.toString, t.stageAttemptId.toString,
           t.taskId.toString, t.attempt.toString,
-          truncateFailureStr(t.endReason))
+          ProfileUtils.truncateFailureStr(t.endReason))
       }
     }
     if (failed.size > 0) {
@@ -68,7 +65,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
         val failureStr = sc.failureReason.getOrElse("")
         Seq(app.index.toString, id.toString, attId.toString,
           sc.info.name, sc.info.numTasks.toString,
-          truncateFailureStr(failureStr))
+          ProfileUtils.truncateFailureStr(failureStr))
       }
     }
     if (failed.size > 0) {
@@ -92,7 +89,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       jobsFailed.map { case (id, jc) =>
         val failureStr = jc.failedReason.getOrElse("")
         Seq(app.index.toString, id.toString, jc.jobResult.getOrElse("Unknown"),
-          truncateFailureStr(failureStr))
+          ProfileUtils.truncateFailureStr(failureStr))
       }
     }
     if (failed.size > 0) {

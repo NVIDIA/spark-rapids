@@ -224,7 +224,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       "executorCPUTime", "executorRunTime", "executorCPURatio") ++ genTaskMetricsColumnHeaders
     val allRows = apps.flatMap { app =>
       if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0) &&
-         (app.liveSQL.size > 0)) {
+        (app.liveSQL.size > 0)) {
 
         // TODO - how to deal with attempts?
         app.liveSQL.map { case (sqlId, sqlCase) =>
@@ -330,8 +330,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       "App Duration", "Potential Problems", "Executor CPU Time Percent")
 
     val allRows = apps.flatMap { app =>
-      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0) &&
-        (app.liveSQL.size > 0)) {
+      if (app.liveSQL.size > 0) {
 
         val appDuration = app.appInfo.duration match {
           case Some(dur) => dur.toString()
@@ -369,47 +368,75 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     }
   }
 
+  private case class AverageStageInfo(avgDuration: Double, avgShuffleReadBytes: Double)
 
-  /*
+  def shuffleSkewCheck(): Unit = {
+    val messageHeader = s"\nShuffle Skew Check:" +
+      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
+    fileWriter.foreach(_.write(messageHeader))
+    val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId", "attempt",
+      "taskDurationSec", "avgDurationSec", "taskShuffleReadMB", "avgShuffleReadMB",
+      "taskPeakMemoryMB", "successful", "reason")
 
-  // Function to find out shuffle read skew(For Joins or Aggregation)
-  def shuffleSkewCheck(): Unit ={
-    for (app <- apps){
-      shuffleSkewCheckSingleApp(app)
+    // TODO - how expensive on large number tasks?
+    val allRows = apps.flatMap { app =>
+      if ((app.taskEnd.size > 0) && (app.liveStages.size > 0)) {
+        val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
+          (tc.stageId, tc.stageAttemptId)
+        }
+        val avgsStageInfos = tasksPerStageAttempt.map { case ((sId, saId), tcArr) =>
+          val sumDuration = tcArr.map(_.duration).sum
+          val avgDuration = ToolUtils.calculateAverage(sumDuration, tcArr.size, 2)
+          val sumShuffleReadBytes = tcArr.map(_.sr_totalBytesRead).sum
+          val avgShuffleReadBytes = ToolUtils.calculateAverage(sumShuffleReadBytes, tcArr.size, 2)
+          ((sId, saId), AverageStageInfo(avgDuration, avgShuffleReadBytes))
+        }
+
+        val tasksWithSkew = app.taskEnd.filter { tc =>
+          val avgShuffleDur = avgsStageInfos.get(tc.stageId, tc.stageAttemptId)
+          avgShuffleDur match {
+            case Some(avg) =>
+              (tc.sr_totalBytesRead > 3 * avg.avgShuffleReadBytes) &&
+                (tc.sr_totalBytesRead > 100 * 1024 * 1024)
+            case None => false
+          }
+        }
+
+        val groupedTasks = tasksWithSkew.groupBy { tc =>
+          (tc.stageId, tc.stageAttemptId)
+        }
+
+        tasksWithSkew.map { tc =>
+          val avgShuffleDur = avgsStageInfos.get(tc.stageId, tc.stageAttemptId)
+          avgShuffleDur match {
+            case Some(avg) =>
+              Seq(app.index.toString, tc.stageId.toString, tc.stageAttemptId.toString,
+                tc.taskId.toString, tc.attempt.toString,
+                (tc.duration / 1000).toString,
+                (avg.avgDuration / 1000).toString,
+                (tc.sr_totalBytesRead / 1024 / 1024).toString,
+                (avg.avgShuffleReadBytes / 1024 / 1024).toString,
+                (tc.peakExecutionMemory / 1024 / 1024).toString,
+                tc.successful.toString,
+                ProfileUtils.truncateFailureStr(tc.endReason))
+            case None =>
+              Seq.empty // ???
+          }
+        }
+      } else {
+        Seq.empty
+      }
     }
-  }
 
-  def shuffleSkewCheckSingleApp(app: ApplicationInfo): DataFrame = {
-    if (app.allDataFrames.contains(s"taskDF_${app.index}")) {
-      val customQuery =
-        s"""with tmp as
-           |(select stageId, stageAttemptId,
-           |avg(sr_totalBytesRead) avgShuffleReadBytes,
-           |avg(duration) avgDuration
-           |from taskDF_${app.index}
-           |group by stageId,stageAttemptId)
-           |select ${app.index} as appIndex, t.stageId,t.stageAttemptId,
-           |t.taskId, t.attempt,
-           |round(t.duration/1000,2) as taskDurationSec,
-           |round(tmp.avgDuration/1000,2) as avgDurationSec,
-           |round(t.sr_totalBytesRead/1024/1024,2) as taskShuffleReadMB,
-           |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
-           |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
-           |t.successful,
-           |substr(t.endReason,0,100) reason
-           |from tmp, taskDF_${app.index} t
-           |where tmp.stageId=t.StageId
-           |and tmp.stageAttemptId=t.stageAttemptId
-           |and t.sr_totalBytesRead > 3 * tmp.avgShuffleReadBytes
-           |and t.sr_totalBytesRead > 100*1024*1024
-           |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
-           |""".stripMargin
-      val messageHeader = s"\nShuffle Skew Check:" +
-        " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
-      app.runQuery(customQuery, false, fileWriter, messageHeader)
+    val allNonEmptyRows = allRows.filter(!_.isEmpty)
+    if (allNonEmptyRows.size > 0) {
+      val sortedRows = allNonEmptyRows.sortBy(cols => (cols(0).toLong, cols(1).toLong,
+        cols(2).toLong, cols(3).toLong, cols(4).toLong))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
     }
   }
-  */
 }

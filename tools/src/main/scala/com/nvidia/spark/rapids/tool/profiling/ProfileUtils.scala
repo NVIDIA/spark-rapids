@@ -74,4 +74,8 @@ object ProfileUtils {
     typeOf[T].members.sorted.collect {
       case m: MethodSymbol if m.isCaseAccessor => m.name.toString
     }
+
+  def truncateFailureStr(failureStr: String): String = {
+    failureStr.substring(0, Math.min(failureStr.size, 100))
+  }
 }

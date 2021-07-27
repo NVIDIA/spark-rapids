@@ -152,11 +152,9 @@ object ProfileMain extends Logging {
       analysis.jobAndStageMetricsAggregation()
       analysis.sqlMetricsAggregation()
       analysis.sqlMetricsAggregationDurationAndCpuTime()
-      /*
       analysis.shuffleSkewCheck()
 
       textFileWriter.write("\n### C. Health Check###\n")
-      */
       val healthCheck=new HealthCheck(apps, Some(textFileWriter), numOutputRows)
       healthCheck.listFailedTasks()
       healthCheck.listFailedStages()
