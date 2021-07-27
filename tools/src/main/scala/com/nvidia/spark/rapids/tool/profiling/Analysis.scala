@@ -16,9 +16,11 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import scala.collection.mutable.ArrayBuffer
+
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -26,69 +28,175 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * from object of ApplicationInfo
  */
 class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter],
-    numOutputRows: Int) {
+    numOutputRows: Int) extends Logging {
+
+  def genTaskMetricsColumnHeaders: Seq[String] = {
+    val cols = taskMetricsColumns.flatMap { case (col, aggType) =>
+      // If aggType=all, it means all 4 aggregation: sum, max, min, avg.
+      if (aggType == "all") {
+        Seq(s"${col}_sum", s"${col}_max", s"${col}_min", s"${col}_avg")
+
+      }
+      else {
+        Seq(s"${col}_${aggType}")
+      }
+    }
+    cols.toSeq
+  }
+
+  // All the metrics column names in Task Metrics with the aggregation type
+  val taskMetricsColumns: scala.collection.mutable.SortedMap[String, String]
+  = scala.collection.mutable.SortedMap(
+    "duration" -> "all",
+    "gettingResultTime" -> "sum",
+    "executorDeserializeTime" -> "sum",
+    "executorDeserializeCPUTime" -> "sum",
+    "executorRunTime" -> "sum",
+    "executorCPUTime" -> "sum",
+    "peakExecutionMemory" -> "max",
+    "resultSize" -> "max",
+    "jvmGCTime" -> "sum",
+    "resultSerializationTime" -> "sum",
+    "memoryBytesSpilled" -> "sum",
+    "diskBytesSpilled" -> "sum",
+    "sr_remoteBlocksFetched" -> "sum",
+    "sr_localBlocksFetched" -> "sum",
+    "sr_fetchWaitTime" -> "sum",
+    "sr_remoteBytesRead" -> "sum",
+    "sr_remoteBytesReadToDisk" -> "sum",
+    "sr_localBytesRead" -> "sum",
+    "sr_totalBytesRead" -> "sum",
+    "sw_bytesWritten" -> "sum",
+    "sw_writeTime" -> "sum",
+    "sw_recordsWritten" -> "sum",
+    "input_bytesRead" -> "sum",
+    "input_recordsRead" -> "sum",
+    "output_bytesWritten" -> "sum",
+    "output_recordsWritten" -> "sum"
+  )
+
+  def getDurations(tcs: ArrayBuffer[TaskCase]): Seq[String] = {
+    val durations = tcs.map(_.duration)
+    Seq(durations.sum.toString, durations.max.toString,
+      durations.min.toString, (durations.sum/durations.size).toString)
+  }
 
   // Job + Stage Level TaskMetrics Aggregation
   def jobAndStageMetricsAggregation(): Unit = {
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
 
     fileWriter.foreach(_.write(messageHeader))
-    /*
-    val outputHeaders =
-      Seq("appIndex", "jobID", "stageIds", "sqlID")
-    val allRows = apps.flatMap { app =>
-      if (app.liveJobs.size > 0) {
-        app.liveJobs.map { case (jobId, j) =>
-          Seq(app.index.toString, j.jobID.toString,
-            s"[${j.stageIds.mkString(",")}]",
-            j.sqlID.map(_.toString).getOrElse(null))
+    val outputHeaders = Seq("appIndex", "ID", "numTasks") ++ genTaskMetricsColumnHeaders
+    val allJobRows = apps.flatMap { app =>
+      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0)) {
+        app.liveJobs.map { case (id, jc) =>
+          val stageIdsInJob = jc.stageIds
+          val stagesInJob = app.liveStages.filterKeys { case (sid, _) =>
+            stageIdsInJob.contains(sid)
+          }.keys.map(_._1).toSeq
+          val tasksInJob = app.taskEnd.filter { tc =>
+            stagesInJob.contains(tc.stageId)
+          }
+          // don't count duplicate task attempts
+          val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
+          uniqueTasks.foreach { case (id, groups) =>
+            logWarning(s"task $id num attempts is: ${groups.size}")
+          }
+          // TODO - how to deal with attempts?
+
+          val jobInfo = Seq(app.index.toString, s"job_$id", uniqueTasks.size.toString)
+          val durs = getDurations(tasksInJob)
+          val metrics = Seq(tasksInJob.map(_.gettingResultTime).sum.toString,
+            tasksInJob.map(_.executorDeserializeTime).sum.toString,
+            tasksInJob.map(_.executorDeserializeCPUTime).sum.toString,
+            tasksInJob.map(_.executorRunTime).sum.toString,
+            tasksInJob.map(_.executorCPUTime).sum.toString,
+            tasksInJob.map(_.peakExecutionMemory).sum.toString,
+            tasksInJob.map(_.resultSize).sum.toString,
+            tasksInJob.map(_.jvmGCTime).sum.toString,
+            tasksInJob.map(_.resultSerializationTime).sum.toString,
+            tasksInJob.map(_.memoryBytesSpilled).sum.toString,
+            tasksInJob.map(_.diskBytesSpilled).sum.toString,
+            tasksInJob.map(_.sr_remoteBlocksFetched).sum.toString,
+            tasksInJob.map(_.sr_localBlocksFetched).sum.toString,
+            tasksInJob.map(_.sr_fetchWaitTime).sum.toString,
+            tasksInJob.map(_.sr_remoteBytesRead).sum.toString,
+            tasksInJob.map(_.sr_remoteBytesReadToDisk).sum.toString,
+            tasksInJob.map(_.sr_localBytesRead).sum.toString,
+            tasksInJob.map(_.sr_totalBytesRead).sum.toString,
+            tasksInJob.map(_.sw_bytesWritten).sum.toString,
+            tasksInJob.map(_.input_bytesRead).sum.toString,
+            tasksInJob.map(_.input_recordsRead).sum.toString,
+            tasksInJob.map(_.output_bytesWritten).sum.toString,
+            tasksInJob.map(_.output_recordsWritten).sum.toString
+          )
+          jobInfo ++ durs ++ metrics
         }
       } else {
         Seq.empty
       }
     }
+    val allStageRows = apps.flatMap { app =>
+      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0)) {
+        app.liveJobs.map { case (id, jc) =>
+          val stageIdsInJob = jc.stageIds
+          val stagesInJob = app.liveStages.filterKeys { case (sid, _) =>
+            stageIdsInJob.contains(sid)
+          }.keys.map(_._1).toSeq
+          stagesInJob.flatMap { id =>
+            val tasksInStage = app.taskEnd.filter { tc =>
+              tc.stageId == id
+            }
+            // don't count duplicate task attempts
+            val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
+            uniqueTasks.foreach { case (id, groups) =>
+              logWarning(s"task $id num attempts is: ${groups.size}")
+            }
+            // TODO - how to deal with attempts?
+
+            val stageInfo = Seq(app.index.toString, s"stage_$id", uniqueTasks.size.toString)
+            val durs = getDurations(tasksInStage)
+            val metrics = Seq(tasksInStage.map(_.gettingResultTime).sum.toString,
+              tasksInStage.map(_.executorDeserializeTime).sum.toString,
+              tasksInStage.map(_.executorDeserializeCPUTime).sum.toString,
+              tasksInStage.map(_.executorRunTime).sum.toString,
+              tasksInStage.map(_.executorCPUTime).sum.toString,
+              tasksInStage.map(_.peakExecutionMemory).sum.toString,
+              tasksInStage.map(_.resultSize).sum.toString,
+              tasksInStage.map(_.jvmGCTime).sum.toString,
+              tasksInStage.map(_.resultSerializationTime).sum.toString,
+              tasksInStage.map(_.memoryBytesSpilled).sum.toString,
+              tasksInStage.map(_.diskBytesSpilled).sum.toString,
+              tasksInStage.map(_.sr_remoteBlocksFetched).sum.toString,
+              tasksInStage.map(_.sr_localBlocksFetched).sum.toString,
+              tasksInStage.map(_.sr_fetchWaitTime).sum.toString,
+              tasksInStage.map(_.sr_remoteBytesRead).sum.toString,
+              tasksInStage.map(_.sr_remoteBytesReadToDisk).sum.toString,
+              tasksInStage.map(_.sr_localBytesRead).sum.toString,
+              tasksInStage.map(_.sr_totalBytesRead).sum.toString,
+              tasksInStage.map(_.sw_bytesWritten).sum.toString,
+              tasksInStage.map(_.input_bytesRead).sum.toString,
+              tasksInStage.map(_.input_recordsRead).sum.toString,
+              tasksInStage.map(_.output_bytesWritten).sum.toString,
+              tasksInStage.map(_.output_recordsWritten).sum.toString
+            )
+            stageInfo ++ durs ++ metrics
+          }
+        }
+      } else {
+        Seq.empty
+      }
+    }
+
+    val allRows = allJobRows ++ allStageRows
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong))
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(3).toLong, cols(1).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))
     } else {
-      fileWriter.foreach(_.write("No Job Information Found!\n"))
+      fileWriter.foreach(_.write("No Job/Stage Metrics Found!\n"))
     }
-
-
-    if (apps.size == 1) {
-      val app = apps.head
-      if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-        app.allDataFrames.contains(s"stageDF_${app.index}") &&
-        app.allDataFrames.contains(s"jobDF_${app.index}")) {
-        app.runQuery(apps.head.jobAndStageMetricsAggregationSQL + " order by Duration desc",
-          false, fileWriter, messageHeader)
-      } else {
-        apps.head.sparkSession.emptyDataFrame
-      }
-    } else {
-      var query = ""
-      for (app <- apps) {
-        if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-          app.allDataFrames.contains(s"stageDF_${app.index}") &&
-          app.allDataFrames.contains(s"jobDF_${app.index}")) {
-          if (query.isEmpty) {
-            query += app.jobAndStageMetricsAggregationSQL
-          } else {
-            query += " union " + app.jobAndStageMetricsAggregationSQL
-          }
-        }
-      }
-      if (query.nonEmpty) {
-        apps.head.runQuery(query + " order by appIndex, Duration desc, ID",
-          false, fileWriter, messageHeader)
-      } else {
-        fileWriter.foreach(_.write("Unable to calculate Job and Stage Metrics\n"))
-        apps.head.sparkSession.emptyDataFrame
-      }
-    }
-    */
   }
 
   /*

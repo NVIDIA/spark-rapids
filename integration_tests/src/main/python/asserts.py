@@ -244,6 +244,7 @@ def _assert_gpu_and_cpu_writes_are_equal(
         from_cpu.sort(key=_RowCmp)
         from_gpu.sort(key=_RowCmp)
 
+
     assert_equal(from_cpu, from_gpu)
 
 def assert_gpu_and_cpu_writes_are_equal_collect(write_func, read_func, base_path, conf={}):

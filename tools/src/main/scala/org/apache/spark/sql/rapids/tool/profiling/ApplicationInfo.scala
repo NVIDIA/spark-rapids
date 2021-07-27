@@ -20,7 +20,6 @@ import java.util.Date
 import java.util.concurrent.ConcurrentHashMap
 
 import scala.collection.{immutable, mutable, Map}
-import scala.collection.immutable.TreeSet
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
@@ -337,6 +336,8 @@ class ApplicationInfo(
   // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
   // taskEnd contains task level metrics - only used for profiling
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
+  var taskEndMap: HashMap[(Long, Int), TaskCase] = new HashMap[(Int, Int), TaskCase]()
+
 
   // From SparkListenerTaskGettingResult
  //  var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =

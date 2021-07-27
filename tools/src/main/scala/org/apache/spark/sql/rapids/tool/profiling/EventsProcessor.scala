@@ -328,6 +328,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     )
     // TODO - can we summarize vs keeping all tasks?
     app.taskEnd += thisTask
+    app.taskEndMap.put((event.taskInfo.taskId, event.taskInfo.attemptNumber), thisTask)
   }
 
   override def doSparkListenerSQLExecutionStart(
@@ -455,7 +456,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     val stage = app.getOrCreateStage(event.stageInfo)
     stage.properties = event.properties.asScala
     stage.gpuMode = ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
-
   }
 
   override def doSparkListenerStageCompleted(
