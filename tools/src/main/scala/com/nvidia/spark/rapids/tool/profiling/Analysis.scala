@@ -269,7 +269,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               val diskBytes = Seq(tasksInSQL.map(_.diskBytesSpilled).sum.toString)
               val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
               val execRunTime = tasksInSQL.map(_.executorRunTime).sum
-              val execCPURatio = ToolUtils.calculateAverage(execCpuTime, execRunTime, 2)
+              val execCPURatio = ToolUtils.calculateDurationPercent(execCpuTime, execRunTime)
               val execStats = Seq(
                 execCpuTime.toString,
                 execRunTime.toString,
