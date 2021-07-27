@@ -337,13 +337,16 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           case None => ""
         }
 
-
         app.liveSQL.map { case (sqlId, sqlCase) =>
           val sqlDuration = sqlCase.duration match {
             case Some(dur) => dur.toString()
             case None => ""
           }
-          val execCpuTimePercent = sqlCase.sqlCpuTimePercent.toString
+          val execCpuTimePercent = if (sqlCase.sqlCpuTimePercent == -1) {
+            "null"
+          } else {
+            sqlCase.sqlCpuTimePercent
+          }
           Seq(app.index.toString, app.appId, s"$sqlId", sqlDuration,
             sqlCase.hasDataset.toString, appDuration, sqlCase.problematic,
             execCpuTimePercent)
