@@ -306,7 +306,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       }
     }
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, -(cols(4).toLong), cols(1)))
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, -(cols(5).toLong), cols(2)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))
