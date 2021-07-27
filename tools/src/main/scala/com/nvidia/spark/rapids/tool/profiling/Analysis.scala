@@ -327,7 +327,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
     fileWriter.foreach(_.write(messageHeader))
     val outputHeaders = Seq("appIndex", "App ID", "sqlID", "SQL Duration", "Contains Dataset Op",
-      "App Duration", "Potential Problsm", "Executor CPU Time Percent")
+      "App Duration", "Potential Problems", "Executor CPU Time Percent")
 
     val allRows = apps.flatMap { app =>
       if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0) &&
