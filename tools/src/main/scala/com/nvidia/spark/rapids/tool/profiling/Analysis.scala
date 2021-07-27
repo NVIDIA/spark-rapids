@@ -268,6 +268,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
               val execRunTime = tasksInSQL.map(_.executorRunTime).sum
               val execCPURatio = ToolUtils.calculateDurationPercent(execCpuTime, execRunTime)
+              // TODO - set this here make sure we don't get it again until later
+              sqlCase.sqlCpuTimePercent = execCPURatio
               val execStats = Seq(
                 execCpuTime.toString,
                 execRunTime.toString,
@@ -335,13 +337,13 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           case None => ""
         }
 
-        val execCpuTimePercent = 0.toString
 
         app.liveSQL.map { case (sqlId, sqlCase) =>
           val sqlDuration = sqlCase.duration match {
             case Some(dur) => dur.toString()
             case None => ""
           }
+          val execCpuTimePercent = sqlCase.sqlCpuTimePercent.toString
           Seq(app.index.toString, app.appId, s"$sqlId", sqlDuration,
             sqlCase.hasDataset.toString, appDuration, sqlCase.problematic,
             execCpuTimePercent)
@@ -353,7 +355,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
     val allNonEmptyRows = allRows.filter(!_.isEmpty)
     if (allNonEmptyRows.size > 0) {
-      val sortedRows = allNonEmptyRows.sortBy(cols => (cols(0).toLong, -(cols(5).toLong), cols(2)))
+      val sortedRows = allNonEmptyRows.sortBy(cols => (cols(0).toLong, cols(2).toLong,
+        (cols(3).toLong)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))

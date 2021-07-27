@@ -79,7 +79,8 @@ class SQLExecutionCaseInfo(
     var durationStr: String,
     var sqlQualDuration: Option[Long],
     var hasDataset: Boolean,
-    var problematic: String = "")
+    var problematic: String = "",
+    var sqlCpuTimePercent: Double = -1)
 
 case class SQLExecutionCase(
     sqlID: Long,
