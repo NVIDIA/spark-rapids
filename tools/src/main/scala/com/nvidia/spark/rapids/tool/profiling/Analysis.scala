@@ -236,6 +236,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           val sqlId = jc.sqlID.getOrElse(throw new IllegalStateException("Shouldn't be here"))
           val sqlInfoOpt = app.liveSQL.get(sqlId)
           if (sqlInfoOpt.isEmpty) {
+            logWarning("sql info empty")
             Seq.empty
           } else {
             val sqlInfo = sqlInfoOpt.get
@@ -299,6 +300,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           }
         }
       } else {
+        logWarning("various empty")
         Seq.empty
       }
     }
