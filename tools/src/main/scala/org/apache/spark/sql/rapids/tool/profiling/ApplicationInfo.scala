@@ -345,33 +345,7 @@ class ApplicationInfo(
 
   // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
-
-
-  "executorCPUTime" -> "sum",
-  "executorDeserializeCPUTime" -> "sum",
-  "executorDeserializeTime" -> "sum",
-  "executorRunTime" -> "sum",
-  "gettingResultTime" -> "sum",
-  "input_bytesRead" -> "sum",
-  "input_recordsRead" -> "sum",
-  "jvmGCTime" -> "sum",
-  "memoryBytesSpilled" -> "sum",
-  "output_bytesWritten" -> "sum",
-  "output_recordsWritten" -> "sum",
-  "peakExecutionMemory" -> "max",
-  "resultSerializationTime" -> "sum",
-  "resultSize" -> "max",
-  "sr_fetchWaitTime" -> "sum",
-  "sr_localBlocksFetched" -> "sum",
-  "sr_localBytesRead" -> "sum",
-  "sr_remoteBlocksFetched" -> "sum",
-  "sr_remoteBytesRead" -> "sum",
-  "sr_remoteBytesReadToDisk" -> "sum",
-  "sr_totalBytesRead" -> "sum",
-  "sw_bytesWritten" -> "sum",
-  "sw_recordsWritten" -> "sum",
-  "sw_writeTime" -> "sum"
-
+  
 
   // From all other events
   // var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
