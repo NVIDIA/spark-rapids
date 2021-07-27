@@ -43,4 +43,18 @@ object ToolUtils extends Logging {
       resScale.toDouble
     }
   }
+
+  // given to duration values, calculate a human average
+  // rounded to 1 decimal place.
+  def calculateAverage(first: Long, size: Long): Double = {
+    val firstDec = BigDecimal.decimal(first)
+    val sizeDec = BigDecimal.decimal(size)
+    if (firstDec == 0 || sizeDec == 0) {
+      0.toDouble
+    } else {
+      val res = (firstDec / sizeDec)
+      val resScale = res.setScale(1, BigDecimal.RoundingMode.HALF_UP)
+      resScale.toDouble
+    }
+  }
 }

@@ -21,6 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
@@ -79,7 +80,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
   def getDurations(tcs: ArrayBuffer[TaskCase]): Seq[String] = {
     val durations = tcs.map(_.duration)
     Seq(durations.sum.toString, durations.max.toString,
-      durations.min.toString, (durations.sum/durations.size).toString)
+      durations.min.toString, ToolUtils.calculateAverage(durations.sum, durations.size).toString)
   }
 
   // Job + Stage Level TaskMetrics Aggregation
@@ -173,8 +174,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             val durs = getDurations(tasksInStage)
             val metrics = Seq(
               tasksInStage.map(_.executorCPUTime).sum.toString,
-              tasksInStage.map(_.executorDeserializeTime).sum.toString,
               tasksInStage.map(_.executorDeserializeCPUTime).sum.toString,
+              tasksInStage.map(_.executorDeserializeTime).sum.toString,
               tasksInStage.map(_.executorRunTime).sum.toString,
               tasksInStage.map(_.gettingResultTime).sum.toString,
               tasksInStage.map(_.input_bytesRead).sum.toString,
