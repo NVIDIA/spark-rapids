@@ -17,7 +17,9 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import org.apache.commons.lang3.StringUtils
 
-object ProfileOutputWriter {
+import org.apache.spark.internal.Logging
+
+object ProfileOutputWriter extends Logging {
 
   /**
    * Regular expression matching full width characters.
@@ -76,6 +78,12 @@ object ProfileOutputWriter {
     val colWidths = Array.fill(numCols)(minimumColWidth)
 
     if (rows.nonEmpty && schema.size != rows.head.size) {
+      logWarning("schema is: " + schema.mkString(","))
+      if (rows.size > 0) {
+        logWarning("one row is: " + rows.head.mkString(","))
+      } else {
+        logWarning("no rows")
+      }
       throw new IllegalArgumentException("schema must be same size as data!")
     }
     val escapedSchema = schema.map(escapeMetaCharacters)
