@@ -30,10 +30,6 @@
     <description>The RAPIDS SQL plugin for Apache Spark 3.0.1 Databricks Shim</description>
     <version>21.10.0-SNAPSHOT</version>
 
-    <properties>
-        <spark.shim.version>${spark301db.version}</spark.shim.version>
-    </properties>
-
     <!-- Set 'spark.version' for the shims layer -->
     <!-- Create a separate file 'SPARK_VER.properties' in the jar to save cudf & spark version info -->
     <build>
@@ -91,6 +87,7 @@
     <properties>
         <parquet.version>1.10.1</parquet.version>
         <arrow.version>0.15.1</arrow.version>
+        <spark.shim.version>${spark301db.version}</spark.shim.version>
     </properties>
 
     <dependencies>
