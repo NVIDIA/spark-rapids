@@ -325,7 +325,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
   def sqlMetricsAggregationDurationAndCpuTime(): Unit = {
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
-    val outputHeaders = Seq("appIndex", "appID", "sqlID", "SQL Duration", "Contains Dataset Op",
+    fileWriter.foreach(_.write(messageHeader))
+    val outputHeaders = Seq("appIndex", "App ID", "sqlID", "SQL Duration", "Contains Dataset Op",
       "App Duration", "Potential Problsm", "Executor CPU Time Percent")
 
     val allRows = apps.flatMap { app =>
