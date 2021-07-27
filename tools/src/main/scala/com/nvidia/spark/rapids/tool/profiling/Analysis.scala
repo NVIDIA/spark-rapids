@@ -407,7 +407,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
 
         tasksWithSkew.map { tc =>
-          val avgShuffleDur = avgsStageInfos.get(tc.stageId, tc.stageAttemptId)
+          val avgShuffleDur = avgsStageInfos.get((tc.stageId, tc.stageAttemptId))
           avgShuffleDur match {
             case Some(avg) =>
               Seq(app.index.toString, tc.stageId.toString, tc.stageAttemptId.toString,
