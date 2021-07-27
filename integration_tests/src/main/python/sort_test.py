@@ -40,8 +40,7 @@ def test_single_orderby(data_gen, order):
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
-    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
-        marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
     pytest.param(ArrayGen(string_gen),
         marks=pytest.mark.xfail(reason="arrays are not supported")),
     pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
@@ -78,8 +77,7 @@ def test_single_orderby_with_limit(data_gen, order):
 
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
-    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
-                 marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
     pytest.param(ArrayGen(string_gen),
                  marks=pytest.mark.xfail(reason="arrays are not supported")),
     pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
@@ -110,7 +108,10 @@ def test_single_sort_in_part(data_gen, order):
         lambda spark : unary_op_df(spark, data_gen, num_slices=12).sortWithinPartitions(order),
         conf = allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
+], ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
     pytest.param(f.col('a').asc_nulls_first()),
@@ -228,12 +229,12 @@ def test_large_orderby(data_gen, stable_sort):
 # This is similar to test_large_orderby, but here we want to test some types
 # that are not being sorted on, but are going along with it
 @pytest.mark.parametrize('data_gen', [byte_gen,
-    string_gen,
-    float_gen,
-    date_gen,
-    timestamp_gen,
-    decimal_gen_default,
-    StructGen([('child1', byte_gen)]),
+    # string_gen,
+    # float_gen,
+    # date_gen,
+    # timestamp_gen,
+    # decimal_gen_default,
+    # StructGen([('child1', byte_gen)]),
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
 def test_large_orderby_nested_ridealong(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
