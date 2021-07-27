@@ -460,28 +460,34 @@ class AppFilterSuite extends FunSuite {
 
   test("App Name Regex match with all user name") {
     testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
-      "10-newest", "[Nn].*", "user", 7)
+      "10-newest", "[Nn].*", "user", "all" ,7)
   }
 
   test("App Name Regex match with user name match") {
     testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
-      "10-newest", "[Nn].*", "user3", 2)
+      "10-newest", "[Nn].*", "user3", "all", 2)
   }
 
   test("App Name Regex exclude with user name match") {
     testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
-      "10-newest", "[^Nn].*", "user3", 0)
+      "10-newest", "[^Nn].*", "user3", "all",0)
   }
 
   test("App Name partial with username match") {
     testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
-      "5-newest", "nds", "user1", 3)
+      "5-newest", "nds", "user1", "all", 3)
+  }
+
+  test("Filter only on username match") {
+    testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
+      "nomatch", "nomatch", "user3", "username", 2)
+
   }
 
   private def testAppNameRegexAndUserName(
       apps: Array[TestRegexAppNameAndUserName],
       filterCriteria: String, filterAppName: String, userName: String,
-      expectedFilterSize: Int): Unit = {
+      filterArgs: String, expectedFilterSize: Int): Unit = {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
 
@@ -497,16 +503,24 @@ class AppFilterSuite extends FunSuite {
           elogFile.toString
         }
 
-        val allArgs = Array(
-          "--output-directory",
-          outpath.getAbsolutePath(),
-          "--filter-criteria",
-          filterCriteria,
-          "--application-name",
-          filterAppName,
-          "--user-name",
-          userName
-        )
+        val allArgs = if (filterArgs.endsWith("all")) {
+          Array(
+            "--output-directory",
+            outpath.getAbsolutePath(),
+            "--filter-criteria",
+            filterCriteria,
+            "--application-name",
+            filterAppName,
+            "--user-name",
+            userName
+          )
+        } else {
+          Array(
+            "--output-directory",
+            outpath.getAbsolutePath(),
+            "--user-name",
+            userName)
+        }
         val appArgs = new QualificationArgs(allArgs ++ fileNames)
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
