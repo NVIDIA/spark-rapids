@@ -128,6 +128,9 @@ walked, node by node, looking up rules based on the type of node (e.g.: scan,
 executor, expression, etc.), and applying the rule that matches.  See the
 `ColumnarOverrideRules` and `GpuOverrides` classes for more details.
 
+There is a separate guide for working with
+[Adaptive Query Execution](adaptive-query.md).
+
 ## Guidelines for Replacing Catalyst Executors and Expressions
 Most development work in the plugin involves translating various Catalyst
 executor and expression nodes into new nodes that execute on the GPU.  This

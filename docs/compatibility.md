@@ -353,7 +353,12 @@ the specified format string will fall into one of three categories:
 - Supported on GPU but may produce different results to Spark
 - Unsupported on GPU
 
-The formats which are supported on GPU and 100% compatible with Spark are :
+The formats which are supported on GPU vary depending on the setting for `timeParserPolicy`.
+
+### CORRECTED and EXCEPTION timeParserPolicy
+
+With timeParserPolicy set to `CORRECTED` or `EXCEPTION` (the default), the following formats are supported
+on the GPU without requiring any additional settings.
 
 - `dd/MM/yyyy`
 - `yyyy/MM`
@@ -366,10 +371,11 @@ The formats which are supported on GPU and 100% compatible with Spark are :
 - `dd-MM`
 - `dd/MM`
 
-Examples of supported formats that may produce different results are:
+Valid Spark date/time formats that do not appear in the list above may also be supported but have not been
+extensively tested and may produce different results compared to the CPU. Known issues include:
 
-- Trailing characters (including whitespace) may return a non-null value on GPU and Spark will 
-  return null 
+- Valid dates and timestamps followed by trailing characters (including whitespace) may be parsed to non-null
+  values on GPU where Spark would treat the data as invalid and return null
 
 To attempt to use other formats on the GPU, set
 [`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
@@ -390,6 +396,26 @@ Formats that contain any of the following words are unsupported and will fall ba
 "D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
 "d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS"
 ```
+
+### LEGACY timeParserPolicy
+
+With timeParserPolicy set to `LEGACY` and
+[`spark.rapids.sql.incompatibleDateFormats.enabled`](configs.md#sql.incompatibleDateFormats.enabled)
+set to `true`, and `spark.sql.ansi.enabled` set to `false`, the following formats are supported but not
+guaranteed to produce the same results as the CPU:
+
+- `dd-MM-yyyy`
+- `dd/MM/yyyy`
+- `yyyy/MM/dd`
+- `yyyy-MM-dd`
+- `yyyy/MM/dd HH:mm:ss`
+- `yyyy-MM-dd HH:mm:ss`
+
+LEGACY timeParserPolicy support has the following limitations when running on the GPU:
+
+- Only 4 digit years are supported
+- The proleptic Gregorian calendar is used instead of the hybrid JulianGregorian calender
+  that Spark uses in legacy mode
 
 ## Formatting dates and timestamps as strings
 
