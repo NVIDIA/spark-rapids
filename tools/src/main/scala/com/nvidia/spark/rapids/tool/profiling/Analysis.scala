@@ -412,11 +412,11 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             case Some(avg) =>
               Seq(app.index.toString, tc.stageId.toString, tc.stageAttemptId.toString,
                 tc.taskId.toString, tc.attempt.toString,
-                (tc.duration / 1000).toString,
-                (avg.avgDuration / 1000).toString,
-                (tc.sr_totalBytesRead / 1024 / 1024).toString,
-                (avg.avgShuffleReadBytes / 1024 / 1024).toString,
-                (tc.peakExecutionMemory / 1024 / 1024).toString,
+                ToolUtils.calculateAverage(tc.duration, 1000, 2).toString,
+                f"${avg.avgDuration / 1000}%1.2f".toString,
+                ToolUtils.calculateAverage(tc.sr_totalBytesRead, 1024/1024, 2).toString,
+                f"${avg.avgShuffleReadBytes / 1024 / 1024}%1.2f".toString,
+                ToolUtils.calculateAverage(tc.peakExecutionMemory, 1024/1024, 2).toString,
                 tc.successful.toString,
                 ProfileUtils.truncateFailureStr(tc.endReason))
             case None =>
