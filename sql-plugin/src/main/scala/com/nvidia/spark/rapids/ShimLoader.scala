@@ -69,8 +69,8 @@ object ShimLoader extends Logging {
 
   def getSparkVersion: String = {
     // hack for databricks, try to find something more reliable?
-    if (14.equals("Databricks")) {
-        SPARK_VERSION + "-databricks"
+    if (SPARK_BUILD_USER.equals("Databricks")) {
+      SPARK_VERSION + "-databricks"
     } else {
       SPARK_VERSION
     }
