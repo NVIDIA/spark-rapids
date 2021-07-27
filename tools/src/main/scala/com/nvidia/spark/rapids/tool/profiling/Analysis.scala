@@ -140,12 +140,12 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     }
     val allStageRows = apps.flatMap { app =>
       if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0)) {
-        app.liveJobs.map { case (id, jc) =>
+        app.liveJobs.flatMap { case (id, jc) =>
           val stageIdsInJob = jc.stageIds
           val stagesInJob = app.liveStages.filterKeys { case (sid, _) =>
             stageIdsInJob.contains(sid)
           }.keys.map(_._1).toSeq
-          stagesInJob.flatMap { id =>
+          stagesInJob.map { id =>
             val tasksInStage = app.taskEnd.filter { tc =>
               tc.stageId == id
             }
