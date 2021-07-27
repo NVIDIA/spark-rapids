@@ -231,7 +231,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         // TODO - how to deal with attempts?
         app.liveSQL.map { case (sqlId, sqlCase) =>
 
+          logWarning("sqlid for live is: " + sqlId)
           val jcs = app.liveJobs.filter { case (_, jc) =>
+            val jcid = jc.sqlID.getOrElse(-1)
+            logWarning("jc sqlid is: " + jcid)
             jc.sqlID.getOrElse(-1) == sqlId
           }
           logWarning("jobs for sql are: " + jcs.mkString(","))
