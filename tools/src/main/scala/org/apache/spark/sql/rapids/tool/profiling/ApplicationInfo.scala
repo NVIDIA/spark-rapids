@@ -240,7 +240,6 @@ class ApplicationInfo(
   val liveJobs = new HashMap[Int, JobCaseInfo]()
   val liveSQL = new HashMap[Long, SQLExecutionCaseInfo]()
 
-
   // allDataFrames is to store all the DataFrames
   // after event log parsing has completed.
   // Possible DataFrames include:
@@ -737,33 +736,7 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  // Function to generate a query for job level Task Metrics aggregation
-  def jobMetricsAggregationSQL: String = {
-    s"""select $index as appIndex, concat('job_',j.jobID) as ID,
-       |count(*) as numTasks, max(j.duration) as Duration
-       |$generateAggSQLString
-       |from taskDF_$index t, stageDF_$index s, jobDF_$index j
-       |where t.stageId=s.stageId
-       |and array_contains(j.stageIds, s.stageId)
-       |group by j.jobID
-       |""".stripMargin
-  }
 
-  // Function to generate a query for stage level Task Metrics aggregation
-  def stageMetricsAggregationSQL: String = {
-    s"""select $index as appIndex, concat('stage_',s.stageId) as ID,
-       |count(*) as numTasks, max(s.duration) as Duration
-       |$generateAggSQLString
-       |from taskDF_$index t, stageDF_$index s
-       |where t.stageId=s.stageId
-       |group by s.stageId
-       |""".stripMargin
-  }
-
-  // Function to generate a query for job+stage level Task Metrics aggregation
-  def jobAndStageMetricsAggregationSQL: String = {
-    jobMetricsAggregationSQL + " union " + stageMetricsAggregationSQL
-  }
 
   // Function to generate a query for SQL level Task Metrics aggregation
   def sqlMetricsAggregationSQL: String = {
@@ -783,20 +756,7 @@ class ApplicationInfo(
        |""".stripMargin
   }
 
-  // Function to generate a query for getting the executor CPU time and run time
-  // specifically for how we aggregate for qualification
-  def sqlMetricsAggregationSQLQual: String = {
-    s"""select $index as appIndex, '$appId' as appID,
-       |sq.sqlID, sq.description,
-       |sum(executorCPUTimeSum) as executorCPUTime,
-       |sum(executorRunTimeSum) as executorRunTime
-       |from stageDF_$index s,
-       |jobDF_$index j, sqlDF_$index sq
-       |where array_contains(j.stageIds, s.stageId)
-       |and sq.sqlID=j.sqlID and sq.sqlID not in ($sqlIdsForUnsuccessfulJobs)
-       |group by sq.sqlID,sq.description
-       |""".stripMargin
-  }
+
 
   // Function to generate a query for printing SQL metrics(accumulables)
   def generateSQLAccums: String = {

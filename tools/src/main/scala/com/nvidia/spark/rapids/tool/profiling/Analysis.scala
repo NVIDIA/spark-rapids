@@ -80,13 +80,12 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
   def getDurations(tcs: ArrayBuffer[TaskCase]): Seq[String] = {
     val durations = tcs.map(_.duration)
     Seq(durations.sum.toString, durations.max.toString,
-      durations.min.toString, ToolUtils.calculateAverage(durations.sum, durations.size).toString)
+      durations.min.toString, ToolUtils.calculateAverage(durations.sum, durations.size, 1).toString)
   }
 
   // Job + Stage Level TaskMetrics Aggregation
   def jobAndStageMetricsAggregation(): Unit = {
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
-
     fileWriter.foreach(_.write(messageHeader))
     val outputHeaders = Seq("appIndex", "ID", "numTasks", "Duration") ++ genTaskMetricsColumnHeaders
     val allJobRows = apps.flatMap { app =>
@@ -217,63 +216,104 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     }
   }
 
-  /*
+
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
-  def sqlMetricsAggregation(): DataFrame = {
+  def sqlMetricsAggregation(): Unit = {
     val messageHeader = "\nSQL level aggregated task metrics:\n"
-    if (apps.size == 1) {
-      val app = apps.head
-      if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-        app.allDataFrames.contains(s"stageDF_${app.index}") &&
-        app.allDataFrames.contains(s"jobDF_${app.index}") &&
-        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-        apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc",
-          false, fileWriter, messageHeader)
-      } else {
-        apps.head.sparkSession.emptyDataFrame
-      }
-    } else {
-      var query = ""
-      val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      for (app <- appsWithSQL) {
-        if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-          app.allDataFrames.contains(s"stageDF_${app.index}") &&
-          app.allDataFrames.contains(s"jobDF_${app.index}") &&
-          app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-          if (query.isEmpty) {
-            query += app.sqlMetricsAggregationSQL
+
+    fileWriter.foreach(_.write(messageHeader))
+
+    val outputHeaders = Seq("appIndex", "sqlID", "description", "numTasks", "Duration",
+      "executorCPUTime", "executorRunTime", "executorCPURatio") ++ genTaskMetricsColumnHeaders
+    val allRows = apps.flatMap { app =>
+      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0) &&
+        (app.liveSQL.size > 0)) {
+        val jobsWithSQL = app.liveJobs.filter { case (id, jc) =>
+            jc.sqlID.isDefined
+        }
+
+        jobsWithSQL.flatMap { case (id, jc) =>
+          val sqlId = jc.sqlID.getOrElse(throw new IllegalStateException("Shouldn't be here"))
+          val sqlInfoOpt = app.liveSQL.get(sqlId)
+          if (sqlInfoOpt.isEmpty) {
+            Seq.empty
           } else {
-            query += " union " + app.sqlMetricsAggregationSQL
+            val sqlInfo = sqlInfoOpt.get
+            val stageIdsInJob = jc.stageIds
+            val stagesInJob = app.liveStages.filterKeys { case (sid, _) =>
+              stageIdsInJob.contains(sid)
+            }
+            stagesInJob.map { case ((id, said), sc) =>
+              val tasksInStage = app.taskEnd.filter { tc =>
+                tc.stageId == id
+              }
+              // don't count duplicate task attempts
+              val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
+              uniqueTasks.foreach { case (id, groups) =>
+                logWarning(s"task $id num attempts is: ${groups.size}")
+              }
+              // TODO - how to deal with attempts?
+
+              val duration = sqlInfo.duration match {
+                case Some(dur) => dur.toString
+                case None => ""
+              }
+              val sqlStats = Seq(app.index.toString, s"$id", sqlInfo.description,
+                uniqueTasks.size.toString, duration)
+              val execCpuTime = tasksInStage.map(_.executorCPUTime).sum
+              val execRunTime = tasksInStage.map(_.executorRunTime).sum
+              val execCPURatio = ToolUtils.calculateAverage(execCpuTime, execRunTime, 2)
+              val execStats = Seq(
+                execCpuTime.toString,
+                execRunTime.toString,
+                execCPURatio.toString
+              )
+              val durs = getDurations(tasksInStage)
+              val metrics = Seq(
+                tasksInStage.map(_.diskBytesSpilled).sum.toString,
+                tasksInStage.map(_.executorDeserializeCPUTime).sum.toString,
+                tasksInStage.map(_.executorDeserializeTime).sum.toString,
+                tasksInStage.map(_.gettingResultTime).sum.toString,
+                tasksInStage.map(_.input_bytesRead).sum.toString,
+                tasksInStage.map(_.input_recordsRead).sum.toString,
+                tasksInStage.map(_.jvmGCTime).sum.toString,
+                tasksInStage.map(_.memoryBytesSpilled).sum.toString,
+                tasksInStage.map(_.output_bytesWritten).sum.toString,
+                tasksInStage.map(_.output_recordsWritten).sum.toString,
+                tasksInStage.map(_.peakExecutionMemory).max.toString,
+                tasksInStage.map(_.resultSerializationTime).sum.toString,
+                tasksInStage.map(_.resultSize).max.toString,
+                tasksInStage.map(_.sr_fetchWaitTime).sum.toString,
+                tasksInStage.map(_.sr_localBlocksFetched).sum.toString,
+                tasksInStage.map(_.sr_localBytesRead).sum.toString,
+                tasksInStage.map(_.sr_remoteBlocksFetched).sum.toString,
+                tasksInStage.map(_.sr_remoteBytesRead).sum.toString,
+                tasksInStage.map(_.sr_remoteBytesReadToDisk).sum.toString,
+                tasksInStage.map(_.sr_totalBytesRead).sum.toString,
+                tasksInStage.map(_.sw_bytesWritten).sum.toString,
+                tasksInStage.map(_.sw_recordsWritten).sum.toString,
+                tasksInStage.map(_.sw_writeTime).sum.toString
+              )
+              sqlStats ++ execStats ++ durs ++ metrics
+            }
           }
         }
-      }
-      if (query.nonEmpty) {
-        apps.head.runQuery(query + " order by appIndex, Duration desc", false,
-          fileWriter, messageHeader)
       } else {
-        fileWriter.foreach(_.write("Unable to aggregate SQL task Metrics\n"))
-        apps.head.sparkSession.emptyDataFrame
+        Seq.empty
       }
     }
-  }
-
-  // sql metrics aggregation specific for qualification because
-  // it aggregates executor time metrics differently
-  def sqlMetricsAggregationQual(): DataFrame = {
-    val query = apps
-      .filter { p =>
-        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
-          p.allDataFrames.contains(s"stageDF_${p.index}") &&
-          p.allDataFrames.contains(s"jobDF_${p.index}")
-      }.map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query)
+    if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, -(cols(4).toLong), cols(1)))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      fileWriter.foreach(_.write("No SQL Metrics Found!\n"))
     }
+
   }
 
+/*
   def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
     val query = apps
@@ -289,15 +329,9 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       apps.head.sparkSession.emptyDataFrame
     }
   }
+  */
 
-  // custom query execution. Normally for debugging use.
-  def customQueryExecution(app: ApplicationInfo): Unit = {
-    fileWriter.foreach(_.write("Custom query execution:"))
-    val customQuery =
-      s"""select stageId from stageDF_${app.index} limit 1
-         |""".stripMargin
-    app.runQuery(customQuery)
-  }
+  /*
 
   // Function to find out shuffle read skew(For Joins or Aggregation)
   def shuffleSkewCheck(): Unit ={
