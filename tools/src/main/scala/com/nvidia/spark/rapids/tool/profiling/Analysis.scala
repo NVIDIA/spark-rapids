@@ -230,9 +230,13 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
         // TODO - how to deal with attempts?
         app.liveSQL.map { case (sqlId, sqlCase) =>
-          val stageIdsForSQL = app.liveJobs.filter { case (_, jc) =>
+
+          val jcs = app.liveJobs.filter { case (_, jc) =>
             jc.sqlID.getOrElse(-1) == sqlId
-          }.map(_._2.stageIds).flatten.toSeq
+          }
+          logWarning("jobs for sql are: " + jcs.mkString(","))
+
+          val stageIdsForSQL = jcs.flatMap(_._2.stageIds).toSeq
           logWarning("stage ids for sql is: " + stageIdsForSQL.mkString(","))
 
           val tasksInSQL = app.taskEnd.filter { tc =>
