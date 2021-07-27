@@ -163,11 +163,12 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             }
             // TODO - how to deal with attempts?
 
-            val jobDuration = sc.duration match {
+            val scDuration = sc.duration match {
               case Some(dur) => dur.toString
               case None => ""
             }
-            val stageInfo = Seq(app.index.toString, s"stage_$id", uniqueTasks.size.toString)
+            val stageInfo = Seq(app.index.toString, s"stage_$id", uniqueTasks.size.toString,
+              scDuration)
             val diskBytes = Seq(tasksInStage.map(_.diskBytesSpilled).sum.toString)
             val durs = getDurations(tasksInStage)
             val metrics = Seq(
