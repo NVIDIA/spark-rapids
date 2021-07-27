@@ -116,8 +116,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           val durs = getDurations(tasksInJob)
           val metrics = Seq(
             tasksInJob.map(_.executorCPUTime).sum.toString,
-            tasksInJob.map(_.executorDeserializeTime).sum.toString,
             tasksInJob.map(_.executorDeserializeCPUTime).sum.toString,
+            tasksInJob.map(_.executorDeserializeTime).sum.toString,
             tasksInJob.map(_.executorRunTime).sum.toString,
             tasksInJob.map(_.gettingResultTime).sum.toString,
             tasksInJob.map(_.input_bytesRead).sum.toString,
