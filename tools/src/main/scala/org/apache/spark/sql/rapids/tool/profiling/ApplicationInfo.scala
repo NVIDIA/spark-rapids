@@ -345,7 +345,7 @@ class ApplicationInfo(
 
   // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
-  
+
 
   // From all other events
   // var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()

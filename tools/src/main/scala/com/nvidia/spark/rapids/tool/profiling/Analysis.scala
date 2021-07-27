@@ -87,7 +87,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
 
     fileWriter.foreach(_.write(messageHeader))
-    val outputHeaders = Seq("appIndex", "ID", "numTasks") ++ genTaskMetricsColumnHeaders
+    val outputHeaders = Seq("appIndex", "ID", "numTasks", "Duration") ++ genTaskMetricsColumnHeaders
     val allJobRows = apps.flatMap { app =>
       if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0)) {
         app.liveJobs.map { case (id, jc) =>
@@ -105,7 +105,12 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           }
           // TODO - how to deal with attempts?
 
-          val jobInfo = Seq(app.index.toString, s"job_$id", uniqueTasks.size.toString)
+          val jobDuration = jc.duration match {
+            case Some(dur) => dur.toString
+            case None => ""
+          }
+          val jobInfo = Seq(app.index.toString, s"job_$id", uniqueTasks.size.toString,
+            jobDuration)
           val diskBytes = Seq(tasksInJob.map(_.diskBytesSpilled).sum.toString)
           val durs = getDurations(tasksInJob)
           val metrics = Seq(
@@ -146,8 +151,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           val stageIdsInJob = jc.stageIds
           val stagesInJob = app.liveStages.filterKeys { case (sid, _) =>
             stageIdsInJob.contains(sid)
-          }.keys.map(_._1).toSeq
-          stagesInJob.map { id =>
+          }
+          stagesInJob.map { case ((id, said), sc) =>
             val tasksInStage = app.taskEnd.filter { tc =>
               tc.stageId == id
             }
@@ -158,6 +163,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             }
             // TODO - how to deal with attempts?
 
+            val jobDuration = sc.duration match {
+              case Some(dur) => dur.toString
+              case None => ""
+            }
             val stageInfo = Seq(app.index.toString, s"stage_$id", uniqueTasks.size.toString)
             val diskBytes = Seq(tasksInStage.map(_.diskBytesSpilled).sum.toString)
             val durs = getDurations(tasksInStage)
