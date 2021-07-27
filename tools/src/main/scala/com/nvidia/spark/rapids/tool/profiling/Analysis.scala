@@ -44,35 +44,36 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     cols.toSeq
   }
 
+  // TODO - match with columsn below?
   // All the metrics column names in Task Metrics with the aggregation type
   val taskMetricsColumns: scala.collection.mutable.SortedMap[String, String]
   = scala.collection.mutable.SortedMap(
-    "duration" -> "all",
-    "gettingResultTime" -> "sum",
-    "executorDeserializeTime" -> "sum",
-    "executorDeserializeCPUTime" -> "sum",
-    "executorRunTime" -> "sum",
-    "executorCPUTime" -> "sum",
-    "peakExecutionMemory" -> "max",
-    "resultSize" -> "max",
-    "jvmGCTime" -> "sum",
-    "resultSerializationTime" -> "sum",
-    "memoryBytesSpilled" -> "sum",
     "diskBytesSpilled" -> "sum",
-    "sr_remoteBlocksFetched" -> "sum",
-    "sr_localBlocksFetched" -> "sum",
-    "sr_fetchWaitTime" -> "sum",
-    "sr_remoteBytesRead" -> "sum",
-    "sr_remoteBytesReadToDisk" -> "sum",
-    "sr_localBytesRead" -> "sum",
-    "sr_totalBytesRead" -> "sum",
-    "sw_bytesWritten" -> "sum",
-    "sw_writeTime" -> "sum",
-    "sw_recordsWritten" -> "sum",
+    "duration" -> "all",
+    "executorCPUTime" -> "sum",
+    "executorDeserializeCPUTime" -> "sum",
+    "executorDeserializeTime" -> "sum",
+    "executorRunTime" -> "sum",
+    "gettingResultTime" -> "sum",
     "input_bytesRead" -> "sum",
     "input_recordsRead" -> "sum",
+    "jvmGCTime" -> "sum",
+    "memoryBytesSpilled" -> "sum",
     "output_bytesWritten" -> "sum",
-    "output_recordsWritten" -> "sum"
+    "output_recordsWritten" -> "sum",
+    "peakExecutionMemory" -> "max",
+    "resultSerializationTime" -> "sum",
+    "resultSize" -> "max",
+    "sr_fetchWaitTime" -> "sum",
+    "sr_localBlocksFetched" -> "sum",
+    "sr_localBytesRead" -> "sum",
+    "sr_remoteBlocksFetched" -> "sum",
+    "sr_remoteBytesRead" -> "sum",
+    "sr_remoteBytesReadToDisk" -> "sum",
+    "sr_totalBytesRead" -> "sum",
+    "sw_bytesWritten" -> "sum",
+    "sw_recordsWritten" -> "sum",
+    "sw_writeTime" -> "sum"
   )
 
   def getDurations(tcs: ArrayBuffer[TaskCase]): Seq[String] = {
@@ -105,34 +106,35 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           // TODO - how to deal with attempts?
 
           val jobInfo = Seq(app.index.toString, s"job_$id", uniqueTasks.size.toString)
+          val diskBytes = Seq(tasksInJob.map(_.diskBytesSpilled).sum.toString)
           val durs = getDurations(tasksInJob)
-          val metrics = Seq(tasksInJob.map(_.gettingResultTime).sum.toString,
+          val metrics = Seq(
+            tasksInJob.map(_.executorCPUTime).sum.toString,
             tasksInJob.map(_.executorDeserializeTime).sum.toString,
             tasksInJob.map(_.executorDeserializeCPUTime).sum.toString,
             tasksInJob.map(_.executorRunTime).sum.toString,
-            tasksInJob.map(_.executorCPUTime).sum.toString,
-            tasksInJob.map(_.peakExecutionMemory).max.toString,
-            tasksInJob.map(_.resultSize).max.toString,
-            tasksInJob.map(_.jvmGCTime).sum.toString,
-            tasksInJob.map(_.resultSerializationTime).sum.toString,
-            tasksInJob.map(_.memoryBytesSpilled).sum.toString,
-            tasksInJob.map(_.diskBytesSpilled).sum.toString,
-            tasksInJob.map(_.sr_remoteBlocksFetched).sum.toString,
-            tasksInJob.map(_.sr_localBlocksFetched).sum.toString,
-            tasksInJob.map(_.sr_fetchWaitTime).sum.toString,
-            tasksInJob.map(_.sr_remoteBytesRead).sum.toString,
-            tasksInJob.map(_.sr_remoteBytesReadToDisk).sum.toString,
-            tasksInJob.map(_.sr_localBytesRead).sum.toString,
-            tasksInJob.map(_.sr_totalBytesRead).sum.toString,
-            tasksInJob.map(_.sw_bytesWritten).sum.toString,
-            tasksInJob.map(_.sw_writeTime).sum.toString,
-            tasksInJob.map(_.sw_recordsWritten).sum.toString,
+            tasksInJob.map(_.gettingResultTime).sum.toString,
             tasksInJob.map(_.input_bytesRead).sum.toString,
             tasksInJob.map(_.input_recordsRead).sum.toString,
+            tasksInJob.map(_.jvmGCTime).sum.toString,
+            tasksInJob.map(_.memoryBytesSpilled).sum.toString,
             tasksInJob.map(_.output_bytesWritten).sum.toString,
-            tasksInJob.map(_.output_recordsWritten).sum.toString
+            tasksInJob.map(_.output_recordsWritten).sum.toString,
+            tasksInJob.map(_.peakExecutionMemory).max.toString,
+            tasksInJob.map(_.resultSerializationTime).sum.toString,
+            tasksInJob.map(_.resultSize).max.toString,
+            tasksInJob.map(_.sr_fetchWaitTime).sum.toString,
+            tasksInJob.map(_.sr_localBlocksFetched).sum.toString,
+            tasksInJob.map(_.sr_localBytesRead).sum.toString,
+            tasksInJob.map(_.sr_remoteBlocksFetched).sum.toString,
+            tasksInJob.map(_.sr_remoteBytesRead).sum.toString,
+            tasksInJob.map(_.sr_remoteBytesReadToDisk).sum.toString,
+            tasksInJob.map(_.sr_totalBytesRead).sum.toString,
+            tasksInJob.map(_.sw_bytesWritten).sum.toString,
+            tasksInJob.map(_.sw_recordsWritten).sum.toString,
+            tasksInJob.map(_.sw_writeTime).sum.toString
           )
-          jobInfo ++ durs ++ metrics
+          jobInfo ++ diskBytes ++ durs ++ metrics
         }
       } else {
         Seq.empty
@@ -157,34 +159,35 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             // TODO - how to deal with attempts?
 
             val stageInfo = Seq(app.index.toString, s"stage_$id", uniqueTasks.size.toString)
+            val diskBytes = Seq(tasksInStage.map(_.diskBytesSpilled).sum.toString)
             val durs = getDurations(tasksInStage)
-            val metrics = Seq(tasksInStage.map(_.gettingResultTime).sum.toString,
+            val metrics = Seq(
+              tasksInStage.map(_.executorCPUTime).sum.toString,
               tasksInStage.map(_.executorDeserializeTime).sum.toString,
               tasksInStage.map(_.executorDeserializeCPUTime).sum.toString,
               tasksInStage.map(_.executorRunTime).sum.toString,
-              tasksInStage.map(_.executorCPUTime).sum.toString,
-              tasksInStage.map(_.peakExecutionMemory).max.toString,
-              tasksInStage.map(_.resultSize).max.toString,
-              tasksInStage.map(_.jvmGCTime).sum.toString,
-              tasksInStage.map(_.resultSerializationTime).sum.toString,
-              tasksInStage.map(_.memoryBytesSpilled).sum.toString,
-              tasksInStage.map(_.diskBytesSpilled).sum.toString,
-              tasksInStage.map(_.sr_remoteBlocksFetched).sum.toString,
-              tasksInStage.map(_.sr_localBlocksFetched).sum.toString,
-              tasksInStage.map(_.sr_fetchWaitTime).sum.toString,
-              tasksInStage.map(_.sr_remoteBytesRead).sum.toString,
-              tasksInStage.map(_.sr_remoteBytesReadToDisk).sum.toString,
-              tasksInStage.map(_.sr_localBytesRead).sum.toString,
-              tasksInStage.map(_.sr_totalBytesRead).sum.toString,
-              tasksInStage.map(_.sw_bytesWritten).sum.toString,
-              tasksInStage.map(_.sw_writeTime).sum.toString,
-              tasksInStage.map(_.sw_recordsWritten).sum.toString,
+              tasksInStage.map(_.gettingResultTime).sum.toString,
               tasksInStage.map(_.input_bytesRead).sum.toString,
               tasksInStage.map(_.input_recordsRead).sum.toString,
+              tasksInStage.map(_.jvmGCTime).sum.toString,
+              tasksInStage.map(_.memoryBytesSpilled).sum.toString,
               tasksInStage.map(_.output_bytesWritten).sum.toString,
-              tasksInStage.map(_.output_recordsWritten).sum.toString
+              tasksInStage.map(_.output_recordsWritten).sum.toString,
+              tasksInStage.map(_.peakExecutionMemory).max.toString,
+              tasksInStage.map(_.resultSerializationTime).sum.toString,
+              tasksInStage.map(_.resultSize).max.toString,
+              tasksInStage.map(_.sr_fetchWaitTime).sum.toString,
+              tasksInStage.map(_.sr_localBlocksFetched).sum.toString,
+              tasksInStage.map(_.sr_localBytesRead).sum.toString,
+              tasksInStage.map(_.sr_remoteBlocksFetched).sum.toString,
+              tasksInStage.map(_.sr_remoteBytesRead).sum.toString,
+              tasksInStage.map(_.sr_remoteBytesReadToDisk).sum.toString,
+              tasksInStage.map(_.sr_totalBytesRead).sum.toString,
+              tasksInStage.map(_.sw_bytesWritten).sum.toString,
+              tasksInStage.map(_.sw_recordsWritten).sum.toString,
+              tasksInStage.map(_.sw_writeTime).sum.toString
             )
-            stageInfo ++ durs ++ metrics
+            stageInfo ++ diskBytes ++ durs ++ metrics
           }
         }
       } else {
