@@ -336,7 +336,7 @@ class ApplicationInfo(
   // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
   // taskEnd contains task level metrics - only used for profiling
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
-  var taskEndMap: HashMap[(Long, Int), TaskCase] = new HashMap[(Int, Int), TaskCase]()
+  var taskEndMap: HashMap[(Long, Int), TaskCase] = new HashMap[(Long, Int), TaskCase]()
 
 
   // From SparkListenerTaskGettingResult
