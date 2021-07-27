@@ -191,14 +191,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
        <eventlogs | eventlog directories ...>
 
-  -a, --application-name  <arg>     Filter event logs whose application name
-                                    matches exactly or is a substring of input
-                                    string. Regular expressions not
-                                    supported. For filtering based on complement
-                                    of application name, use ~APPLICATION_NAME.
-                                    i.e Select all event logs except the ones
-                                    which have application name as the input
-                                    string.
+  -a, --application-name  <arg>     Filter event logs by application name. The
+                                    string specified can be a regular expression,
+                                    substring, or exact match. For filtering based
+                                    on complement of application name,
+                                    use ~APPLICATION_NAME. i.e Select all event
+                                    logs except the ones which have application
+                                    name as the input string.
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on
                                     application start timestamp, unique
                                     application name or filesystem timestamp.
@@ -263,6 +262,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     than 3 seconds. If it times out, it will
                                     report what it was able to process up until
                                     the timeout.
+  -u, --user-name <arg>             Applications which a particular user has submitted.
   -h, --help                        Show help message
 
  trailing arguments:

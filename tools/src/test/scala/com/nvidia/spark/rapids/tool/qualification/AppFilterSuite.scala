@@ -441,4 +441,91 @@ class AppFilterSuite extends FunSuite {
       }
     }
   }
+
+  case class TestRegexAppNameAndUserName(fileName: String, fsTime: Long, appName: String,
+      appTime: Long, uniqueId: Int, userName: String)
+
+  private val appsWithAppNameRegexAndUserNameToTest = Array(
+    TestRegexAppNameAndUserName("app-ndshours18", msHoursAgo(16), "ndshours18",
+      msHoursAgo(18), 1, "user1"),
+    TestRegexAppNameAndUserName("app-ndsweeks-1", msWeeksAgo(1), "ndsweeks",
+      msWeeksAgo(1), 1, "user1"),
+    TestRegexAppNameAndUserName("app-ndsweeks-2", msWeeksAgo(2), "ndsweeks",
+      msWeeksAgo(2), 2, "user2"),
+    TestRegexAppNameAndUserName("app-ndsweeks-3", msWeeksAgo(3), "Ndsweeks",
+      msWeeksAgo(3), 3, "user3"),
+    TestRegexAppNameAndUserName("app-nds86-1", msDaysAgo(3), "nds86", msDaysAgo(4), 1, "user1"),
+    TestRegexAppNameAndUserName("app-nds86-2", msDaysAgo(13), "Nds86", msWeeksAgo(2), 2, "user2"),
+    TestRegexAppNameAndUserName("app-nds86-3", msDaysAgo(18), "nds86", msWeeksAgo(3), 3, "user3"))
+
+  test("App Name Regex match with all user name") {
+    testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
+      "10-newest", "[Nn].*", "user", "all" ,7)
+  }
+
+  test("App Name Regex match with user name match") {
+    testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
+      "10-newest", "[Nn].*", "user3", "all", 2)
+  }
+
+  test("App Name Regex exclude with user name match") {
+    testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
+      "10-newest", "[^Nn].*", "user3", "all",0)
+  }
+
+  test("App Name partial with username match") {
+    testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
+      "5-newest", "nds", "user1", "all", 3)
+  }
+
+  test("Filter only on username match") {
+    testAppNameRegexAndUserName(appsWithAppNameRegexAndUserNameToTest,
+      "nomatch", "nomatch", "user3", "username", 2)
+
+  }
+
+  private def testAppNameRegexAndUserName(
+      apps: Array[TestRegexAppNameAndUserName],
+      filterCriteria: String, filterAppName: String, userName: String,
+      filterArgs: String, expectedFilterSize: Int): Unit = {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val fileNames = apps.map { app =>
+          val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, app.fileName)
+          // scalastyle:off line.size.limit
+          val supText =
+            s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"user${app.userName}"}""".stripMargin
+          // scalastyle:on line.size.limit
+          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+          new File(elogFile.toString).setLastModified(app.fsTime)
+          elogFile.toString
+        }
+
+        val allArgs = if (filterArgs.endsWith("all")) {
+          Array(
+            "--output-directory",
+            outpath.getAbsolutePath(),
+            "--filter-criteria",
+            filterCriteria,
+            "--application-name",
+            filterAppName,
+            "--user-name",
+            userName
+          )
+        } else {
+          Array(
+            "--output-directory",
+            outpath.getAbsolutePath(),
+            "--user-name",
+            userName)
+        }
+        val appArgs = new QualificationArgs(allArgs ++ fileNames)
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == expectedFilterSize)
+      }
+    }
+  }
 }
