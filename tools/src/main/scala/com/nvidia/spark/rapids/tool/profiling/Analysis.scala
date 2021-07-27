@@ -216,7 +216,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     }
   }
 
-
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
   def sqlMetricsAggregation(): Unit = {
     val messageHeader = "\nSQL level aggregated task metrics:\n"
@@ -259,6 +258,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
                 case Some(dur) => dur.toString
                 case None => ""
               }
+              val diskBytes = Seq(tasksInStage.map(_.diskBytesSpilled).sum.toString)
               val sqlStats = Seq(app.index.toString, s"$id", sqlInfo.description,
                 uniqueTasks.size.toString, duration)
               val execCpuTime = tasksInStage.map(_.executorCPUTime).sum
@@ -271,9 +271,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               )
               val durs = getDurations(tasksInStage)
               val metrics = Seq(
-                tasksInStage.map(_.diskBytesSpilled).sum.toString,
+                execCpuTime.toString,
                 tasksInStage.map(_.executorDeserializeCPUTime).sum.toString,
                 tasksInStage.map(_.executorDeserializeTime).sum.toString,
+                execRunTime.toString,
                 tasksInStage.map(_.gettingResultTime).sum.toString,
                 tasksInStage.map(_.input_bytesRead).sum.toString,
                 tasksInStage.map(_.input_recordsRead).sum.toString,
@@ -295,7 +296,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
                 tasksInStage.map(_.sw_recordsWritten).sum.toString,
                 tasksInStage.map(_.sw_writeTime).sum.toString
               )
-              sqlStats ++ execStats ++ durs ++ metrics
+              sqlStats ++ execStats ++ diskBytes ++ durs ++ metrics
             }
           }
         }
