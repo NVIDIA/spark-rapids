@@ -52,7 +52,6 @@ pipeline {
     environment {
         JENKINS_ROOT = 'jenkins'
         PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
-        PREMERGE_UT_SCRIPT = '$JENKINS_ROOT/spark-premerge-build-ut.sh'
         MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
         ARTIFACTORY_NAME = "${ArtifactoryConstants.ARTIFACTORY_NAME}"
@@ -212,8 +211,8 @@ pipeline {
                             unstash "source_tree"
 
                             container('gpu') {
-                                timeout(time: 2, unit: 'HOURS') {
-                                    sh "$PREMERGE_UT_SCRIPT"
+                                timeout(time: 4, unit: 'HOURS') {
+                                    sh "RUN_UT_ONLY=yes $PREMERGE_SCRIPT"
                                 }
                             }
                         }

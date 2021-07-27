@@ -19,6 +19,17 @@ set -ex
 
 nvidia-smi
 
+if [[ ! -z "$RUN_UT_ONLY" ]]; then
+    echo "Run unit test only..."
+
+    mvn -U -B $MVN_URM_MIRROR -Pspark303tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+    mvn -U -B $MVN_URM_MIRROR -Pspark304tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+    mvn -U -B $MVN_URM_MIRROR -Pspark312tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+    mvn -U -B $MVN_URM_MIRROR -Pspark313tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+
+    exit 0
+fi
+
 . jenkins/version-def.sh
 
 # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
