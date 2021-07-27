@@ -222,7 +222,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
     fileWriter.foreach(_.write(messageHeader))
 
-    val outputHeaders = Seq("appIndex", "sqlID", "description", "numTasks", "Duration",
+    val outputHeaders = Seq("appIndex", "appID", "sqlID", "description", "numTasks", "Duration",
       "executorCPUTime", "executorRunTime", "executorCPURatio") ++ genTaskMetricsColumnHeaders
     val allRows = apps.flatMap { app =>
       if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0) &&
@@ -259,7 +259,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
                 case None => ""
               }
               val diskBytes = Seq(tasksInStage.map(_.diskBytesSpilled).sum.toString)
-              val sqlStats = Seq(app.index.toString, s"$id", sqlInfo.description,
+              val sqlStats = Seq(app.index.toString, app.appId, s"$id", sqlInfo.description,
                 uniqueTasks.size.toString, duration)
               val execCpuTime = tasksInStage.map(_.executorCPUTime).sum
               val execRunTime = tasksInStage.map(_.executorRunTime).sum
