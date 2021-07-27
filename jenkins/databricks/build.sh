@@ -72,6 +72,7 @@ JARDIR=/databricks/jars
 SQLJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 CATALYSTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 ANNOTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
+LIBCOREJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--core--libcore_generated_resources.jar
 COREJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_VERSION}.pom
 COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_VERSION}
@@ -105,6 +106,14 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$ANNOTJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-annotation_$SCALA_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$LIBCOREJAR \
+   -DgroupId=org.apache.spark \
+   -DartifactId=spark-libcore_$SCALA_VERSION \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
