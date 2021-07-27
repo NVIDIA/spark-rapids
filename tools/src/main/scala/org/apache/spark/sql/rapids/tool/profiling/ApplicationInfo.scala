@@ -240,20 +240,6 @@ class ApplicationInfo(
   val liveJobs = new HashMap[Int, JobCaseInfo]()
   val liveSQL = new HashMap[Long, SQLExecutionCaseInfo]()
 
-  // allDataFrames is to store all the DataFrames
-  // after event log parsing has completed.
-  // Possible DataFrames include:
-  // 1. resourceProfilesDF (Optional)
-  // 2. blockManagersDF (Optional)
-  // 3. appDF (Must exist, otherwise fail!)
-  // 4. executorsDF (Must exist, otherwise fail!)
-  // 5. propertiesDF (Must exist, otherwise fail!)
-  // 6. blockManagersRemoved (Optional)
-  // 7. sqlDF (Could be missing)
-  // 8. jobDF (Must exist, otherwise fail!)
-  // 9. stageDF (Must exist, otherwise fail!)
-  // 10. taskDF (Must exist, otherwise fail!)
-  // val allDataFrames: mutable.HashMap[String, DataFrame] = mutable.HashMap.empty[String, DataFrame]
 
   // From SparkListenerResourceProfileAdded
   // var resourceProfiles: ArrayBuffer[ResourceProfileCase] = ArrayBuffer[ResourceProfileCase]()

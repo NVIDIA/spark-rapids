@@ -151,7 +151,7 @@ object ProfileMain extends Logging {
       val analysis = new Analysis(apps, Some(textFileWriter), numOutputRows)
       analysis.jobAndStageMetricsAggregation()
       analysis.sqlMetricsAggregation()
-      // analysis.sqlMetricsAggregationDurationAndCpuTime()
+      analysis.sqlMetricsAggregationDurationAndCpuTime()
       /*
       analysis.shuffleSkewCheck()
 

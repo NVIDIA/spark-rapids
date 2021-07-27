@@ -219,9 +219,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
   def sqlMetricsAggregation(): Unit = {
     val messageHeader = "\nSQL level aggregated task metrics:\n"
-
     fileWriter.foreach(_.write(messageHeader))
-
     val outputHeaders = Seq("appIndex", "appID", "sqlID", "description", "numTasks", "Duration",
       "executorCPUTime", "executorRunTime", "executorCPURatio") ++ genTaskMetricsColumnHeaders
     val allRows = apps.flatMap { app =>
@@ -323,23 +321,47 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
   }
 
-/*
-  def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
+  def sqlMetricsAggregationDurationAndCpuTime(): Unit = {
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
-    val query = apps
-      .filter { p =>
-        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
-        p.allDataFrames.contains(s"appDF_${p.index}")
-      }.map( app => "(" + app.profilingDurationSQL + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex, sqlID, `SQL Duration`",
-        false, fileWriter, messageHeader)
+    val outputHeaders = Seq("appIndex", "appID", "sqlID", "SQL Duration", "Contains Dataset Op",
+      "App Duration", "Potential Problsm", "Executor CPU Time Percent")
+
+    val allRows = apps.flatMap { app =>
+      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0) &&
+        (app.liveSQL.size > 0)) {
+
+        val appDuration = app.appInfo.duration match {
+          case Some(dur) => dur.toString()
+          case None => ""
+        }
+
+        val execCpuTimePercent = 0.toString
+
+        app.liveSQL.map { case (sqlId, sqlCase) =>
+          val sqlDuration = sqlCase.duration match {
+            case Some(dur) => dur.toString()
+            case None => ""
+          }
+          Seq(app.index.toString, app.appId, s"$sqlId", sqlDuration,
+            sqlCase.hasDataset.toString, appDuration, sqlCase.problematic,
+            execCpuTimePercent)
+        }
+      } else {
+        Seq.empty
+      }
+    }
+
+    val allNonEmptyRows = allRows.filter(!_.isEmpty)
+    if (allNonEmptyRows.size > 0) {
+      val sortedRows = allNonEmptyRows.sortBy(cols => (cols(0).toLong, -(cols(5).toLong), cols(2)))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
     }
   }
-  */
+
 
   /*
 
