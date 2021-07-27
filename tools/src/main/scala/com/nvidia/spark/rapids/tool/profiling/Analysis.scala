@@ -233,14 +233,12 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           val stageIdsForSQL = app.liveJobs.filter { case (_, jc) =>
             jc.sqlID == sqlId
           }.map(_._2.stageIds).flatten.toSeq
-
-          val stagesInSQL = app.liveStages.filterKeys { case (sid, _) =>
-            stageIdsForSQL.contains(sid)
-          }
+          logWarning("stage ids for sql is: " + stageIdsForSQL.mkString(","))
 
           val tasksInSQL = app.taskEnd.filter { tc =>
             stageIdsForSQL.contains(tc.stageId)
           }
+          logWarning("tasks in sql size: " + tasksInSQL.size)
 
           // don't count duplicate task attempts ???
           val uniqueTasks = tasksInSQL.groupBy(tc => tc.taskId)
