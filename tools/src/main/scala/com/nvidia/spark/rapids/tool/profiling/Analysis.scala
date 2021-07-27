@@ -237,67 +237,75 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             logWarning("jc sqlid is: " + jcid)
             jc.sqlID.getOrElse(-1) == sqlId
           }
-          logWarning("jobs for sql are: " + jcs.mkString(","))
+          if (jcs.isEmpty) {
+            Seq.empty
+          } else {
+            logWarning("jobs for sql are: " + jcs.mkString(","))
 
-          val stageIdsForSQL = jcs.flatMap(_._2.stageIds).toSeq
-          logWarning("stage ids for sql is: " + stageIdsForSQL.mkString(","))
+            val stageIdsForSQL = jcs.flatMap(_._2.stageIds).toSeq
+            logWarning("stage ids for sql is: " + stageIdsForSQL.mkString(","))
 
-          val tasksInSQL = app.taskEnd.filter { tc =>
-            stageIdsForSQL.contains(tc.stageId)
+            val tasksInSQL = app.taskEnd.filter { tc =>
+              stageIdsForSQL.contains(tc.stageId)
+            }
+            if (tasksInSQL.isEmpty) {
+              Seq.empty
+            } else {
+              logWarning("tasks in sql size: " + tasksInSQL.size)
+
+              // don't count duplicate task attempts ???
+              val uniqueTasks = tasksInSQL.groupBy(tc => tc.taskId)
+              uniqueTasks.foreach { case (id, groups) =>
+                logWarning(s"task $id num attempts is: ${groups.size}")
+              }
+
+              val duration = sqlCase.duration match {
+                case Some(dur) => dur.toString
+                case None => ""
+              }
+
+              val sqlStats = Seq(app.index.toString, app.appId, s"$sqlId", sqlCase.description,
+                uniqueTasks.size.toString, duration)
+
+              val diskBytes = Seq(tasksInSQL.map(_.diskBytesSpilled).sum.toString)
+              val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
+              val execRunTime = tasksInSQL.map(_.executorRunTime).sum
+              val execCPURatio = ToolUtils.calculateAverage(execCpuTime, execRunTime, 2)
+              val execStats = Seq(
+                execCpuTime.toString,
+                execRunTime.toString,
+                execCPURatio.toString
+              )
+              val durs = getDurations(tasksInSQL)
+              val metrics = Seq(
+                execCpuTime.toString,
+                tasksInSQL.map(_.executorDeserializeCPUTime).sum.toString,
+                tasksInSQL.map(_.executorDeserializeTime).sum.toString,
+                execRunTime.toString,
+                tasksInSQL.map(_.gettingResultTime).sum.toString,
+                tasksInSQL.map(_.input_bytesRead).sum.toString,
+                tasksInSQL.map(_.input_recordsRead).sum.toString,
+                tasksInSQL.map(_.jvmGCTime).sum.toString,
+                tasksInSQL.map(_.memoryBytesSpilled).sum.toString,
+                tasksInSQL.map(_.output_bytesWritten).sum.toString,
+                tasksInSQL.map(_.output_recordsWritten).sum.toString,
+                tasksInSQL.map(_.peakExecutionMemory).max.toString,
+                tasksInSQL.map(_.resultSerializationTime).sum.toString,
+                tasksInSQL.map(_.resultSize).max.toString,
+                tasksInSQL.map(_.sr_fetchWaitTime).sum.toString,
+                tasksInSQL.map(_.sr_localBlocksFetched).sum.toString,
+                tasksInSQL.map(_.sr_localBytesRead).sum.toString,
+                tasksInSQL.map(_.sr_remoteBlocksFetched).sum.toString,
+                tasksInSQL.map(_.sr_remoteBytesRead).sum.toString,
+                tasksInSQL.map(_.sr_remoteBytesReadToDisk).sum.toString,
+                tasksInSQL.map(_.sr_totalBytesRead).sum.toString,
+                tasksInSQL.map(_.sw_bytesWritten).sum.toString,
+                tasksInSQL.map(_.sw_recordsWritten).sum.toString,
+                tasksInSQL.map(_.sw_writeTime).sum.toString
+              )
+              sqlStats ++ execStats ++ diskBytes ++ durs ++ metrics
+            }
           }
-          logWarning("tasks in sql size: " + tasksInSQL.size)
-
-          // don't count duplicate task attempts ???
-          val uniqueTasks = tasksInSQL.groupBy(tc => tc.taskId)
-          uniqueTasks.foreach { case (id, groups) =>
-            logWarning(s"task $id num attempts is: ${groups.size}")
-          }
-
-          val duration = sqlCase.duration match {
-            case Some(dur) => dur.toString
-            case None => ""
-          }
-
-          val sqlStats = Seq(app.index.toString, app.appId, s"$sqlId", sqlCase.description,
-            uniqueTasks.size.toString, duration)
-
-          val diskBytes = Seq(tasksInSQL.map(_.diskBytesSpilled).sum.toString)
-          val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
-          val execRunTime = tasksInSQL.map(_.executorRunTime).sum
-          val execCPURatio = ToolUtils.calculateAverage(execCpuTime, execRunTime, 2)
-          val execStats = Seq(
-            execCpuTime.toString,
-            execRunTime.toString,
-            execCPURatio.toString
-          )
-          val durs = getDurations(tasksInSQL)
-          val metrics = Seq(
-            execCpuTime.toString,
-            tasksInSQL.map(_.executorDeserializeCPUTime).sum.toString,
-            tasksInSQL.map(_.executorDeserializeTime).sum.toString,
-            execRunTime.toString,
-            tasksInSQL.map(_.gettingResultTime).sum.toString,
-            tasksInSQL.map(_.input_bytesRead).sum.toString,
-            tasksInSQL.map(_.input_recordsRead).sum.toString,
-            tasksInSQL.map(_.jvmGCTime).sum.toString,
-            tasksInSQL.map(_.memoryBytesSpilled).sum.toString,
-            tasksInSQL.map(_.output_bytesWritten).sum.toString,
-            tasksInSQL.map(_.output_recordsWritten).sum.toString,
-            tasksInSQL.map(_.peakExecutionMemory).max.toString,
-            tasksInSQL.map(_.resultSerializationTime).sum.toString,
-            tasksInSQL.map(_.resultSize).max.toString,
-            tasksInSQL.map(_.sr_fetchWaitTime).sum.toString,
-            tasksInSQL.map(_.sr_localBlocksFetched).sum.toString,
-            tasksInSQL.map(_.sr_localBytesRead).sum.toString,
-            tasksInSQL.map(_.sr_remoteBlocksFetched).sum.toString,
-            tasksInSQL.map(_.sr_remoteBytesRead).sum.toString,
-            tasksInSQL.map(_.sr_remoteBytesReadToDisk).sum.toString,
-            tasksInSQL.map(_.sr_totalBytesRead).sum.toString,
-            tasksInSQL.map(_.sw_bytesWritten).sum.toString,
-            tasksInSQL.map(_.sw_recordsWritten).sum.toString,
-            tasksInSQL.map(_.sw_writeTime).sum.toString
-          )
-          sqlStats ++ execStats ++ diskBytes ++ durs ++ metrics
         }
       } else {
         logWarning("various empty")
