@@ -195,7 +195,7 @@ def test_single_orderby_with_skew(data_gen):
 
 
 # We are not trying all possibilities, just doing a few with numbers so the query works.
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', all_basic_struct_gen]])], ids=idfn)
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
 def test_single_nested_orderby_with_skew(data_gen, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}

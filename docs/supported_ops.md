@@ -399,7 +399,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -14126,7 +14126,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -14147,7 +14147,7 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -20873,7 +20873,7 @@ as `a` don't show up in the table. They are controlled by the rules for
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS* (Only supported for a single partition; missing nested BINARY, CALENDAR, ARRAY, STRUCT, UDT)</em></td>
+<td><em>PS* (missing nested BINARY, CALENDAR, ARRAY, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
