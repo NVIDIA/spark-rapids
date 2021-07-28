@@ -130,7 +130,9 @@ object ProfileMain extends Logging {
         collect.printJobInfo()
         collect.printRapidsProperties()
         collect.printRapidsJAR()
-        collect.printSQLPlanMetrics()
+        val compare = new CompareApplications(apps, Some(textFileWriter), numOutputRows)
+        compare.findMatchingStages()
+
         // val compare = new CompareApplications(apps, Some(textFileWriter))
         // compare.compareAppInfo()
         /*compare.compareDataSourceInfo(sparkSession, numOutputRows)

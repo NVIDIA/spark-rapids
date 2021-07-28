@@ -33,7 +33,7 @@ import org.apache.spark.sql.types.{StringType, StructField, StructType}
  * CompareApplications compares multiple ApplicationInfo objects
  */
 class CompareApplications(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter]) extends Logging {
+    fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
 
   require(apps.size>1)
 
@@ -121,30 +121,39 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     val outputAppIds = normalizedByAppId.keys.toSeq.sorted
 
     val matchingSqlData = matchingSqlIds.map { info =>
-      Row(outputAppIds.map { appId =>
+      val foo = outputAppIds.map { appId =>
+        info.get(appId).map(_.toString).getOrElse("")
+      }
+      Seq(outputAppIds.map { appId =>
         info.get(appId).map(_.toString).getOrElse("")
       }: _*)
-    }.toList.asJava
+    }
 
-    val matchingType = StructType(outputAppIds.map(id => StructField(id, StringType)))
+    // val matchingType = StructType(outputAppIds.map(id => StructField(id, StringType)))
 
-    /*
-    apps.head.writeAsDF(matchingSqlData,
-      matchingType,
-      "\n\nMatching SQL IDs Across Applications:\n",
-      fileWriter)
+    if (matchingSqlData.size > 0) {
+      val sortedRows = matchingSqlData
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputAppIds, sortedRows)
+      fileWriter.foreach(_.write(outStr + "\n"))
+    } else {
+      fileWriter.foreach(_.write("Not able to find Matching SQL IDs Across Applications!\n"))
+    }
 
     val matchingStageData = matchingStageIds.map { info =>
-      Row(outputAppIds.map { appId =>
+      Seq(outputAppIds.map { appId =>
         info.get(appId).map(_.toString).getOrElse("")
       }: _*)
-    }.toList.asJava
+    }
 
-    apps.head.writeAsDF(matchingStageData,
-      matchingType,
-      "\n\nMatching Stage IDs Across Applications:\n",
-      fileWriter)
-      */
+    if (matchingStageData.size > 0) {
+      val sortedRows = matchingStageData
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputAppIds, sortedRows)
+      fileWriter.foreach(_.write(outStr + "\n"))
+    } else {
+      fileWriter.foreach(_.write("Not able to find Matching Stage IDs Across Applications!\n"))
+    }
   }
 
 /*
