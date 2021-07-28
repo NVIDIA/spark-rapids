@@ -101,22 +101,26 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
     random.setSeed(seed);
     info("Seeding test with: " + seed)
     val numTests = 100
-
     val lineLengthRange = 50 until 200
-
-
     val planLengthSeq = mutable.ArrayBuffer.empty[Int]
     val labelLengthSeq = mutable.ArrayBuffer.empty[Int]
 
     // some imperfect randomness for edge cases
-    for (_ <- 1 to numTests) {
+    for (iter <- 1 to numTests) {
       val lineLength = lineLengthRange.start +
         random.nextInt(lineLengthRange.length) -
         SparkPlanGraph.htmlLineBreak.length()
 
       val sign = if (random.nextBoolean()) 1 else -1
       val planLength = 16 * 1024 + sign * lineLength * (1 + random.nextInt(5));
-      val planStr = (0 to planLength / lineLength).map(_ => "a" * lineLength).mkString("\n")
+      val initPlanStr = (0 to planLength / lineLength).map(_ => "a" * lineLength).mkString("\n")
+
+      // throw some html characters in there to make sure escaped
+      val planStr = if (iter == 2) {
+        """ReadSchema: struct<_c1:string,_c2:string><br align="left"/>""" + initPlanStr
+      } else {
+        initPlanStr
+      }
 
       planLengthSeq += planStr.length()
 
