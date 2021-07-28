@@ -121,12 +121,9 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     val outputAppIds = normalizedByAppId.keys.toSeq.sorted
 
     val matchingSqlData = matchingSqlIds.map { info =>
-      val foo = outputAppIds.map { appId =>
+      outputAppIds.map { appId =>
         info.get(appId).map(_.toString).getOrElse("")
       }
-      Seq(outputAppIds.map { appId =>
-        info.get(appId).map(_.toString).getOrElse("")
-      }: _*)
     }
 
     // val matchingType = StructType(outputAppIds.map(id => StructField(id, StringType)))
@@ -142,9 +139,9 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     }
 
     val matchingStageData = matchingStageIds.map { info =>
-      Seq(outputAppIds.map { appId =>
+      outputAppIds.map { appId =>
         info.get(appId).map(_.toString).getOrElse("")
-      }: _*)
+      }
     }
 
     fileWriter.foreach(_.write("\nMatching Stage IDs Across Applications:\n"))
