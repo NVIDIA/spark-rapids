@@ -70,7 +70,7 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
 
    NOTE: Please install the artifact with the newest CUDA 11.x version (for UCX 1.11.0 please
    pick CUDA 11.2) as CUDA 11 introduced [CUDA Enhanced Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases). 
-   Starting UCX 1.12, UCX will stop publishing individual artifacts for each minor version of CUDA.
+   Starting with UCX 1.12, UCX will stop publishing individual artifacts for each minor version of CUDA.
    
    Please refer to our [FAQ](../FAQ.md#what-hardware-is-supported) for caveats with 
    CUDA Enhanced Compatibility.
