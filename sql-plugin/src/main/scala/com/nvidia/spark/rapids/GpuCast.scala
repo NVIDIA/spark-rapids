@@ -251,7 +251,7 @@ object GpuCast extends Arm {
     // have been stripped of leading and trailing whitespace
     val sanitized = withResource(input.containsRe("\\s")) { hasWhitespace =>
       withResource(hasWhitespace.any()) { any =>
-        if (any.getBoolean) {
+        if (any.isValid && any.getBoolean) {
           if (ansiEnabled) {
             throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
           } else {
@@ -622,7 +622,7 @@ case class GpuCast(
     def throwIfAny(cv: ColumnView): Unit = {
       withResource(cv) { cv =>
         withResource(cv.any()) { isAny =>
-          if (isAny.getBoolean) {
+          if (isAny.isValid && isAny.getBoolean) {
             throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
           }
         }
@@ -1152,9 +1152,11 @@ case class GpuCast(
           withResource(input.isNotNull) { wasNotNull =>
             withResource(finalResult.isNull) { isNull =>
               withResource(wasNotNull.and(isNull)) { notConverted =>
-                if (notConverted.any().getBoolean) {
-                  throw new DateTimeException(
-                    "One or more values could not be converted to TimestampType")
+                withResource(notConverted.any()) { notConvertedAny =>
+                  if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
+                    throw new DateTimeException(
+                      "One or more values could not be converted to TimestampType")
+                  }
                 }
               }
             }

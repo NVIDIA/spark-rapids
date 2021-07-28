@@ -33,7 +33,7 @@ object RebaseHelper extends Arm {
       withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>
           withResource(hasBad.any()) { a =>
-            a.getBoolean
+            a.isValid && a.getBoolean
           }
         }
       }
@@ -45,7 +45,7 @@ object RebaseHelper extends Arm {
         Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, startTs)) { minGood =>
         withResource(column.lessThan(minGood)) { hasBad =>
           withResource(hasBad.any()) { a =>
-            a.getBoolean
+            a.isValid && a.getBoolean
           }
         }
       }
