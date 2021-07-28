@@ -131,6 +131,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
 
     // val matchingType = StructType(outputAppIds.map(id => StructField(id, StringType)))
 
+    fileWriter.foreach(_.write("\nMatching SQL IDs Across Applications:\n"))
     if (matchingSqlData.size > 0) {
       val sortedRows = matchingSqlData
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
@@ -146,6 +147,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       }: _*)
     }
 
+    fileWriter.foreach(_.write("\nMatching Stage IDs Across Applications:\n"))
     if (matchingStageData.size > 0) {
       val sortedRows = matchingStageData
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
