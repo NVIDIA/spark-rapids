@@ -120,43 +120,27 @@ object ProfileMain extends Logging {
      * at a time.
      */
     def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean): Unit = {
-      if (appArgs.compare()) { // Compare Applications
 
-        textFileWriter.write("### A. Compare Information Collected ###")
-        val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
-        collect.printAppInfo()
-        collect.printDataSourceInfo()
-        collect.printExecutorInfo()
-        collect.printJobInfo()
-        collect.printRapidsProperties()
-        collect.printRapidsJAR()
-        val compare = new CompareApplications(apps, Some(textFileWriter), numOutputRows)
-        compare.findMatchingStages()
+      textFileWriter.write("### A. Information Collected ###")
+      val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
+      collect.printAppInfo()
+      collect.printDataSourceInfo()
+      collect.printExecutorInfo()
+      collect.printJobInfo()
+      collect.printRapidsProperties()
+      collect.printRapidsJAR()
+      collect.printSQLPlanMetrics()
 
-        // val compare = new CompareApplications(apps, Some(textFileWriter))
-        // compare.compareAppInfo()
-        /*compare.compareDataSourceInfo(sparkSession, numOutputRows)
-        compare.compareExecutorInfo()
-        compare.findMatchingStages()
-        compare.compareJobInfo()
-        compare.compareRapidsProperties()
-        */
-      } else {
-        textFileWriter.write("### A. Information Collected ###")
-        val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
-        collect.printAppInfo()
-        collect.printDataSourceInfo()
-        collect.printExecutorInfo()
-        collect.printJobInfo()
-        collect.printRapidsProperties()
-        collect.printRapidsJAR()
-        collect.printSQLPlanMetrics()
-
-        if (printPlans) {
-          collect.printSQLPlans(outputDirectory)
-        }
+      if (printPlans) {
+        collect.printSQLPlans(outputDirectory)
       }
 
+      // for compare mode we just add in extra tables for matching across applications
+      // the rest of the tables simply list all applications specified
+      if (appArgs.compare()) {
+        val compare = new CompareApplications(apps, Some(textFileWriter), numOutputRows)
+        compare.findMatchingStages()
+      }
 
       textFileWriter.write("\n### B. Analysis ###\n")
       val analysis = new Analysis(apps, Some(textFileWriter), numOutputRows)

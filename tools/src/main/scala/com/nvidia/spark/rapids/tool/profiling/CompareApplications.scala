@@ -16,18 +16,13 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.functions.asc
-import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
 /**
  * CompareApplications compares multiple ApplicationInfo objects
@@ -35,7 +30,7 @@ import org.apache.spark.sql.types.{StringType, StructField, StructType}
 class CompareApplications(apps: Seq[ApplicationInfo],
     fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
 
-  require(apps.size>1)
+  require(apps.size > 1)
 
   def findMatchingStages(): Unit = {
     val normalizedByAppId = apps.map { app =>
@@ -154,127 +149,4 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       fileWriter.foreach(_.write("Not able to find Matching Stage IDs Across Applications!\n"))
     }
   }
-
-/*
-  // Compare the App Information.
-  def compareAppInfo(): Unit = {
-    val messageHeader = "\n\nCompare Application Information:\n"
-    var query = ""
-    var i = 1
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"appDF_${app.index}")) {
-        query += app.generateAppInfo
-        if (i < apps.size) {
-          query += "\n union \n"
-        } else {
-          query += " order by appIndex"
-        }
-      } else {
-        fileWriter.foreach(_.write("No Application Information Found!\n"))
-      }
-      i += 1
-    }
-    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
-  }
-  */
-
-  /*
-  // Compare Job information
-  def compareJobInfo(): Unit = {
-    val messageHeader = "\n\nCompare Job Information:\n"
-    var query = ""
-    var i = 1
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
-        query += app.jobtoStagesSQL
-        if (i < apps.size) {
-          query += "\n union \n"
-        } else {
-          query += " order by appIndex"
-        }
-      } else {
-        fileWriter.foreach(_.write("No Job Information Found!\n"))
-      }
-      i += 1
-    }
-    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
-  }
-
-  // Compare Executors information
-  def compareExecutorInfo(): DataFrame = {
-    val messageHeader = "\n\nCompare Executor Information:\n"
-    var query = ""
-    var i = 1
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
-        query += app.generateExecutorInfo
-        if (i < apps.size) {
-          query += "\n union \n"
-        } else {
-          query += " order by appIndex"
-        }
-      } else {
-        fileWriter.foreach(_.write("No Executor Information Found!\n"))
-      }
-      i += 1
-    }
-    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
-  }
-
-  def compareDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
-    import sparkSession.implicits._
-    val messageHeader = "\n\nCompare Data Source Information:\n"
-    fileWriter.foreach(_.write(messageHeader))
-    val allAppsDs = apps.flatMap { app =>
-      val dsInfo = app.dataSourceInfo
-      dsInfo.map { ds =>
-        DataSourceCompareCase(app.index, app.appId, ds.sqlID, ds.format, ds.location,
-          ds.pushedFilters, ds.schema)
-      }
-    }
-    val df = allAppsDs.toDF.sort(asc("appIndex"), asc("sqlID"), asc("location"))
-    if (allAppsDs.nonEmpty) {
-      fileWriter.foreach { writer =>
-        writer.write(ToolUtils.showString(df, numRows))
-      }
-    } else {
-      fileWriter.foreach(_.write("No Data Source Information Found!\n"))
-    }
-  }
-
-  // Compare Rapids Properties which are set explicitly
-  def compareRapidsProperties(): Unit = {
-    val messageHeader = "\n\nCompare Rapids Properties which are set explicitly:\n"
-    var withClauseAllKeys = "with allKeys as \n ("
-    val selectKeyPart = "select allKeys.propertyName"
-    var selectValuePart = ""
-    var query = " allKeys LEFT OUTER JOIN \n"
-    var i = 1
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        if (i < apps.size) {
-          withClauseAllKeys += "select distinct propertyName from (" +
-              app.generateNvidiaProperties + ") union "
-          query += "(" + app.generateNvidiaProperties + s") tmp_$i"
-          query += s" on allKeys.propertyName=tmp_$i.propertyName"
-          query += "\n LEFT OUTER JOIN \n"
-        } else { // For the last app
-          withClauseAllKeys += "select distinct propertyName from (" +
-              app.generateNvidiaProperties + "))\n"
-          query += "(" + app.generateNvidiaProperties + s") tmp_$i"
-          query += s" on allKeys.propertyName=tmp_$i.propertyName"
-        }
-        selectValuePart += s",appIndex_${app.index}"
-      } else {
-        fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
-      }
-      i += 1
-    }
-
-    query = withClauseAllKeys + selectKeyPart + selectValuePart +
-        " from (\n" + query + "\n) order by propertyName"
-    logDebug("Running query " + query)
-    apps.head.runQuery(query = query, fileWriter = fileWriter, messageHeader = messageHeader)
-  }
-  */
 }
