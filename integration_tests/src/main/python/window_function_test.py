@@ -14,7 +14,7 @@
 import math
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -818,3 +818,23 @@ def test_window_aggs_for_rows_collect_set():
             from window_collect_table
         ) t
         ''')
+
+
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
+# but small batch sizes can make sort very slow, so do the final order by locally
+@ignore_order(local=True)
+@pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]]), ArrayGen(long_gen)], ids=meta_idfn('partBy:'))
+# For arrays the sort and hash partition are also not supported
+@allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'AggregateExpression', 'Count', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'Literal', 'SortExec', 'SortOrder', 'ShuffleExchangeExec', 'HashPartitioning')
+def test_nested_part_fallbck(part_gen):
+    data_gen = [
+            ('a', RepeatSeqGen(part_gen, length=20)),
+            ('b', LongRangeGen()),
+            ('c', int_gen)]
+    window_spec = Window.partitionBy('a').orderBy('b').rowsBetween(-5, 5)
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=2048) \
+            .withColumn('rn', f.count('c').over(window_spec))
+
+    assert_gpu_fallback_collect(do_it, 'WindowExec')

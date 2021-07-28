@@ -89,10 +89,19 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
   override def tagPlanForGpu(): Unit = {
     // Implementation depends on receiving a `NamedExpression` wrapped WindowExpression.
     windowExpressions.map(meta => meta.wrapped)
-      .filter(expr => !expr.isInstanceOf[NamedExpression])
-      .foreach(_ => willNotWorkOnGpu(because = "Unexpected query plan with Windowing functions; " +
-        "cannot convert for GPU execution. " +
-        "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
+        .filter(expr => !expr.isInstanceOf[NamedExpression])
+        .foreach(_ => willNotWorkOnGpu("Unexpected query plan with Windowing functions; " +
+            "cannot convert for GPU execution. " +
+            "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
+    val unsupported = partitionSpec.map(_.wrapped.dataType).filter {
+      case _: StructType => true
+      case _: ArrayType => true
+      case _ => false
+    }.distinct
+
+    if (unsupported.nonEmpty) {
+      willNotWorkOnGpu(s"nested partition by keys are not supported $unsupported")
+    }
   }
 
   override def convertToGpu(): GpuExec = {
