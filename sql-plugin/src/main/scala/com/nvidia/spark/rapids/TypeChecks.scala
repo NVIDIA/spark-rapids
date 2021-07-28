@@ -1646,11 +1646,9 @@ object SupportedOpsDocs {
   }
 
   def main(args: Array[String]): Unit = {
-    val f = new File(args(0))
     val baseName = new File(args(0).substring(0, args(0).lastIndexOf('/')))
     if (!baseName.exists()) {
-      baseName.createNewFile()
-      f.createNewFile()
+      baseName.mkdir()
     }
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {
@@ -1719,11 +1717,9 @@ object SupportedOpsForTools {
   }
 
   def main(args: Array[String]): Unit = {
-    val f = new File(args(0))
     val baseName = new File(args(0).substring(0, args(0).lastIndexOf('/')))
     if (!baseName.exists()) {
-      baseName.createNewFile()
-      f.createNewFile()
+      baseName.mkdir()
     }
     val out = new FileOutputStream(new File(args(0)))
     Console.withOut(out) {

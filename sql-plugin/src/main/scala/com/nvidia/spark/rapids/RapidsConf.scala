@@ -1365,7 +1365,6 @@ object RapidsConf {
   def main(args: Array[String]): Unit = {
     // Include the configs in PythonConfEntries
     com.nvidia.spark.rapids.python.PythonConfEntries.init()
-    val f = new File(args(0))
     val dir = new File(args(0).substring(0, args(0).lastIndexOf('/')))
     if (!dir.exists()) {
       dir.mkdir()
