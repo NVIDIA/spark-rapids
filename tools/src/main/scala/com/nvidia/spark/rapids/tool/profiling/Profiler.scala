@@ -37,19 +37,8 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
   val timeout = appArgs.timeout.toOption
   val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
-  val threadFactory = new ThreadFactoryBuilder()
-    .setDaemon(true).setNameFormat("profileTool" + "-%d").build()
   logInfo(s"Threadpool size is $nThreads")
 
-  val allApps = new ConcurrentLinkedQueue[ApplicationInfo]()
-
-  class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
-    def run: Unit = {
-      val (appOpt, error) = ApplicationInfo.createApp(path, numOutputRows, index, hadoopConf)
-      // TODO - just swallowing errors for now
-      appOpt.foreach(app => allApps.add(app))
-    }
-  }
 
   def profile(eventLogInfos: Seq[EventLogInfo]): Unit = {
 
@@ -86,9 +75,20 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
       startIndex: Int = 1): Seq[ApplicationInfo] = {
     var index: Int = startIndex
     var errorCodes = ArrayBuffer[Int]()
-
+    val threadFactory = new ThreadFactoryBuilder()
+      .setDaemon(true).setNameFormat("profileTool" + "-%d").build()
     val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
       .asInstanceOf[ThreadPoolExecutor]
+
+    val allApps = new ConcurrentLinkedQueue[ApplicationInfo]()
+
+    class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
+      def run: Unit = {
+        val (appOpt, error) = ApplicationInfo.createApp(path, numOutputRows, index, hadoopConf)
+        // TODO - just swallowing errors for now
+        appOpt.foreach(app => allApps.add(app))
+      }
+    }
 
     var appIndex = startIndex
     allPaths.foreach { path =>
