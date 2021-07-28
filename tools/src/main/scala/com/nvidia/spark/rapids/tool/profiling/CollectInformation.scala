@@ -240,6 +240,9 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val allRows = props.map { case(k, v) => Seq(k) ++ v }.toSeq
       val sortedRows = allRows.sortBy(cols => (cols(0)))
       if (sortedRows.size > 0) {
+        logWarning("output headers: " + outputHeaders)
+        logWarning("rows headers: " + sortedRows)
+
         val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
           outputHeaders, sortedRows)
         fileWriter.foreach(_.write(outStr))
