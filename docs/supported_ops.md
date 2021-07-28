@@ -14884,7 +14884,7 @@ Accelerator support is described below.
 <td rowSpan="6">StringRepeat operator</td>
 <td rowSpan="6">None</td>
 <td rowSpan="3">project</td>
-<td>str</td>
+<td>input</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14894,7 +14894,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS (Literal value only)</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14948,7 +14948,7 @@ Accelerator support is described below.
 </tr>
 <tr>
 <td rowSpan="3">lambda</td>
-<td>str</td>
+<td>input</td>
 <td> </td>
 <td> </td>
 <td> </td>
