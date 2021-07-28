@@ -16,11 +16,10 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.util.Date
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.mutable.ArrayBuffer
 import scala.collection.JavaConverters._
+import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling._
 
