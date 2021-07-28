@@ -37,6 +37,11 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
   val timeout = appArgs.timeout.toOption
   val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
+  val threadFactory = new ThreadFactoryBuilder()
+    .setDaemon(true).setNameFormat("profileTool" + "-%d").build()
+  val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
+    .asInstanceOf[ThreadPoolExecutor]
+
   logInfo(s"Threadpool size is $nThreads")
 
 
@@ -45,6 +50,7 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
     // If compare mode is on, we need lots of memory to cache all applications then compare.
     // Suggest only enable compare mode if there is no more than 10 applications as input.
     if (appArgs.compare()) {
+      // create all the apps in parallel since we need the info for all of them to compare
       val apps = createApps(eventLogInfos)
       if (apps.isEmpty) {
         logInfo("No application to process. Exiting")
@@ -55,31 +61,25 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
       }
     } else {
       var index: Int = 1
-      // This is a bit odd that we process apps individual right now due to
-      // memory concerns. So the aggregation functions only aggregate single
-      // application not across applications.
+      // Read each application and process it separately to save memory.
+      // Memory usage will be controlled by number of threads running.
       eventLogInfos.foreach { log =>
-        val apps = createApps(Seq(log), index)
+        createAppAndProcess(Seq(log), index)
         index += 1
-        if (apps.isEmpty) {
-          logInfo("No application to process. Exiting")
-        } else {
-          processApps(apps, appArgs.printPlans())
-        }
+      }
+      // wait for the threads to finish processing the files
+      threadPool.shutdown()
+      if (!threadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
+        logError(s"Processing log files took longer then $waitTimeInSec seconds," +
+          " stopping processing any more event logs")
+        threadPool.shutdownNow()
       }
     }
   }
 
   def createApps(
-      allPaths: Seq[EventLogInfo],
-      startIndex: Int = 1): Seq[ApplicationInfo] = {
-    var index: Int = startIndex
+      allPaths: Seq[EventLogInfo]): Seq[ApplicationInfo] = {
     var errorCodes = ArrayBuffer[Int]()
-    val threadFactory = new ThreadFactoryBuilder()
-      .setDaemon(true).setNameFormat("profileTool" + "-%d").build()
-    val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
-      .asInstanceOf[ThreadPoolExecutor]
-
     val allApps = new ConcurrentLinkedQueue[ApplicationInfo]()
 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
@@ -90,7 +90,7 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
       }
     }
 
-    var appIndex = startIndex
+    var appIndex = 1
     allPaths.foreach { path =>
       try {
         threadPool.submit(new ProfileThread(path, appIndex))
@@ -109,6 +109,35 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
     }
     allApps.asScala.toSeq
   }
+
+  def createAppAndProcess(
+      allPaths: Seq[EventLogInfo],
+      startIndex: Int = 1): Unit = {
+    var index: Int = startIndex
+    var errorCodes = ArrayBuffer[Int]()
+
+    class ProfileProcessThread(path: EventLogInfo, index: Int) extends Runnable {
+      def run: Unit = {
+        val (apps, error) = ApplicationInfo.createApp(path, numOutputRows, index, hadoopConf)
+        // TODO - just swallowing errors for now
+        if (apps.isEmpty) {
+          logInfo("No application to process. Exiting")
+        } else {
+          processApps(Seq(apps.get), appArgs.printPlans())
+        }
+      }
+    }
+
+    allPaths.foreach { path =>
+      try {
+        threadPool.submit(new ProfileProcessThread(path, index))
+      } catch {
+        case e: Exception =>
+          logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
+      }
+    }
+  }
+
 
   /**
    * Function to process ApplicationInfo. If it is in compare mode, then all the eventlogs are
