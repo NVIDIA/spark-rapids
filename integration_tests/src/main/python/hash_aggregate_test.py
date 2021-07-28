@@ -397,44 +397,33 @@ _gen_data_for_collect_op = [[
     ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op
 ]
 
-_conf_to_enable_typed_imp_agg = [('spark.rapids.sql.typedImperativeAggregate.enabled', 'true')]
-_conf_to_disable_obj_hash_agg = [('spark.sql.execution.useObjectHashAggregateExec', 'false')]
-
-_conf_for_typed_imp_agg = [
-    dict(_conf_to_enable_typed_imp_agg),
-    dict(_conf_to_enable_typed_imp_agg + _conf_to_disable_obj_hash_agg),
-]
-
 @approximate_float
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-@pytest.mark.parametrize('conf', _conf_for_typed_imp_agg, ids=idfn)
-def test_hash_groupby_collect_list(data_gen, conf):
+@pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
+def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_list('b')), f.count('b')),
-        conf=conf)
+        conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
 
 @approximate_float
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-@pytest.mark.parametrize('conf', _conf_for_typed_imp_agg, ids=idfn)
-def test_hash_groupby_collect_set(data_gen, conf):
+def test_hash_groupby_collect_set(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
-            .agg(f.sort_array(f.collect_set('b')), f.count('b')),
-        conf=conf)
+            .agg(f.sort_array(f.collect_set('b')), f.count('b')))
 
 @approximate_float
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-@pytest.mark.parametrize('conf', _conf_for_typed_imp_agg, ids=idfn)
-def test_hash_groupby_collect_with_single_distinct(data_gen, conf):
+def test_hash_groupby_collect_with_single_distinct(data_gen):
     # test collect_ops with other distinct aggregations
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -442,8 +431,7 @@ def test_hash_groupby_collect_with_single_distinct(data_gen, conf):
             .agg(f.sort_array(f.collect_list('b')),
                  f.sort_array(f.collect_set('b')),
                  f.countDistinct('c'),
-                 f.count('c')),
-        conf=conf)
+                 f.count('c')))
 
     # test distinct collect with other aggregations
     sql = """select a,
@@ -454,7 +442,7 @@ def test_hash_groupby_collect_with_single_distinct(data_gen, conf):
             from tbl group by a"""
     assert_gpu_and_cpu_are_equal_sql(
         df_fun=lambda spark: gen_df(spark, data_gen, length=100),
-        table_name="tbl", sql=sql, conf=conf)
+        table_name="tbl", sql=sql)
 
 # Queries with multiple distinct aggregations will fallback to CPU if they also contain
 # collect aggregations. Because Spark optimizer will insert expressions like `If` and `First`
@@ -477,8 +465,7 @@ def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         df_fun=lambda spark: gen_df(spark, data_gen, length=100),
         table_name="tbl",
-        sql=sql,
-        conf=dict(_conf_to_enable_typed_imp_agg))
+        sql=sql)
 
 @approximate_float
 @ignore_order(local=True)
@@ -490,8 +477,7 @@ def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
 @pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
 def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled):
-    conf.update({'spark.rapids.sql.typedImperativeAggregate.enabled': 'true',
-                 'spark.sql.adaptive.enabled': aqe_enabled})
+    conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
     # test without Distinct
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
