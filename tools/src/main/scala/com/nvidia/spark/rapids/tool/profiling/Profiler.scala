@@ -30,7 +30,7 @@ import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 
 class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
-    textFileWriter: ToolTextFileWriter, appArgs: ProfileArgs) extends Logging {
+    textFileWriter2: ToolTextFileWriter, appArgs: ProfileArgs) extends Logging {
 
   val nThreads = appArgs.numThreads.getOrElse(
     Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
@@ -55,7 +55,7 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
       if (apps.isEmpty) {
         logInfo("No application to process. Exiting")
       } else {
-        processApps(apps, printPlans = false)
+        processApps(apps, printPlans = false, textFileWriter2)
         // Show the application Id <-> appIndex mapping.
         apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
       }
@@ -118,12 +118,20 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
 
     class ProfileProcessThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val (apps, error) = ApplicationInfo.createApp(path, numOutputRows, index, hadoopConf)
-        // TODO - just swallowing errors for now
-        if (apps.isEmpty) {
-          logInfo("No application to process. Exiting")
-        } else {
-          processApps(Seq(apps.get), appArgs.printPlans())
+        val logFileName = "rapids_4_spark_tools_output.log"
+
+        val textFileWriter = new ToolTextFileWriter(outputDir, logFileName + index,
+          "Profile summary")
+        try {
+          val (apps, error) = ApplicationInfo.createApp(path, numOutputRows, index, hadoopConf)
+          // TODO - just swallowing errors for now
+          if (apps.isEmpty) {
+            logInfo("No application to process. Exiting")
+          } else {
+            processApps(Seq(apps.get), appArgs.printPlans(), textFileWriter)
+          }
+        } finally {
+          textFileWriter.close()
         }
       }
     }
@@ -144,7 +152,8 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
    * evaluated at once and the output is one row per application. Else each eventlog is parsed one
    * at a time.
    */
-  def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean): Unit = {
+  def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
+      textFileWriter: ToolTextFileWriter): Unit = {
 
     textFileWriter.write("### A. Information Collected ###")
     val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
