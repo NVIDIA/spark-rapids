@@ -105,10 +105,10 @@ class Spark301dbShims extends Spark301Shims {
         "Databricks-specific window function exec, for \"running\" windows, " +
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-              TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
-              TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
-                  + TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+              TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+              TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
+              TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
           TypeSig.all),
         (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       ),
