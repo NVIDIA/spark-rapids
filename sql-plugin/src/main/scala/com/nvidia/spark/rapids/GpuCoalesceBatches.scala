@@ -554,7 +554,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     case batchingGoal: BatchedByKey =>
       batchingGoal.order
     case _ =>
-      super.outputOrdering
+      child.outputOrdering
   }
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {

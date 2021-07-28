@@ -107,7 +107,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
   def getDataSourceInfo(app: ApplicationInfo, sparkSession: SparkSession): DataFrame = {
     import sparkSession.implicits._
-    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"))
+    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"), asc("schema"),
+      asc("pushedFilters"))
     df.withColumn("appIndex", lit(app.index.toString))
       .select("appIndex", df.columns:_*)
   }

@@ -134,6 +134,19 @@ def test_int96_write_conf(spark_tmp_path, data_gen):
                  'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
     with_gpu_session(lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs)
 
+def test_all_null_int96(spark_tmp_path):
+    class AllNullTimestampGen(TimestampGen):
+        def start(self, rand):
+            self._start(rand, lambda : None)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    confs = writer_confs.copy()
+    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path : unary_op_df(spark, AllNullTimestampGen()).coalesce(1).write.parquet(path),
+        lambda spark, path : spark.read.parquet(path),
+        data_path,
+        conf=confs)
+
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)

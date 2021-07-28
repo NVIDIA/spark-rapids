@@ -30,6 +30,7 @@ def _assert_equal(cpu, gpu, float_check, path):
     if (t is Row):
         assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         if hasattr(cpu, "__fields__") and hasattr(gpu, "__fields__"):
+            assert cpu.__fields__ == gpu.__fields__, "CPU and GPU row have different fields at {} CPU: {} GPU: {}".format(path, cpu.__fields__, gpu.__fields__)
             for field in cpu.__fields__:
                 _assert_equal(cpu[field], gpu[field], float_check, path + [field])
         else:

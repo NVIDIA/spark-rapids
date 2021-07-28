@@ -21,7 +21,8 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, AggregationOverWindow, DType, GroupByOptions, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanType, Table, WindowOptions}
+import ai.rapids.cudf
+import ai.rapids.cudf.{Aggregation, AggregationOverWindow, DType, GroupByOptions, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanType, Table, WindowOptions}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -32,7 +33,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, ShortType, StructType}
+import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, ShortType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -88,10 +89,19 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
   override def tagPlanForGpu(): Unit = {
     // Implementation depends on receiving a `NamedExpression` wrapped WindowExpression.
     windowExpressions.map(meta => meta.wrapped)
-      .filter(expr => !expr.isInstanceOf[NamedExpression])
-      .foreach(_ => willNotWorkOnGpu(because = "Unexpected query plan with Windowing functions; " +
-        "cannot convert for GPU execution. " +
-        "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
+        .filter(expr => !expr.isInstanceOf[NamedExpression])
+        .foreach(_ => willNotWorkOnGpu("Unexpected query plan with Windowing functions; " +
+            "cannot convert for GPU execution. " +
+            "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
+    val unsupported = partitionSpec.map(_.wrapped.dataType).filter {
+      case _: StructType => true
+      case _: ArrayType => true
+      case _ => false
+    }.distinct
+
+    if (unsupported.nonEmpty) {
+      willNotWorkOnGpu(s"nested partition by keys are not supported $unsupported")
+    }
   }
 
   override def convertToGpu(): GpuExec = {
@@ -397,6 +407,14 @@ trait GpuWindowBaseExec extends UnaryExecNode with GpuExec {
 }
 
 /**
+ * For Scan and GroupBy Scan aggregations nulls are not always treated the same way as they are
+ * in window operations. Often we have to run a post processing step and replace them. This
+ * groups those two together so we can have a complete picture of how to perform these types of
+ * aggregations.
+ */
+case class AggAndReplace(agg: Aggregation, nullReplacePolicy: Option[ReplacePolicy])
+
+/**
  * The class represents a window function and the locations of its deduped inputs after an initial
  * projection.
  */
@@ -404,29 +422,40 @@ case class BoundGpuWindowFunction(
     windowFunc: GpuWindowFunction,
     boundInputLocations: Array[Int]) extends Arm {
 
-  def scanAggregation: Aggregation = {
+  /**
+   * Get the operations to perform a scan aggregation.
+   * @param isRunningBatched is this for a batched running window operation?
+   * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
+   *         for each value in `boundInputLocations` so that they can be zipped together.
+   */
+  def scan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
-    aggFunc.scanAggregation
+    aggFunc.scanAggregation(isRunningBatched)
   }
 
-  def scanReplaceNulls: Option[ReplacePolicy] = {
+  /**
+   * Get the operations to perform a group by scan aggregation.
+   * @param isRunningBatched is this for a batched running window operation?
+   * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
+   *         for each value in `boundInputLocations` so that they can be zipped together.
+   */
+  def groupByScan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
-    aggFunc.scanReplaceNulls
+    aggFunc.groupByScanAggregation(isRunningBatched)
   }
 
-  def groupByScan(cb: ColumnarBatch): AggregationOnColumn[Nothing] = {
+  /**
+   * After a scan or group by scan if there are multiple columns they need to be combined together
+   * into a single final output column. This does that job.
+   * @param isRunningBatched is this for a batched running window operation?
+   * @param cols the columns to be combined. This should not close them.
+   * @return a single result column.
+   */
+  def scanCombine(isRunningBatched: Boolean,
+      cols: Seq[cudf.ColumnVector]): cudf.ColumnVector = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
-    val inputs = boundInputLocations.map { pos =>
-      (cb.column(pos).asInstanceOf[GpuColumnVector].getBase, pos)
-    }
-    aggFunc.groupByScanAggregation(inputs).asInstanceOf[AggregationOnColumn[Nothing]]
+    aggFunc.scanCombine(isRunningBatched, cols)
   }
-
-  def groupByReplaceNulls(index: Int): Option[ReplacePolicyWithColumn] = {
-    val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
-    aggFunc.groupByReplaceNulls(index)
-  }
-
 
   def aggOverWindow(cb: ColumnarBatch,
       windowOpts: WindowOptions): AggregationOverWindow[Nothing] = {
@@ -448,7 +477,7 @@ object GroupedAggregations extends Arm {
   // end up using a SUM aggregation to work around other issues, and cudf rightly makes the output
   // an INT64 instead of an INT32. This is here to fix that up.
   private def castIfNeeded(
-      col: ai.rapids.cudf.ColumnVector,
+      col: cudf.ColumnVector,
       dataType: DataType): GpuColumnVector = {
     dataType match {
       case _: ArrayType | _: StructType =>
@@ -646,39 +675,13 @@ class GroupedAggregations extends Arm {
       ArrayBuffer.empty) += outputIndex
   }
 
-  private def copyResultToFinalOutput(result: Table,
-      functions: mutable.HashMap[BoundGpuWindowFunction, ArrayBuffer[Int]],
-      outputColumns: Array[ColumnVector]): Unit = {
-    functions.zipWithIndex.foreach {
-      case ((winFunc, outputIndexes), resultIndex) =>
-        val aggColumn = result.getColumn(resultIndex)
-        // For nested type, do not cast
-        val finalCol = aggColumn.getType match {
-          case dType if dType.isNestedType =>
-            GpuColumnVector.from(aggColumn.incRefCount(), winFunc.dataType)
-          case _ =>
-            val expectedType = GpuColumnVector.getNonNestedRapidsType(winFunc.dataType)
-            // The API 'castTo' will take care of the 'from' type and 'to' type, and
-            // just increase the reference count by one when they are the same.
-            // so it is OK to always call it here.
-            GpuColumnVector.from(aggColumn.castTo(expectedType), winFunc.dataType)
-        }
-
-        withResource(finalCol) { finalCol =>
-          outputIndexes.foreach { outIndex =>
-            outputColumns(outIndex) = finalCol.incRefCount()
-          }
-        }
-    }
-  }
-
   private def doAggInternal(
       frameType: FrameType,
       boundOrderSpec: Seq[SortOrder],
       orderByPositions: Array[Int],
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
-      outputColumns: Array[ColumnVector],
+      outputColumns: Array[cudf.ColumnVector],
       aggIt: (Table.GroupByOperation, Seq[AggregationOverWindow[Nothing]]) => Table): Unit = {
     data.foreach {
       case (frameSpec, functions) =>
@@ -695,7 +698,14 @@ class GroupedAggregations extends Arm {
             }
           }
           withResource(result) { result =>
-            copyResultToFinalOutput(result, functions, outputColumns)
+            functions.zipWithIndex.foreach {
+              case ((_, outputIndexes), resultIndex) =>
+                val aggColumn = result.getColumn(resultIndex)
+
+                outputIndexes.foreach { outIndex =>
+                  outputColumns(outIndex) = aggColumn.incRefCount()
+                }
+            }
           }
         }
     }
@@ -705,7 +715,7 @@ class GroupedAggregations extends Arm {
       orderByPositions: Array[Int],
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
-      outputColumns: Array[ColumnVector]): Unit = {
+      outputColumns: Array[cudf.ColumnVector]): Unit = {
     doAggInternal(
       RowFrame, boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns,
       (groupBy, aggs) => groupBy.aggregateWindows(aggs: _*))
@@ -715,130 +725,249 @@ class GroupedAggregations extends Arm {
       orderByPositions: Array[Int],
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
-      outputColumns: Array[ColumnVector]): Unit = {
+      outputColumns: Array[cudf.ColumnVector]): Unit = {
     doAggInternal(
       RangeFrame, boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns,
       (groupBy, aggs) => groupBy.aggregateWindowsOverRanges(aggs: _*))
   }
 
   private final def doRunningWindowScan(
+      isRunningBatched: Boolean,
       inputCb: ColumnarBatch,
-      outputColumns: Array[ColumnVector]): Unit = {
+      outputColumns: Array[cudf.ColumnVector]): Unit = {
     runningWindowOptimizedData.foreach {
       case (func, outputIndexes) =>
-        val agg = func.scanAggregation
-        val replace = func.scanReplaceNulls
-        require(func.boundInputLocations.length == 1)
-        val inputColIndex = func.boundInputLocations.head
-        val inputCol = inputCb.column(inputColIndex).asInstanceOf[GpuColumnVector].getBase
-        val replaced = withResource(inputCol.scan(agg, ScanType.INCLUSIVE, NullPolicy.EXCLUDE)) {
-          scanned =>
-            // For scans when nulls are excluded then each input row that has a null in it the
-            // output row also has a null in it. Typically this is not what we want, because
-            // for windows that only happens if the first values are nulls. So we will then call
-            // replace nulls as needed to fix that up. Typically the replacement policy is
-            // preceding.
-            if (replace.isDefined) {
-              scanned.replaceNulls(replace.get)
-            } else {
-              scanned.incRefCount()
-            }
+        val aggAndReplaces = func.scan(isRunningBatched)
+        // For now we need at least one column. For row number in the future we might be able
+        // to change that, but I think this is fine.
+        require(func.boundInputLocations.length == aggAndReplaces.length,
+          s"Input locations for ${func.windowFunc} do not match aggregations " +
+              s"${func.boundInputLocations.toSeq} vs $aggAndReplaces")
+        val combined = withResource(
+          new ArrayBuffer[cudf.ColumnVector](aggAndReplaces.length)) { replacedCols =>
+          func.boundInputLocations.indices.foreach { aggIndex =>
+            val inputColIndex = func.boundInputLocations(aggIndex)
+            val inputCol = inputCb.column(inputColIndex).asInstanceOf[GpuColumnVector].getBase
+            val anr = aggAndReplaces(aggIndex)
+            val agg = anr.agg
+            val replacePolicy = anr.nullReplacePolicy
+            replacedCols +=
+                withResource(inputCol.scan(agg, ScanType.INCLUSIVE, NullPolicy.EXCLUDE)) {
+                  scanned =>
+                    // For scans when nulls are excluded then each input row that has a null in it
+                    // the output row also has a null in it. Typically this is not what we want,
+                    // because for windows that only happens if the first values are nulls. So we
+                    // will then call replace nulls as needed to fix that up. Typically the
+                    // replacement policy is preceding.
+                    replacePolicy.map(scanned.replaceNulls).getOrElse(scanned.incRefCount())
+                }
+          }
+          func.scanCombine(isRunningBatched, replacedCols)
         }
 
-        withResource(replaced) { replaced =>
-          withResource(castIfNeeded(replaced, func.dataType)) { retCol =>
-            outputIndexes.foreach { outIndex =>
-              outputColumns(outIndex) = retCol.incRefCount()
-            }
+        withResource(combined) { combined =>
+          outputIndexes.foreach { outIndex =>
+            outputColumns(outIndex) = combined.incRefCount()
           }
         }
     }
   }
 
-  private final def doRunningWindowGroupedScan(
+  // Part by is always ascending with nulls first, which is the default for group by options too
+  private[this] val sortedGroupingOpts = GroupByOptions.builder()
+      .withKeysSorted(true)
+      .build()
+
+  /**
+   * Do just the grouped scan portion of a grouped scan aggregation.
+   * @param isRunningBatched is this optimized for a running batch?
+   * @param partByPositions what are the positions of the part by columns.
+   * @param inputCb the input data to process
+   * @return a Table that is the result of the aggregations. The partition
+   *         by columns will be first, followed by one column for each aggregation in the order of
+   *         `runningWindowOptimizedData`.
+   */
+  private final def justGroupedScan(
+      isRunningBatched: Boolean,
       partByPositions: Array[Int],
-      inputCb: ColumnarBatch,
-      outputColumns: Array[ColumnVector]): Unit = {
-    val allAggs = runningWindowOptimizedData.map {
-      case (func, _) =>
-        func.groupByScan(inputCb)
-    }.toSeq
+      inputCb: ColumnarBatch): Table = {
+    val allAggsWithInputs = runningWindowOptimizedData.map { case (func, _) =>
+      func.groupByScan(isRunningBatched).zip(func.boundInputLocations)
+    }.toArray
 
-    // Part by is always ascending with nulls first, which is the default for group by options too
-    val sortedGroupingOpts = GroupByOptions.builder()
-        .withKeysSorted(true)
-        .build()
+    val allAggs = allAggsWithInputs.flatMap { aggsWithInputs =>
+      aggsWithInputs.map { case (aggAndReplace, index) =>
+        aggAndReplace.agg.onColumn(index)
+      }
+    }
 
-    val scanned = withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
+    val unoptimizedResult = withResource(GpuColumnVector.from(inputCb)) { initProjTab =>
       initProjTab.groupBy(sortedGroupingOpts, partByPositions: _*).scan(allAggs: _*)
     }
-    withResource(scanned) { scanned =>
-      // This gets a little complicated, because scan does not typically treat nulls the
-      // way window treats nulls. So in some cases we need to do another group by and replace
-      // the nulls to make them match what we want. But this is not all of the time, so we
-      // keep track of which aggregations need to have a replace called on them, and where
-      // we need to copy the results back out to. This is a little hard because the output of
-      // scan has the group by columns first followed by the scan columns, and the output of
-      // replace has the group by columns first followed by the replaced columns.
-      val allReplace = ArrayBuffer[ReplacePolicyWithColumn]()
-      val copyOutAfterReplace = ArrayBuffer[(Int, DataType, ArrayBuffer[Int])]()
-      var afterReplaceIndex = partByPositions.length
-      runningWindowOptimizedData.zipWithIndex.foreach {
-        case ((func, finalOutputIndices), zipIndex) =>
-          val inputIndex = zipIndex + partByPositions.length
-          val replace = func.groupByReplaceNulls(inputIndex)
-          if (replace.isDefined) {
-            allReplace.append(replace.get)
-            copyOutAfterReplace.append((afterReplaceIndex, func.dataType, finalOutputIndices))
-            afterReplaceIndex += 1
-          } else {
-            withResource(castIfNeeded(scanned.getColumn(inputIndex), func.dataType)) { col =>
-              finalOutputIndices.foreach { i =>
-                outputColumns(i) = col.incRefCount()
-              }
-            }
-          }
-      }
-
-      if (allReplace.nonEmpty) {
-        withResource(scanned
-            .groupBy(sortedGroupingOpts, partByPositions.indices: _*)
-            .replaceNulls(allReplace: _*)) { replaced =>
-          copyOutAfterReplace.foreach {
-            case (inputIndex, dt, outputIndices) =>
-              withResource(castIfNeeded(replaced.getColumn(inputIndex), dt)) { col =>
-                outputIndices.foreach { i =>
-                  outputColumns(i) = col.incRefCount()
-                }
-              }
-          }
+    // Our scan is sorted, but to comply with the API requirements of a non-sorted scan
+    // the group/partition by columns are copied out. This is more memory then we want,
+    // so we will replace them in the result with the same columns from the input batch
+    withResource(unoptimizedResult) { unoptimizedResult =>
+      withResource(new Array[cudf.ColumnVector](unoptimizedResult.getNumberOfColumns)) { cols =>
+        // First copy over the part by columns
+        partByPositions.zipWithIndex.foreach { case (inPos, outPos) =>
+          cols(outPos) = inputCb.column(inPos).asInstanceOf[GpuColumnVector].getBase.incRefCount()
         }
+
+        // Now copy over the scan results
+        (partByPositions.length until unoptimizedResult.getNumberOfColumns).foreach { pos =>
+          cols(pos) = unoptimizedResult.getColumn(pos).incRefCount()
+        }
+        new Table(cols: _*)
       }
     }
   }
 
-  private def doRunningWindowOptimizedAggs(
+  private final def groupedReplace(
+      isRunningBatched: Boolean,
+      partByPositions: Array[Int],
+      tabFromScan: Table): Table = {
+    // This gets a little complicated, because scan does not typically treat nulls the
+    // way window treats nulls. So in some cases we need to do another group by and replace
+    // the nulls to make them match what we want. But this is not all of the time, so we
+    // keep track of which aggregations need to have a replace called on them, and where
+    // we need to copy the results back out to. This is a little hard, but to try and help keep
+    // track of it all the output of scan has the group by columns first followed by the scan
+    // result columns in the order of `runningWindowOptimizedData`, and the output of
+    // replace has the group by columns first followed by the replaced columns. So scans that
+    // don't need a replace don't show up in the output of the replace call.
+    val allReplace = ArrayBuffer[ReplacePolicyWithColumn]()
+    val copyFromScan = ArrayBuffer[Int]()
+    // We will not drop the partition by columns
+    copyFromScan.appendAll(partByPositions.indices)
+
+    // Columns to copy from the output of replace in the format of (fromReplaceIndex, toOutputIndex)
+    val copyFromReplace = ArrayBuffer[(Int, Int)]()
+    // Index of a column after it went through replace
+    var afterReplaceIndex = partByPositions.length
+    // Index of a column before it went through replace (this should be the same as the scan input
+    // and the final output)
+    var beforeReplaceIndex = partByPositions.length
+    runningWindowOptimizedData.foreach { case (func, _) =>
+      func.groupByScan(isRunningBatched).foreach { aggAndReplace =>
+        val replace = aggAndReplace.nullReplacePolicy
+        if (replace.isDefined) {
+          allReplace.append(replace.get.onColumn(beforeReplaceIndex))
+          copyFromReplace.append((afterReplaceIndex, beforeReplaceIndex))
+          afterReplaceIndex += 1
+        } else {
+          copyFromScan.append(beforeReplaceIndex)
+        }
+        beforeReplaceIndex += 1
+      }
+    }
+
+    withResource(new Array[cudf.ColumnVector](tabFromScan.getNumberOfColumns)) { columns =>
+      copyFromScan.foreach { index =>
+        columns(index) = tabFromScan.getColumn(index).incRefCount()
+      }
+      if (allReplace.nonEmpty) {
+        // Don't bother to do the replace if none of them want anything replaced
+        withResource(tabFromScan
+            .groupBy(sortedGroupingOpts, partByPositions.indices: _*)
+            .replaceNulls(allReplace: _*)) { replaced =>
+          copyFromReplace.foreach { case (from, to) =>
+            columns(to) = replaced.getColumn(from).incRefCount()
+          }
+        }
+      }
+      new Table(columns: _*)
+    }
+  }
+
+  /**
+   * Take the aggregation results and run `scanCombine` on them if needed before copying them to
+   * the output location.
+   */
+  private final def combineAndOutput(isRunningBatched: Boolean,
+      partByPositions: Array[Int],
+      scannedAndReplaced: Table,
+      outputColumns: Array[cudf.ColumnVector]): Unit = {
+    var readIndex = partByPositions.length
+    runningWindowOptimizedData.foreach { case (func, outputLocations) =>
+      val numScans = func.boundInputLocations.length
+      val columns =
+        (readIndex until (readIndex + numScans)).map(scannedAndReplaced.getColumn).toArray
+      withResource(func.scanCombine(isRunningBatched, columns)) { col =>
+        outputLocations.foreach { i =>
+          outputColumns(i) = col.incRefCount()
+        }
+      }
+      readIndex += numScans
+    }
+  }
+
+  /**
+   * Do any running window grouped scan aggregations.
+   */
+  private final def doRunningWindowGroupedScan(
+      isRunningBatched: Boolean,
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
-      outputColumns: Array[ColumnVector]): Unit = {
+      outputColumns: Array[cudf.ColumnVector]): Unit = {
+    val replaced =
+      withResource(justGroupedScan(isRunningBatched, partByPositions, inputCb)) { scanned =>
+        groupedReplace(isRunningBatched, partByPositions, scanned)
+      }
+    withResource(replaced) { replaced =>
+      combineAndOutput(isRunningBatched, partByPositions, replaced, outputColumns)
+    }
+  }
+
+  /**
+   * Do any running window optimized aggregations.
+   */
+  private def doRunningWindowOptimizedAggs(
+      isRunningBatched: Boolean,
+      partByPositions: Array[Int],
+      inputCb: ColumnarBatch,
+      outputColumns: Array[cudf.ColumnVector]): Unit = {
     if (runningWindowOptimizedData.nonEmpty) {
       if (partByPositions.isEmpty) {
         // This is implemented in terms of a scan on a column
-        doRunningWindowScan(inputCb, outputColumns)
+        doRunningWindowScan(isRunningBatched, inputCb, outputColumns)
       } else {
-        doRunningWindowGroupedScan(partByPositions, inputCb, outputColumns)
+        doRunningWindowGroupedScan(isRunningBatched, partByPositions, inputCb, outputColumns)
       }
     }
   }
 
-  def doAggs(boundOrderSpec: Seq[SortOrder],
+  /**
+   * Do all of the aggregations and put them in the output columns. There may be extra processing
+   * after this before you get to a final result.
+   */
+  def doAggs(isRunningBatched: Boolean,
+      boundOrderSpec: Seq[SortOrder],
       orderByPositions: Array[Int],
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
-      outputColumns: Array[ColumnVector]): Unit = {
-    doRunningWindowOptimizedAggs(partByPositions, inputCb, outputColumns)
+      outputColumns: Array[cudf.ColumnVector]): Unit = {
+    doRunningWindowOptimizedAggs(isRunningBatched, partByPositions, inputCb, outputColumns)
     doRowAggs(boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns)
     doRangeAggs(boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns)
+  }
+
+  /**
+   * Turn the final result of the aggregations into a ColumnarBatch. Because of some differences in
+   * output types between cudf and Spark a cast may be done before to fix it up.
+   */
+  def castAggOutputsIfNeeded(dataTypes: Array[DataType],
+      aggOutputColumns: Array[cudf.ColumnVector]): ColumnarBatch = {
+    assert(dataTypes.length == aggOutputColumns.length)
+    val numRows = aggOutputColumns.head.getRowCount.toInt
+    closeOnExcept(new Array[ColumnVector](aggOutputColumns.length)) { finalOutputColumns =>
+      dataTypes.indices.foreach { index =>
+        val dt = dataTypes(index)
+        val col = aggOutputColumns(index)
+        finalOutputColumns(index) = castIfNeeded(col, dt)
+      }
+      new ColumnarBatch(finalOutputColumns, numRows)
+    }
   }
 }
 
@@ -850,6 +979,11 @@ trait BasicWindowCalc extends Arm {
   val boundWindowOps: Seq[GpuExpression]
   val boundPartitionSpec: Seq[GpuExpression]
   val boundOrderSpec: Seq[SortOrder]
+
+  /**
+   * Is this going to do a batched running window optimization or not.
+   */
+  def isRunningBatched: Boolean
 
   // In order to dedupe aggregations we take a slightly different approach from
   // group by aggregations. Instead of using named expressions to line up different
@@ -888,7 +1022,7 @@ trait BasicWindowCalc extends Arm {
       case (GpuBoundReference(inputIndex, _, _), outputIndex) =>
         passThrough.append((inputIndex, outputIndex))
       case (GpuAlias(win: GpuWindowExpression, _), outputIndex) =>
-        val inputLocations = win.initialProjections
+        val inputLocations = win.initialProjections(isRunningBatched)
             .map(getOrAddInitialProjectionIndex).toArray
         aggregations.addAggregation(win, inputLocations, outputIndex)
       case _ =>
@@ -903,23 +1037,35 @@ trait BasicWindowCalc extends Arm {
     (initialProjections, passThrough, aggregations, orderByPositions, partByPositions)
   }
 
-  def computeBasicWindow(cb: ColumnarBatch): ColumnarBatch = {
-    closeOnExcept(new Array[ColumnVector](boundWindowOps.length)) { outputColumns =>
+  /**
+   * Compute the basic aggregations. In some cases the resulting columns may not be the expected
+   * types.  This could be caused by cudf type differences and can be fixed by calling
+   * `castResultsIfNeeded` or it could be different because the window operations know about a
+   * post processing step that needs to happen prior to `castResultsIfNeeded`.
+   * @param cb the batch to do window aggregations on.
+   * @return the cudf columns that are the results of doing the aggregations.
+   */
+  def computeBasicWindow(cb: ColumnarBatch): Array[cudf.ColumnVector] = {
+    closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
       // First the pass through unchanged columns
       passThrough.foreach {
         case (inputIndex, outputIndex) =>
           outputColumns(outputIndex) =
-            cb.column(inputIndex).asInstanceOf[GpuColumnVector].incRefCount()
+            cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.incRefCount()
       }
 
       withResource(GpuProjectExec.project(cb, initialProjections)) { initProjCb =>
-        aggregations.doAggs(boundOrderSpec, orderByPositions,
+        aggregations.doAggs(isRunningBatched, boundOrderSpec, orderByPositions,
           partByPositions, initProjCb, outputColumns)
       }
 
-      new ColumnarBatch(outputColumns, cb.numRows())
+      outputColumns
     }
   }
+
+  def castResultsIfNeeded(dataTypes: Array[DataType],
+      cols: Array[cudf.ColumnVector]): ColumnarBatch =
+    aggregations.castAggOutputsIfNeeded(dataTypes, cols)
 }
 
 /**
@@ -932,16 +1078,21 @@ class GpuWindowIterator(
     override val boundWindowOps: Seq[GpuExpression],
     override val boundPartitionSpec: Seq[GpuExpression],
     override val boundOrderSpec: Seq[SortOrder],
+    val outputTypes: Array[DataType],
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
+
+  override def isRunningBatched: Boolean = false
 
   override def hasNext: Boolean = input.hasNext
 
   override def next(): ColumnarBatch = {
     withResource(input.next()) { cb =>
       withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
-        val ret = computeBasicWindow(cb)
+        val ret = withResource(computeBasicWindow(cb)) { cols =>
+          castResultsIfNeeded(outputTypes, cols)
+        }
         numOutputBatches += 1
         numOutputRows += ret.numRows()
         ret
@@ -951,8 +1102,8 @@ class GpuWindowIterator(
 }
 
 object GpuRunningWindowIterator extends Arm {
-  private def cudfAnd(lhs: ai.rapids.cudf.ColumnVector,
-      rhs: ai.rapids.cudf.ColumnVector): ai.rapids.cudf.ColumnVector = {
+  private def cudfAnd(lhs: cudf.ColumnVector,
+      rhs: cudf.ColumnVector): cudf.ColumnVector = {
     withResource(lhs) { lhs =>
       withResource(rhs) { rhs =>
         lhs.and(rhs)
@@ -962,20 +1113,72 @@ object GpuRunningWindowIterator extends Arm {
 
   private def arePartsEqual(
       scalars: Seq[Scalar],
-      columns: Seq[ai.rapids.cudf.ColumnVector]): Either[GpuColumnVector, Boolean] = {
+      columns: Seq[cudf.ColumnVector]): Either[cudf.ColumnVector, Boolean] = {
     if (scalars.length != columns.length) {
       scala.util.Right(false)
     } else if (scalars.isEmpty && columns.isEmpty) {
       scala.util.Right(true)
     } else {
-      val ret = scalars.zip(columns).map {
-        case (scalar, column) => scalar.equalToNullAware(column)
-      }.reduce(cudfAnd)
-      scala.util.Left(GpuColumnVector.from(ret, BooleanType))
+      scala.util.Left(computeMask(scalars, columns))
     }
   }
 
-  private def getScalarRow(index: Int, columns: Seq[ai.rapids.cudf.ColumnVector]): Array[Scalar] =
+  private def computeMask(
+      scalars: Seq[Scalar],
+      columns: Seq[cudf.ColumnVector]): cudf.ColumnVector = {
+    val dType = scalars.head.getType
+    if (dType == DType.FLOAT32 || dType == DType.FLOAT64) {
+      // We need to handle nans and nulls
+      scalars.zip(columns).map {
+        case (scalar, column) =>
+          withResource(scalar.equalToNullAware(column)) { eq =>
+            dType match {
+              case DType.FLOAT32 if scalar.getFloat.isNaN =>
+                withResource(column.isNan) { isNan =>
+                  isNan.or(eq)
+                }
+              case DType.FLOAT64 if scalar.getDouble.isNaN =>
+                withResource(column.isNan) { isNan =>
+                  isNan.or(eq)
+                }
+              case _ => eq.incRefCount()
+            }
+          }
+      }.reduce(cudfAnd)
+    } else {
+      scalars.zip(columns).map {
+        case (scalar, column) => scalar.equalToNullAware(column)
+      }.reduce(cudfAnd)
+    }
+  }
+
+  private def areOrdersEqual(
+      scalars: Seq[Scalar],
+      columns: Seq[cudf.ColumnVector],
+      partsEqual: Either[cudf.ColumnVector, Boolean]): Either[cudf.ColumnVector, Boolean] = {
+    if (scalars.length != columns.length) {
+      scala.util.Right(false)
+    } else if (scalars.isEmpty && columns.isEmpty) {
+      // they are equal but only so far as the parts are also equal
+      partsEqual match {
+        case r @ scala.util.Right(_) => r
+        case scala.util.Left(mask) => scala.util.Left(mask.incRefCount())
+      }
+    } else {
+      // Part mask and order by equality mask
+      partsEqual match {
+        case r @ scala.util.Right(false) => r
+        case scala.util.Right(true) =>
+          scala.util.Left(computeMask(scalars, columns))
+        case scala.util.Left(partMask) =>
+          withResource(computeMask(scalars, columns)) { orderMask =>
+            scala.util.Left(orderMask.and(partMask))
+          }
+      }
+    }
+  }
+
+  private def getScalarRow(index: Int, columns: Seq[cudf.ColumnVector]): Array[Scalar] =
     columns.map(_.getScalarElement(index)).toArray
 }
 
@@ -991,16 +1194,21 @@ class GpuRunningWindowIterator(
     override val boundWindowOps: Seq[GpuExpression],
     override val boundPartitionSpec: Seq[GpuExpression],
     override val boundOrderSpec: Seq[SortOrder],
+    val outputTypes: Array[DataType],
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuRunningWindowIterator._
   TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
+  override def isRunningBatched: Boolean = true
+
   // This should only ever be cached in between calls to `hasNext` and `next`. This is just
   // to let us filter out empty batches.
+  private val boundOrderColumns = boundOrderSpec.map(_.child)
   private var cachedBatch: Option[ColumnarBatch] = None
   private var lastParts: Array[Scalar] = Array.empty
+  private var lastOrder: Array[Scalar] = Array.empty
   private var isClosed: Boolean = false
 
   private def saveLastParts(newLastParts: Array[Scalar]): Unit = {
@@ -1008,11 +1216,17 @@ class GpuRunningWindowIterator(
     lastParts = newLastParts
   }
 
+  private def saveLastOrder(newLastOrder: Array[Scalar]): Unit = {
+    lastOrder.foreach(_.close())
+    lastOrder = newLastOrder
+  }
+
   def close(): Unit = {
     if (!isClosed) {
       isClosed = true
       fixerIndexMap.values.foreach(_.close())
       saveLastParts(Array.empty)
+      saveLastOrder(Array.empty)
     }
   }
 
@@ -1029,38 +1243,57 @@ class GpuRunningWindowIterator(
       case _ => None
     }.toMap
 
-  private def fixUpAll(computedWindows: ColumnarBatch,
+  private lazy val fixerNeedsOrderMask = fixerIndexMap.values.exists(_.needsOrderMask)
+
+  private def fixUpAll(computedWindows: Array[cudf.ColumnVector],
       fixers: Map[Int, BatchedRunningWindowFixer],
-      samePartitionMask: Either[GpuColumnVector, Boolean]): ColumnarBatch = {
-    closeOnExcept(ArrayBuffer[ColumnVector]()) { newColumns =>
+      samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      sameOrderMask: Option[Either[cudf.ColumnVector, Boolean]]): Array[cudf.ColumnVector] = {
+    closeOnExcept(ArrayBuffer[cudf.ColumnVector]()) { newColumns =>
       boundWindowOps.indices.foreach { idx =>
-        val column = computedWindows.column(idx).asInstanceOf[GpuColumnVector]
+        val column = computedWindows(idx)
         fixers.get(idx) match {
           case Some(fixer) =>
-            closeOnExcept(fixer.fixUp(samePartitionMask, column)) { finalOutput =>
-              fixer.updateState(finalOutput)
+            closeOnExcept(fixer.fixUp(samePartitionMask, sameOrderMask, column)) { finalOutput =>
               newColumns += finalOutput
             }
           case None =>
             newColumns += column.incRefCount()
         }
       }
-      new ColumnarBatch(newColumns.toArray, computedWindows.numRows())
+      newColumns.toArray
     }
   }
 
   def computeRunning(cb: ColumnarBatch): ColumnarBatch = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
+
     withResource(computeBasicWindow(cb)) { basic =>
       withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
         val partColumns = GpuColumnVector.extractBases(parts)
-        // We need to fix up the rows that are part of the same batch as the end of the
-        // last batch
         withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
-          val ret = fixUpAll(basic, fixers, partsEqual)
-          saveLastParts(getScalarRow(numRows - 1, partColumns))
-          ret
+          val fixedUp = if (fixerNeedsOrderMask) {
+            withResource(GpuProjectExec.project(cb, boundOrderColumns)) { order =>
+              val orderColumns = GpuColumnVector.extractBases(order)
+              // We need to fix up the rows that are part of the same batch as the end of the
+              // last batch
+              withResourceIfAllowed(areOrdersEqual(lastOrder, orderColumns, partsEqual)) {
+                orderEqual =>
+                  closeOnExcept(fixUpAll(basic, fixers, partsEqual, Some(orderEqual))) { fixed =>
+                    saveLastOrder(getScalarRow(numRows - 1, orderColumns))
+                    fixed
+                  }
+              }
+            }
+          } else {
+            // No ordering needed
+            fixUpAll(basic, fixers, partsEqual, None)
+          }
+          withResource(fixedUp) { fixed =>
+            saveLastParts(getScalarRow(numRows - 1, partColumns))
+            castResultsIfNeeded(outputTypes, fixed)
+          }
         }
       }
     }
@@ -1122,7 +1355,7 @@ case class GpuRunningWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuRunningWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
-        numOutputBatches, numOutputRows, opTime)
+        output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
     }
   }
 }
@@ -1153,7 +1386,7 @@ case class GpuWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
         new GpuWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
-          numOutputBatches, numOutputRows, opTime)
+          output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
     }
   }
 }

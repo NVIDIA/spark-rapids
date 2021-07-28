@@ -59,7 +59,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   private val BOOL_CHARS = " \t\r\nFALSEfalseTRUEtrue01yesYESnoNO"
-  private val NUMERIC_CHARS = "inf \t\r\n0123456789.+-eE"
+  private val NUMERIC_CHARS = "infinityINFINITY \t\r\n0123456789.+-eEfFdD"
   private val DATE_CHARS = " \t\r\n0123456789:-/TZ"
 
   test("Cast from string to boolean using random inputs") {
@@ -122,15 +122,28 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.LongType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to float using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2900
+  test("Cast from string to float using random inputs") {
     testCastStringTo(DataTypes.FloatType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to double using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2900
+  test("Cast from string to float using hand-picked values") {
+    testCastStringTo(DataTypes.FloatType, Seq(".", "e", "Infinity", "+Infinity", "-Infinity",
+      "+nAn", "-naN", "Nan", "5f", "1.2f", "\riNf", null))
+  }
+
+  test("Cast from string to float ANSI mode with nulls") {
+    testCastStringTo(DataTypes.FloatType, Seq(null, null, null), ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to float ANSI mode with invalid values") {
+    val values = Seq(".", "e")
+    // test the values individually
+    for (value <- values ) {
+      testCastStringTo(DataTypes.FloatType, Seq(value), ansiMode = AnsiExpectFailure)
+    }
+  }
+
+  test("Cast from string to double using random inputs") {
     testCastStringTo(DataTypes.DoubleType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
@@ -202,7 +215,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_INTEGER.key, "true")
 
     val tryGpu = Try(withGpuSparkSession(castDf, gpuConf)
       .sortBy(_.getInt(INDEX_ID)))
@@ -214,8 +226,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
           assert(cpuRow.getInt(INDEX_ID) === gpuRow.getInt(INDEX_ID))
           val cpuValue = cpuRow.get(INDEX_C1)
           val gpuValue = gpuRow.get(INDEX_C1)
-          if (!compare(cpuValue, gpuValue)) {
+          if (!compare(cpuValue, gpuValue, epsilon = 0.0001)) {
             val inputValue = cpuRow.getString(INDEX_C0)
+              .replace("\r", "\\r")
+              .replace("\t", "\\t")
+              .replace("\n", "\\n")
             fail(s"Mismatch casting string [$inputValue] " +
               s"to $toType. CPU: $cpuValue; GPU: $gpuValue")
           }
@@ -623,6 +638,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  test("ansi cast null ints to decimal") {
+    testCastToDecimal(DataTypes.IntegerType, -5,
+      customDataGenerator = Some((spark: SparkSession) => {
+        import spark.implicits._
+        Seq[Integer](null, null, null).toDF("col")
+      }),
+      ansiEnabled = true)
+  }
+
   test("cast long to decimal") {
     List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
       testCastToDecimal(DataTypes.LongType, scale,
@@ -869,6 +893,26 @@ class CastOpSuite extends GpuExpressionTestSuite {
       testCastToDecimal(DataTypes.StringType, scale = scale,
         customDataGenerator = Some(exponentsAsStrings),
         ansiEnabled = true)
+    }
+  }
+
+  test("CAST string to float - sanitize step") {
+    val testPairs = Seq(
+      ("\tinf", "Inf"),
+      ("\t+InFinITy", "Inf"),
+      ("\tInFinITy", "Inf"),
+      ("\t-InFinITy", "-Inf"),
+      ("\t61f", "61"),
+      (".8E4f", ".8E4")
+    )
+    val inputs = testPairs.map(_._1)
+    val expected = testPairs.map(_._2)
+    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
+      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
+        withResource(GpuCast.sanitizeStringToFloat(v, ansiEnabled = false)) { actual =>
+          CudfTestHelper.assertColumnsAreEqual(expected, actual)
+        }
+      }
     }
   }
 

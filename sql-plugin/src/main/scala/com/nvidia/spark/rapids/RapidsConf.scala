@@ -629,14 +629,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
-    .doc("When set to true, enables casting from strings to integer types (byte, short, " +
-      "int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
-      "results when the string represents a number larger than Long.MaxValue or smaller than " +
-      "Long.MinValue.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
       .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
         "does NOT produce exact same string as spark produces, but producing strings which are " +
@@ -994,9 +986,19 @@ object RapidsConf {
 
   val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL =
     conf("spark.rapids.shuffle.transport.earlyStart.heartbeatInterval")
-      .doc("Shuffle early start heartbeat interval (milliseconds)")
+      .doc("Shuffle early start heartbeat interval (milliseconds). " +
+        "Executors will send a heartbeat RPC message to the driver at this interval")
       .integerConf
       .createWithDefault(5000)
+
+  val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_TIMEOUT =
+    conf("spark.rapids.shuffle.transport.earlyStart.heartbeatTimeout")
+      .doc(s"Shuffle early start heartbeat timeout (milliseconds). " +
+        s"Executors that don't heartbeat within this timeout will be considered stale. " +
+        s"This timeout must be higher than the value for " +
+        s"${SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL.key}")
+      .integerConf
+      .createWithDefault(10000)
 
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
@@ -1578,6 +1580,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleTransportEarlyStartHeartbeatInterval: Int = get(
     SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL)
+
+  lazy val shuffleTransportEarlyStartHeartbeatTimeout: Int = get(
+    SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_TIMEOUT)
 
   lazy val shuffleTransportEarlyStart: Boolean = get(SHUFFLE_TRANSPORT_EARLY_START)
 

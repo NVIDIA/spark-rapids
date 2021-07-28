@@ -176,7 +176,9 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           }
 
           withResource(new NvtxRange("UCX Handling Tasks", NvtxColor.CYAN)) { _ =>
-            while (!workerTasks.isEmpty) {
+            // check initialized since on close we queue a "task" that sets initialized to false
+            // to exit the progress loop, we don't want to execute any other tasks after that.
+            while (!workerTasks.isEmpty && initialized) {
               val wt = workerTasks.poll()
               if (wt != null) {
                 wt()
@@ -190,8 +192,11 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         }
       }
 
-      logDebug("Exiting UCX progress thread.")
-      Seq(endpointManager, worker, context).safeClose()
+      synchronized {
+        logDebug("Exiting UCX progress thread.")
+        Seq(endpointManager, worker, context).safeClose()
+        worker = null
+      }
     })
   }
 
@@ -630,7 +635,12 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     workerTasks.add(task)
     if (rapidsConf.shuffleUcxUseWakeup) {
       withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
-        worker.signal()
+        // take up the worker object lock to protect against another `.close`
+        synchronized {
+          if (worker != null) {
+            worker.signal()
+          }
+        }
       }
     }
   }
@@ -694,6 +704,14 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   }
 
   override def close(): Unit = {
+    // put a UCX task in the progress thread. This will:
+    // - signal the worker, so the task is executed
+    // - tear down endpoints
+    // - remove all active messages
+    // - remove all memory registrations
+    // - sets `initialized` to false, which means that no further
+    //   tasks will get executed in the progress thread, the loop exits
+    //   and we close the endpointManager, the worker, and the context.
     onWorkerThreadAsync(() => {
       amRegistrations.forEach { (activeMessageId, _) =>
         logDebug(s"Removing Active Message registration for " +
@@ -719,22 +737,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       }
     }
 
-    if (rapidsConf.shuffleUcxUseWakeup && worker != null) {
-      worker.signal()
-    }
-
     progressThread.shutdown()
     if (!progressThread.awaitTermination(500, TimeUnit.MILLISECONDS)) {
       logError("UCX progress thread failed to terminate correctly")
     }
-
-    endpointManager.close()
-
-    if (worker != null) {
-      worker.close()
-    }
-
-    context.close()
   }
 
   private def makeClientConnection(peerExecutorId: Long): UCXClientConnection = {
