@@ -67,6 +67,23 @@ def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort
                 }
             })
 
+# only default null ordering for direction is supported for nested types
+@pytest.mark.allow_non_gpu('SortExec', 'ShuffleExchangeExec', 'RangePartitioning', 'SortOrder')
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
+], ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc_nulls_last()),
+    pytest.param(f.col('a').desc_nulls_first()),
+], ids=idfn)
+def test_single_nested_orderby_fallback_for_nullorder(data_gen, order):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            conf = {
+                **allow_negative_scale_of_decimal_conf,
+            })
+
 # SPARK CPU itself has issue with negative scale for take ordered and project
 orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
@@ -229,12 +246,12 @@ def test_large_orderby(data_gen, stable_sort):
 # This is similar to test_large_orderby, but here we want to test some types
 # that are not being sorted on, but are going along with it
 @pytest.mark.parametrize('data_gen', [byte_gen,
-    # string_gen,
-    # float_gen,
-    # date_gen,
-    # timestamp_gen,
-    # decimal_gen_default,
-    # StructGen([('child1', byte_gen)]),
+    string_gen,
+    float_gen,
+    date_gen,
+    timestamp_gen,
+    decimal_gen_default,
+    StructGen([('child1', byte_gen)]),
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
 def test_large_orderby_nested_ridealong(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
