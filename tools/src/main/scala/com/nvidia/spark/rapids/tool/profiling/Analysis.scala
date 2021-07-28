@@ -156,9 +156,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             }
             // don't count duplicate task attempts
             val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
-            uniqueTasks.foreach { case (id, groups) =>
-              logWarning(s"task $id num attempts is: ${groups.size}")
-            }
             // TODO - how to deal with attempts?
 
             val scDuration = sc.duration match {
@@ -226,33 +223,22 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
         // TODO - how to deal with attempts?
         app.liveSQL.map { case (sqlId, sqlCase) =>
-          logWarning("sqlid for live is: " + sqlId)
           val jcs = app.liveJobs.filter { case (_, jc) =>
             val jcid = jc.sqlID.getOrElse(-1)
-            logWarning("jc sqlid is: " + jcid)
             jc.sqlID.getOrElse(-1) == sqlId
           }
           if (jcs.isEmpty) {
             Seq.empty
           } else {
-            logWarning("jobs for sql are: " + jcs.mkString(","))
-
             val stageIdsForSQL = jcs.flatMap(_._2.stageIds).toSeq
-            logWarning("stage ids for sql is: " + stageIdsForSQL.mkString(","))
-
             val tasksInSQL = app.taskEnd.filter { tc =>
               stageIdsForSQL.contains(tc.stageId)
             }
             if (tasksInSQL.isEmpty) {
               Seq.empty
             } else {
-              logWarning("tasks in sql size: " + tasksInSQL.size)
-
               // don't count duplicate task attempts ???
               val uniqueTasks = tasksInSQL.groupBy(tc => tc.taskId)
-              uniqueTasks.foreach { case (id, groups) =>
-                logWarning(s"task $id num attempts is: ${groups.size}")
-              }
 
               val duration = sqlCase.duration match {
                 case Some(dur) => dur.toString

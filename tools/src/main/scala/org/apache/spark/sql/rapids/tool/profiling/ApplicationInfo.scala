@@ -858,8 +858,11 @@ object ApplicationInfo extends Logging {
     val apps = allPaths.flatMap { path =>
       try {
         // This apps only contains 1 app in each loop.
+        val startTime = System.currentTimeMillis()
         val app = new ApplicationInfo(numRows, hadoopConf, path, index)
         EventLogPathProcessor.logApplicationInfo(app)
+        val endTime = System.currentTimeMillis()
+        logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
         index += 1
         Some(app)
       } catch {
