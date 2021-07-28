@@ -968,13 +968,6 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
     }
 
   override def tagPlanForGpu(): Unit = {
-    val hasTypedImperativeAgg = agg.aggregateExpressions.exists(
-      _.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]])
-    if (hasTypedImperativeAgg && !conf.enableTypedImperativeAggregate) {
-      willNotWorkOnGpu(s"Not enabling TypedImperativeAggregate functions, " +
-          s"see ${RapidsConf.ENABLE_TYPED_IMPERATIVE_AGGREGATE.key}")
-    }
-
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this plan can run on GPU
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
