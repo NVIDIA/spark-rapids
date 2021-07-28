@@ -22,6 +22,10 @@ import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object DecimalUtil {
 
+  def createCudfDecimal(dt: DecimalType): DType = {
+    createCudfDecimal(dt.precision, dt.scale)
+  }
+
   def createCudfDecimal(precision: Int, scale: Int): DType = {
     if (precision <= Decimal.MAX_INT_DIGITS) {
       DType.create(DType.DTypeEnum.DECIMAL32, -scale)

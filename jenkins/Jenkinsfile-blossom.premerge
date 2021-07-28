@@ -25,8 +25,6 @@
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
-def pluginPremerge
-
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
@@ -48,7 +46,7 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '50'))
         skipDefaultCheckout true
         // TODO: improve resource management
-        timeout(time: 9, unit: 'HOURS') // long enough to make sure we won't timeout GPU scheduling w/ too many concurrent builds
+        timeout(time: 12, unit: 'HOURS') // long enough to make sure we won't timeout GPU scheduling w/ too many concurrent builds
     }
 
     environment {
@@ -118,6 +116,8 @@ pipeline {
                             ]
                     )
 
+                    stash(name: "source_tree", includes: "**")
+
                     container('docker-build') {
                         // check if pre-merge dockerfile modified
                         def dockerfileModified = sh(returnStdout: true,
@@ -139,49 +139,86 @@ pipeline {
                             // if no pre-merge dockerfile change, use nightly image
                             IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
                         }
-
-
-                        pluginPremerge = pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.PRE_MERGE_GPU_TYPE}", '8', '32Gi') // cpu: 8, memory: 32Gi
                     }
                 }
             }
         } // end of Build docker image
 
-        // TODO: support parallel testing for different spark versions
         stage('Premerge Test') {
             when {
                 beforeAgent true
+                beforeOptions true
                 expression {
                     !skipped
                 }
             }
 
-            agent {
-                kubernetes {
-                    label "premerge-test-${BUILD_TAG}"
-                    cloud 'sc-ipp-blossom-prod'
-                    yaml "$pluginPremerge"
-                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
-                    customWorkspace "${CUSTOM_WORKSPACE}"
-                }
-            }
-
-            steps {
-                script {
-                    container('gpu') {
-                        // TODO: improve resource management
-                        timeout(time: 3, unit: 'HOURS') { // step only timeout for test run
-                            sh "$PREMERGE_SCRIPT"
-                            step([$class                : 'JacocoPublisher',
-                                  execPattern           : '**/target/jacoco.exec',
-                                  classPattern          : 'target/jacoco_classes/',
-                                  sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
-                                  sourceInclusionPattern: '**/*.java,**/*.scala'
-                            ])
+            // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
+            // If any one is failed will abort another if not finish yet and will upload failure log to Github
+            failFast true
+            parallel {
+                stage('mvn verify') {
+                    options {
+                        // We have to use params to pass the resource label in options block,
+                        // this is a limitation of declarative pipeline. And we need to lock resource before agent start
+                        lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
+                    }
+                    agent {
+                        kubernetes {
+                            label "premerge-test-it-${BUILD_TAG}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
+                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            customWorkspace "${CUSTOM_WORKSPACE}"
                         }
                     }
-                }
-            }
+
+                    steps {
+                        script {
+                            container('gpu') {
+                                timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
+                                    sh "$PREMERGE_SCRIPT mvn_verify"
+                                    step([$class                : 'JacocoPublisher',
+                                          execPattern           : '**/target/jacoco.exec',
+                                          classPattern          : 'target/jacoco_classes/',
+                                          sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
+                                          sourceInclusionPattern: '**/*.java,**/*.scala'
+                                    ])
+                                }
+                            }
+                        }
+                    }
+                } // end of mvn verify stage
+
+                stage('Unit Test') {
+                    options {
+                        // We have to use params to pass the resource label in options block,
+                        // this is a limitation of declarative pipeline. And we need to lock resource before agent start
+                        lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
+                    }
+                    agent {
+                        kubernetes {
+                            label "premerge-test-ut-${BUILD_TAG}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
+                            workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                            customWorkspace "${CUSTOM_WORKSPACE}-ut" // Use different workspace to avoid conflict with IT
+                        }
+                    }
+
+                    steps {
+                        script {
+                            unstash "source_tree"
+
+                            container('gpu') {
+                                timeout(time: 4, unit: 'HOURS') {
+                                    sh "$PREMERGE_SCRIPT unit_test"
+                                }
+                            }
+                        }
+                    }
+                } // end of Unit Test stage
+            } // end of parallel
         } // end of Premerge Test
     } // end of stages
 
@@ -197,9 +234,9 @@ pipeline {
                 } else {
                     // upload log only in case of build failure
                     def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com"]
-                    def logPattern = "### BEGIN OF TEST LOG ###.*### END OF TEST LOG ###"
+                    guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
 
-                    githubHelper.uploadPartialLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords, logPattern)
+                    githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
                     githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
                 }

@@ -27,13 +27,13 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures: 
 
-	GPU Architecture: NVIDIA V100, T4 and A30/A100 GPUs
+	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
 Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 	
-	CUDA & Nvidia Drivers: 11.0 or 11.2 & v450.80.02+
+	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
 	
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0 
 	
@@ -41,10 +41,13 @@ Software Requirements:
 	
 	Python 3.6+, Scala 2.12, Java 8 
 
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet 
+for your hardware's minimum driver version.
+
 ### Download v21.06.0
 * Download the [RAPIDS
   Accelerator for Apache Spark 21.06.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.0/rapids-4-spark_2.12-21.06.0.jar)
-* Download the [RAPIDS cuDF 21.06.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.0/cudf-21.06.0-cuda11.jar) 
+* Download the [RAPIDS cuDF 21.06.1 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.1/cudf-21.06.1-cuda11.jar)
 
 This package is built against CUDA 11.2 and has [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
@@ -70,11 +73,15 @@ New functionality for this release includes:
   * Range windows supporting non-timestamp order by expressions
 * Enabling large joins that can spill out of memory
 * Support for the `concat_ws` operator
+* Spark Qualification and Profiling Tools
+  * A qualification tool to look at a set of applications to determine if the RAPIDS Accelerator for
+    Apache Spark is a good fit
+  * A profiling tool to generate information used for debugging and profiling applications
 
 Performance improvements for this release include: 
 * Moving RAPIDS Shuffle out of beta
 * Updates to UCX error handling
-* GPU Direct storage for spilling
+* GPUDirect Storage for spilling
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).

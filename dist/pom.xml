@@ -22,12 +22,12 @@
   <parent>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark-parent</artifactId>
-    <version>21.08.0-SNAPSHOT</version>
+    <version>21.10.0-SNAPSHOT</version>
   </parent>
   <artifactId>rapids-4-spark_2.12</artifactId>
   <name>RAPIDS Accelerator for Apache Spark Distribution</name>
   <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-  <version>21.08.0-SNAPSHOT</version>
+  <version>21.10.0-SNAPSHOT</version>
 
   <dependencies>
     <dependency>
@@ -171,6 +171,24 @@
                   <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
                   <args>
                     <arg>${project.basedir}/../docs/supported_ops.md</arg>
+                  </args>
+                </launcher>
+              </launchers>
+            </configuration>
+          </execution>
+          <execution>
+            <id>update_supported_tools</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <launchers>
+                <launcher>
+                  <id>update_rapids_support_tools</id>
+                  <mainClass>com.nvidia.spark.rapids.SupportedOpsForTools</mainClass>
+                  <args>
+                      <arg>${project.basedir}/../tools/src/main/resources/supportedDataSource.csv</arg>
                   </args>
                 </launcher>
               </launchers>

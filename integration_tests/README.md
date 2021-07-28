@@ -134,7 +134,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-21.08.0-SNAPSHOT-tests.jar,rapids-4-spark-udf-examples_2.12-21.08.0-SNAPSHOT,rapids-4-spark-integration-tests_2.12-21.08.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-21.10.0-SNAPSHOT-tests.jar,rapids-4-spark-udf-examples_2.12-21.10.0-SNAPSHOT,rapids-4-spark-integration-tests_2.12-21.10.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -149,7 +149,6 @@ Next you can start to run the tests.
 
 ```scala
 durations.run(new com.nvidia.spark.rapids.JoinsSuite)
-...
 ```
 
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
@@ -158,7 +157,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 example assumes CUDA 11.0 is being used.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-21.08.0-SNAPSHOT.jar,cudf-21.08.0-SNAPSHOT-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-21.10.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-21.10.0-SNAPSHOT.jar,cudf-21.10.0-SNAPSHOT-cuda11.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -228,6 +227,14 @@ SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=integration_tests/target/run
   ${SPARK_HOME}/bin/spark-class org.apache.spark.deploy.history.HistoryServer
 ```
 
+By default, integration tests write event logs using [Zstandard](https://facebook.github.io/zstd/)
+(`zstd`) compression codec. It can be changed by setting the environment variable `PYSP_TEST_spark_eventLog_compression_codec` to one of
+the SHS supported values for the config key
+[`spark.eventLog.compression.codec`](https://spark.apache.org/docs/3.1.1/configuration.html#spark-ui)
+
+With `zstd` it's easy to view / decompress event logs using the CLI `zstd -d [--stdout] <file>`
+even without the SHS webUI.
+
 ### Enabling cudf_udf Tests
 
 The cudf_udf tests in this framework are testing Pandas UDF(user-defined function) with cuDF. They are disabled by default not only because of the complicated environment setup, but also because GPU resources scheduling for Pandas UDF is an experimental feature now, the performance may not always be better.
@@ -249,7 +256,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-21.08.0-SNAPSHOT.jar,cudf-21.08.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-21.08.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-21.10.0-SNAPSHOT.jar,rapids-4-spark-udf-examples_2.12-21.10.0-SNAPSHOT.jar,cudf-21.10.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-21.10.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-21.10.0-SNAPSHOT.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-21.10.0-SNAPSHOT.jar" ./runtests.py --cudf_udf
 ```
 
 ## Writing tests
@@ -303,3 +310,149 @@ The marks you care about are all in marks.py
 
 For the most part you can ignore this file. It provides the underlying Spark session to operations that need it, but most tests should interact with
 it through `asserts.py`.
+
+## Guidelines for Testing
+
+When support for a new operator is added to the Rapids Accelerator for Spark, or when an existing operator is extended
+ to support more data types, it is recommended that the following conditions be covered in its corresponding integration tests:
+
+### 1. Cover all supported data types
+Ensure that tests cover all data types supported by the added operation. An exhaustive list of data types supported in 
+Apache Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes.html). These include:
+   * Numeric Types 
+     * `ByteType` 
+     * `ShortType` 
+     * `IntegerType`
+     * `LongType`
+     * `FloatType`
+     * `DoubleType`
+     * `DecimalType`
+   * Strings 
+     * `StringType` 
+     * `VarcharType`
+   * Binary (`BinaryType`)  
+   * Booleans (`BooleanType`)
+   * Chrono Types 
+     * `TimestampType` 
+     * `DateType`
+     * `Interval`
+   * Complex Types 
+     * `ArrayType`
+     * `StructType`
+     * `MapType`
+
+`data_gen.py` provides `DataGen` classes that help generate test data in integration tests.
+
+The `assert_gpu_and_cpu_are_equal_collect()` function from `asserts.py` may be used to compare that an operator in 
+the Rapids Accelerator produces the same results as Apache Spark, for a test query.
+
+For data types that are not currently supported for an operator in the Rapids Accelerator,
+the `assert_gpu_fallback_collect()` function from `asserts.py` can be used to verify that the query falls back
+on the CPU operator from Apache Spark, and produces the right results.
+
+### 2. Nested data types
+Complex data types (`ArrayType`, `StructType`, `MapType`) warrant extensive testing for various combinations of nesting.
+E.g.
+   * `Array<primitive_type>`
+   * `Array<Array<primitive_type>>`
+   * `Array<Struct<primitive_type>>`
+   * `Struct<Array<primitive_type>>`
+   * `Array<Struct<Array<primitive_type>>>`
+   * `Struct<Array<Struct<primitive_type>>>`
+
+The `ArrayGen` and `StructGen` classes in `data_gen.py` can be configured to support arbitrary nesting.
+
+### 3. Literal (i.e. Scalar) values
+Operators and expressions that support literal operands need to be tested with literal inputs, of all 
+supported types from 1 and 2, above. 
+For instance, `SUM()` supports numeric columns (e.g. `SUM(a + b)`), or scalars (e.g. `SUM(20)`).
+Similarly, `COUNT()` supports the following:
+   * Columns: E.g. `COUNT(a)` to count non-null rows for column `a`
+   * Scalars: E.g. `COUNT(1)` to count all rows (including nulls)
+   * `*`: E.g. `COUNT(*)`, functionally equivalent to `COUNT(1)`
+It is advised that tests be added for all applicable literal types, for an operator.
+     
+Note that for most operations, if all inputs are literal values, the Spark Catalyst optimizer will evaluate
+the expression during the logical planning phase of query compilation, via 
+[Constant Folding](https://jaceklaskowski.gitbooks.io/mastering-spark-sql/content/spark-sql-Optimizer-ConstantFolding.html)
+E.g. Consider this query:
+```sql
+SELECT SUM(1+2+3) FROM ...
+```
+The expression `1+2+3` will not be visible to the Rapids Accelerator for Apache Spark, because it will be evaluated
+at query compile time, before the Rapids Accelerator is invoked. Thus, adding multiple combinations of literal inputs
+need not necessarily add more test coverage.
+
+### 4. Null values
+Ensure that the test data accommodates null values for input columns. This includes null values in columns
+and in literal inputs.
+
+Null values in input columns are a frequent source of bugs in the Rapids Accelerator for Spark, 
+because of mismatches in null-handling and semantics, between RAPIDS `libcudf` (on which 
+the Rapids Accelerator relies heavily), and Apache Spark. 
+
+Tests for aggregations (including group-by, reductions, and window aggregations) should cover cases where 
+some rows are null, and where *all* input rows are null.
+
+Apart from null rows in columns of primitive types, the following conditions must be covered for nested types:
+
+   * Null rows at the "top" level for `Array`/`Struct` columns.   E.g. `[ [1,2], [3], ∅, [4,5,6] ]`.
+   * Non-null rows containing null elements in the child column. E.g. `[ [1,2], [3,∅], ∅, [4,∅,6] ]`.
+   * All null rows at a nested level. E.g. 
+     * All null list rows: `[ ∅, ∅, ∅, ∅ ]`
+     * All null elements within list rows: `[ [∅,∅], [∅,∅], [∅,∅], [∅,∅] ]`
+
+The `DataGen` classes in `integration_tests/src/main/python/data_gen.py` can be configured to generate null values
+for the cases mentioned above.
+
+### 5. Empty rows in `Array` columns
+Operations on `ArrayType` columns must be tested with input columns containing non-null *empty* rows.
+E.g.
+```
+[
+    [0,1,2,3],
+    [], <------- Empty, non-null row.
+    [4,5,6,7],
+    ...
+]
+```
+Using the `ArrayGen` data generator in `integration_tests/src/main/python/data_gen.py` will generate
+empty rows as mentioned above.
+
+### 6. Degenerate cases with "empty" inputs
+Ensure that operations are tested with "empty" input columns (i.e. containing zero rows.)
+
+E.g. `COUNT()` on an empty input column yields `0`. `SUM()` yields `0` for the appropriate numeric type.
+
+### 7. Special floating point values
+Apart from `null` values, `FloatType` and `DoubleType` input columns must also include the following special values:
+   * +/- Zero
+   * +/- Infinity
+   * +/- NaN
+
+Note that the special values for floating point numbers might have different bit representations for the same
+equivalent values. The [Java documentation for longBitsToDouble()](https://docs.oracle.com/javase/8/docs/api/java/lang/Double.html#longBitsToDouble-long-)
+describes this with examples. Operations should be tested with multiple bit-representations for these special values.
+
+The `FloatGen` and `DoubleGen` data generators in `integration_tests/src/main/python/data_gen.py` can be configured
+to generate the special float/double values mentioned above.
+
+For most basic floating-point operations like addition, subtraction, multiplication, and division the plugin will 
+produce a bit for bit identical result as Spark does. For some other functions (like `sin`, `cos`, etc.), the output may
+differ slightly, but remain within the rounding error inherent in floating-point calculations. Certain aggregations
+might compound those differences. In those cases, the `@approximate_float` test annotation may be used to mark tests 
+to use "approximate" comparisons for floating-point values.
+
+Refer to the "Floating Point" section of [compatibility.md](../docs/compatibility.md) for details.
+
+### 8. Special values in timestamp columns
+Ensure date/timestamp columns include dates before the [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
+
+Apache Spark supports dates/timetamps between `0001-01-01 00:00:00.000000` and `9999-12-31 23:59:59.999999`, but at 
+values close to the minimum value, the format used in Apache Spark causes rounding errors. To avoid such problems,
+it is recommended that the minimum value used in a test not actually equal `0001-01-01`. For instance, `0001-01-03` is
+acceptable.
+
+It is advised that `DateGen` and `TimestampGen` classes from `data_gen.py` be used to generate valid 
+(proleptic Gregorian calendar) dates when testing operators that work on dates. This data generator respects 
+the valid boundaries for dates and timestamps.

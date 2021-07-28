@@ -22,12 +22,15 @@ import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
 
+import ai.rapids.cudf.ColumnVector
 import scala.collection.JavaConverters._
+import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 class CastOpSuite extends GpuExpressionTestSuite {
@@ -53,6 +56,195 @@ class CastOpSuite extends GpuExpressionTestSuite {
   /** Produces a matrix of all possible casts. */
   protected def typeMatrix: Seq[(DataType, DataType)] = {
     for (from <- supportedTypes; to <- supportedTypes) yield (from, to)
+  }
+
+  private val BOOL_CHARS = " \t\r\nFALSEfalseTRUEtrue01yesYESnoNO"
+  private val NUMERIC_CHARS = "infinityINFINITY \t\r\n0123456789.+-eEfFdD"
+  private val DATE_CHARS = " \t\r\n0123456789:-/TZ"
+
+  test("Cast from string to boolean using random inputs") {
+    testCastStringTo(DataTypes.BooleanType,
+      generateRandomStrings(Some(BOOL_CHARS), maxStringLen = 1))
+    testCastStringTo(DataTypes.BooleanType,
+      generateRandomStrings(Some(BOOL_CHARS), maxStringLen = 3))
+    testCastStringTo(DataTypes.BooleanType, generateRandomStrings(Some(BOOL_CHARS)))
+  }
+
+  test("Cast from string to boolean using hand-picked values") {
+    testCastStringTo(DataTypes.BooleanType, Seq("\n\nN", "False", "FALSE", "false", "FaLsE",
+      "f", "F", "True", "TRUE", "true", "tRuE", "t", "T", "Y", "y", "10", "01", "0", "1"))
+  }
+
+  test("Cast from string to byte using random inputs") {
+    testCastStringTo(DataTypes.ByteType, generateRandomStrings(Some(NUMERIC_CHARS)))
+  }
+
+  test("Cast from string to short using random inputs") {
+    testCastStringTo(DataTypes.ShortType, generateRandomStrings(Some(NUMERIC_CHARS)))
+  }
+
+  test("Cast from string to int using random inputs") {
+    testCastStringTo(DataTypes.IntegerType, generateRandomStrings(Some(NUMERIC_CHARS)))
+  }
+
+  test("Cast from string to int using hand-picked values") {
+    testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
+      ".", "+1.2", "\n123\n456\n", "1e+4"))
+  }
+
+  test("Cast from string to int ANSI mode with mix of valid and invalid values") {
+    testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
+      ".", "+1.2", "\n123\n456\n", "1 2", null, "123"), ansiMode = AnsiExpectFailure)
+  }
+
+  test("Cast from string to int ANSI mode with valid values") {
+    testCastStringTo(DataTypes.IntegerType, Seq("1", "-1"),
+      ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to int ANSI mode with invalid values") {
+    val values = Seq("1e4", "Inf", "1.2")
+    // test the values individually
+    for (value <- values ) {
+      testCastStringTo(DataTypes.IntegerType, Seq(value), ansiMode = AnsiExpectFailure)
+    }
+  }
+
+  test("Cast from string to int ANSI mode with nulls") {
+    testCastStringTo(DataTypes.IntegerType, Seq(null, null, null), ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to int ANSI mode with newline in string") {
+    testCastStringTo(DataTypes.IntegerType, Seq("1\n2"), ansiMode = AnsiExpectFailure)
+  }
+
+  test("Cast from string to long using random inputs") {
+    testCastStringTo(DataTypes.LongType, generateRandomStrings(Some(NUMERIC_CHARS)))
+  }
+
+  test("Cast from string to float using random inputs") {
+    testCastStringTo(DataTypes.FloatType, generateRandomStrings(Some(NUMERIC_CHARS)))
+  }
+
+  test("Cast from string to float using hand-picked values") {
+    testCastStringTo(DataTypes.FloatType, Seq(".", "e", "Infinity", "+Infinity", "-Infinity",
+      "+nAn", "-naN", "Nan", "5f", "1.2f", "\riNf", null))
+  }
+
+  test("Cast from string to float ANSI mode with nulls") {
+    testCastStringTo(DataTypes.FloatType, Seq(null, null, null), ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to float ANSI mode with invalid values") {
+    val values = Seq(".", "e")
+    // test the values individually
+    for (value <- values ) {
+      testCastStringTo(DataTypes.FloatType, Seq(value), ansiMode = AnsiExpectFailure)
+    }
+  }
+
+  test("Cast from string to double using random inputs") {
+    testCastStringTo(DataTypes.DoubleType, generateRandomStrings(Some(NUMERIC_CHARS)))
+  }
+
+  test("Cast from string to date using random inputs") {
+    testCastStringTo(DataTypes.DateType, generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8))
+  }
+
+  test("Cast from string to date using random inputs with valid year prefix") {
+    testCastStringTo(DataTypes.DateType,
+      generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
+  }
+
+  ignore("Cast from string to timestamp using random inputs") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2889
+    testCastStringTo(DataTypes.TimestampType,
+      generateRandomStrings(Some(DATE_CHARS), maxStringLen = 32, None))
+  }
+
+  ignore("Cast from string to timestamp using random inputs with valid year prefix") {
+    // Test ignored due to known issues
+    // https://github.com/NVIDIA/spark-rapids/issues/2889
+    testCastStringTo(DataTypes.TimestampType,
+      generateRandomStrings(Some(DATE_CHARS), maxStringLen = 32, Some("2021-")))
+  }
+
+  private def generateRandomStrings(
+      validChars: Option[String],
+      maxStringLen: Int = 12,
+      prefix: Option[String] = None): Seq[String] = {
+    val randomValueCount = 8192
+
+    val random = new Random(0)
+    val r = new EnhancedRandom(random,
+      FuzzerOptions(validChars, maxStringLen))
+
+    (0 until randomValueCount)
+      .map(_ => prefix.getOrElse("") + r.nextString())
+  }
+
+  private def testCastStringTo(
+      toType: DataType,
+      strings: Seq[String],
+      ansiMode: AnsiTestMode = AnsiDisabled) {
+
+    def castDf(spark: SparkSession): Seq[Row] = {
+      import spark.implicits._
+      val df = strings.zipWithIndex.toDF("c0", "id").repartition(2)
+      val castDf = df.withColumn("c1", col("c0").cast(toType))
+      castDf.collect()
+    }
+
+    val INDEX_ID = 1
+    val INDEX_C0 = 0
+    val INDEX_C1 = 2
+
+    val ansiModeBoolString = (ansiMode != AnsiDisabled).toString
+
+    val cpuConf = new SparkConf()
+      .set(SQLConf.ANSI_ENABLED.key, ansiModeBoolString)
+
+    val tryCpu = Try(withCpuSparkSession(castDf, cpuConf)
+      .sortBy(_.getInt(INDEX_ID)))
+
+    val gpuConf = new SparkConf()
+      .set(SQLConf.ANSI_ENABLED.key, ansiModeBoolString)
+      .set(RapidsConf.EXPLAIN.key, "ALL")
+      .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
+      .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+
+    val tryGpu = Try(withGpuSparkSession(castDf, gpuConf)
+      .sortBy(_.getInt(INDEX_ID)))
+
+    (tryCpu, tryGpu) match {
+      case (Success(cpu), Success(gpu)) if ansiMode != AnsiExpectFailure =>
+        for ((cpuRow, gpuRow) <- cpu.zip(gpu)) {
+          assert(cpuRow.getString(INDEX_C0) === gpuRow.getString(INDEX_C0))
+          assert(cpuRow.getInt(INDEX_ID) === gpuRow.getInt(INDEX_ID))
+          val cpuValue = cpuRow.get(INDEX_C1)
+          val gpuValue = gpuRow.get(INDEX_C1)
+          if (!compare(cpuValue, gpuValue, epsilon = 0.0001)) {
+            val inputValue = cpuRow.getString(INDEX_C0)
+              .replace("\r", "\\r")
+              .replace("\t", "\\t")
+              .replace("\n", "\\n")
+            fail(s"Mismatch casting string [$inputValue] " +
+              s"to $toType. CPU: $cpuValue; GPU: $gpuValue")
+          }
+        }
+
+      case (Failure(_), Failure(_)) if ansiMode == AnsiExpectFailure =>
+        // this is fine
+
+      case (Success(_), Failure(gpu)) =>
+        fail(s"Query succeeded on CPU but failed on GPU: $gpu")
+
+      case (Failure(cpu), Success(_)) =>
+        fail(s"Query succeeded on GPU but failed on CPU: $cpu")
+    }
   }
 
   test("Test all supported casts with in-range values") {
@@ -695,6 +887,74 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  test("CAST string to float - sanitize step") {
+    val testPairs = Seq(
+      ("\tinf", "Inf"),
+      ("\t+InFinITy", "Inf"),
+      ("\tInFinITy", "Inf"),
+      ("\t-InFinITy", "-Inf"),
+      ("\t61f", "61"),
+      (".8E4f", ".8E4")
+    )
+    val inputs = testPairs.map(_._1)
+    val expected = testPairs.map(_._2)
+    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
+      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
+        withResource(GpuCast.sanitizeStringToFloat(v, ansiEnabled = false)) { actual =>
+          CudfTestHelper.assertColumnsAreEqual(expected, actual)
+        }
+      }
+    }
+  }
+
+  test("CAST string to integer - sanitize step") {
+    val testPairs: Seq[(String, String)] = Seq(
+      (null, null),
+      ("1e4", "1e4"),
+      ("123", "123"),
+      (".", "0"),
+      (".2", "0"),
+      ("-.2", "0"),
+      ("0.123", "0"),
+      ("321.123", "321"),
+      ("0.123\r123", null),
+      (".\r123", null)
+    )
+    val inputs = testPairs.map(_._1)
+    val expected = testPairs.map(_._2)
+    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
+      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
+        withResource(GpuCast.sanitizeStringToIntegralType(v, ansiEnabled = false)) { actual =>
+          CudfTestHelper.assertColumnsAreEqual(expected, actual)
+        }
+      }
+    }
+  }
+
+  test("CAST string to date - sanitize step") {
+    val testPairs = Seq(
+      ("2001-1", "2001-01"),
+      ("2001-01-1", "2001-01-01"),
+      ("2001-1-1", "2001-01-01"),
+      ("2001-01-1", "2001-01-01"),
+      ("2001-01-1 ", "2001-01-01 "),
+      ("2001-1-1 ", "2001-01-01 "),
+      ("2001-1-1 ZZZ", "2001-01-01 ZZZ"),
+      ("2001-1-1TZZZ", "2001-01-01TZZZ"),
+      ("3330-7 39 49: 1", "3330-7 39 49: 1"),
+      ("today", "today")
+    )
+    val inputs = testPairs.map(_._1)
+    val expected = testPairs.map(_._2)
+    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
+      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
+        withResource(GpuCast.sanitizeStringToDate(v)) { actual =>
+          CudfTestHelper.assertColumnsAreEqual(expected, actual)
+        }
+      }
+    }
+  }
+
   protected def testCastToDecimal(
     dataType: DataType,
     scale: Int,
@@ -1007,6 +1267,7 @@ object CastOpSuite {
       Seq(
         "200", // year too few digits
         "20000", // year too many digits
+        "3330-7 39 49: 1",
         "1999\rGARBAGE",
         "1999-1\rGARBAGE",
         "1999-12\rGARBAGE",
@@ -1133,3 +1394,8 @@ object CastOpSuite {
   private val timestampValues: Seq[Long] = Seq(6321706291000L)
 
 }
+
+sealed trait AnsiTestMode;
+case object AnsiDisabled extends AnsiTestMode
+case object AnsiExpectSuccess extends AnsiTestMode
+case object AnsiExpectFailure extends AnsiTestMode

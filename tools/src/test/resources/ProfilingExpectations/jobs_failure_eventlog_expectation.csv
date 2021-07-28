@@ -1,2 +1,2 @@
-jobID,jobResult,failedReason_first100char
-79,JobFailed,java.lang.Exception: Job 79 cancelled because SparkContext was shut down
+appIndex,jobID,jobResult,failureReason
+1,79,JobFailed,java.lang.Exception: Job 79 cancelled because SparkContext was shut down

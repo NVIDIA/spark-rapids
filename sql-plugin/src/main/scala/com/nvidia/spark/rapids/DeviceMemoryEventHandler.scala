@@ -32,7 +32,8 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  */
 class DeviceMemoryEventHandler(
     store: RapidsDeviceMemoryStore,
-    oomDumpDir: Option[String]) extends RmmEventHandler with Logging {
+    oomDumpDir: Option[String],
+    isGdsSpillEnabled: Boolean) extends RmmEventHandler with Logging {
 
   /**
    * Handles RMM allocation failures by spilling buffers from device memory.
@@ -56,7 +57,11 @@ class DeviceMemoryEventHandler(
         logDebug(s"Targeting device store size of $targetSize bytes")
         val amountSpilled = store.synchronousSpill(targetSize)
         logInfo(s"Spilled $amountSpilled bytes from the device store")
-        TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+        if (isGdsSpillEnabled) {
+          TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
+        } else {
+          TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+        }
         true
       } finally {
         nvtx.close()

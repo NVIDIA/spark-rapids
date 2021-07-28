@@ -50,6 +50,16 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    in machines that don't connect their GPUs and NICs to PCIe switches (i.e. directly to the 
    root-complex). 
    
+   Other considerations:
+
+   - Please refer to [Mellanox documentation](
+   https://community.mellanox.com/s/article/recommended-network-configuration-examples-for-roce-deployment)
+   on how to configure RoCE networks (lossless/lossy, QoS, and more)
+
+   - We recommend that the `--without-ucx` option is passed when installing MLNX_OFED
+   (`mlnxofedinstall`). This is because the UCX included in MLNX_OFED does not have CUDA support,
+   and is likely older than what is available in the UCX repo (see Step 2 below).
+
    If you encounter issues or poor performance, GPUDirectRDMA can be controlled via the 
    UCX environment variable `UCX_IB_GPU_DIRECT_RDMA=no`, but please 
    [file a GitHub issue](https://github.com/NVIDIA/spark-rapids/issues) so we can investigate 
@@ -278,24 +288,44 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
     | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
     | 3.0.3      | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
+    | 3.0.4      | com.nvidia.spark.rapids.spark304.RapidsShuffleManager    |
     | 3.1.1      | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
+    | 3.1.1 CDH  | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
     | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
     | 3.1.3      | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
-    | 3.2.0      | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
 
-2. Recommended settings for UCX 1.10.1+
-```shell
-...
---conf spark.shuffle.manager=com.nvidia.spark.rapids.spark301.RapidsShuffleManager \
---conf spark.shuffle.service.enabled=false \
---conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
---conf spark.executorEnv.UCX_ERROR_SIGNALS= \
---conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
---conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1 \
---conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
---conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
---conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR}
-```
+2. Settings for UCX 1.10.1+:
+
+    Minimum configuration:
+
+    ```shell
+    ...
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+    --conf spark.shuffle.service.enabled=false \
+    --conf spark.dynamicAllocation.enabled=false \
+    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+    --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
+    --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n
+    ```
+
+    Recommended configuration:
+
+    ```shell
+    ...
+    --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+    --conf spark.shuffle.service.enabled=false \
+    --conf spark.dynamicAllocation.enabled=false \
+    --conf spark.executor.extraClassPath=${SPARK_CUDF_JAR}:${SPARK_RAPIDS_PLUGIN_JAR} \
+    --conf spark.executorEnv.UCX_ERROR_SIGNALS= \
+    --conf spark.executorEnv.UCX_MEMTYPE_CACHE=n \
+    --conf spark.executorEnv.UCX_IB_RX_QUEUE_LEN=1024 \
+    --conf spark.executorEnv.UCX_TLS=cuda_copy,cuda_ipc,rc,tcp \
+    --conf spark.executorEnv.UCX_RNDV_SCHEME=put_zcopy \
+    --conf spark.executorEnv.UCX_MAX_RNDV_RAILS=1
+    ```
+
+Please replace `[shim package]` with the appropriate value. For example, the full class name for
+Apache Spark 3.1.3 is: `com.nvidia.spark.rapids.spark313.RapidsShuffleManager`.
 
 Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.

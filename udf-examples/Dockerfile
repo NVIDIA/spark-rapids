@@ -58,7 +58,7 @@ CUDA_VERSION_MINOR=$(echo $CUDA_VERSION | tr -d '.' | cut -c 3); \
 # Set JDK8 as the default Java
 && update-alternatives --set java /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
 
-ARG CMAKE_VERSION=3.19.0
+ARG CMAKE_VERSION=3.20.5
 
 # Install CMake
 RUN cd /tmp \

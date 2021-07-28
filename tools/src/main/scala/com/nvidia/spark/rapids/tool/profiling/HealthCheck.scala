@@ -17,73 +17,100 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 /**
  * HealthCheck defined health check rules
  */
-class HealthCheck(apps: ArrayBuffer[ApplicationInfo], textFileWriter: ToolTextFileWriter) {
+class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter) {
 
   require(apps.nonEmpty)
 
   // Function to list all failed tasks , stages and jobs.
   def listFailedJobsStagesTasks(): Unit = {
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"taskDF_${app.index}")) {
-        // Look for failed tasks.
-        val tasksMessageHeader = s"Failed tasks:\n"
-        app.runQuery(query = app.getFailedTasks, fileWriter = Some(textFileWriter),
-          messageHeader = tasksMessageHeader)
-      }
-      if (app.allDataFrames.contains(s"stageDF_${app.index}")) {
-        // Look for failed stages.
-        val stagesMessageHeader = s"Failed stages:\n"
-        app.runQuery(query = app.getFailedStages, fileWriter = Some(textFileWriter),
-          messageHeader = stagesMessageHeader)
-      }
-      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
-        // Look for failed jobs.
-        val jobsMessageHeader = s"Failed jobs:\n"
-        app.runQuery(query = app.getFailedJobs, fileWriter = Some(textFileWriter),
-          messageHeader = jobsMessageHeader)
-      }
+    val tasksMessageHeader = s"\nFailed tasks:\n"
+    val tasksQuery = apps
+        .filter { p =>
+          p.allDataFrames.contains(s"taskDF_${p.index}")
+        }.map(app => "(" + app.getFailedTasks + ")")
+        .mkString(" union ")
+    if (tasksQuery.nonEmpty) {
+      apps.head.runQuery(tasksQuery + "order by appIndex", false,
+        fileWriter = Some(textFileWriter), messageHeader = tasksMessageHeader)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
+    }
+
+    val stagesMessageHeader = s"\nFailed stages:\n"
+    val stagesQuery = apps
+        .filter { p =>
+          p.allDataFrames.contains(s"stageDF_${p.index}")
+        }.map(app => "(" + app.getFailedStages + ")")
+        .mkString(" union ")
+    if (stagesQuery.nonEmpty) {
+      apps.head.runQuery(stagesQuery + "order by appIndex", false,
+        fileWriter = Some(textFileWriter), messageHeader = stagesMessageHeader)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
+    }
+
+    val jobsMessageHeader = s"\nFailed jobs:\n"
+    val jobsQuery = apps
+        .filter { p =>
+          p.allDataFrames.contains(s"jobDF_${p.index}")
+        }.map(app => "(" + app.getFailedJobs + ")")
+        .mkString(" union ")
+    if (jobsQuery.nonEmpty) {
+      apps.head.runQuery(jobsQuery + "order by appIndex", false,
+        fileWriter = Some(textFileWriter), messageHeader = jobsMessageHeader)
+    } else {
+      apps.head.sparkSession.emptyDataFrame
     }
   }
 
   //Function to list all SparkListenerBlockManagerRemoved
   def listRemovedBlockManager(): Unit = {
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"blockManagersRemovedDF_${app.index}")) {
-        val blockManagersMessageHeader =
-          s"Removed BlockManager(s):\n"
-        app.runQuery(query = app.getblockManagersRemoved, fileWriter = Some(textFileWriter),
-          messageHeader = blockManagersMessageHeader)
-      }
+    val header = "\nRemoved BlockManager(s):\n"
+    val query = apps
+      .filter { p =>
+        (p.allDataFrames.contains(s"blockManagersRemovedDF_${p.index}"))
+      }.map(app => "(" + app.getblockManagersRemoved + ")")
+      .mkString(" union ")
+    if (query.nonEmpty) {
+      apps.head.runQuery(query + "order by appIndex, executorID", false,
+        fileWriter = Some(textFileWriter), messageHeader = header)
     }
   }
 
   //Function to list all SparkListenerExecutorRemoved
   def listRemovedExecutors(): Unit = {
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"executorsRemovedDF_${app.index}")) {
-        val executorsRemovedMessageHeader =
-          s"Removed Executors(s):\n"
-        app.runQuery(query = app.getExecutorsRemoved, fileWriter = Some(textFileWriter),
-          messageHeader = executorsRemovedMessageHeader)
-      }
+    val header = "\nRemoved Executors(s):\n"
+    val query = apps
+      .filter { p =>
+        (p.allDataFrames.contains(s"executorsRemovedDF_${p.index}"))
+      }.map(app => "(" + app.getExecutorsRemoved + ")")
+      .mkString(" union ")
+    if (query.nonEmpty) {
+      apps.head.runQuery(query + "order by appIndex, executorID", false,
+        fileWriter = Some(textFileWriter), messageHeader = header)
     }
   }
 
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
   def listPossibleUnsupportedSQLPlan(): Unit = {
-    textFileWriter.write("\nSQL Plan HealthCheck\n")
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"sqlDF_${app.index}") && app.sqlPlan.nonEmpty) {
-        app.runQuery(query = app.unsupportedSQLPlan, fileWriter = Some(textFileWriter),
-          messageHeader = s"\nUnsupported SQL Plan\n")
-      }
+    textFileWriter.write("\nSQL Plan HealthCheck:\n")
+    val query = apps
+        .filter { p =>
+          (p.allDataFrames.contains(s"sqlDF_${p.index}") && p.sqlPlan.nonEmpty)
+        }.map(app => "(" + app.unsupportedSQLPlan + ")")
+        .mkString(" union ")
+
+    if (query.nonEmpty) {
+      apps.head.runQuery(query + "order by appIndex", false,
+        fileWriter = Some(textFileWriter), messageHeader = s"\nUnsupported SQL Plan\n")
+    } else {
+      apps.head.sparkSession.emptyDataFrame
     }
   }
 }

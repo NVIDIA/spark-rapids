@@ -18,18 +18,18 @@
 # This script generates the commits that went in Apache Spark for audit.
 # Audit is required to evaluate if the code needs to be updated based
 # on new commits merged in Apache Spark. This currently audits changes for
-# Spark-3.2 (master branch).
+# Spark branch-3.2
 # Arguments:
 #   lastcommit - File which contains the latest commit hash when this script ran last.
 #   basebranch - branch in Apache Spark for which commits needs to be audited.
-#                Currently it's master as Spark-3.2 branch is not cut yet.
+#                Currently it's Apache Spark's branch-3.2.
 #   tag        - tag until which the commits are audited 
 
 
 set -ex
 ABSOLUTE_PATH=$(cd $(dirname $0) && pwd)
 lastcommit=""
-basebranch="master"
+basebranch="branch-3.2"
 tag="v3.1.1-rc3"
 REF=${REF:-"main"}
 REF=main

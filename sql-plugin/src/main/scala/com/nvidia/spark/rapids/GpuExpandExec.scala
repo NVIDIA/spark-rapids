@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{NvtxColor, Scalar}
+import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -40,10 +40,10 @@ class GpuExpandExecMeta(
   private val gpuProjections: Seq[Seq[BaseExprMeta[_]]] =
     expand.projections.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
 
-  private val outputAttributes: Seq[BaseExprMeta[_]] =
+  private val outputs: Seq[BaseExprMeta[_]] =
     expand.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = gpuProjections.flatten ++ outputAttributes
+  override val childExprs: Seq[BaseExprMeta[_]] = gpuProjections.flatten ++ outputs
 
   /**
    * Convert what this wraps to a GPU enabled version.

@@ -35,9 +35,9 @@ the latest release.
 
 ### What hardware is supported? 
 
-The plugin is tested and supported on V100, T4, A30 and A100 datacenter GPUs.  It is possible to run
-the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware does
-not support [CUDA enhanced
+The plugin is tested and supported on V100, T4, A10, A30 and A100 datacenter GPUs.  It is possible
+to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
+does not support [CUDA enhanced
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases),
 and will need CUDA 11.2 installed. If not, the following error will be displayed:
 
@@ -359,6 +359,14 @@ different because of compression. Users can turn on
 [spark.rapids.sql.hashOptimizeSort.enabled](configs.md#sql.hashOptimizeSort.enabled) to have
 the GPU try to replicate more closely what the output ordering would have been if sort were used,
 like on the CPU.
+
+### Why am I getting the error `Failed to open the timezone file` when reading files?
+
+When reading from a file that contains data referring to a particular timezone, e.g.: reading
+timestamps from an ORC file, the system's timezone database at `/usr/share/zoneinfo/` must contain
+the timezone in order to process the data properly. This error often indicates the system is
+missing the timezone database. The timezone database is provided by the `tzdata` package on many
+Linux distributions.
 
 ### Why am I getting an error when trying to use pinned memory?
 

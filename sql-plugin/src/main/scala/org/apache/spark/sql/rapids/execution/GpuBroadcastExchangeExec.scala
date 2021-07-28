@@ -296,9 +296,8 @@ abstract class GpuBroadcastExchangeExecBase(
             // Setup a job group here so later it may get cancelled by groupId if necessary.
             sparkContext.setJobGroup(_runId.toString, s"broadcast exchange (runId ${_runId})",
               interruptOnCancel = true)
-            val collectRange = new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
-              collectTime)
-            val batch = try {
+            val batch = withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
+              collectTime)) { _ =>
               val data = child.executeColumnar().map(cb => try {
                 new SerializeBatchDeserializeHostBuffer(cb)
               } finally {
@@ -306,8 +305,6 @@ abstract class GpuBroadcastExchangeExecBase(
               })
               val d = data.collect()
               new SerializeConcatHostBuffersDeserializeBatch(d, output)
-            } finally {
-              collectRange.close()
             }
 
             val numRows = batch.numRows
@@ -315,8 +312,8 @@ abstract class GpuBroadcastExchangeExecBase(
             numOutputBatches += 1
             numOutputRows += numRows
 
-            val buildRange = new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN, buildTime)
-            try {
+            withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
+                buildTime)) { _ =>
               // we only support hashjoin so this is a noop
               // val relation = mode.transform(input, Some(numRows))
               val dataSize = batch.dataSize
@@ -326,15 +323,11 @@ abstract class GpuBroadcastExchangeExecBase(
                 throw new SparkException(
                   s"Cannot broadcast the table that is larger than 8GB: ${dataSize >> 30} GB")
               }
-            } finally {
-              buildRange.close()
             }
-            val broadcastRange = new NvtxWithMetrics("broadcast", NvtxColor.CYAN, broadcastTime)
-            val broadcasted = try {
+            val broadcasted = withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
+                broadcastTime)) { _ =>
               // Broadcast the relation
               sparkContext.broadcast(batch.asInstanceOf[Any])
-            } finally {
-              broadcastRange.close()
             }
 
             SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
