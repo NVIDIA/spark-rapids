@@ -165,7 +165,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
         if (failOnError) {
           withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)){ keyExistenceColumn =>
             withResource(keyExistenceColumn.all()) { exist =>
-              if (exist.getBoolean) {
+              if (!exist.isValid || exist.getBoolean) {
                 lhs.getBase.getMapValue(rhs.getBase)
               } else {
                 throw new NoSuchElementException(

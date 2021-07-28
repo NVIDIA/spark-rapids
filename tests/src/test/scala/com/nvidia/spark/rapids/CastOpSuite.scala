@@ -638,6 +638,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  test("ansi cast null ints to decimal") {
+    testCastToDecimal(DataTypes.IntegerType, -5,
+      customDataGenerator = Some((spark: SparkSession) => {
+        import spark.implicits._
+        Seq[Integer](null, null, null).toDF("col")
+      }),
+      ansiEnabled = true)
+  }
+
   test("cast long to decimal") {
     List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
       testCastToDecimal(DataTypes.LongType, scale,

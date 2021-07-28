@@ -303,7 +303,7 @@ class GpuParquetWriter(
                       withResource(int64.lessOrEqualTo(lower)) { b =>
                         withResource(a.or(b)) { aOrB =>
                           withResource(aOrB.any()) { any =>
-                            if (any.getBoolean()) {
+                            if (any.isValid && any.getBoolean) {
                               // its the writer's responsibility to close the batch
                               batch.close()
                               throw new IllegalArgumentException("INT96 column contains one " +
