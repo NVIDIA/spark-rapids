@@ -60,11 +60,11 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
       val apps = createApps(eventLogInfos)
       if (apps.isEmpty) {
         logInfo("No application to process. Exiting")
-        return 0
+      } else {
+        processApps(apps, printPlans = false)
+        // Show the application Id <-> appIndex mapping.
+        apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
       }
-      processApps(apps, printPlans = false)
-      // Show the application Id <-> appIndex mapping.
-      apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
     } else {
       var index: Int = 1
       // This is a bit odd that we process apps individual right now due to
@@ -75,9 +75,9 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
         index += 1
         if (apps.isEmpty) {
           logInfo("No application to process. Exiting")
-          return 0
+        } else {
+          processApps(apps, appArgs.printPlans())
         }
-        processApps(apps, appArgs.printPlans())
       }
     }
   }
