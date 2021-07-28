@@ -3052,10 +3052,10 @@ object GpuOverrides {
     exec[WindowExec](
       "Window-operator backend",
       ExecChecks(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-          TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
-            + TypeSig.ARRAY),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+            TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
+            TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
         TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
