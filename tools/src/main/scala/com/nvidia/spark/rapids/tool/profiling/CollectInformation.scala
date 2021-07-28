@@ -239,9 +239,13 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     if (apps.size > 0) {
       val allRows = props.map { case(k, v) => Seq(k) ++ v }.toSeq
       val sortedRows = allRows.sortBy(cols => (cols(0)))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
-      fileWriter.foreach(_.write(outStr))
+      if (sortedRows.size > 0) {
+        val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+          outputHeaders, sortedRows)
+        fileWriter.foreach(_.write(outStr))
+      } else {
+        fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+      }
     } else {
       fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
     }
