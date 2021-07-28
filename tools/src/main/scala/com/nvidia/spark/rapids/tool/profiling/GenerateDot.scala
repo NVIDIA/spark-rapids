@@ -348,7 +348,6 @@ object SparkPlanGraph {
     val lineBreakBytes = numLinebreaks * htmlLineBreak.length()
     val planStrLength = formatBytes + lineBreakBytes + escapedPlan.length()
     val planStr = if (planStrLength >= maxLength) {
-      println("truncating")
       // this might be overestimate depending on how much we truncate that would have
       // been escaped, but it will be safe on size
       val htmlEscapeLength = escapedPlan.length() - physicalPlan.length()
