@@ -297,15 +297,22 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
 
         server.start()
 
+        val ioe = new IOException("mmap failed in test")
+
         when(rapidsBuffer.copyToMemoryBuffer(any(), any(), any(), any(), any()))
-            .thenAnswer(_ => {
-              throw new IOException("mmap failed in test")
-            })
+            .thenAnswer(_ => throw ioe)
 
         val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null)
         // if nothing else can be handled, we throw
         assertThrows[IllegalStateException] {
-          server.doHandleTransferRequest(Seq(bss))
+          try {
+            server.doHandleTransferRequest(Seq(bss))
+          } catch {
+            case e: Throwable =>
+              assertResult(1)(e.getSuppressed.length)
+              assertResult(ioe)(e.getSuppressed()(0).getCause)
+              throw e
+          }
         }
 
         // since nothing could be handled, we don't try again
