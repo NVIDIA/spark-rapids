@@ -100,9 +100,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           }
           // don't count duplicate task attempts
           val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
-          uniqueTasks.foreach { case (id, groups) =>
-            logWarning(s"task $id num attempts is: ${groups.size}")
-          }
+
           // TODO - how to deal with attempts?
 
           val jobDuration = jc.duration match {

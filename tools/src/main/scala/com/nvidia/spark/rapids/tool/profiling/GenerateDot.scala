@@ -25,9 +25,9 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import org.apache.commons.text.StringEscapeUtils
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.{SparkPlanInfo, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
 
 /**
@@ -44,7 +44,7 @@ import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInf
  *
  * See https://graphviz.org/pdf/dotguide.pdf for a description of DOT files.
  */
-object GenerateDot {
+object GenerateDot extends Logging {
   val GPU_COLOR = "#76b900" // NVIDIA Green
   val CPU_COLOR = "#0071c5"
   val TRANSITION_COLOR = "red"
@@ -85,6 +85,7 @@ object GenerateDot {
   }
 
   def apply(app: ApplicationInfo, outputDirectory: String): Unit = {
+    // TODO - doing twice
     val accums = CollectInformation.generateSQLAccums(Seq(app))
 
     // Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
@@ -93,6 +94,7 @@ object GenerateDot {
     //              metric.nodeName, metric.accumulatorId.toString, metric.name,
     //              max.toString, metric.metricType)
     val accumSummary = accums.map { a =>
+      logWarning("values are: " + a.mkString(","))
       Seq(a(1), a(4), a(6))
     }
 

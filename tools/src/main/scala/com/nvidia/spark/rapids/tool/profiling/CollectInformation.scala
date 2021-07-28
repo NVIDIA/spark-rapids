@@ -270,9 +270,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter.foreach(_.write(messageHeader))
      val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
        "name", "max_value", "metricType")
-    val allRows = CollectInformation.generateSQLAccums(apps)
-    val filtered = allRows.filter(_.nonEmpty)
-    if (allRows.size > 0) {
+    val filtered = CollectInformation.generateSQLAccums(apps)
+    if (filtered.size > 0) {
       // appIndex, sqlID, nodeID, nodeName, accumulatorId, name, metricType
       val sortedRows = filtered.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong,
         cols(3), cols(4).toLong, cols(6)))
@@ -320,6 +319,6 @@ object CollectInformation {
         Seq.empty
       }
     }
-    allRows
+    allRows.filter(_.nonEmpty)
   }
 }
