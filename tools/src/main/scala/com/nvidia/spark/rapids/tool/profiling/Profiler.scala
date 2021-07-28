@@ -40,8 +40,7 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
   val threadFactory = new ThreadFactoryBuilder()
     .setDaemon(true).setNameFormat("profileTool" + "-%d").build()
   logInfo(s"Threadpool size is $nThreads")
-  val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
-    .asInstanceOf[ThreadPoolExecutor]
+
   val allApps = new ConcurrentLinkedQueue[ApplicationInfo]()
 
   class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
@@ -87,6 +86,9 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
       startIndex: Int = 1): Seq[ApplicationInfo] = {
     var index: Int = startIndex
     var errorCodes = ArrayBuffer[Int]()
+
+    val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
+      .asInstanceOf[ThreadPoolExecutor]
 
     var appIndex = startIndex
     allPaths.foreach { path =>
