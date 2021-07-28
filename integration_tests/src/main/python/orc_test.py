@@ -285,6 +285,48 @@ def test_missing_column_names(spark_tmp_table_factory, reader_confs):
         lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)),
         all_confs)
 
+def setup_orc_file_with_column_names(spark, table_name):
+    drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
+    create_query = "CREATE TABLE `{}` (`c_1` INT, `c_2` STRING, `c_3` ARRAY<INT>) USING orc".format(table_name)
+    insert_query = "INSERT INTO {} VALUES(13, '155', array(2020))".format(table_name)
+    spark.sql(drop_query).collect
+    spark.sql(create_query).collect
+    spark.sql(insert_query).collect
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_disorder_read_schema(spark_tmp_table_factory, reader_confs):
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_orc_file_with_column_names(spark, table_name))
+    all_confs = reader_confs.copy()
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_2,c_1 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_3,c_1 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_3,c_2 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_1,c_3,c_2 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_1,c_2,c_3 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_2,c_1,c_3 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_2,c_3,c_1 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_3,c_1,c_2 FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c_3,c_2,c_1 FROM {}".format(table_name)),
+        all_confs)
+
+
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_missing_column_names_filter(spark_tmp_table_factory, reader_confs):
     table_name = spark_tmp_table_factory.get()
