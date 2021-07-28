@@ -343,14 +343,21 @@ object SparkPlanGraph {
 
     // pre-calculate size post substitutions
     val formatBytes = queryLabelFormat.length() - sqlPlanPlaceHolder.length()
+    val escapedPlan = StringEscapeUtils.escapeHtml4(physicalPlan)
+    val planStrLength = formatBytes + escapedPlan.length()
     val numLinebreaks = physicalPlan.count(_ == '\n')
     val lineBreakBytes = numLinebreaks * htmlLineBreak.length()
-    val maxPlanLength = maxLength - formatBytes - lineBreakBytes
-
-    queryLabelFormat.format(
-      physicalPlan.take(maxPlanLength)
-        .replaceAll("\n", htmlLineBreak)
-    )
+    val planStr = if (planStrLength >= 16384) {
+      println("truncating")
+      // this might be overestimate depending on how much we truncate that would have
+      // been escaped, but it will be safe on size
+      val htmlEscapeLength = escapedPlan.length() - physicalPlan.length()
+      val truncatePlanBy = maxLength - formatBytes - lineBreakBytes - htmlEscapeLength
+      StringEscapeUtils.escapeHtml4(physicalPlan.take(truncatePlanBy))
+    } else {
+      escapedPlan
+    }
+    queryLabelFormat.format(planStr.replaceAll("\n", htmlLineBreak))
   }
 }
 
