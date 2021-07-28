@@ -327,7 +327,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     )
     // TODO - can we summarize vs keeping all tasks?
     app.taskEnd += thisTask
-    app.taskEndMap.put((event.taskInfo.taskId, event.taskInfo.attemptNumber), thisTask)
   }
 
   override def doSparkListenerSQLExecutionStart(
@@ -381,7 +380,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       }
       sql.problematic = finalPotProbs
     }
-
   }
 
   override def doSparkListenerDriverAccumUpdates(
@@ -472,10 +470,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       case None => ""
     }
 
-
-    // app.stageCompletionTime += (event.stageInfo.stageId -> event.stageInfo.completionTime)
-   //  app.stageFailureReason += (event.stageInfo.stageId -> event.stageInfo.failureReason)
-
     // Parse stage accumulables
     // TODO - do this better!
     for (res <- event.stageInfo.accumulables) {
@@ -514,16 +508,25 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
 
+  // TODO - need tests
   override def doSparkListenerSQLAdaptiveSQLMetricUpdates(
       app: ApplicationInfo,
       event: SparkListenerSQLAdaptiveSQLMetricUpdates): Unit = {
     logDebug("Processing event: " + event.getClass)
     val SparkListenerSQLAdaptiveSQLMetricUpdates(sqlID, sqlPlanMetrics) = event
     val metrics = sqlPlanMetrics.map { metric =>
+      // TODO - how get node info?
+      /*SQLMetricInfoCase(sqlID, metric.name,
+        metric.accumulatorId, metric.metricType, node.id,
+        node.name, node.desc)
+        */
+
       SQLPlanMetricsCase(sqlID, metric.name,
         metric.accumulatorId, metric.metricType)
+
     }
     app.sqlPlanMetricsAdaptive ++= metrics
+
   }
 
   // To process all other unknown events

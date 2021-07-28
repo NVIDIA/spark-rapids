@@ -16,11 +16,9 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.util.concurrent.TimeUnit
-
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
@@ -70,120 +68,12 @@ object ProfileMain extends Logging {
         return 0
       }
 
-      // If compare mode is on, we need lots of memory to cache all applications then compare.
-      // Suggest only enable compare mode if there is no more than 10 applications as input.
-      if (appArgs.compare()) {
-        // Create an Array of Applications(with an index starting from 1)
-        val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos,
-          numOutputRows, hadoopConf)
-        if (errorCode > 0) {
-          logError(s"Error parsing one of the event logs")
-          return 1
-        }
+      val profiler = new Profiler(outputDirectory, numOutputRows, hadoopConf,
+        textFileWriter, appArgs)
+      profiler.profile(eventLogInfos)
 
-        if (apps.isEmpty) {
-          logInfo("No application to process. Exiting")
-          return 0
-        }
-        processApps(apps, printPlans = false)
-        // Show the application Id <-> appIndex mapping.
-        apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
-      } else {
-        var index: Int = 1
-        eventLogInfos.foreach { log =>
-          // Only process 1 app at a time.
-          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(log), numOutputRows,
-            hadoopConf, startIndex = index)
-          index += 1
-          if (errorCode > 0) {
-            logError(s"Error parsing ${log.eventLog}")
-            return 1
-          }
-          if (apps.isEmpty) {
-            logInfo("No application to process. Exiting")
-            return 0
-          }
-          // This is a bit odd that we process apps individual right now due to
-          // memory concerns. So the aggregation functions only aggregate single
-          // application not across applications.
-          processApps(apps, appArgs.printPlans())
-          // apps.foreach(_.dropAllTempViews())
-        }
-      }
     } finally {
       textFileWriter.close()
-    }
-
-    /**
-     * Function to process ApplicationInfo. If it is in compare mode, then all the eventlogs are
-     * evaluated at once and the output is one row per application. Else each eventlog is parsed one
-     * at a time.
-     */
-    def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean): Unit = {
-
-      textFileWriter.write("### A. Information Collected ###")
-      val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
-      collect.printAppInfo()
-      collect.printDataSourceInfo()
-      collect.printExecutorInfo()
-      collect.printJobInfo()
-      collect.printRapidsProperties()
-      collect.printRapidsJAR()
-      collect.printSQLPlanMetrics()
-
-      if (printPlans) {
-        collect.printSQLPlans(outputDirectory)
-      }
-
-      // for compare mode we just add in extra tables for matching across applications
-      // the rest of the tables simply list all applications specified
-      if (appArgs.compare()) {
-        val compare = new CompareApplications(apps, Some(textFileWriter), numOutputRows)
-        compare.findMatchingStages()
-      }
-
-      textFileWriter.write("\n### B. Analysis ###\n")
-      val analysis = new Analysis(apps, Some(textFileWriter), numOutputRows)
-      analysis.jobAndStageMetricsAggregation()
-      analysis.sqlMetricsAggregation()
-      analysis.sqlMetricsAggregationDurationAndCpuTime()
-      analysis.shuffleSkewCheck()
-
-      textFileWriter.write("\n### C. Health Check###\n")
-      val healthCheck=new HealthCheck(apps, Some(textFileWriter), numOutputRows)
-      healthCheck.listFailedTasks()
-      healthCheck.listFailedStages()
-      healthCheck.listFailedJobs()
-      healthCheck.listRemovedBlockManager()
-      healthCheck.listRemovedExecutors()
-      healthCheck.listPossibleUnsupportedSQLPlan()
-
-
-      if (appArgs.generateDot()) {
-        if (appArgs.compare()) {
-          logWarning("Dot graph does not compare apps")
-        }
-        apps.foreach { app =>
-          val start = System.nanoTime()
-          GenerateDot(app, outputDirectory)
-          val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-          textFileWriter.write(s"Generated DOT graphs for app ${app.appId} " +
-              s"to $outputDirectory in $duration second(s)\n")
-        }
-      }
-
-      if (appArgs.generateTimeline()) {
-        if (appArgs.compare()) {
-          logWarning("Timeline graph does not compare apps")
-        }
-        apps.foreach { app =>
-          val start = System.nanoTime()
-          GenerateTimeline.generateFor(app, outputDirectory)
-          val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-          textFileWriter.write(s"Generated timeline graphs for app ${app.appId} " +
-              s"to $outputDirectory in $duration second(s)\n")
-        }
-      }
     }
 
     0

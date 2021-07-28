@@ -76,6 +76,16 @@ For usage see below:
   val printPlans: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
+  val numThreads: ScallopOption[Int] =
+    opt[Int](required = false,
+      descr = "Number of thread to use for parallel processing. The default is the " +
+        "number of cores on host divided by 4.")
+  val timeout: ScallopOption[Long] =
+    opt[Long](required = false,
+      descr = "Maximum time in seconds to wait for the event logs to be processed. " +
+        "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
+        "times out, it will report what it was able to process up until the timeout.",
+      default = Some(86400))
   val generateTimeline: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Write an SVG graph out for the full application timeline.")

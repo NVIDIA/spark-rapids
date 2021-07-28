@@ -240,13 +240,6 @@ class ApplicationInfo(
   val liveJobs = new HashMap[Int, JobCaseInfo]()
   val liveSQL = new HashMap[Long, SQLExecutionCaseInfo]()
 
-
-  // From SparkListenerResourceProfileAdded
-  // var resourceProfiles: ArrayBuffer[ResourceProfileCase] = ArrayBuffer[ResourceProfileCase]()
-
-  // From SparkListenerBlockManagerAdded and SparkListenerBlockManagerRemoved
-  // var blockManagers: ArrayBuffer[BlockManagerCase] =
-  //   ArrayBuffer[BlockManagerCase]()
   var blockManagersRemoved: ArrayBuffer[BlockManagerRemovedCase] =
      ArrayBuffer[BlockManagerRemovedCase]()
 
@@ -261,10 +254,6 @@ class ApplicationInfo(
   // From SparkListenerApplicationStart and SparkListenerApplicationEnd
   var appInfo: ApplicationCase = null
   var appId: String = ""
-
-  // From SparkListenerExecutorAdded and SparkListenerExecutorRemoved
-  // var executors: ArrayBuffer[ExecutorCase] = ArrayBuffer[ExecutorCase]()
-  // var executorsRemoved: ArrayBuffer[ExecutorRemovedCase] = ArrayBuffer[ExecutorRemovedCase]()
 
   // From SparkListenerSQLExecutionStart and SparkListenerSQLExecutionEnd
   var sqlStart: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
@@ -281,7 +270,7 @@ class ApplicationInfo(
   var sqlPlanMetrics: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
   var planNodeAccum: ArrayBuffer[PlanNodeAccumCase] = ArrayBuffer[PlanNodeAccumCase]()
   var allSQLMetrics: ArrayBuffer[SQLMetricInfoCase] = ArrayBuffer[SQLMetricInfoCase]()
-  // From SparkListenerSQLAdaptiveSQLMetricUpdates
+
   var sqlPlanMetricsAdaptive: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
 
   // From SparkListenerDriverAccumUpdates
@@ -302,72 +291,15 @@ class ApplicationInfo(
   // JobStart contains mapping relationship for JobID -> StageID(s)
   var jobStart: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
   val jobEndTime: mutable.HashMap[Int, Long] = mutable.HashMap.empty[Int, Long]
-  val jobEndResult: mutable.HashMap[Int, String] = mutable.HashMap.empty[Int, String]
-  val jobFailedReason: mutable.HashMap[Int, String] = mutable.HashMap.empty[Int, String]
-
-  // From SparkListenerStageSubmitted and SparkListenerStageCompleted
-  // stageSubmitted contains mapping relationship for Stage -> RDD(s)
-  // var stageSubmitted: ArrayBuffer[StageCase] = ArrayBuffer[StageCase]()
-  /*val stageCompletionTime: mutable.HashMap[Int, Option[Long]] =
-    mutable.HashMap.empty[Int, Option[Long]]
-  val stageFailureReason: mutable.HashMap[Int, Option[String]] =
-    mutable.HashMap.empty[Int, Option[String]]
-    */
-
-
 
   // From SparkListenerTaskStart & SparkListenerTaskEnd
   // taskStart was not used so comment out for now
   // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
   // taskEnd contains task level metrics - only used for profiling
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
-  var taskEndMap: HashMap[(Long, Int), TaskCase] = new HashMap[(Long, Int), TaskCase]()
-
-
-  // From SparkListenerTaskGettingResult
- //  var taskGettingResult: ArrayBuffer[SparkListenerTaskGettingResult] =
-  //   ArrayBuffer[SparkListenerTaskGettingResult]()
 
   // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
-
-
-  // From all other events
-  // var otherEvents: ArrayBuffer[SparkListenerEvent] = ArrayBuffer[SparkListenerEvent]()
-
-  // Generated warnings by predefined checks for this Application
-  var warnings: ArrayBuffer[String] = ArrayBuffer[String]()
-
-  // All the metrics column names in Task Metrics with the aggregation type
-  val taskMetricsColumns: scala.collection.mutable.SortedMap[String, String]
-  = scala.collection.mutable.SortedMap(
-    "duration" -> "all",
-    "gettingResultTime" -> "sum",
-    "executorDeserializeTime" -> "sum",
-    "executorDeserializeCPUTime" -> "sum",
-    "executorRunTime" -> "sum",
-    "executorCPUTime" -> "sum",
-    "peakExecutionMemory" -> "max",
-    "resultSize" -> "max",
-    "jvmGCTime" -> "sum",
-    "resultSerializationTime" -> "sum",
-    "memoryBytesSpilled" -> "sum",
-    "diskBytesSpilled" -> "sum",
-    "sr_remoteBlocksFetched" -> "sum",
-    "sr_localBlocksFetched" -> "sum",
-    "sr_fetchWaitTime" -> "sum",
-    "sr_remoteBytesRead" -> "sum",
-    "sr_remoteBytesReadToDisk" -> "sum",
-    "sr_localBytesRead" -> "sum",
-    "sr_totalBytesRead" -> "sum",
-    "sw_bytesWritten" -> "sum",
-    "sw_writeTime" -> "sum",
-    "sw_recordsWritten" -> "sum",
-    "input_bytesRead" -> "sum",
-    "input_recordsRead" -> "sum",
-    "output_bytesWritten" -> "sum",
-    "output_recordsWritten" -> "sum"
-  )
 
   // By looping through SQL Plan nodes to find out the problematic SQLs. Currently we define
   // problematic SQL's as those which have RowToColumnar, ColumnarToRow transitions and Lambda's in
@@ -381,14 +313,9 @@ class ApplicationInfo(
 
   // Process all events
   processEvents()
-  // Process all properties after all events are processed
-  // processAllProperties()
   // Process SQL Plan Metrics after all events are processed
   processSQLPlanMetrics()
   aggregateAppInfo
-  // arraybufferToDF()
-
-  private val codecMap = new ConcurrentHashMap[String, CompressionCodec]()
 
   override def processEvent(event: SparkListenerEvent) = {
     eventProcessor.processAnyEvent(this, event)
@@ -460,6 +387,7 @@ class ApplicationInfo(
           if (this.sqlEndTime.isEmpty && this.jobEndTime.isEmpty) {
             None
           } else {
+            // TODO - need to fix
             logWarning("Application End Time is unknown, estimating based on" +
               " job and sql end times!")
             // estimate the app end with job or sql end times
@@ -484,403 +412,37 @@ class ApplicationInfo(
     }
   }
 
-  /**
-   * Functions to convert ArrayBuffer to DataFrame
-   * and then create a view for each of them
-   */
-  def arraybufferToDF(): Unit = {
-    // import sparkSession.implicits._
-
-    // For appDF
-    // aggregateAppInfo
-
-    /*
-
-    // For taskDF
-    if (taskEnd.nonEmpty) {
-      allDataFrames += (s"taskDF_$index" -> taskEnd.toDF)
-    }
-
-    // For sqlMetricsDF
-    if (sqlPlanMetrics.nonEmpty) {
-      logInfo(s"Total ${sqlPlanMetrics.size} SQL Metrics for appID=$appId")
-      allDataFrames += (s"sqlMetricsDF_$index" -> sqlPlanMetrics.toDF)
-    } else {
-      logInfo("No SQL Metrics Found. Skipping generating SQL Metrics DataFrame.")
-    }
-
-    // For propertiesDF
-    if (this.allProperties.nonEmpty) {
-      this.allDataFrames += (s"propertiesDF_$index" -> this.allProperties.toDF)
-    }
-
-
-    // For driverAccumDF
-    allDataFrames += (s"driverAccumDF_$index" -> driverAccum.toDF)
-    if (driverAccum.nonEmpty) {
-      logInfo(s"Total ${driverAccum.size} driver accums for appID=$appId")
-    } else {
-      logInfo("No Driver accum Found. Create an empty driver accum DataFrame.")
-    }
-
-    // For taskStageAccumDF
-    allDataFrames += (s"taskStageAccumDF_$index" -> taskStageAccum.toDF)
-    if (taskStageAccum.nonEmpty) {
-      logInfo(s"Total ${taskStageAccum.size} task&stage accums for appID=$appId")
-    } else {
-      logInfo("No task&stage accums Found.Create an empty task&stage accum DataFrame.")
-    }
-
-    // For planNodeAccumDF
-    allDataFrames += (s"planNodeAccumDF_$index" -> planNodeAccum.toDF)
-    if (planNodeAccum.nonEmpty) {
-      logInfo(s"Total ${planNodeAccum.size} Plan node accums for appID=$appId")
-    } else {
-      logInfo("No Plan node accums Found. Create an empty Plan node accums DataFrame.")
-    }
-
-    // For unsupportedSQLPlanDF
-    allDataFrames += (s"unsupportedSQLplan_$index" -> unsupportedSQLplan.toDF)
-    if (unsupportedSQLplan.nonEmpty) {
-      logInfo(s"Total ${unsupportedSQLplan.size} Unsupported ops for appID=$appId")
-    } else {
-      logInfo("No unSupportedSQLPlan node accums Found. " +
-        "Create an empty node accums DataFrame.")
-    }
-
-    for ((name, df) <- this.allDataFrames) {
-      df.createOrReplaceTempView(name)
-    }
-    */
-  }
-
-  /*
-  // Function to drop all temp views of this application.
-  def dropAllTempViews(): Unit ={
-    for ((name,_) <- this.allDataFrames) {
-      sparkSession.catalog.dropTempView(name)
-    }
-  }
-
-  // Function to run a query and optionally print the result to the file.
-  def runQuery(
-      query: String,
-      vertical: Boolean = false,
-      fileWriter: Option[ToolTextFileWriter] = None,
-      messageHeader: String = ""): DataFrame = {
-    logDebug("Running:" + query)
-    val df = sparkSession.sql(query)
-    writeDF(df, messageHeader, fileWriter, vertical=vertical)
-    df
-  }
-
-  def writeDF(df: DataFrame,
-      messageHeader: String,
-      writer: Option[ToolTextFileWriter],
-      vertical: Boolean = false): Unit = {
-    writer.foreach { writer =>
-      writer.write(messageHeader)
-      writer.write(df.showString(numOutputRows, 0, vertical))
-    }
-  }
-
-  def writeAsDF(data: java.util.List[Row],
-      schema: StructType,
-      messageHeader: String,
-      writer: Option[ToolTextFileWriter],
-      vertical: Boolean = false): Unit = {
-    val df = sparkSession.createDataFrame(data, schema)
-    writeDF(df, messageHeader, writer, vertical = vertical)
-  }
-  */
-
-  /*
-
-  // Function to return a DataFrame based on query text
-  def queryToDF(query: String): DataFrame = {
-    logDebug("Creating a DataFrame based on query : \n" + query)
-    sparkSession.sql(query)
-  }
-
-  // Function to generate a query for printing Application information
-  def generateAppInfo: String =
-    s"""select $index as appIndex, appName, appId, startTime, endTime, duration,
-       |durationStr, sparkVersion, gpuMode as pluginEnabled
-       |from appDF_$index
-       |""".stripMargin
-
-  // Function to generate a query for printing Executors information
-  def generateExecutorInfo: String = {
-    // If both blockManagersDF and resourceProfilesDF exist:
-    if (allDataFrames.contains(s"blockManagersDF_$index") &&
-        allDataFrames.contains(s"resourceProfilesDF_$index")) {
-      s"""select $index as appIndex,
-         |t.resourceProfileId, t.numExecutors, t.totalCores as executorCores,
-         |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
-         |rp.executorMemory, rp.numGpusPerExecutor,
-         |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
-         |from (select resourceProfileId, totalCores ,
-         |count(executorId) as numExecutors,
-         |max(executorId) as maxId
-         |from executorsDF_$index
-         |group by resourceProfileId, totalCores) t
-         |inner join resourceProfilesDF_$index rp
-         |on t.resourceProfileId = rp.id
-         |inner join blockManagersDF_$index bm
-         |on t.maxId = bm.executorId""".stripMargin
-    } else if (allDataFrames.contains(s"blockManagersDF_$index") &&
-        !allDataFrames.contains(s"resourceProfilesDF_$index")) {
-
-      s"""select $index as appIndex,
-         |null as resourceProfileId,
-         |t.numExecutors, t.totalCores as executorCores,
-         |bm.maxMem, bm.maxOnHeapMem, bm.maxOffHeapMem,
-         |null as executorMemory, null as numGpusPerExecutor,
-         |null as executorOffHeap, null as taskCpu, null as taskGpu
-         |from (select resourceProfileId, totalCores,
-         |count(executorId) as numExecutors,
-         |max(executorId) as maxId
-         |from executorsDF_$index
-         |group by resourceProfileId, totalCores) t
-         |inner join blockManagersDF_$index bm
-         |on t.maxId = bm.executorId""".stripMargin
-
-    } else if (!allDataFrames.contains(s"blockManagersDF_$index") &&
-        allDataFrames.contains(s"resourceProfilesDF_$index")) {
-      s"""select $index as appIndex,
-         |t.resourceProfileId,
-         |t.numExecutors,
-         |t.totalCores as executorCores,
-         |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |rp.executorMemory, rp.numGpusPerExecutor,
-         |rp.executorOffHeap, rp.taskCpu, rp.taskGpu
-         |from (select resourceProfileId, totalCores,
-         |count(executorId) as numExecutors,
-         |max(executorId) as maxId
-         |from executorsDF_$index
-         |group by resourceProfileId, totalCores) t
-         |inner join resourceProfilesDF_$index rp
-         |on t.resourceProfileId = rp.id
-         |""".stripMargin
-    } else {
-      s"""select $index as appIndex,
-         |null as resourceProfileId,
-         |count(executorID) as numExecutors,
-         |first(totalCores) as executorCores,
-         |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |null as maxMem, null as maxOnHeapMem, null as maxOffHeapMem,
-         |null as executorMemory, null as numGpusPerExecutor,
-         |null as executorOffHeap, null as taskCpu, null as taskGpu
-         |from executorsDF_$index
-         |group by appIndex
-         |""".stripMargin
-    }
-  }
-
-  // Function to generate a query for printing Rapids/UCX/GDS related Spark properties
-  def generateNvidiaProperties: String = {
-    s"""select key as propertyName,value as appIndex_$index
-       |from propertiesDF_$index
-       |where source ='spark'
-       |and key like 'spark.rapids%'
-       |or key like 'spark.executorEnv.UCX%'
-       |or key in ('spark.shuffle.manager','spark.shuffle.service.enabled')
-       |""".stripMargin
-  }
-
-  // Function to generate the SQL string for aggregating task metrics columns.
-  def generateAggSQLString: String = {
-    var resultString = ""
-
-    // Function to concat the Aggregation column string
-    // eg: ",\n round(sum(column),1) as column_sum"
-    def concatAggCol(col: String, aggType: String): Unit = {
-      val colString = "round(" + aggType + "(t." + col + ")" + ",1)"
-      resultString += ",\n" + colString + " as " + col + "_" + aggType
-    }
-
-    for ((col, aggType) <- this.taskMetricsColumns) {
-      // If aggType=all, it means all 4 aggregation: sum, max, min, avg.
-      if (aggType == "all") {
-        concatAggCol(col, "sum")
-        concatAggCol(col, "max")
-        concatAggCol(col, "min")
-        concatAggCol(col, "avg")
-      }
-      else {
-        concatAggCol(col, aggType)
-      }
-    }
-    resultString
-  }
-
-  // Function to generate a query for job level Task Metrics aggregation
-  def jobtoStagesSQL: String = {
-    s"""select $index as appIndex, j.jobID,
-       |j.stageIds, j.sqlID
-       |from jobDF_$index j
-       |""".stripMargin
-  }
-
-
-
-  // Function to generate a query for SQL level Task Metrics aggregation
-  def sqlMetricsAggregationSQL: String = {
-    s"""select $index as appIndex, '$appId' as appID,
-       |sq.sqlID, sq.description,
-       |count(*) as numTasks, max(sq.duration) as Duration,
-       |sum(executorCPUTime) as executorCPUTime,
-       |sum(executorRunTime) as executorRunTime,
-       |round(sum(executorCPUTime)/sum(executorRunTime)*100,2) executorCPURatio
-       |$generateAggSQLString
-       |from taskDF_$index t, stageDF_$index s,
-       |jobDF_$index j, sqlDF_$index sq
-       |where t.stageId=s.stageId
-       |and array_contains(j.stageIds, s.stageId)
-       |and sq.sqlID=j.sqlID
-       |group by sq.sqlID,sq.description
-       |""".stripMargin
-  }
-
-
-
-  // Function to generate a query for printing SQL metrics(accumulables)
-  def generateSQLAccums: String = {
-    s"""with allaccums as
-       |(
-       |select s.sqlID, p.nodeID, p.nodeName,
-       |s.accumulatorId, s.name, d.value, s.metricType
-       |from sqlMetricsDF_$index s, driverAccumDF_$index d,
-       |planNodeAccumDF_$index p
-       |where s.sqlID = d.sqlID and s.accumulatorId=d.accumulatorId
-       |and s.sqlID=p.sqlID and s.accumulatorId=p.accumulatorId
-       |union
-       |select s.sqlID, p.nodeID, p.nodeName,
-       |s.accumulatorId, s.name, t.value, s.metricType
-       |from jobDF_$index j, sqlDF_$index sq ,
-       |taskStageAccumDF_$index t, sqlMetricsDF_$index s,
-       |planNodeAccumDF_$index p
-       |where array_contains(j.stageIds, t.stageId)
-       |and sq.sqlID=j.sqlID
-       |and s.sqlID = sq.sqlID
-       |and s.accumulatorId=t.accumulatorId
-       |and s.sqlID=p.sqlID and s.accumulatorId=p.accumulatorId
-       |)
-       |select $index as appIndex, sqlID, nodeID, nodeName,
-       |accumulatorId, name, max(value) as max_value, metricType
-       |from allaccums
-       |group by sqlID, nodeID, nodeName, accumulatorId, name, metricType
-       |order by sqlID, nodeID, nodeName, accumulatorId, name, metricType
-       |""".stripMargin
-  }
-
-  def getFailedTasks: String = {
-    s"""select $index as appIndex, stageId, stageAttemptId, taskId, attempt,
-       |substr(endReason, 1, 100) as failureReason
-       |from taskDF_$index
-       |where successful = false
-       |order by appIndex, stageId, stageAttemptId, taskId, attempt
-       |""".stripMargin
-  }
-
-  def getFailedStages: String = {
-    s"""select $index as appIndex, stageId, attemptId, name, numTasks,
-       |substr(failureReason, 1, 100) as failureReason
-       |from stageDF_$index
-       |where failureReason is not null
-       |order by stageId, attemptId
-       |""".stripMargin
-  }
-
-  def getFailedJobs: String = {
-    s"""select $index as appIndex, jobID, jobResult,
-       |substr(failedReason, 1, 100) as failureReason
-       |from jobDF_$index
-       |where jobResult <> 'JobSucceeded'
-       |order by jobID
-       |""".stripMargin
-  }
-
-  def getblockManagersRemoved: String = {
-    s"""select $index as appIndex, executorID, time
-       |from blockManagersRemovedDF_$index
-       |order by cast(executorID as long)
-       |""".stripMargin
-  }
-
-  def getExecutorsRemoved: String = {
-    s"""select $index as appIndex, executorID, time,
-       |substr(reason, 1, 100) reason_first100char
-       |from executorsRemovedDF_$index
-       |order by cast(executorID as long)
-       |""".stripMargin
-  }
-
-  def unsupportedSQLPlan: String = {
-    s"""select $index as appIndex, sqlID, nodeID, nodeName,
-       |substr(nodeDesc, 1, 100) nodeDescription
-       |from unsupportedSQLplan_$index""".stripMargin
-  }
-
-  def sqlIdsForUnsuccessfulJobs: String = {
-    s"""select
-       |sqlID
-       |from jobDF_$index j
-       |where j.jobResult != "JobSucceeded" or j.jobResult is null
-       |""".stripMargin
-  }
-
-  def profilingDurationSQL: String = {
-    s"""select
-       |$index as appIndex,
-       |'$appId' as `App ID`,
-       |sq.sqlID,
-       |sq.duration as `SQL Duration`,
-       |sq.hasDataset as `Contains Dataset Op`,
-       |app.duration as `App Duration`,
-       |problematic as `Potential Problems`,
-       |round(executorCPUTime/executorRunTime*100,2) as `Executor CPU Time Percent`
-       |from sqlDF_$index sq, appdf_$index app
-       |left join sqlAggMetricsDF m on $index = m.appIndex and sq.sqlID = m.sqlID
-       |""".stripMargin
-  }
-  */
 }
 
 object ApplicationInfo extends Logging {
-  def createApps(
-      allPaths: Seq[EventLogInfo],
-      numRows: Int,
-      hadoopConf: Configuration,
-      startIndex: Int = 1): (Seq[ApplicationInfo], Int) = {
-    var index: Int = startIndex
+
+
+  def createApp(path: EventLogInfo, numRows: Int, index: Int,
+      hadoopConf: Configuration): (Option[ApplicationInfo], Int) = {
     var errorCode = 0
-    val apps = allPaths.flatMap { path =>
-      try {
-        // This apps only contains 1 app in each loop.
-        val startTime = System.currentTimeMillis()
-        val app = new ApplicationInfo(numRows, hadoopConf, path, index)
-        EventLogPathProcessor.logApplicationInfo(app)
-        val endTime = System.currentTimeMillis()
-        logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
-        index += 1
-        Some(app)
-      } catch {
-        case json: com.fasterxml.jackson.core.JsonParseException =>
-          logWarning(s"Error parsing JSON: $path")
-          errorCode = 1
-          None
-        case il: IllegalArgumentException =>
-          logWarning(s"Error parsing file: $path", il)
-          errorCode = 2
-          None
-        case e: Exception =>
-          // catch all exceptions and skip that file
-          logWarning(s"Got unexpected exception processing file: $path", e)
-          errorCode = 3
-          None
-      }
+    val app = try {
+      // This apps only contains 1 app in each loop.
+      val startTime = System.currentTimeMillis()
+      val app = new ApplicationInfo(numRows, hadoopConf, path, index)
+      EventLogPathProcessor.logApplicationInfo(app)
+      val endTime = System.currentTimeMillis()
+      logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
+      Some(app)
+    } catch {
+      case json: com.fasterxml.jackson.core.JsonParseException =>
+        logWarning(s"Error parsing JSON: $path")
+        errorCode = 1
+        None
+      case il: IllegalArgumentException =>
+        logWarning(s"Error parsing file: $path", il)
+        errorCode = 2
+        None
+      case e: Exception =>
+        // catch all exceptions and skip that file
+        logWarning(s"Got unexpected exception processing file: $path", e)
+        errorCode = 3
+        None
     }
-    (apps, errorCode)
+    (app, errorCode)
   }
 }

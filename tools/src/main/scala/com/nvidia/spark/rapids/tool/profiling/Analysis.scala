@@ -342,6 +342,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
     val allNonEmptyRows = allRows.filter(!_.isEmpty)
     if (allNonEmptyRows.size > 0) {
+      // TODO - fix dealing with empty string
       val sortedRows = allNonEmptyRows.sortBy(cols => (cols(0).toLong, cols(2).toLong,
         (cols(3).toLong)))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
