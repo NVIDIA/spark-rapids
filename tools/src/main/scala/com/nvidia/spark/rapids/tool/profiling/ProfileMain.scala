@@ -123,18 +123,19 @@ object ProfileMain extends Logging {
       if (appArgs.compare()) { // Compare Applications
 
         textFileWriter.write("### A. Compare Information Collected ###")
-        /*
-        val compare = new CompareApplications(apps, Some(textFileWriter))
-        compare.compareAppInfo()
-        compare.compareDataSourceInfo(sparkSession, numOutputRows)
+        val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
+        collect.printAppInfo()
+        // val compare = new CompareApplications(apps, Some(textFileWriter))
+        // compare.compareAppInfo()
+        /*compare.compareDataSourceInfo(sparkSession, numOutputRows)
         compare.compareExecutorInfo()
         compare.findMatchingStages()
         compare.compareJobInfo()
         compare.compareRapidsProperties()
         */
       } else {
-        val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
         textFileWriter.write("### A. Information Collected ###")
+        val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
         collect.printAppInfo()
         collect.printDataSourceInfo()
         collect.printExecutorInfo()
