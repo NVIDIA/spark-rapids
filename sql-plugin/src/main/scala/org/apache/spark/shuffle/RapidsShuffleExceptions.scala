@@ -36,5 +36,7 @@ class RapidsShuffleTimeoutException(message: String) extends Exception(message)
  * Internal exception thrown by `BufferSendState` in case where it detects
  * an `IOException` when copying buffers into a bounce buffer that it is preparing.
  * @param message - string describing the issue
+ * @param cause - causing exception, or null
  */
-class RapidsShuffleSendPrepareException(message: String) extends Exception(message)
+class RapidsShuffleSendPrepareException(message: String, cause: Throwable)
+    extends Exception(message, cause)

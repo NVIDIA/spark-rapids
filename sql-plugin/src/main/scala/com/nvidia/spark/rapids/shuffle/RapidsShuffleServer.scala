@@ -331,7 +331,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           // For each `BufferSendState` we ask for a bounce buffer fill up
           // so the server is servicing N (`bufferSendStates`) requests
           try {
-            val buffersToSend = bufferSendState.tryGetBufferToSend()
+            val buffersToSend = bufferSendState.getBufferToSend()
             bssBuffers.append((bufferSendState, buffersToSend))
           } catch {
             case ex: RapidsShuffleSendPrepareException =>

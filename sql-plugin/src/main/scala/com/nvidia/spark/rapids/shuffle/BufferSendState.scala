@@ -151,7 +151,13 @@ class BufferSendState(
     }
   }
 
-  def tryGetBufferToSend(): MemoryBuffer = synchronized {
+  /**
+   * Prepares and returns a `MemoryBuffer` that can be used in a send.
+   * @return - a memory buffer slice backed by either a host or device bounce buffer, depending on
+   *         the tier location for buffers we are sending.
+   * @throws `RapidsShuffleSendPrepareException` when copies to the bounce buffer fail.
+   */
+  def getBufferToSend(): MemoryBuffer = synchronized {
     require(acquiredBuffs.isEmpty,
       "Called next without calling `releaseAcquiredToCatalog` first")
 
@@ -203,11 +209,9 @@ class BufferSendState(
           needsCleanup = false
         } catch {
           case ioe: IOException =>
-            val ex = new RapidsShuffleSendPrepareException(
+            throw new RapidsShuffleSendPrepareException(
               s"Error while copying to bounce buffer for executor ${peerExecutorId} and " +
-                  s"header ${TransportUtils.toHex(peerBufferReceiveHeader)}")
-            ex.addSuppressed(ioe)
-            throw ex
+                  s"header ${TransportUtils.toHex(peerBufferReceiveHeader)}", ioe)
         } finally {
           if (needsCleanup) {
             // we likely failed in `copyToMemoryBuffer`

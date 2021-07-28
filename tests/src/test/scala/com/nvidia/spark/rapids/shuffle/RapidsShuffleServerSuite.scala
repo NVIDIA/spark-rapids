@@ -109,7 +109,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           assert(bss.hasMoreSends)
-          val mb = bss.tryGetBufferToSend()
+          val mb = bss.getBufferToSend()
           val receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
           assertResult(10000)(mb.getLength)
@@ -139,13 +139,13 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
-          var buffs = bss.tryGetBufferToSend()
+          var buffs = bss.getBufferToSend()
           var receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
           assert(bss.hasMoreSends)
           bss.releaseAcquiredToCatalog()
 
-          buffs = bss.tryGetBufferToSend()
+          buffs = bss.getBufferToSend()
           receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
           assert(!bss.hasMoreSends)
@@ -177,7 +177,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           (0 until 246).foreach { _ =>
-            bss.tryGetBufferToSend()
+            bss.getBufferToSend()
             val receiveBlocks = receiveWindow.next()
             compareRanges(bounceBuffer, receiveBlocks)
             bss.releaseAcquiredToCatalog()
