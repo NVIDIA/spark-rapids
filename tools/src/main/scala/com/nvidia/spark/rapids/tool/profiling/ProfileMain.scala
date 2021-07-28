@@ -179,7 +179,6 @@ object ProfileMain extends Logging {
         }
       }
 
-      /*
       if (appArgs.generateTimeline()) {
         if (appArgs.compare()) {
           logWarning("Timeline graph does not compare apps")
@@ -192,7 +191,6 @@ object ProfileMain extends Logging {
               s"to $outputDirectory in $duration second(s)\n")
         }
       }
-      */
     }
 
     0
