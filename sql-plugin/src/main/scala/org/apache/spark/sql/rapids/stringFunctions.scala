@@ -487,11 +487,8 @@ case class GpuInitCap(child: Expression) extends GpuUnaryExpression with Implici
 case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
     extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
   override def left: Expression = input
-
   override def right: Expression = repeatTimes
-
   override def dataType: DataType = input.dataType
-
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, IntegerType)
 
   def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
