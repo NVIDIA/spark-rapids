@@ -198,7 +198,8 @@ manually trigger it by commenting `build`. It includes following steps,
 1. Mergeable check
 2. Blackduck vulnerability scan
 3. Fetch merged code (merge the pull request HEAD into BASE branch, e.g. fea-001 into branch-x)
-4. Run `mvn verify` and unit tests for multiple Spark versions in parallel. Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
+4. Run `mvn verify` and unit tests for multiple Spark versions in parallel. 
+Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
 
 If it fails, you can click the `Details` link of this check, and go to `Post processing -> Start post processing` to
 find the uploaded log.
