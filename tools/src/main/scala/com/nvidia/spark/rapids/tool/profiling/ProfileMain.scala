@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.util.concurrent.TimeUnit
+
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTextFileWriter}
@@ -163,7 +165,7 @@ object ProfileMain extends Logging {
       healthCheck.listRemovedExecutors()
       healthCheck.listPossibleUnsupportedSQLPlan()
 
-      /*
+
       if (appArgs.generateDot()) {
         if (appArgs.compare()) {
           logWarning("Dot graph does not compare apps")
@@ -177,6 +179,7 @@ object ProfileMain extends Logging {
         }
       }
 
+      /*
       if (appArgs.generateTimeline()) {
         if (appArgs.compare()) {
           logWarning("Timeline graph does not compare apps")

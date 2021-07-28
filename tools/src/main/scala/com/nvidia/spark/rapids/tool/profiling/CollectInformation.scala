@@ -264,13 +264,29 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }
   }
 
-
   // Print SQL Plan Metrics
   def printSQLPlanMetrics(): Unit = {
     val messageHeader = "\nSQL Plan Metrics for Application:\n"
     fileWriter.foreach(_.write(messageHeader))
      val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
        "name", "max_value", "metricType")
+    val allRows = CollectInformation.generateSQLAccums(apps)
+    val filtered = allRows.filter(_.nonEmpty)
+    if (allRows.size > 0) {
+      // appIndex, sqlID, nodeID, nodeName, accumulatorId, name, metricType
+      val sortedRows = filtered.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong,
+        cols(3), cols(4).toLong, cols(6)))
+      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        outputHeaders, sortedRows)
+      fileWriter.foreach(_.write(outStr))
+    } else {
+      fileWriter.foreach(_.write("No SQL Plan Metrics Found!\n"))
+    }
+  }
+}
+
+object CollectInformation {
+  def generateSQLAccums(apps: Seq[ApplicationInfo]): Seq[Seq[String]] = {
     val allRows = apps.flatMap { app =>
       // todo - update conditional
       if ((app.taskStageAccumMap.size > 0 || app.driverAccum.size > 0)
@@ -304,16 +320,6 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         Seq.empty
       }
     }
-    val filtered = allRows.filter(_.nonEmpty)
-    if (allRows.size > 0) {
-      // appIndex, sqlID, nodeID, nodeName, accumulatorId, name, metricType
-      val sortedRows = filtered.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong,
-        cols(3), cols(4).toLong, cols(6)))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
-      fileWriter.foreach(_.write(outStr))
-    } else {
-      fileWriter.foreach(_.write("No SQL Plan Metrics Found!\n"))
-    }
+    allRows
   }
 }

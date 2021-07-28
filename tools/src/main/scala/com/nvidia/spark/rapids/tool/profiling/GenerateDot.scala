@@ -84,40 +84,47 @@ object GenerateDot {
     fileWriter.write(str)
   }
 
-  /*
   def apply(app: ApplicationInfo, outputDirectory: String): Unit = {
-    val accums = app.runQuery(app.generateSQLAccums)
+    val accums = CollectInformation.generateSQLAccums(Seq(app))
+
+    // Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
+    //       "name", "max_value", "metricType")
+    // Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
+    //              metric.nodeName, metric.accumulatorId.toString, metric.name,
+    //              max.toString, metric.metricType)
+    val accumSummary = accums.map { a =>
+      Seq(a(1), a(4), a(6))
+    }
 
     val accumIdToStageId = app.accumIdToStageId
 
     val formatter = java.text.NumberFormat.getIntegerInstance
 
+    // TODO - what about stage attempt id?
     val stageIdToStageMetrics = app.taskEnd.groupBy(task => task.stageId).mapValues { tasks =>
       val durations = tasks.map(_.duration)
       val numTasks = durations.length
       val minDur = durations.min
       val maxDur = durations.max
-      val meanDur = durations.sum/numTasks.toDouble
+      val meanDur = durations.sum / numTasks.toDouble
       StageMetrics(numTasks,
         s"MIN: ${formatter.format(minDur)} ms " +
-            s"MAX: ${formatter.format(maxDur)} ms " +
-            s"AVG: ${formatter.format(meanDur)} ms")
+          s"MAX: ${formatter.format(maxDur)} ms " +
+          s"AVG: ${formatter.format(meanDur)} ms")
     }
 
-    val accumSummary = accums
-        .select(col("sqlId"), col("accumulatorId"), col("max_value"))
-        .collect()
-    val sqlIdToMaxMetric = new mutable.HashMap[Long, ArrayBuffer[(Long,Long)]]()
+
+    val sqlIdToMaxMetric = new mutable.HashMap[Long, ArrayBuffer[(Long, Long)]]()
     for (row <- accumSummary) {
-      val list = sqlIdToMaxMetric.getOrElseUpdate(row.getLong(0),
+      val list = sqlIdToMaxMetric.getOrElseUpdate(row(0).toLong,
         new ArrayBuffer[(Long, Long)]())
-      list += row.getLong(1) -> row.getLong(2)
+      list += row(1).toLong -> row(2).toLong
     }
 
     val sqlPlansMap = app.sqlPlan.map { case (sqlId, sparkPlanInfo) =>
       sqlId -> ((sparkPlanInfo, app.physicalPlanDescription(sqlId)))
     }
-    for ((sqlID,  (planInfo, physicalPlan)) <- sqlPlansMap) {
+    for ((sqlID, (planInfo, physicalPlan)) <- sqlPlansMap) {
       val dotFileWriter = new ToolTextFileWriter(outputDirectory,
         s"${app.appId}-query-$sqlID.dot", "Dot file")
       try {
@@ -129,8 +136,8 @@ object GenerateDot {
         dotFileWriter.close()
       }
     }
+
   }
-  */
 }
 
 /**
