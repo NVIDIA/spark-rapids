@@ -231,7 +231,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         newDiff.foreach { k =>
           // we need to fill if some apps didn't have it
           val appVals = ArrayBuffer[String]()
-          appVals ++ Seq.fill(numApps - 1)("na")
+          appVals ++= Seq.fill(numApps - 1)("na")
           logWarning("new app " + app.index + " value: " + k)
           logWarning("app values before: " + appVals.mkString(","))
           appVals += rapidsRelated.getOrElse(k, "na")
