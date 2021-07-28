@@ -190,15 +190,18 @@ modification should be triggered by the copyright year update hook and the commi
 ### Pull request status checks
 A pull request should pass all status checks before merged.
 #### signoff check
-Please follow [sign-your-work](#sign-your-work) section, and make sure at least one commit in your pull request get signed-off.
+Please follow the steps in the [Sign your work](#sign-your-work) section,
+and make sure at least one commit in your pull request get signed-off.
 #### blossom-ci
-The check runs on NVIDIA self-hosted runner, a [project committer](.github/workflows/blossom-ci.yml#L36) can manually trigger it by commenting `build`. It includes following steps,
+The check runs on NVIDIA self-hosted runner, a [project committer](.github/workflows/blossom-ci.yml#L36) can
+manually trigger it by commenting `build`. It includes following steps,
 1. Mergeable check
 2. Blackduck vulnerability scan
 3. Fetch merged code (merge the pull request HEAD into BASE branch, e.g. fea-001 into branch-x)
-4. Run `mvn verify` and unit tests for multiple spark versions in parallel. Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
+4. Run `mvn verify` and unit tests for multiple Spark versions in parallel. Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
 
-If fail, you can click the `Details` link of this check, and go to `Post processing -> Start post processing` to find the uploaded log.
+If it fails, you can click the `Details` link of this check, and go to `Post processing -> Start post processing` to
+find the uploaded log.
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md
