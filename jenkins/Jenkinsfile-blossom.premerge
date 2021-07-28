@@ -144,7 +144,6 @@ pipeline {
             }
         } // end of Build docker image
 
-        // TODO: support parallel testing for different spark versions
         stage('Premerge Test') {
             when {
                 beforeAgent true
@@ -154,6 +153,8 @@ pipeline {
                 }
             }
 
+            // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
+            // If any one is failed will abort another if not finish yet and will upload failure log to Github
             failFast true
             parallel {
                 stage('mvn verify') {
@@ -175,7 +176,6 @@ pipeline {
                     steps {
                         script {
                             container('gpu') {
-                                // TODO: improve resource management
                                 timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
                                     sh "$PREMERGE_SCRIPT mvn_verify"
                                     step([$class                : 'JacocoPublisher',
