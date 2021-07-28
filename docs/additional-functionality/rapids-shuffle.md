@@ -65,8 +65,15 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    [file a GitHub issue](https://github.com/NVIDIA/spark-rapids/issues) so we can investigate 
    further.
     
-2. Fetch and install the UCX package for your OS and CUDA version 
+2. Fetch and install the UCX package for your OS from:
    [UCX 1.11.0](https://github.com/openucx/ucx/releases/tag/v1.11.0).
+
+   NOTE: Please install the artifact with the newest CUDA 11.x version (for UCX 1.11.0 please
+   pick CUDA 11.2) as CUDA 11 introduced [CUDA Enhanced Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases). 
+   Starting UCX 1.12, UCX will stop publishing individual artifacts for each minor version of CUDA.
+   
+   Please refer to our [FAQ](../FAQ.md#what-hardware-is-supported) for caveats with 
+   CUDA Enhanced Compatibility.
    
    RDMA packages have extra requirements that should be satisfied by MLNX_OFED.
    
