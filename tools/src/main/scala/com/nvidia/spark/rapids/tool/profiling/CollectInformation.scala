@@ -215,11 +215,14 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         // first update intersecting
         inter.foreach { k =>
           val appVals = props.getOrElse(k, ArrayBuffer[String]())
+          logWarning("inter app " + app.index + " value: " + k)
           appVals += rapidsRelated.getOrElse(k, "na")
         }
 
         // this app doesn't contain a key that was in another app
         existDiff.foreach { k =>
+          logWarning("exist app " + app.index + " value: " + k)
+
           val appVals = props.getOrElse(k, ArrayBuffer[String]())
           appVals += "na"
         }
@@ -229,6 +232,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           // we need to fill if some apps didn't have it
           val appVals = ArrayBuffer[String]()
           appVals ++ Seq.fill(numApps)("na")
+          logWarning("new app " + app.index + " value: " + k)
+
           appVals += rapidsRelated.getOrElse(k, "na")
           props.put(k, appVals)
         }
