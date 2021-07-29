@@ -341,7 +341,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
   protected def buildReaderSchema(ctx: OrcPartitionReaderContext): TypeDescription = {
     if (ctx.requestedMapping.isDefined) {
       // filter top-level schema based on requested mapping
-      val orcSchema = ctx.fileSchema
+      val orcSchema = ctx.updatedReadSchema
       val orcSchemaNames = orcSchema.getFieldNames
       val orcSchemaChildren = orcSchema.getChildren
       val readerSchema = TypeDescription.createStruct()
