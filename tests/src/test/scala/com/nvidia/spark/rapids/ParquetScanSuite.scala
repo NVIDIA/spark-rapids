@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.nio.file.Files
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.types.{IntegerType, LongType, StringType, StructField, StructType}
 
 class ParquetScanSuite extends SparkQueryCompareTestSuite {
   private val fileSplitsParquet = frameFromParquet("file-splits.parquet")
@@ -56,4 +57,37 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frameFromParquet("decimal-test-legacy.parquet")) {
     frame => frame.select(col("*"))
   }
+
+  testSparkResultsAreEqual("parquet dis-order read schema",
+    frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
+      StructField("c2_string", StringType),
+      StructField("c3_long", LongType),
+      StructField("c1_int", IntegerType))))) { frame => frame }
+
+  testSparkResultsAreEqual("parquet dis-order read schema 1",
+    frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
+      StructField("c2_string", StringType),
+      StructField("c1_int", IntegerType),
+      StructField("c3_long", LongType))))) { frame => frame }
+
+  testSparkResultsAreEqual("parquet dis-order read schema 2",
+    frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
+      StructField("c3_long", LongType),
+      StructField("c2_string", StringType),
+      StructField("c1_int", IntegerType))))) { frame => frame }
+
+  testSparkResultsAreEqual("parquet dis-order read schema 3",
+    frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
+      StructField("c3_long", LongType),
+      StructField("c2_string", StringType))))) { frame => frame }
+
+  testSparkResultsAreEqual("parquet dis-order read schema 4",
+    frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
+      StructField("c2_string", StringType),
+      StructField("c1_int", IntegerType))))) { frame => frame }
+
+  testSparkResultsAreEqual("parquet dis-order read schema 5",
+    frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
+      StructField("c3_long", LongType),
+      StructField("c1_int", IntegerType))))) { frame => frame }
 }
