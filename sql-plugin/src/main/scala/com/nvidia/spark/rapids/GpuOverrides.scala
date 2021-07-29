@@ -2473,10 +2473,10 @@ object GpuOverrides {
           ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringRepeat](
-      "StringRepeat operator",
+      "StringRepeat operator, which repeat the given strings by given number of times",
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
-        Seq(ParamCheck("input", TypeSig.lit(TypeEnum.STRING) + TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("repeatTimes", TypeSig.lit(TypeEnum.INT) + TypeSig.INT, TypeSig.INT))),
+        Seq(ParamCheck("input", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("repeatTimes", TypeSig.INT, TypeSig.INT))),
       (in, conf, p, r) => new BinaryExprMeta[StringRepeat](in, conf, p, r) {
         override def convertToGpu(
             input: Expression,
