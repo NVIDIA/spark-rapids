@@ -92,7 +92,14 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       }
     }
     if (failed.size > 0) {
-      val sortedRows = failed.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong))
+      val sortedRows = failed.sortBy { cols =>
+        val jobRes = if (cols(2).isEmpty) {
+          0
+        } else {
+          cols(2).toLong
+        }
+        (cols(0).toLong, cols(1).toLong, jobRes)
+      }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))
