@@ -58,7 +58,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -124,19 +124,6 @@ object GpuOrcScanBase {
       .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
-
-    if (sparkSession.conf
-      .getOption("spark.sql.optimizer.nestedSchemaPruning.enabled").exists(_.toBoolean) &&
-      schema.exists(f => hasStructType(f.dataType))) {
-      meta.willNotWorkOnGpu("nested schema pruning is not supported yet")
-    }
-  }
-
-  private def hasStructType(dt: DataType): Boolean = dt match {
-    case m: MapType => hasStructType(m.keyType) || hasStructType(m.valueType)
-    case a: ArrayType => hasStructType(a.elementType)
-    case _: StructType => true
-    case _ => false
   }
 }
 
