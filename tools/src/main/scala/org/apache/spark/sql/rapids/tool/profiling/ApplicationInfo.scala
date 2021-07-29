@@ -317,7 +317,7 @@ class ApplicationInfo(
               " job and sql end times!")
             // estimate the app end with job or sql end times
             val sqlEndTime = if (sqlEndTimes.size == 0) 0L else sqlEndTimes.map(_.get).max
-            val jobEndTime = if (jobEndTimes == 0 ) 0L else jobEndTimes.map(_.get).max
+            val jobEndTime = if (jobEndTimes.size == 0) 0L else jobEndTimes.map(_.get).max
             val maxEndTime = math.max(sqlEndTime, jobEndTime)
             if (maxEndTime == 0) None else Some(maxEndTime)
           }
