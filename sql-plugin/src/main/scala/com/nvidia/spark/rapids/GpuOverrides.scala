@@ -964,6 +964,18 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression =
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }),
+    expr[PreciseTimestampConversion](
+      "Expression used internally to convert the TimestampType to Long and back without losing " +
+          "precision, i.e. in microseconds. Used in time windowing.",
+      ExprChecks.unaryProjectNotLambda(
+        TypeSig.TIMESTAMP + TypeSig.LONG,
+        TypeSig.TIMESTAMP + TypeSig.LONG,
+        TypeSig.TIMESTAMP + TypeSig.LONG,
+        TypeSig.TIMESTAMP + TypeSig.LONG),
+      (a, conf, p, r) => new UnaryExprMeta[PreciseTimestampConversion](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuPreciseTimestampConversion(child, a.fromType, a.toType)
+      }),
     expr[UnaryMinus](
       "Negate a numeric value",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
@@ -3046,7 +3058,10 @@ object GpuOverrides {
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",
