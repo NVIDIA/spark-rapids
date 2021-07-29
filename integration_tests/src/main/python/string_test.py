@@ -286,40 +286,60 @@ def test_substring():
                 'SUBSTRING(a, 1, NULL)',
                 'SUBSTRING(a, 0, 0)'))
 
+
 def test_repeat_scalar_and_scalar():
-    gen_s = StringGen()
-    gen_r = IntegerGen()
-    s = gen_scalar(gen_s)
-    r = gen_scalar_value(gen_r, force_no_nulls=True)
+    gen_s = StringGen(nullable=False)
+    (s,) = gen_scalars_for_sql(gen_s, 1)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen_s).select(f.repeat(s, r)))
+            lambda spark: unary_op_df(spark, gen_s).selectExpr(
+                'repeat(NULL, NULL)',
+                'repeat(NULL, -1)',
+                'repeat(NULL, 0)',
+                'repeat(NULL, 1)',
+                'repeat({}, -10)'.format(s),
+                'repeat({}, 0)'.format(s),
+                'repeat({}, 10)'.format(s),
+                'repeat({}, NULL)'.format(s)
+            ))
+
+def test_repeat_scalar_and_column():
+    gen_s = StringGen(nullable=False)
+    gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0])
+    (s,) = gen_scalars_for_sql(gen_s, 1)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen_r).selectExpr(
+                'repeat(NULL, a)'.format(s),
+                'repeat({}, a)'.format(s)
+            ))
 
 def test_repeat_column_and_scalar():
     gen_s = StringGen()
-    gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0])
-    r = gen_scalar_value(gen_r, force_no_nulls=True)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen_s).select(
-                f.repeat(f.col('a'), r)))
+            lambda spark: unary_op_df(spark, gen_s).selectExpr(
+                'repeat(a, -10)',
+                'repeat(a, 0)',
+                'repeat(a, 10)',
+                'repeat(a, NULL)'
+            ))
 
 def test_repeat_column_and_column():
     gen_s = StringGen()
+
     gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0])
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: two_col_df(spark, gen_s, gen_r).select(
-                f.repeat(f.col('a'), f.col('b'))))
+            lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
+
     gen_r = ByteGen(min_val=-100, max_val=100, special_cases=[0])
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: two_col_df(spark, gen_s, gen_r).select(
-                f.repeat(f.col('a'), f.col('b'))))
+            lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
+
     gen_r = ShortGen(min_val=-100, max_val=100, special_cases=[0])
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: two_col_df(spark, gen_s, gen_r).select(
-                f.repeat(f.col('a'), f.col('b'))))
+            lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
+
     gen_r = LongGen(min_val=-100, max_val=100, special_cases=[0])
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: two_col_df(spark, gen_s, gen_r).select(
-                f.repeat(f.col('a'), f.col('b'))))
+            lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
 
 def test_replace():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
