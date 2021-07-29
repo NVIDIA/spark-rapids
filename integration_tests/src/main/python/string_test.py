@@ -286,7 +286,6 @@ def test_substring():
                 'SUBSTRING(a, 1, NULL)',
                 'SUBSTRING(a, 0, 0)'))
 
-
 def test_repeat_scalar_and_scalar():
     gen_s = StringGen(nullable=False)
     (s,) = gen_scalars_for_sql(gen_s, 1)
@@ -304,7 +303,7 @@ def test_repeat_scalar_and_scalar():
 
 def test_repeat_scalar_and_column():
     gen_s = StringGen(nullable=False)
-    gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0])
+    gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0], nullable=True)
     (s,) = gen_scalars_for_sql(gen_s, 1)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen_r).selectExpr(
@@ -313,7 +312,7 @@ def test_repeat_scalar_and_column():
             ))
 
 def test_repeat_column_and_scalar():
-    gen_s = StringGen()
+    gen_s = StringGen(nullable=True)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen_s).selectExpr(
                 'repeat(a, -10)',
@@ -323,21 +322,8 @@ def test_repeat_column_and_scalar():
             ))
 
 def test_repeat_column_and_column():
-    gen_s = StringGen()
-
-    gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0])
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
-
-    gen_r = ByteGen(min_val=-100, max_val=100, special_cases=[0])
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
-
-    gen_r = ShortGen(min_val=-100, max_val=100, special_cases=[0])
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
-
-    gen_r = LongGen(min_val=-100, max_val=100, special_cases=[0])
+    gen_s = StringGen(nullable=True)
+    gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0], nullable=True)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: two_col_df(spark, gen_s, gen_r).selectExpr('repeat(a, b)'))
 
