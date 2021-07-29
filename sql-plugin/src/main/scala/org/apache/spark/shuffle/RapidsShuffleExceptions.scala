@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,3 +31,12 @@ class RapidsShuffleFetchFailedException(
 }
 
 class RapidsShuffleTimeoutException(message: String) extends Exception(message)
+
+/**
+ * Internal exception thrown by `BufferSendState` in case where it detects
+ * an `IOException` when copying buffers into a bounce buffer that it is preparing.
+ * @param message - string describing the issue
+ * @param cause - causing exception, or null
+ */
+class RapidsShuffleSendPrepareException(message: String, cause: Throwable)
+    extends Exception(message, cause)

@@ -16,12 +16,15 @@
 
 package com.nvidia.spark.rapids.shuffle
 
+import java.io.IOException
+
 import ai.rapids.cudf.{Cuda, MemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, RapidsBuffer, ShuffleMetadata, StorageTier}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.shuffle.RapidsShuffleSendPrepareException
 
 /**
  * A helper case class to maintain the server side state in response to a transfer
@@ -54,7 +57,7 @@ class BufferSendState(
     sendBounceBuffers: SendBounceBuffers,
     requestHandler: RapidsShuffleRequestHandler,
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
-    extends Iterator[MemoryBuffer] with AutoCloseable with Logging with Arm {
+    extends AutoCloseable with Logging with Arm {
 
   class SendBlock(val bufferId: Int, tableSize: Long) extends BlockWithSize {
     override def size: Long = tableSize
@@ -114,7 +117,7 @@ class BufferSendState(
     transaction
   }
 
-  def hasNext: Boolean = synchronized { hasMoreBlocks }
+  def hasMoreSends: Boolean = synchronized { hasMoreBlocks }
 
   private[this] def freeBounceBuffers(): Unit = {
     sendBounceBuffers.close()
@@ -148,7 +151,13 @@ class BufferSendState(
     }
   }
 
-  def next(): MemoryBuffer = synchronized {
+  /**
+   * Prepares and returns a `MemoryBuffer` that can be used in a send.
+   * @return - a memory buffer slice backed by either a host or device bounce buffer, depending on
+   *         the tier location for buffers we are sending.
+   * @throws `RapidsShuffleSendPrepareException` when copies to the bounce buffer fail.
+   */
+  def getBufferToSend(): MemoryBuffer = synchronized {
     require(acquiredBuffs.isEmpty,
       "Called next without calling `releaseAcquiredToCatalog` first")
 
@@ -185,11 +194,30 @@ class BufferSendState(
           hostBounceBuffer.buffer
         }
 
-        acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
-          require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
-          rapidsBuffer.copyToMemoryBuffer(blockRange.rangeStart, bounceBuffToUse, buffOffset,
-            blockRange.rangeSize(), serverStream)
-          buffOffset += blockRange.rangeSize()
+        // `copyToMemoryBuffer` can throw if the `RapidsBuffer` is in the DISK tier and
+        // the file fails to mmap. We catch the `IOException` and attempt a retry
+        // in the server.
+        var needsCleanup = false
+        try {
+          acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
+            needsCleanup = true
+            require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
+            rapidsBuffer.copyToMemoryBuffer(blockRange.rangeStart, bounceBuffToUse, buffOffset,
+              blockRange.rangeSize(), serverStream)
+            buffOffset += blockRange.rangeSize()
+          }
+          needsCleanup = false
+        } catch {
+          case ioe: IOException =>
+            throw new RapidsShuffleSendPrepareException(
+              s"Error while copying to bounce buffer for executor ${peerExecutorId} and " +
+                  s"header ${TransportUtils.toHex(peerBufferReceiveHeader)}", ioe)
+        } finally {
+          if (needsCleanup) {
+            // we likely failed in `copyToMemoryBuffer`
+            // unacquire buffs (removing ref count)
+            releaseAcquiredToCatalog()
+          }
         }
 
         val buffSlice = bounceBuffToUse.slice(0, buffOffset)
