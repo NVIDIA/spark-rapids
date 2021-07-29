@@ -83,6 +83,7 @@ class SQLExecutionInfoClass(
     var endTime: Option[Long],
     var duration: Option[Long],
     var hasDataset: Boolean,
+    var problematic: String = "",
     var sqlCpuTimePercent: Double = -1)
 
 case class ResourceProfileInfoCase(

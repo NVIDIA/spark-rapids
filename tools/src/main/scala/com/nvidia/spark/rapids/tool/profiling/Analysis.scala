@@ -338,6 +338,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           } else {
             sqlCase.sqlCpuTimePercent.toString
           }
+          // Potential problems not properly track, add it later
           Seq(app.index.toString, app.appId, s"$sqlId", sqlDuration,
             sqlCase.hasDataset.toString, appDuration, sqlCase.problematic,
             execCpuTimePercent)
