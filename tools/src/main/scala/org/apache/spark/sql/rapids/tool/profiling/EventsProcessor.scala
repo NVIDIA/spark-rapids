@@ -24,11 +24,9 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.profiling._
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.resource.ResourceProfile.CPUS
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 import org.apache.spark.sql.rapids.tool.EventProcessorBase
-import org.apache.spark.ui.UIUtils
 
 /**
  * This class is to process all events and do validation in the end.

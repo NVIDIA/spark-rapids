@@ -55,9 +55,9 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           dotFileDir.getAbsolutePath,
           "--generate-dot",
           eventLog))
-        ProfileMain.mainInternal(appArgs)
+        ProfileMain.mainInternal(appArgs)12
 
-        val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
+        val tempSubDir = new File(dotFileDir, Profiler.SUBDIR)
 
         // assert that a file was generated
         val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))

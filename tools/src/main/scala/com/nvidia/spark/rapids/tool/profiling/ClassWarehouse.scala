@@ -146,7 +146,6 @@ case class TaskStageAccumCase(
     isInternal: Boolean)
 
 // Note: sr = Shuffle Read; sw = Shuffle Write
-// Totally 39 columns
 case class TaskCase(
     stageId: Int,
     stageAttemptId: Int,
@@ -196,15 +195,6 @@ case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String,
     nodeDesc: String, reason: String)
 
 case class DataSourceCase(
-    sqlID: Long,
-    format: String,
-    location: String,
-    pushedFilters: String,
-    schema: String)
-
-case class DataSourceCompareCase(
-    appIndex: Int,
-    appId: String,
     sqlID: Long,
     format: String,
     location: String,

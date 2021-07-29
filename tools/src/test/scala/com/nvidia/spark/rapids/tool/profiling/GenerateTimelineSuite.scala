@@ -55,7 +55,7 @@ class GenerateTimelineSuite extends FunSuite with BeforeAndAfterAll with Logging
           eventLog))
         ProfileMain.mainInternal(appArgs)
 
-        val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
+        val tempSubDir = new File(dotFileDir, Profiler.SUBDIR)
 
         // assert that a file was generated
         val outputDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
