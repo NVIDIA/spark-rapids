@@ -96,7 +96,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
         (cols(0).toLong, cols(1).toLong, cols(2))
       }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        outputHeaders, 1)
       fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Failed Jobs Found!\n"))

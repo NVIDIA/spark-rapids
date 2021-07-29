@@ -44,8 +44,9 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val allRows = apps.map(a => a.appInfo.fieldsToPrint(a.index)).toList
     if (apps.size > 0) {
       val headerNames = apps.head.appInfo.outputHeaders
+      val sortedRows = allRows.sortBy(cols => (cols(0).toLong))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        headerNames, allRows)
+        headerNames, sortedRows)
       fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
