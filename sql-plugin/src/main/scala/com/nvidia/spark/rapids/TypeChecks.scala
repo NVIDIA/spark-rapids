@@ -139,7 +139,7 @@ object TypeEnum extends Enumeration {
  */
 final class TypeSig private(
     private val initialTypes: TypeEnum.ValueSet,
-    private val maxDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
+    private val maxAllowedDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
     private val nestedTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val litOnlyTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     private val notes: Map[TypeEnum.Value, String] = Map.empty) {
@@ -152,7 +152,7 @@ final class TypeSig private(
   def withLit(dataType: TypeEnum.Value): TypeSig = {
     val it = initialTypes + dataType
     val lt = litOnlyTypes + dataType
-    new TypeSig(it, maxDecimalPrecision, nestedTypes, lt, notes)
+    new TypeSig(it, maxAllowedDecimalPrecision, nestedTypes, lt, notes)
   }
 
   /**
@@ -161,7 +161,7 @@ final class TypeSig private(
    */
   def withAllLit(): TypeSig = {
     // don't need to combine initialTypes with litOnlyTypes because litOnly should be a subset
-    new TypeSig(initialTypes, maxDecimalPrecision, nestedTypes, initialTypes, notes)
+    new TypeSig(initialTypes, maxAllowedDecimalPrecision, nestedTypes, initialTypes, notes)
   }
 
   /**
@@ -174,7 +174,7 @@ final class TypeSig private(
     val it = initialTypes ++ other.initialTypes
     val nt = nestedTypes ++ other.nestedTypes
     val lt = litOnlyTypes ++ other.litOnlyTypes
-    val dp = Math.max(maxDecimalPrecision, other.maxDecimalPrecision)
+    val dp = Math.max(maxAllowedDecimalPrecision, other.maxAllowedDecimalPrecision)
     // TODO nested types is not always going to do what you want, so we might want to warn
     val nts = notes ++ other.notes
     new TypeSig(it, dp, nt, lt, nts)
@@ -190,7 +190,7 @@ final class TypeSig private(
     val nt = nestedTypes -- other.nestedTypes
     val lt = litOnlyTypes -- other.litOnlyTypes
     val nts = notes -- other.notes.keySet
-    new TypeSig(it, maxDecimalPrecision, nt, lt, nts)
+    new TypeSig(it, maxAllowedDecimalPrecision, nt, lt, nts)
   }
 
   /**
@@ -200,7 +200,7 @@ final class TypeSig private(
    * @return the new type signature
    */
   def nested(nesting: TypeSig): TypeSig = {
-    val mp = Math.max(maxDecimalPrecision, nesting.maxDecimalPrecision)
+    val mp = Math.max(maxAllowedDecimalPrecision, nesting.maxAllowedDecimalPrecision)
     new TypeSig(initialTypes, mp, nestedTypes ++ nesting.initialTypes, litOnlyTypes, notes)
   }
 
@@ -208,9 +208,9 @@ final class TypeSig private(
    * Update this type signature to be nested with the initial types too.
    * @return the update type signature
    */
-  def nested(): TypeSig = {
-    new TypeSig(initialTypes, maxDecimalPrecision, initialTypes ++ nestedTypes, litOnlyTypes, notes)
-  }
+  def nested(): TypeSig =
+    new TypeSig(initialTypes, maxAllowedDecimalPrecision, initialTypes ++ nestedTypes,
+      litOnlyTypes, notes)
 
   /**
    * Add a note about a given type that marks it as partially supported.
@@ -218,14 +218,12 @@ final class TypeSig private(
    * @param note the note itself
    * @return the updated TypeSignature.
    */
-  def withPsNote(dataType: TypeEnum.Value, note: String): TypeSig = {
-    new TypeSig(initialTypes + dataType, maxDecimalPrecision, nestedTypes, litOnlyTypes,
+  def withPsNote(dataType: TypeEnum.Value, note: String): TypeSig =
+    new TypeSig(initialTypes + dataType, maxAllowedDecimalPrecision, nestedTypes, litOnlyTypes,
       notes.+((dataType, note)))
-  }
 
   private def isSupportedType(dataType: TypeEnum.Value): Boolean =
       initialTypes.contains(dataType)
-
 
   /**
    * Given an expression tag the associated meta for it to be supported or not.
@@ -240,10 +238,10 @@ final class TypeSig private(
     typeMeta.dataType.foreach { dt =>
       val expr = exprMeta.wrapped.asInstanceOf[Expression]
       val allowDecimal = meta.conf.decimalTypeEnabled
-      // TODO change this so decimal is a two pass
+
       if (!isSupportedByPlugin(dt, allowDecimal)) {
         meta.willNotWorkOnGpu(s"$name expression ${expr.getClass.getSimpleName} $expr " +
-            s"produces an unsupported type $dt")
+            reasonNotSupported(dt, allowDecimal).mkString("(", ", ", ")"))
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
         meta.willNotWorkOnGpu(s"$name only supports $dt if it is a literal value")
       }
@@ -260,7 +258,7 @@ final class TypeSig private(
    * @return true if it is allowed else false.
    */
   def isSupportedByPlugin(dataType: DataType, allowDecimal: Boolean): Boolean =
-    isSupportedByPlugin(initialTypes, dataType, allowDecimal)
+    isSupported(initialTypes, dataType, allowDecimal)
 
   private [this] def isLitOnly(dataType: DataType): Boolean = dataType match {
     case BooleanType => litOnlyTypes.contains(TypeEnum.BOOLEAN)
@@ -284,9 +282,9 @@ final class TypeSig private(
   }
 
   def isSupportedBySpark(dataType: DataType): Boolean =
-    isSupportedByPlugin(initialTypes, dataType, allowDecimal = true)
+    isSupported(initialTypes, dataType, allowDecimal = true)
 
-  private[this] def isSupportedByPlugin(
+  private[this] def isSupported(
       check: TypeEnum.ValueSet,
       dataType: DataType,
       allowDecimal: Boolean): Boolean =
@@ -304,20 +302,116 @@ final class TypeSig private(
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType => allowDecimal &&
           check.contains(TypeEnum.DECIMAL) &&
-          dt.precision <= maxDecimalPrecision
+          dt.precision <= maxAllowedDecimalPrecision
       case NullType => check.contains(TypeEnum.NULL)
       case BinaryType => check.contains(TypeEnum.BINARY)
       case CalendarIntervalType => check.contains(TypeEnum.CALENDAR)
       case ArrayType(elementType, _) if check.contains(TypeEnum.ARRAY) =>
-        isSupportedByPlugin(nestedTypes, elementType, allowDecimal)
+        isSupported(nestedTypes, elementType, allowDecimal)
       case MapType(keyType, valueType, _) if check.contains(TypeEnum.MAP) =>
-        isSupportedByPlugin(nestedTypes, keyType, allowDecimal) &&
-            isSupportedByPlugin(nestedTypes, valueType, allowDecimal)
+        isSupported(nestedTypes, keyType, allowDecimal) &&
+            isSupported(nestedTypes, valueType, allowDecimal)
       case StructType(fields) if check.contains(TypeEnum.STRUCT) =>
         fields.map(_.dataType).forall { t =>
-          isSupportedByPlugin(nestedTypes, t, allowDecimal)
+          isSupported(nestedTypes, t, allowDecimal)
         }
       case _ => false
+    }
+
+  def reasonNotSupported(dataType: DataType, allowDecimal: Boolean): Seq[String] =
+    reasonNotSupported(initialTypes, dataType, isNested = false, allowDecimal)
+
+  private[this] def withNested(isNested: Boolean, msg: String): String = if (isNested) {
+    "nested " + msg
+  } else {
+    msg
+  }
+
+  private[this] def basicNotSupportedMessage(dataType: DataType,
+      te: TypeEnum.Value, check: TypeEnum.ValueSet, isNested: Boolean): Seq[String] = {
+    if (check.contains(te)) {
+      Seq.empty
+    } else {
+      Seq(withNested(isNested, s"$dataType is not supported"))
+    }
+  }
+
+  private[this] def reasonNotSupported(
+      check: TypeEnum.ValueSet,
+      dataType: DataType,
+      isNested: Boolean,
+      allowDecimal: Boolean): Seq[String] =
+    dataType match {
+      case BooleanType =>
+        basicNotSupportedMessage(dataType, TypeEnum.BOOLEAN, check, isNested)
+      case ByteType =>
+        basicNotSupportedMessage(dataType, TypeEnum.BYTE, check, isNested)
+      case ShortType =>
+        basicNotSupportedMessage(dataType, TypeEnum.SHORT, check, isNested)
+      case IntegerType =>
+        basicNotSupportedMessage(dataType, TypeEnum.INT, check, isNested)
+      case LongType =>
+        basicNotSupportedMessage(dataType, TypeEnum.LONG, check, isNested)
+      case FloatType =>
+        basicNotSupportedMessage(dataType, TypeEnum.FLOAT, check, isNested)
+      case DoubleType =>
+        basicNotSupportedMessage(dataType, TypeEnum.DOUBLE, check, isNested)
+      case DateType =>
+        basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isNested)
+      case TimestampType =>
+        if (check.contains(TypeEnum.TIMESTAMP) &&
+            (ZoneId.systemDefault().normalized() != GpuOverrides.UTC_TIMEZONE_ID)) {
+          Seq(withNested(isNested, s"$dataType is not supported in the given timezone. " +
+              s"Please set the timezone to UTC"))
+        } else {
+          basicNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isNested)
+        }
+      case StringType =>
+        basicNotSupportedMessage(dataType, TypeEnum.STRING, check, isNested)
+      case dt: DecimalType =>
+        if (check.contains(TypeEnum.DECIMAL)) {
+          var reasons = Seq[String]()
+          if (dt.precision > maxAllowedDecimalPrecision) {
+            reasons ++= Seq(withNested(isNested, s"$dataType precision is larger " +
+                s"than we support $maxAllowedDecimalPrecision"))
+          }
+          if (!allowDecimal) {
+            reasons ++= Seq(s"decimal support has been disabled to enable it set " +
+                s"${RapidsConf.DECIMAL_TYPE_ENABLED} to true")
+          }
+          reasons
+        } else {
+          basicNotSupportedMessage(dataType, TypeEnum.DECIMAL, check, isNested)
+        }
+      case NullType =>
+        basicNotSupportedMessage(dataType, TypeEnum.NULL, check, isNested)
+      case BinaryType =>
+        basicNotSupportedMessage(dataType, TypeEnum.BINARY, check, isNested)
+      case CalendarIntervalType =>
+        basicNotSupportedMessage(dataType, TypeEnum.CALENDAR, check, isNested)
+      case ArrayType(elementType, _) =>
+        if (check.contains(TypeEnum.ARRAY)) {
+          reasonNotSupported(nestedTypes, elementType, isNested = true, allowDecimal)
+        } else {
+          basicNotSupportedMessage(dataType, TypeEnum.ARRAY, check, isNested)
+        }
+      case MapType(keyType, valueType, _) =>
+        if (check.contains(TypeEnum.MAP)) {
+          reasonNotSupported(nestedTypes, keyType, isNested = true, allowDecimal) ++
+              reasonNotSupported(nestedTypes, valueType, isNested = true, allowDecimal)
+        } else {
+          basicNotSupportedMessage(dataType, TypeEnum.MAP, check, isNested)
+        }
+      case StructType(fields) =>
+        if (check.contains(TypeEnum.STRUCT)) {
+          fields.flatMap { sf =>
+            reasonNotSupported(nestedTypes, sf.dataType, isNested = true, allowDecimal)
+          }
+        } else {
+          basicNotSupportedMessage(dataType, TypeEnum.STRUCT, check, isNested)
+        }
+      case _ =>
+        Seq(withNested(isNested, s"$dataType is not supported"))
     }
 
   def areAllSupportedByPlugin(types: Seq[DataType], allowDecimal: Boolean): Boolean =
@@ -337,12 +431,12 @@ final class TypeSig private(
       val needsLitWarning = litOnlyTypes.contains(dataType) &&
           !allowed.litOnlyTypes.contains(dataType)
       val needsAsterisks = dataType == TypeEnum.TIMESTAMP ||
-        (dataType == TypeEnum.DECIMAL && maxDecimalPrecision < DecimalType.MAX_PRECISION)
+        (dataType == TypeEnum.DECIMAL && maxAllowedDecimalPrecision < DecimalType.MAX_PRECISION)
       dataType match {
         case TypeEnum.ARRAY | TypeEnum.MAP | TypeEnum.STRUCT =>
           val needsAsterisksFromSubTypes = nestedTypes.contains(TypeEnum.TIMESTAMP) ||
               (nestedTypes.contains(TypeEnum.DECIMAL) &&
-                  maxDecimalPrecision < DecimalType.MAX_PRECISION)
+                  maxAllowedDecimalPrecision < DecimalType.MAX_PRECISION)
           val subTypesMissing = allowed.nestedTypes -- nestedTypes
           if (subTypesMissing.isEmpty && note.isEmpty && !needsLitWarning) {
             new Supported(needsAsterisks || needsAsterisksFromSubTypes)
@@ -1685,7 +1779,7 @@ object SupportedOpsForTools {
         // we have lots of configs for various operations, just try to get the main ones
         val readOps = types.map { t =>
           val typeEnabled = if (format.toString.toLowerCase.equals("csv")) {
-            t.toString() match {
+            t.toString match {
               case "BOOLEAN" => conf.isCsvBoolReadEnabled
               case "BYTE" => conf.isCsvByteReadEnabled
               case "SHORT" => conf.isCsvShortReadEnabled
@@ -1699,7 +1793,7 @@ object SupportedOpsForTools {
               case _ => true
             }
           } else {
-            t.toString() match {
+            t.toString match {
               case "DECIMAL" => conf.decimalTypeEnabled
               case _ => true
             }
