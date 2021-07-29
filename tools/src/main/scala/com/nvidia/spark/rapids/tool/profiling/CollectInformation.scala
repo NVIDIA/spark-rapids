@@ -175,8 +175,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val outputHeaders =
       Seq("appIndex", "jobID", "stageIds", "sqlID")
     val allRows = apps.flatMap { app =>
-      if (app.liveJobs.size > 0) {
-        app.liveJobs.map { case (jobId, j) =>
+      if (app.jobs.size > 0) {
+        app.jobs.map { case (jobId, j) =>
           Seq(app.index.toString, j.jobID.toString,
             s"[${j.stageIds.mkString(",")}]",
             j.sqlID.map(_.toString).getOrElse(null))
@@ -295,7 +295,7 @@ object CollectInformation {
   def generateSQLAccums(apps: Seq[ApplicationInfo]): Seq[Seq[String]] = {
     val allRows = apps.flatMap { app =>
       // todo - update conditional
-      if ((app.taskStageAccumMap.size > 0 || app.driverAccum.size > 0)
+      if ((app.taskStageAccumMap.size > 0)
         && app.allSQLMetrics.size > 0) {
         app.allSQLMetrics.map { metric =>
           val accums = app.taskStageAccumMap.get(metric.accumulatorId)

@@ -247,7 +247,7 @@ object GenerateTimeline {
         new TimelineStageInfo(stageId, start, end, end-start)
     }
 
-    val stageInfo = app.liveStages.map { case ((_, _), sc) =>
+    val stageInfo = app.stages.map { case ((_, _), sc) =>
       val stageId = sc.info.stageId
       val submissionTime = sc.info.submissionTime.get
       val completionTime = sc.completionTime.get
@@ -262,7 +262,7 @@ object GenerateTimeline {
         (execHost, calcLayoutSlotsNeeded(taskList))
     }.toMap
 
-    val jobInfo = app.liveJobs.map { case (_, jc) =>
+    val jobInfo = app.jobs.map { case (_, jc) =>
       val jobId = jc.jobID
       val startTime = jc.startTime
       val endTime = jc.endTime.get
@@ -272,7 +272,7 @@ object GenerateTimeline {
       new TimelineJobInfo(jobId, startTime, endTime, duration)
     }
 
-    val sqlInfo = app.liveSQL.flatMap { case (_, sc) =>
+    val sqlInfo = app.sqls.flatMap { case (_, sc) =>
       // If a SQL op fails, it may not have an end-time with it (So remove it from the graph)
       if (sc.endTime.isDefined) {
         val sqlId = sc.sqlID

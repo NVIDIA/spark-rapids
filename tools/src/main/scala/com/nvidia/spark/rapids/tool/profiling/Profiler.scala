@@ -28,35 +28,33 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
+class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging {
 
-class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
-    textFileWriter2: ToolTextFileWriter, appArgs: ProfileArgs) extends Logging {
-
-  val nThreads = appArgs.numThreads.getOrElse(
+  private val nThreads = appArgs.numThreads.getOrElse(
     Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
-  val timeout = appArgs.timeout.toOption
-  val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
+  private val timeout = appArgs.timeout.toOption
+  private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
 
-  val threadFactory = new ThreadFactoryBuilder()
+  private val threadFactory = new ThreadFactoryBuilder()
     .setDaemon(true).setNameFormat("profileTool" + "-%d").build()
-  val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
+  private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
     .asInstanceOf[ThreadPoolExecutor]
+  private val outputDir = appArgs.outputDirectory().stripSuffix("/") +
+    s"/${Profiler.SUBDIR}"
+  private val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
   logInfo(s"Threadpool size is $nThreads")
 
-
   def profile(eventLogInfos: Seq[EventLogInfo]): Unit = {
-
-    // If compare mode is on, we need lots of memory to cache all applications then compare.
-    // Suggest only enable compare mode if there is no more than 10 applications as input.
     if (appArgs.compare()) {
+      val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.LOG_FILE_NAME,
+        "Profile summary")
       // create all the apps in parallel since we need the info for all of them to compare
       val apps = createApps(eventLogInfos)
       if (apps.isEmpty) {
         logInfo("No application to process. Exiting")
       } else {
-        processApps(apps, printPlans = false, textFileWriter2)
-        // Show the application Id <-> appIndex mapping.
+        processApps(apps, printPlans = false, textFileWriter)
         apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
       }
     } else {
@@ -77,15 +75,13 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
     }
   }
 
-  def createApps(
-      allPaths: Seq[EventLogInfo]): Seq[ApplicationInfo] = {
+  private def createApps(allPaths: Seq[EventLogInfo]): Seq[ApplicationInfo] = {
     var errorCodes = ArrayBuffer[Int]()
     val allApps = new ConcurrentLinkedQueue[ApplicationInfo]()
 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val (appOpt, error) = ApplicationInfo.createApp(path, numOutputRows, index, hadoopConf)
-        // TODO - just swallowing errors for now
+        val appOpt = createApp(path, numOutputRows, index, hadoopConf)
         appOpt.foreach(app => allApps.add(app))
       }
     }
@@ -110,25 +106,21 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
     allApps.asScala.toSeq
   }
 
-  def createAppAndProcess(
+  private def createAppAndProcess(
       allPaths: Seq[EventLogInfo],
       startIndex: Int = 1): Unit = {
-    var index: Int = startIndex
-    var errorCodes = ArrayBuffer[Int]()
-
     class ProfileProcessThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val logFileName = "rapids_4_spark_tools_output.log"
-
-        val textFileWriter = new ToolTextFileWriter(outputDir, logFileName + index,
+        val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.LOG_FILE_NAME + index,
           "Profile summary")
         try {
-          val (apps, error) = ApplicationInfo.createApp(path, numOutputRows, index, hadoopConf)
-          // TODO - just swallowing errors for now
-          if (apps.isEmpty) {
-            logInfo("No application to process. Exiting")
-          } else {
-            processApps(Seq(apps.get), appArgs.printPlans(), textFileWriter)
+          // we just skip apps that don't process cleanly
+          val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+          appOpt match {
+            case Some(app) =>
+              processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter)
+            case None =>
+              logInfo("No application to process. Exiting")
           }
         } finally {
           textFileWriter.close()
@@ -138,7 +130,7 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
 
     allPaths.foreach { path =>
       try {
-        threadPool.submit(new ProfileProcessThread(path, index))
+        threadPool.submit(new ProfileProcessThread(path, startIndex))
       } catch {
         case e: Exception =>
           logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
@@ -146,13 +138,36 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
     }
   }
 
+  private def createApp(path: EventLogInfo, numRows: Int, index: Int,
+      hadoopConf: Configuration): Option[ApplicationInfo] = {
+    try {
+      // This apps only contains 1 app in each loop.
+      val startTime = System.currentTimeMillis()
+      val app = new ApplicationInfo(numRows, hadoopConf, path, index)
+      EventLogPathProcessor.logApplicationInfo(app)
+      val endTime = System.currentTimeMillis()
+      logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
+      Some(app)
+    } catch {
+      case json: com.fasterxml.jackson.core.JsonParseException =>
+        logWarning(s"Error parsing JSON: $path")
+        None
+      case il: IllegalArgumentException =>
+        logWarning(s"Error parsing file: $path", il)
+        None
+      case e: Exception =>
+        // catch all exceptions and skip that file
+        logWarning(s"Got unexpected exception processing file: $path", e)
+        None
+    }
+  }
 
   /**
    * Function to process ApplicationInfo. If it is in compare mode, then all the eventlogs are
    * evaluated at once and the output is one row per application. Else each eventlog is parsed one
    * at a time.
    */
-  def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
+  private def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
       textFileWriter: ToolTextFileWriter): Unit = {
 
     textFileWriter.write("### A. Information Collected ###")
@@ -184,14 +199,13 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
     analysis.shuffleSkewCheck()
 
     textFileWriter.write("\n### C. Health Check###\n")
-    val healthCheck=new HealthCheck(apps, Some(textFileWriter), numOutputRows)
+    val healthCheck = new HealthCheck(apps, Some(textFileWriter), numOutputRows)
     healthCheck.listFailedTasks()
     healthCheck.listFailedStages()
     healthCheck.listFailedJobs()
     healthCheck.listRemovedBlockManager()
     healthCheck.listRemovedExecutors()
     healthCheck.listPossibleUnsupportedSQLPlan()
-
 
     if (appArgs.generateDot()) {
       if (appArgs.compare()) {
@@ -219,6 +233,10 @@ class Profiler(outputDir: String, numOutputRows: Int, hadoopConf: Configuration,
       }
     }
   }
+}
 
-
+object Profiler {
+  // This tool's output log file name
+  val LOG_FILE_NAME = "rapids_4_spark_tools_output.log"
+  val SUBDIR = "rapids_4_spark_profile"
 }

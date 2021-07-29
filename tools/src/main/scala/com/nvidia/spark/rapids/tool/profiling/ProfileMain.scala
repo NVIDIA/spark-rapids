@@ -16,13 +16,10 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.EventLogPathProcessor
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * A profiling tool to parse Spark Event Log
@@ -38,44 +35,26 @@ object ProfileMain extends Logging {
     }
   }
 
-  val SUBDIR = "rapids_4_spark_profile"
-
   /**
    * Entry point for tests
    */
   def mainInternal(appArgs: ProfileArgs): Int = {
 
-    // This tool's output log file name
-    val logFileName = "rapids_4_spark_tools_output.log"
-
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
-    val outputDirectory = appArgs.outputDirectory().stripSuffix("/") +
-      s"/$SUBDIR"
-    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
     val hadoopConf = new Configuration()
 
-    // Create the FileWriter used for ALL Applications.
-    val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName, "Profile summary")
-    try {
-      // Get the event logs required to process
-      val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-        matchEventLogs.toOption, eventlogPaths, hadoopConf)
-      if (eventLogInfos.isEmpty) {
-        logWarning("No event logs to process after checking paths, exiting!")
-        return 0
-      }
-
-      val profiler = new Profiler(outputDirectory, numOutputRows, hadoopConf,
-        textFileWriter, appArgs)
-      profiler.profile(eventLogInfos)
-
-    } finally {
-      textFileWriter.close()
+    // Get the event logs required to process
+    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      matchEventLogs.toOption, eventlogPaths, hadoopConf)
+    if (eventLogInfos.isEmpty) {
+      logWarning("No event logs to process after checking paths, exiting!")
+      return 0
     }
-
+    val profiler = new Profiler(hadoopConf, appArgs)
+    profiler.profile(eventLogInfos)
     0
   }
 }

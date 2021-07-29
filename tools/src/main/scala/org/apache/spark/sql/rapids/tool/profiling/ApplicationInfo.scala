@@ -16,28 +16,20 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import java.util.Date
-import java.util.concurrent.ConcurrentHashMap
-
-import scala.collection.{immutable, mutable, Map}
+import scala.collection.{mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
-import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
+import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 
-import org.apache.spark.executor.ExecutorMetrics
 import org.apache.spark.internal.Logging
-import org.apache.spark.io.CompressionCodec
-import org.apache.spark.resource.{ExecutorResourceRequest, ResourceInformation, ResourceProfile, TaskResourceRequest}
 import org.apache.spark.scheduler._
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
-import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
+import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.AppBase
 import org.apache.spark.ui.UIUtils
-import org.apache.spark.util.Utils
 
 
 class SparkPlanInfoWithStage(
@@ -188,40 +180,6 @@ object SparkPlanInfoWithStage {
   }
 }
 
-class LiveResourceProfile(
-    val resourceProfileId: Int,
-    val executorResources: Map[String, ExecutorResourceRequest],
-    val taskResources: Map[String, TaskResourceRequest],
-    val maxTasksPerExecutor: Option[Int])
-
-class LiveExecutor(val executorId: String, _addTime: Long) {
-  var hostPort: String = null
-  var host: String = null
-  var isActive = true
-  var totalCores = 0
-
-  val addTime = new Date(_addTime)
-  var removeTime: Long = 0L
-  var removeReason: String = null
-  var maxMemory = 0L
-
-  var resources = Map[String, ResourceInformation]()
-
-  // Memory metrics. They may not be recorded (e.g. old event logs) so if totalOnHeap is not
-  // initialized, the store will not contain this information.
-  var totalOnHeap = -1L
-  var totalOffHeap = 0L
-  var usedOnHeap = 0L
-  var usedOffHeap = 0L
-
-  var resourceProfileId = ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
-
-  // peak values for executor level metrics
-  val peakExecutorMetrics = new ExecutorMetrics()
-
-  def hostname: String = if (host != null) host else Utils.parseHostPort(hostPort)._1
-}
-
 /**
  * ApplicationInfo class saves all parsed events for future use.
  * Used only for Profiling.
@@ -233,80 +191,43 @@ class ApplicationInfo(
     val index: Int)
   extends AppBase(numRows, eLogInfo, hadoopConf) with Logging {
 
-  val executors = new HashMap[String, LiveExecutor]()
-  val resourceProfiles = new HashMap[Int, LiveResourceProfile]()
+  val executors = new HashMap[String, ExecutorInfoClass]()
+  val resourceProfiles = new HashMap[Int, ResourceProfileInfoCase]()
 
-  val liveStages = new HashMap[(Int, Int), StageCaseInfo]()
-  val liveJobs = new HashMap[Int, JobCaseInfo]()
-  val liveSQL = new HashMap[Long, SQLExecutionCaseInfo]()
+  val stages = new HashMap[(Int, Int), StageInfoClass]()
+  val jobs = new HashMap[Int, JobInfoClass]()
+  val sqls = new HashMap[Long, SQLExecutionInfoClass]()
 
   var blockManagersRemoved: ArrayBuffer[BlockManagerRemovedCase] =
      ArrayBuffer[BlockManagerRemovedCase]()
 
   // From SparkListenerEnvironmentUpdate
   var sparkProperties = Map.empty[String, String]
-  var hadoopProperties = Map.empty[String, String]
-  var systemProperties = Map.empty[String, String]
-  var jvmInfo = Map.empty[String, String]
   var classpathEntries = Map.empty[String, String]
   var gpuMode = false
 
-  // From SparkListenerApplicationStart and SparkListenerApplicationEnd
   var appInfo: ApplicationCase = null
   var appId: String = ""
 
-  // From SparkListenerSQLExecutionStart and SparkListenerSQLExecutionEnd
-  var sqlStart: ArrayBuffer[SQLExecutionCase] = ArrayBuffer[SQLExecutionCase]()
-  val sqlEndTime: mutable.HashMap[Long, Long] = mutable.HashMap.empty[Long, Long]
-
-  // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
   // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
   var sqlPlan: mutable.HashMap[Long, SparkPlanInfo] = mutable.HashMap.empty[Long, SparkPlanInfo]
 
   // physicalPlanDescription stores HashMap (sqlID <-> physicalPlanDescription)
   var physicalPlanDescription: mutable.HashMap[Long, String] = mutable.HashMap.empty[Long, String]
 
-  // From SparkListenerSQLExecutionStart and SparkListenerSQLAdaptiveExecutionUpdate
-  var sqlPlanMetrics: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
-  var planNodeAccum: ArrayBuffer[PlanNodeAccumCase] = ArrayBuffer[PlanNodeAccumCase]()
   var allSQLMetrics: ArrayBuffer[SQLMetricInfoCase] = ArrayBuffer[SQLMetricInfoCase]()
-
   var sqlPlanMetricsAdaptive: ArrayBuffer[SQLPlanMetricsCase] = ArrayBuffer[SQLPlanMetricsCase]()
 
-  // From SparkListenerDriverAccumUpdates
-  var driverAccum: ArrayBuffer[DriverAccumCase] = ArrayBuffer[DriverAccumCase]()
   var driverAccumMap: mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]] =
     mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]]()
 
-  // From SparkListenerTaskEnd and SparkListenerTaskEnd
-  var taskStageAccum: ArrayBuffer[TaskStageAccumCase] = ArrayBuffer[TaskStageAccumCase]()
+  // acum id to task stage accum info
   var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
-
-  lazy val accumIdToStageId: immutable.Map[Long, Int] =
-    taskStageAccum.map(accum => (accum.accumulatorId, accum.stageId)).toMap
-
-  // From SparkListenerJobStart and SparkListenerJobEnd
-  // JobStart contains mapping relationship for JobID -> StageID(s)
-  var jobStart: ArrayBuffer[JobCase] = ArrayBuffer[JobCase]()
-  val jobEndTime: mutable.HashMap[Int, Long] = mutable.HashMap.empty[Int, Long]
-
-  // From SparkListenerTaskStart & SparkListenerTaskEnd
-  // taskStart was not used so comment out for now
-  // var taskStart: ArrayBuffer[SparkListenerTaskStart] = ArrayBuffer[SparkListenerTaskStart]()
-  // taskEnd contains task level metrics - only used for profiling
+  val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
-
-  // Unsupported SQL plan
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
-
-  // By looping through SQL Plan nodes to find out the problematic SQLs. Currently we define
-  // problematic SQL's as those which have RowToColumnar, ColumnarToRow transitions and Lambda's in
-  // the Spark plan.
-  var problematicSQL: ArrayBuffer[ProblematicSQLCase] = ArrayBuffer[ProblematicSQLCase]()
-
-  // SQL containing any Dataset operation
   var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
 
   private lazy val eventProcessor =  new EventsProcessor()
@@ -322,15 +243,15 @@ class ApplicationInfo(
     false
   }
 
-  def getOrCreateExecutor(executorId: String, addTime: Long): LiveExecutor = {
+  def getOrCreateExecutor(executorId: String, addTime: Long): ExecutorInfoClass = {
     executors.getOrElseUpdate(executorId, {
-      new LiveExecutor(executorId, addTime)
+      new ExecutorInfoClass(executorId, addTime)
     })
   }
 
-  def getOrCreateStage(info: StageInfo): StageCaseInfo = {
-    val stage = liveStages.getOrElseUpdate((info.stageId, info.attemptNumber),
-      new StageCaseInfo(info))
+  def getOrCreateStage(info: StageInfo): StageInfoClass = {
+    val stage = stages.getOrElseUpdate((info.stageId, info.attemptNumber),
+      new StageInfoClass(info))
     stage
   }
 
@@ -349,50 +270,54 @@ class ApplicationInfo(
         if (isDataSetPlan(node.desc)) {
           datasetSQL += DatasetSQLCase(sqlID)
           if (gpuMode) {
-            // TODO - add in what problem is
-            val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc)
+            val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc,
+              "Contains Dataset")
             unsupportedSQLplan += thisPlan
           }
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
-          val thisMetric = SQLPlanMetricsCase(sqlID, metric.name,
-            metric.accumulatorId, metric.metricType)
-          sqlPlanMetrics += thisMetric
-          val thisNode = PlanNodeAccumCase(sqlID, node.id,
-            node.name, node.desc, metric.accumulatorId)
-          planNodeAccum += thisNode
-
           val allMetric = SQLMetricInfoCase(sqlID, metric.name,
             metric.accumulatorId, metric.metricType, node.id,
             node.name, node.desc)
           allSQLMetrics += allMetric
+          if (this.sqlPlanMetricsAdaptive.nonEmpty) {
+            logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive)" +
+              s" for appID=$appId")
+            val adaptive = sqlPlanMetricsAdaptive.filter { adaptiveMetric =>
+              adaptiveMetric.sqlID == sqlID && adaptiveMetric.accumulatorId == metric.accumulatorId
+            }
+            // TODO - need to test
+            adaptive.foreach { adaptiveMetric =>
+              val allMetric = SQLMetricInfoCase(sqlID, adaptiveMetric.name,
+                adaptiveMetric.accumulatorId, adaptiveMetric.metricType, node.id,
+                node.name, node.desc)
+              allSQLMetrics += allMetric
+            }
+          }
         }
       }
-    }
-    if (this.sqlPlanMetricsAdaptive.nonEmpty){
-      logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive) for appID=$appId")
-      sqlPlanMetrics = sqlPlanMetrics.union(sqlPlanMetricsAdaptive).distinct
     }
   }
 
   private def aggregateAppInfo: Unit = {
     if (this.appInfo != null) {
-      val appStartNew: ArrayBuffer[ApplicationCase] = ArrayBuffer[ApplicationCase]()
       val res = this.appInfo
 
       val estimatedResult = this.appEndTime match {
         case Some(t) => this.appEndTime
         case None =>
-          if (this.sqlEndTime.isEmpty && this.jobEndTime.isEmpty) {
+          val jobEndTimes = jobs.map { case (_, jc) => jc.endTime }.filter(_.isDefined)
+          val sqlEndTimes = sqls.map { case (_, sc) => sc.endTime }.filter(_.isDefined)
+
+          if (sqlEndTimes.size == 0 && jobEndTimes.size == 0) {
             None
           } else {
-            // TODO - need to fix
             logWarning("Application End Time is unknown, estimating based on" +
               " job and sql end times!")
             // estimate the app end with job or sql end times
-            val sqlEndTime = if (this.sqlEndTime.isEmpty) 0L else this.sqlEndTime.values.max
-            val jobEndTime = if (this.jobEndTime.isEmpty) 0L else this.jobEndTime.values.max
+            val sqlEndTime = if (sqlEndTimes.size == 0) 0L else sqlEndTimes.map(_.get).max
+            val jobEndTime = if (jobEndTimes == 0 ) 0L else jobEndTimes.map(_.get).max
             val maxEndTime = math.max(sqlEndTime, jobEndTime)
             if (maxEndTime == 0) None else Some(maxEndTime)
           }
@@ -410,39 +335,5 @@ class ApplicationInfo(
       logWarning("aggregate app start: " + newApp)
       appInfo = newApp
     }
-  }
-
-}
-
-object ApplicationInfo extends Logging {
-
-
-  def createApp(path: EventLogInfo, numRows: Int, index: Int,
-      hadoopConf: Configuration): (Option[ApplicationInfo], Int) = {
-    var errorCode = 0
-    val app = try {
-      // This apps only contains 1 app in each loop.
-      val startTime = System.currentTimeMillis()
-      val app = new ApplicationInfo(numRows, hadoopConf, path, index)
-      EventLogPathProcessor.logApplicationInfo(app)
-      val endTime = System.currentTimeMillis()
-      logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
-      Some(app)
-    } catch {
-      case json: com.fasterxml.jackson.core.JsonParseException =>
-        logWarning(s"Error parsing JSON: $path")
-        errorCode = 1
-        None
-      case il: IllegalArgumentException =>
-        logWarning(s"Error parsing file: $path", il)
-        errorCode = 2
-        None
-      case e: Exception =>
-        // catch all exceptions and skip that file
-        logWarning(s"Got unexpected exception processing file: $path", e)
-        errorCode = 3
-        None
-    }
-    (app, errorCode)
   }
 }

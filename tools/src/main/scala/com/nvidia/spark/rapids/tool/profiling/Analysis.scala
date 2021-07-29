@@ -89,10 +89,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     fileWriter.foreach(_.write(messageHeader))
     val outputHeaders = Seq("appIndex", "ID", "numTasks", "Duration") ++ genTaskMetricsColumnHeaders
     val allJobRows = apps.flatMap { app =>
-      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0)) {
-        app.liveJobs.map { case (id, jc) =>
+      if ((app.taskEnd.size > 0) && (app.jobs.size > 0) && (app.stages.size > 0)) {
+        app.jobs.map { case (id, jc) =>
           val stageIdsInJob = jc.stageIds
-          val stagesInJob = app.liveStages.filterKeys { case (sid, _) =>
+          val stagesInJob = app.stages.filterKeys { case (sid, _) =>
             stageIdsInJob.contains(sid)
           }.keys.map(_._1).toSeq
           val tasksInJob = app.taskEnd.filter { tc =>
@@ -144,10 +144,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       }
     }
     val allStageRows = apps.flatMap { app =>
-      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0)) {
-        app.liveJobs.flatMap { case (id, jc) =>
+      if ((app.taskEnd.size > 0) && (app.jobs.size > 0) && (app.stages.size > 0)) {
+        app.jobs.flatMap { case (id, jc) =>
           val stageIdsInJob = jc.stageIds
-          val stagesInJob = app.liveStages.filterKeys { case (sid, _) =>
+          val stagesInJob = app.stages.filterKeys { case (sid, _) =>
             stageIdsInJob.contains(sid)
           }
           stagesInJob.map { case ((id, said), sc) =>
@@ -218,12 +218,12 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     val outputHeaders = Seq("appIndex", "appID", "sqlID", "description", "numTasks", "Duration",
       "executorCPUTime", "executorRunTime", "executorCPURatio") ++ genTaskMetricsColumnHeaders
     val allRows = apps.flatMap { app =>
-      if ((app.taskEnd.size > 0) && (app.liveJobs.size > 0) && (app.liveStages.size > 0) &&
-        (app.liveSQL.size > 0)) {
+      if ((app.taskEnd.size > 0) && (app.jobs.size > 0) && (app.stages.size > 0) &&
+        (app.sqls.size > 0)) {
 
         // TODO - how to deal with attempts?
-        app.liveSQL.map { case (sqlId, sqlCase) =>
-          val jcs = app.liveJobs.filter { case (_, jc) =>
+        app.sqls.map { case (sqlId, sqlCase) =>
+          val jcs = app.jobs.filter { case (_, jc) =>
             val jcid = jc.sqlID.getOrElse(-1)
             jc.sqlID.getOrElse(-1) == sqlId
           }
@@ -299,7 +299,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     if (allNonEmptyRows.size > 0) {
       val sortedRows = allNonEmptyRows.sortBy { cols =>
         val dur = if (cols(5).isEmpty) {
-          0
+
         } else {
           -(cols(5).toLong)
         }
@@ -321,14 +321,14 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       "App Duration", "Potential Problems", "Executor CPU Time Percent")
 
     val allRows = apps.flatMap { app =>
-      if (app.liveSQL.size > 0) {
+      if (app.sqls.size > 0) {
 
         val appDuration = app.appInfo.duration match {
           case Some(dur) => dur.toString()
           case None => ""
         }
 
-        app.liveSQL.map { case (sqlId, sqlCase) =>
+        app.sqls.map { case (sqlId, sqlCase) =>
           val sqlDuration = sqlCase.duration match {
             case Some(dur) => dur.toString()
             case None => ""
@@ -377,7 +377,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
     // TODO - how expensive on large number tasks?
     val allRows = apps.flatMap { app =>
-      if ((app.taskEnd.size > 0) && (app.liveStages.size > 0)) {
+      if ((app.taskEnd.size > 0) && (app.stages.size > 0)) {
         val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
           (tc.stageId, tc.stageAttemptId)
         }

@@ -16,26 +16,82 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.util.Date
+
+import scala.collection.Map
+
+import org.apache.spark.executor.ExecutorMetrics
+import org.apache.spark.resource.{ExecutorResourceRequest, ResourceInformation, ResourceProfile, TaskResourceRequest}
 import org.apache.spark.scheduler.StageInfo
+import org.apache.spark.util.Utils
 
 /**
- * This is a warehouse to store all Case Classes
- * used to create Spark DataFrame.
+ * This is a warehouse to store all Classes
+ * used for profiling and qualification.
  */
 
-case class ResourceProfileCase(
-    id: Int, executorCores: Int, executorMemory: Long, numGpusPerExecutor: Int,
-    executorOffHeap: Long, taskCpu: Int, taskGpu: Double)
+class ExecutorInfoClass(val executorId: String, _addTime: Long) {
+  var hostPort: String = null
+  var host: String = null
+  var isActive = true
+  var totalCores = 0
 
-case class BlockManagerCase(
-    executorID: String, host: String, port: Int,
-    maxMem: Long, maxOnHeapMem: Long, maxOffHeapMem: Long)
+  val addTime = new Date(_addTime)
+  var removeTime: Long = 0L
+  var removeReason: String = null
+  var maxMemory = 0L
+
+  var resources = Map[String, ResourceInformation]()
+
+  // Memory metrics. They may not be recorded (e.g. old event logs) so if totalOnHeap is not
+  // initialized, the store will not contain this information.
+  var totalOnHeap = -1L
+  var totalOffHeap = 0L
+  var usedOnHeap = 0L
+  var usedOffHeap = 0L
+
+  var resourceProfileId = ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
+
+  // peak values for executor level metrics
+  val peakExecutorMetrics = new ExecutorMetrics()
+
+  def hostname: String = if (host != null) host else Utils.parseHostPort(hostPort)._1
+}
+
+class JobInfoClass(val jobID: Int,
+    val stageIds: Seq[Int],
+    val sqlID: Option[Long],
+    val properties: scala.collection.Map[String, String],
+    val startTime: Long,
+    var endTime: Option[Long],
+    var jobResult: Option[String],
+    var failedReason: Option[String],
+    var duration: Option[Long],
+    var gpuMode: Boolean)
+
+class StageInfoClass(val info: StageInfo) {
+  var completionTime: Option[Long] = None
+  var failureReason: Option[String] = None
+  var duration: Option[Long] = None
+}
+
+class SQLExecutionInfoClass(
+    val sqlID: Long,
+    val description: String,
+    val details: String,
+    val startTime: Long,
+    var endTime: Option[Long],
+    var duration: Option[Long],
+    var hasDataset: Boolean,
+    var sqlCpuTimePercent: Double = -1)
+
+case class ResourceProfileInfoCase(
+    val resourceProfileId: Int,
+    val executorResources: Map[String, ExecutorResourceRequest],
+    val taskResources: Map[String, TaskResourceRequest])
 
 case class BlockManagerRemovedCase(
     executorID: String, host: String, port: Int, time: Long)
-
-case class PropertiesCase(
-    source: String, key: String, value: String)
 
 case class ApplicationCase(
     appName: String, appId: Option[String], sparkUser: String,
@@ -60,39 +116,6 @@ case class ApplicationCase(
       pluginEnabled.toString)
   }
 }
-
-case class ExecutorCase(
-    executorID: String, host: String, totalCores: Int, resourceProfileId: Int)
-
-case class ExecutorRemovedCase(
-    executorID: String,
-    reason: String,
-    time: Long)
-
-class SQLExecutionCaseInfo(
-    val sqlID: Long,
-    val description: String,
-    val details: String,
-    val startTime: Long,
-    var endTime: Option[Long],
-    var duration: Option[Long],
-    var durationStr: String,
-    var sqlQualDuration: Option[Long],
-    var hasDataset: Boolean,
-    var problematic: String = "",
-    var sqlCpuTimePercent: Double = -1)
-
-case class SQLExecutionCase(
-    sqlID: Long,
-    description: String,
-    details: String,
-    startTime: Long,
-    endTime: Option[Long],
-    duration: Option[Long],
-    durationStr: String,
-    sqlQualDuration: Option[Long],
-    hasDataset: Boolean,
-    problematic: String = "")
 
 case class SQLPlanMetricsCase(
     sqlID: Long,
@@ -129,56 +152,6 @@ case class TaskStageAccumCase(
     name: Option[String],
     value: Option[Long],
     isInternal: Boolean)
-
-class JobCaseInfo(val jobID: Int,
-    val stageIds: Seq[Int],
-    val sqlID: Option[Long],
-    val properties: scala.collection.Map[String, String],
-    val startTime: Long,
-    var endTime: Option[Long],
-    var jobResult: Option[String],
-    var failedReason: Option[String],
-    var duration: Option[Long],
-    var durationStr: String,
-    var gpuMode: Boolean)
-
-case class JobCase(
-    jobID: Int,
-    stageIds: Seq[Int],
-    sqlID: Option[Long],
-    properties: scala.collection.Map[String, String],
-    startTime: Long,
-    endTime: Option[Long],
-    jobResult: Option[String],
-    failedReason: Option[String],
-    duration: Option[Long],
-    durationStr: String,
-    gpuMode: Boolean)
-
-class StageCaseInfo(val info: StageInfo) {
-  var completionTime: Option[Long] = None
-  var failureReason: Option[String] = None
-  var duration: Option[Long] = None
-  var durationStr: String = ""
-  var gpuMode: Boolean = false
-  var properties: scala.collection.Map[String, String] = Map.empty[String, String]
-}
-
-case class StageCase(
-    stageId: Int,
-    attemptId: Int,
-    name: String,
-    numTasks: Int,
-    numRDD: Int,
-    parentIds: Seq[Int],
-    details: String,
-    properties: scala.collection.Map[String, String],
-    submissionTime: Option[Long],
-    completionTime: Option[Long],
-    failureReason: Option[String],
-    duration: Option[Long],
-    durationStr: String,
-    gpuMode: Boolean)
 
 // Note: sr = Shuffle Read; sw = Shuffle Write
 // Totally 39 columns
@@ -227,7 +200,8 @@ case class DatasetSQLCase(sqlID: Long)
 
 case class ProblematicSQLCase(sqlID: Long, reason: String)
 
-case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String, nodeDesc: String)
+case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String,
+    nodeDesc: String, reason: String)
 
 case class DataSourceCase(
     sqlID: Long,

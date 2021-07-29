@@ -139,9 +139,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
 
     logDebug("Processing event: " + event.getClass)
     // leave off maxTasks for now
-    val liveRP = new LiveResourceProfile(event.resourceProfile.id,
-      event.resourceProfile.executorResources, event.resourceProfile.taskResources, None)
-    app.resourceProfiles(event.resourceProfile.id) = liveRP
+    val rp = ResourceProfileInfoCase(event.resourceProfile.id,
+      event.resourceProfile.executorResources, event.resourceProfile.taskResources)
+    app.resourceProfiles(event.resourceProfile.id) = rp
   }
 
   override def doSparkListenerBlockManagerAdded(
@@ -168,8 +168,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerBlockManagerRemoved): Unit = {
     logDebug("Processing event: " + event.getClass)
-    // TODO - do we really need, spark doesn't use because executor removed
-    // handles this.
     val thisBlockManagerRemoved = BlockManagerRemovedCase(
       event.blockManagerId.executorId,
       event.blockManagerId.host,
@@ -184,9 +182,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       event: SparkListenerEnvironmentUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.sparkProperties = event.environmentDetails("Spark Properties").toMap
-    app.hadoopProperties = event.environmentDetails("Hadoop Properties").toMap
-    app.systemProperties = event.environmentDetails("System Properties").toMap
-    app.jvmInfo = event.environmentDetails("JVM Information").toMap
     app.classpathEntries = event.environmentDetails("Classpath Entries").toMap
 
     //Decide if this application is on GPU Mode
@@ -269,9 +264,10 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
         val thisMetric = TaskStageAccumCase(
           event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
           res.id, res.name, Some(value), res.internal)
-        app.taskStageAccum += thisMetric
         val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
           ArrayBuffer[TaskStageAccumCase]())
+        // TODO - what about attempt?
+        app.accumIdToStageId.put(res.id, event.stageId)
         arrBuf += thisMetric
       } catch {
         case e: ClassCastException =>
@@ -325,7 +321,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       event.taskMetrics.outputMetrics.bytesWritten,
       event.taskMetrics.outputMetrics.recordsWritten
     )
-    // TODO - can we summarize vs keeping all tasks?
     app.taskEnd += thisTask
   }
 
@@ -333,7 +328,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
     logDebug("Processing event: " + event.getClass)
-    val sqlExecution = new SQLExecutionCaseInfo(
+    val sqlExecution = new SQLExecutionInfoClass(
       event.executionId,
       event.description,
       event.details,
@@ -342,10 +337,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       None,
       "",
       None,
-      false,
-      ""
+      false
     )
-    app.liveSQL.put(event.executionId, sqlExecution)
+    app.sqls.put(event.executionId, sqlExecution)
     // app.sqlStart += sqlExecution
     app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
@@ -355,30 +349,10 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerSQLExecutionEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
-    app.liveSQL.get(event.executionId).foreach { sql =>
+    app.sqls.get(event.executionId).foreach { sql =>
       sql.endTime = Some(event.time)
       sql.duration = ProfileUtils.OptionLongMinusLong(sql.endTime, sql.startTime)
-      sql.durationStr = sql.duration match {
-        case Some(i) => UIUtils.formatDuration(i)
-        case None => ""
-      }
-      val (containsDataset, sqlQDuration) =
-        if (app.datasetSQL.exists(_.sqlID == event.executionId)) {
-          (true, Some(0L))
-        } else {
-          (false, sql.duration)
-        }
-      sql.hasDataset = containsDataset
-      sql.sqlQualDuration = sqlQDuration
-      val potProbs = app.problematicSQL.filter { p =>
-        p.sqlID == event.executionId && p.reason.nonEmpty
-      }.map(_.reason).mkString(",")
-      val finalPotProbs = if (potProbs.isEmpty) {
-        null
-      } else {
-        potProbs
-      }
-      sql.problematic = finalPotProbs
+      sql.hasDataset = app.datasetSQL.exists(_.sqlID == event.executionId)
     }
   }
 
@@ -390,12 +364,10 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     val SparkListenerDriverAccumUpdates(sqlID, accumUpdates) = event
     accumUpdates.foreach { accum =>
       val driverAccum = DriverAccumCase(sqlID, accum._1, accum._2)
-      app.driverAccum += driverAccum
       val arrBuf =  app.driverAccumMap.getOrElseUpdate(accum._1,
         ArrayBuffer[DriverAccumCase]())
       arrBuf += driverAccum
     }
-    logDebug("Current driverAccum has " + app.driverAccum.size + " accums.")
   }
 
   override def doSparkListenerJobStart(
@@ -404,7 +376,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     logDebug("Processing event: " + event.getClass)
     val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
     val sqlID = ProfileUtils.stringToLong(sqlIDString)
-    val thisJob = new JobCaseInfo(
+    val thisJob = new JobInfoClass(
       event.jobId,
       event.stageIds,
       sqlID,
@@ -414,23 +386,18 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       None,
       None,
       None,
-      "",
       ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
     )
-    app.liveJobs.put(event.jobId, thisJob)
+    app.jobs.put(event.jobId, thisJob)
   }
 
   override def doSparkListenerJobEnd(
       app: ApplicationInfo,
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
-    app.liveJobs.get(event.jobId).foreach { j =>
+    app.jobs.get(event.jobId).foreach { j =>
       j.endTime = Some(event.time)
       j.duration = ProfileUtils.OptionLongMinusLong(j.endTime, j.startTime)
-      j.durationStr = j.duration match {
-        case Some(i) => UIUtils.formatDuration(i)
-        case None => ""
-      }
       val thisJobResult = event.jobResult match {
         case JobSucceeded => "JobSucceeded"
         case _: JobFailed => "JobFailed"
@@ -450,9 +417,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerStageSubmitted): Unit = {
     logDebug("Processing event: " + event.getClass)
-    val stage = app.getOrCreateStage(event.stageInfo)
-    stage.properties = event.properties.asScala
-    stage.gpuMode = ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
+    app.getOrCreateStage(event.stageInfo)
   }
 
   override def doSparkListenerStageCompleted(
@@ -465,10 +430,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
 
     stage.duration = ProfileUtils.optionLongMinusOptionLong(stage.completionTime,
       stage.info.submissionTime)
-    stage.durationStr = stage.duration match {
-      case Some(i) => UIUtils.formatDuration(i)
-      case None => ""
-    }
 
     // Parse stage accumulables
     // TODO - do this better!
@@ -478,9 +439,10 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
         val thisMetric = TaskStageAccumCase(
           event.stageInfo.stageId, event.stageInfo.attemptNumber(),
           None, res._2.id, res._2.name, Some(value), res._2.internal)
-        app.taskStageAccum += thisMetric
         val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res._2.id,
           ArrayBuffer[TaskStageAccumCase]())
+        // TODO - what about attempt?
+        app.accumIdToStageId.put(res._2.id, event.stageInfo.stageId)
         arrBuf += thisMetric
       } catch {
         case e: ClassCastException =>
@@ -508,7 +470,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
 
-  // TODO - need tests
+  // TODO - need tests - do we need this?
   override def doSparkListenerSQLAdaptiveSQLMetricUpdates(
       app: ApplicationInfo,
       event: SparkListenerSQLAdaptiveSQLMetricUpdates): Unit = {

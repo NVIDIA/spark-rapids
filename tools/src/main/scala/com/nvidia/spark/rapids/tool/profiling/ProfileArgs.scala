@@ -22,26 +22,9 @@ class ProfileArgs(arguments: Seq[String]) extends ScallopConf(arguments) {
   banner("""
 RAPIDS Accelerator for Apache Spark profiling tool
 
-Example:
-
-# Input 1 or more event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
-rapids-4-spark-tools_2.12-<version>.jar /path/to/eventlog1 /path/to/eventlog2
-
-# Specify a directory of event logs from local path:
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
- rapids-4-spark-tools_2.12-<version>.jar /path/to/DirOfManyEventLogs
-
-# If any event log is from S3:
-# Need to download hadoop-aws-<version>.jar and aws-java-sdk-<version>.jar firstly.
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
-rapids-4-spark-tools_2.12-<version>.jar s3a://<BUCKET>/eventlog1 /path/to/eventlog2
-
-# Change output directory to /tmp
-./bin/spark-submit --class com.nvidia.spark.rapids.tool.profiling.ProfileMain
-rapids-4-spark-tools_2.12-<version>.jar -o /tmp /path/to/eventlog1
-
-For usage see below:
+Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+       com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
+       <eventlogs | eventlog directories ...>
     """)
 
   val outputDirectory: ScallopOption[String] =
@@ -76,6 +59,9 @@ For usage see below:
   val printPlans: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
+  val generateTimeline: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Write an SVG graph out for the full application timeline.")
   val numThreads: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of thread to use for parallel processing. The default is the " +
@@ -86,15 +72,17 @@ For usage see below:
         "Default is 24 hours (86400 seconds) and must be greater than 3 seconds. If it " +
         "times out, it will report what it was able to process up until the timeout.",
       default = Some(86400))
-  val generateTimeline: ScallopOption[Boolean] =
-    opt[Boolean](required = false,
-      descr = "Write an SVG graph out for the full application timeline.")
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest-filesystem") ||
         crit.endsWith("-oldest-filesystem")) => Right(Unit)
     case _ => Left("Error, the filter criteria must end with either -newest-filesystem " +
         "or -oldest-filesystem")
+  }
+
+  validate(timeout) {
+    case timeout if (timeout > 3) => Right(Unit)
+    case _ => Left("Error, timeout must be greater than 3 seconds.")
   }
 
   verify()

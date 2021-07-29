@@ -57,7 +57,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     val outputHeaders = Seq("appIndex", "stageId", "attemptId", "name",
       "numTasks", "failureReason")
     val failed = apps.flatMap { app =>
-      val stagesFailed = app.liveStages.filter { case (_, sc) =>
+      val stagesFailed = app.stages.filter { case (_, sc) =>
         sc.failureReason.nonEmpty
       }
       stagesFailed.map { case ((id, attId), sc) =>
@@ -82,7 +82,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     fileWriter.foreach(_.write(jobsMessageHeader))
     val outputHeaders = Seq("appIndex", "jobId", "jobResult", "failureReason")
     val failed = apps.flatMap { app =>
-      val jobsFailed = app.liveJobs.filter { case (_, jc) =>
+      val jobsFailed = app.jobs.filter { case (_, jc) =>
         jc.jobResult.nonEmpty && !jc.jobResult.get.equals("JobSucceeded")
       }
       jobsFailed.map { case (id, jc) =>
@@ -150,11 +150,11 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
   def listPossibleUnsupportedSQLPlan(): Unit = {
     val header = "\nSQL Plan HealthCheck:\n"
     fileWriter.foreach(_.write(header))
-    val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "nodeDescription")
+    val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "nodeDescription", "reason")
     val res = apps.flatMap { app =>
       app.unsupportedSQLplan.map { unsup =>
         Seq(app.index.toString, unsup.sqlID.toString, unsup.nodeID.toString, unsup.nodeName,
-          unsup.nodeDesc)
+          unsup.nodeDesc, unsup.reason)
       }
     }
     if (res.size > 0) {
