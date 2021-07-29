@@ -64,7 +64,8 @@ Spark driver and executor logs with messages that are similar to the following:
 
 ### What is the right hardware setup to run GPU accelerated Spark?
 
-Reference architectures should be available around Q1 2021.
+GPU accelerated Spark can run on any NVIDIA Pascal or better GPU architecture, including Volta,
+Turing or Ampere. 
 
 ### What parts of Apache Spark are accelerated?
 
