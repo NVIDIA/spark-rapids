@@ -20,10 +20,8 @@ import java.util.Date
 
 import scala.collection.Map
 
-import org.apache.spark.executor.ExecutorMetrics
 import org.apache.spark.resource.{ExecutorResourceRequest, ResourceInformation, ResourceProfile, TaskResourceRequest}
 import org.apache.spark.scheduler.StageInfo
-import org.apache.spark.util.Utils
 
 /**
  * This is a warehouse to store all Classes
@@ -47,15 +45,8 @@ class ExecutorInfoClass(val executorId: String, _addTime: Long) {
   // initialized, the store will not contain this information.
   var totalOnHeap = -1L
   var totalOffHeap = 0L
-  var usedOnHeap = 0L
-  var usedOffHeap = 0L
 
   var resourceProfileId = ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
-
-  // peak values for executor level metrics
-  val peakExecutorMetrics = new ExecutorMetrics()
-
-  def hostname: String = if (host != null) host else Utils.parseHostPort(hostPort)._1
 }
 
 class JobInfoClass(val jobID: Int,
