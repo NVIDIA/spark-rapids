@@ -14,6 +14,7 @@ Generated on 2021-07-29
 |[#2757](https://github.com/NVIDIA/spark-rapids/issues/2757)|[FEA] Profiling tool display input data types|
 |[#2860](https://github.com/NVIDIA/spark-rapids/issues/2860)|[FEA] Minimal support for LEGACY timeParserPolicy|
 |[#2693](https://github.com/NVIDIA/spark-rapids/issues/2693)|[FEA] Profiling Tool: Print GDS + UCX related parameters |
+|[#2334](https://github.com/NVIDIA/spark-rapids/issues/2334)|[FEA] Record GPU time and Fetch time separately, instead of recording Total Time|
 |[#2685](https://github.com/NVIDIA/spark-rapids/issues/2685)|[FEA] Profiling compare mode for table SQL Duration and Executor CPU Time Percent|
 |[#2742](https://github.com/NVIDIA/spark-rapids/issues/2742)|[FEA] include App Name from profiling tool output|
 |[#2712](https://github.com/NVIDIA/spark-rapids/issues/2712)|[FEA] Display job and stage info in the dot graph for profiling tool|
@@ -31,7 +32,6 @@ Generated on 2021-07-29
 |[#1590](https://github.com/NVIDIA/spark-rapids/issues/1590)|Rapids Shuffle - UcpListener|
 |[#2275](https://github.com/NVIDIA/spark-rapids/issues/2275)|[FEA] UCP error callback deal with cleanup|
 |[#2799](https://github.com/NVIDIA/spark-rapids/issues/2799)|[FEA] Support ORC multi-file cloud reading|
-|[#2334](https://github.com/NVIDIA/spark-rapids/issues/2334)|[FEA] Record GPU time and Fetch time separately, instead of recording Total Time|
 
 ### Bugs Fixed
 |||
