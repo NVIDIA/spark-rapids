@@ -768,7 +768,7 @@ object GpuOverrides {
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
-      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(),
       cudfWrite = TypeSig.commonCudfTypes,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
@@ -963,6 +963,18 @@ object GpuOverrides {
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+      }),
+    expr[PreciseTimestampConversion](
+      "Expression used internally to convert the TimestampType to Long and back without losing " +
+          "precision, i.e. in microseconds. Used in time windowing.",
+      ExprChecks.unaryProjectNotLambda(
+        TypeSig.TIMESTAMP + TypeSig.LONG,
+        TypeSig.TIMESTAMP + TypeSig.LONG,
+        TypeSig.TIMESTAMP + TypeSig.LONG,
+        TypeSig.TIMESTAMP + TypeSig.LONG),
+      (a, conf, p, r) => new UnaryExprMeta[PreciseTimestampConversion](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuPreciseTimestampConversion(child, a.fromType, a.toType)
       }),
     expr[UnaryMinus](
       "Negate a numeric value",
@@ -1916,11 +1928,11 @@ object GpuOverrides {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        pluginSupportedOrderableSig,
+        pluginSupportedOrderableSig + TypeSig.STRUCT.nested(),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          pluginSupportedOrderableSig,
+          pluginSupportedOrderableSig + TypeSig.STRUCT.nested(),
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2785,8 +2797,7 @@ object GpuOverrides {
     part[RangePartitioning](
       "Range partitioning",
       PartChecks(RepeatingParamCheck("order_key",
-        pluginSupportedOrderableSig +
-            TypeSig.psNote(TypeEnum.STRUCT, "Only supported for a single partition"),
+        pluginSupportedOrderableSig + TypeSig.STRUCT.nested(),
         TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
@@ -2913,7 +2924,7 @@ object GpuOverrides {
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
-      ExecChecks(pluginSupportedOrderableSig, TypeSig.all),
+      ExecChecks(pluginSupportedOrderableSig + TypeSig.STRUCT.nested(), TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =
@@ -2990,7 +3001,7 @@ object GpuOverrides {
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-            + TypeSig.STRUCT)
+            + TypeSig.STRUCT + TypeSig.MAP)
         .withPsNote(TypeEnum.STRUCT,
           "unionByName will not optionally impute nulls for missing struct fields  " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
@@ -3057,7 +3068,10 @@ object GpuOverrides {
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",

@@ -76,13 +76,16 @@ class GpuBroadcastHashJoinMeta(
       case BuildRight => right
     }
     verifyBuildSideWasReplaced(buildSide)
-    GpuBroadcastHashJoinExec(
+    val joinExec = GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       GpuJoinUtils.getGpuBuildSide(join.buildSide),
-      condition.map(_.convertToGpu()),
+      None,
       left, right)
+    // The GPU does not yet support conditional joins, so conditions are implemented
+    // as a filter after the join when possible.
+    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
   }
 }
 
@@ -102,8 +105,7 @@ case class GpuBroadcastHashJoinExec(
     TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
-    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME)) ++ spillMetrics
+    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME)) ++ spillMetrics
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -141,7 +143,6 @@ case class GpuBroadcastHashJoinExec(
     val totalTime = gpuLongMetric(TOTAL_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val filterTime = gpuLongMetric(FILTER_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
@@ -157,7 +158,7 @@ case class GpuBroadcastHashJoinExec(
       GpuColumnVector.extractBases(builtBatch).foreach(_.noWarnLeakExpected())
       doJoin(builtBatch, it, targetSize, spillCallback,
         numOutputRows, joinOutputRows, numOutputBatches, streamTime, joinTime,
-        filterTime, totalTime)
+        totalTime)
     }
   }
 }
