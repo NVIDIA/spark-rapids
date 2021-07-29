@@ -297,7 +297,14 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     }
     val allNonEmptyRows = allRows.filter(!_.isEmpty)
     if (allNonEmptyRows.size > 0) {
-      val sortedRows = allNonEmptyRows.sortBy(cols => (cols(0).toLong, -(cols(5).toLong), cols(2)))
+      val sortedRows = allNonEmptyRows.sortBy { cols =>
+        val dur = if (cols(5).isEmpty) {
+          0
+        } else {
+          -(cols(5).toLong)
+        }
+        (cols(0).toLong, dur, cols(2))
+      }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows)
       fileWriter.foreach(_.write(outStr))
