@@ -2979,7 +2979,7 @@ object GpuOverrides {
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-            + TypeSig.STRUCT)
+            + TypeSig.STRUCT + TypeSig.MAP)
         .withPsNote(TypeEnum.STRUCT,
           "unionByName will not optionally impute nulls for missing struct fields  " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),

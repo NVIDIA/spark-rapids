@@ -422,7 +422,7 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS* (unionByName will not optionally impute nulls for missing struct fields  when the column is a struct and there are non-overlapping fields; missing nested BINARY, CALENDAR, ARRAY, MAP, UDT)</em></td>
+<td><em>PS* (unionByName will not optionally impute nulls for missing struct fields  when the column is a struct and there are non-overlapping fields; missing nested BINARY, CALENDAR, ARRAY, UDT)</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
