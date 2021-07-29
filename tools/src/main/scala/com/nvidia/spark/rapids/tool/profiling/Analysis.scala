@@ -299,7 +299,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     if (allNonEmptyRows.size > 0) {
       val sortedRows = allNonEmptyRows.sortBy { cols =>
         val dur = if (cols(5).isEmpty) {
-
+          0
         } else {
           -(cols(5).toLong)
         }
