@@ -40,7 +40,7 @@ Software Requirements:
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
-### Download v21.08.00
+### Download v21.08.0
 * Download the [RAPIDS
   Accelerator for Apache Spark 21.08.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.08.0/rapids-4-spark_2.12-21.08.0.jar)
 * Download the [RAPIDS cuDF 21.08.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.08.0/cudf-21.08.0-cuda11.jar)
