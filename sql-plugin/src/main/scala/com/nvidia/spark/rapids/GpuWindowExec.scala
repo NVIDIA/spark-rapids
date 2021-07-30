@@ -22,7 +22,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanType, Table, WindowOptions}
+import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -428,7 +428,7 @@ case class BoundGpuWindowFunction(
    * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
    *         for each value in `boundInputLocations` so that they can be zipped together.
    */
-  def scan(isRunningBatched: Boolean): Seq[AggAndReplace[Aggregation]] = {
+  def scan(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
     aggFunc.scanAggregation(isRunningBatched)
   }

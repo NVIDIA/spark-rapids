@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, BinaryOp, ColumnVector, DType, GroupByScanAggregation, NullPolicy, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn}
+import ai.rapids.cudf.{Aggregation, BinaryOp, ColumnVector, DType, GroupByScanAggregation, NullPolicy, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -329,8 +329,8 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
   }
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[Aggregation]] =
-    Seq(AggAndReplace(Aggregation.min(), Some(ReplacePolicy.PRECEDING)))
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.min(), Some(ReplacePolicy.PRECEDING)))
 
   override def isScanSupported: Boolean  = child.dataType match {
     case TimestampType | DateType => false
@@ -384,8 +384,8 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   }
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[Aggregation]] =
-    Seq(AggAndReplace(Aggregation.max(), Some(ReplacePolicy.PRECEDING)))
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.max(), Some(ReplacePolicy.PRECEDING)))
 
   override def isScanSupported: Boolean = child.dataType match {
     case TimestampType | DateType => false
@@ -435,8 +435,8 @@ case class GpuSum(child: Expression, resultType: DataType)
     Seq(AggAndReplace(GroupByScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[Aggregation]] =
-    Seq(AggAndReplace(Aggregation.sum(), Some(ReplacePolicy.PRECEDING)))
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 }
 
 /*
@@ -583,8 +583,8 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
 
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[Aggregation]] =
-    Seq(AggAndReplace(Aggregation.sum(), None))
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.sum(), None))
 }
 
 case class GpuAverage(child: Expression) extends GpuAggregateFunction
