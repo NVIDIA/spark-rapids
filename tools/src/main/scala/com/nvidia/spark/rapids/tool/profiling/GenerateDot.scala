@@ -93,8 +93,9 @@ object GenerateDot extends Logging {
     // Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
     //              metric.nodeName, metric.accumulatorId.toString, metric.name,
     //              max.toString, metric.metricType)
+    // TODO - double check
     val accumSummary = accums.map { a =>
-      Seq(a(1), a(4), a(6))
+      Seq(a.sqlID, a.accumulatorId, a.max_value)
     }
 
     val accumIdToStageId = app.accumIdToStageId

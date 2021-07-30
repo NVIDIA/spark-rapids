@@ -167,7 +167,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(exit == 0)
     }
   }
-  
+
   test("test printSQLPlanMetrics") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
