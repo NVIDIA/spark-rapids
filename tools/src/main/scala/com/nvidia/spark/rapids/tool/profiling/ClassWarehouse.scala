@@ -85,6 +85,12 @@ case class ResourceProfileInfoCase(
 case class BlockManagerRemovedCase(
     executorID: String, host: String, port: Int, time: Long)
 
+case class AppInfoResults(appIndex:Int, appName: String, appId: Option[String],
+    sparkUser: String,
+    startTime: Long, endTime: Option[Long], duration: Option[Long],
+    durationStr: String, sparkVersion: String, pluginEnabled: Boolean)
+
+
 case class ApplicationCase(
     appName: String, appId: Option[String], sparkUser: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],
@@ -106,6 +112,20 @@ case class ApplicationCase(
     Seq(index.toString, appName, appId.getOrElse(""), sparkUser,
       startTime.toString, endTimeStr, durStr, durationStr, sparkVersion,
       pluginEnabled.toString)
+  }
+
+  def toResult(index: Int): AppInfoResults = {
+    val endTimeStr = endTime match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+    val durStr = duration match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+    AppInfoResults(index, appName, appId, sparkUser,
+      startTime, endTime, duration, durationStr, sparkVersion,
+      pluginEnabled)
   }
 }
 

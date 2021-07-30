@@ -42,6 +42,11 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nApplication Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     val allRows = apps.map(a => a.appInfo.fieldsToPrint(a.index)).toList
+    val allResults = apps.map(a => a.appInfo.toResult(a.index))
+
+    allResults.foreach(res =>
+      logWarning("all results is: " + res.productIterator.toList.mkString(","))
+    )
     if (apps.size > 0) {
       val headerNames = apps.head.appInfo.outputHeaders
       val sortedRows = allRows.sortBy(cols => (cols(0).toLong))

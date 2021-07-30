@@ -169,6 +169,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   /*
+
   test("test printSQLPlanMetrics") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
@@ -194,6 +195,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       ToolTestUtils.compareDataFrames(accums, dfExpect)
     }
   }
+
+
   test("test printSQLPlans") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
