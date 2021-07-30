@@ -60,7 +60,6 @@ case class ExecutorInfoProfileResult(appIndex: Int, resourceProfileId: Int,
       "executorOffHeap", "taskCpu", "taskGpu")
   }
   def convertToSeq: Seq[String] = {
-
     Seq(appIndex.toString, resourceProfileId.toString, numExecutors.toString,
       executorCores.toString, maxMem.toString, maxOnHeapMem.toString,
       maxOffHeapMem.toString, executorMemory.map(_.toString).getOrElse(null),
@@ -89,7 +88,7 @@ case class JobInfoProfileResult(
 
   val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID")
   def convertToSeq: Seq[String] = {
-    Seq(appIndex, jobID.toString, stageIds, sqlID.map(_.toString).getOrElse(null))
+    Seq(appIndex.toString, jobID.toString, stageIds, sqlID.map(_.toString).getOrElse(null))
   }
 }
 
@@ -113,18 +112,10 @@ class SQLExecutionInfoClass(
 case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
     nodeName: String, accumulatorId: Long,
     name: String, max_value: Long, metricType: String) {
-  /*
-  case class SQLAccumProfileResults(appIndex: String, sqlID: String, nodeID: String,
-      nodeName: String, accumulatorId: String,
-      name: String, max_value: String, metricType: String) {
-  */
+
   val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
     "name", "max_value", "metricType")
 
-  /*
-  def convertToSeq: Seq[String] = Seq(appIndex, sqlID, nodeID, nodeName, accumulatorId,
-    name, max_value, metricType)
-  */
   def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, accumulatorId.toString,
       name, max_value.toString, metricType)
