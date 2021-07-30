@@ -868,9 +868,9 @@ date_n_time_gens = [date_gen, timestamp_gen]
 
 boolean_gens = [boolean_gen]
 
-single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens + [null_gen]]
+single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens]
 
-single_level_array_gens_no_decimal = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + [null_gen]]
+single_level_array_gens_no_decimal = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
 
 map_string_string_gen = [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen())]
 

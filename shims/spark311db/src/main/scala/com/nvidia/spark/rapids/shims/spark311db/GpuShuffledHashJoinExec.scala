@@ -58,15 +58,18 @@ class GpuShuffledHashJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val Seq(left, right) = childPlans.map(_.convertIfNeeded)
-    GpuShuffledHashJoinExec(
+    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+    val joinExec = GpuShuffledHashJoinExec(
       leftKeys.map(_.convertToGpu()),
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       GpuJoinUtils.getGpuBuildSide(join.buildSide),
-      condition.map(_.convertToGpu()),
+      None,
       left,
       right)
+    // The GPU does not yet support conditional joins, so conditions are implemented
+    // as a filter after the join when possible.
+    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
   }
 }
 

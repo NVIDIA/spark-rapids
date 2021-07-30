@@ -618,7 +618,6 @@ trait GpuHashJoin extends GpuExec {
       numOutputBatches: GpuMetric,
       streamTime: GpuMetric,
       joinTime: GpuMetric,
-      filterTime: GpuMetric,
       totalTime: GpuMetric): Iterator[ColumnarBatch] = {
     // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
     val realTarget = Math.max(targetSize, 10 * 1024)
@@ -640,20 +639,7 @@ trait GpuHashJoin extends GpuExec {
         streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
         streamTime, joinTime, totalTime)
     if (boundCondition.isDefined) {
-      val condition = boundCondition.get
-      joinIterator.flatMap { cb =>
-        joinOutputRows += cb.numRows()
-        withResource(
-          GpuFilter(cb, condition, numOutputRows, numOutputBatches, filterTime)) { filtered =>
-          if (filtered.numRows == 0) {
-            // Not sure if there is a better way to work around this
-            numOutputBatches.set(numOutputBatches.value - 1)
-            None
-          } else {
-            Some(GpuColumnVector.incRefCounts(filtered))
-          }
-        }
-      }
+      throw new IllegalStateException("Conditional joins are not supported on the GPU")
     } else {
       joinIterator.map { cb =>
         joinOutputRows += cb.numRows()
