@@ -307,7 +307,7 @@ def test_repeat_scalar_and_column():
     (s,) = gen_scalars_for_sql(gen_s, 1)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen_r).selectExpr(
-                'repeat(NULL, a)'.format(s),
+                'repeat(NULL, a)',
                 'repeat({}, a)'.format(s)
             ))
 
