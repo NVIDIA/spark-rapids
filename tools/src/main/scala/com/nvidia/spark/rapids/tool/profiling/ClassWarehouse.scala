@@ -59,7 +59,6 @@ case class ExecutorInfoProfileResult(appIndex: String, resourceProfileId: String
       "maxMem", "maxOnHeapMem", "maxOffHeapMem", "executorMemory", "numGpusPerExecutor",
       "executorOffHeap", "taskCpu", "taskGpu")
   }
-
   def convertToSeq: Seq[String] = {
     Seq(appIndex, resourceProfileId, numExecutors, executorCores, maxMem, maxOnHeapMem,
       maxOffHeapMem, executorMemory, numGpusPerExecutor, executorOffHeap, taskCpu,
@@ -78,6 +77,18 @@ class JobInfoClass(val jobID: Int,
     var duration: Option[Long],
     var gpuMode: Boolean)
 
+case class JobInfoProfileResult(
+    appIndex: String,
+    jobID: String,
+    stageIds: String,
+    sqlID: String) {
+
+  val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID")
+  def convertToSeq: Seq[String] = {
+    Seq(appIndex, jobID, stageIds, sqlID)
+  }
+}
+
 class StageInfoClass(val info: StageInfo) {
   var completionTime: Option[Long] = None
   var failureReason: Option[String] = None
@@ -94,6 +105,17 @@ class SQLExecutionInfoClass(
     var hasDataset: Boolean,
     var problematic: String = "",
     var sqlCpuTimePercent: Double = -1)
+
+case class SQLAccumProfileResults(appIndex: String, sqlID: String, nodeID: String,
+    nodeName: String, accumulatorId: String,
+    name: String, max_value: String, metricType: String) {
+
+  val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
+    "name", "max_value", "metricType")
+
+  def convertToSeq: Seq[String] = Seq(appIndex, sqlID, nodeID, nodeName, accumulatorId,
+      name, max_value, metricType)
+}
 
 case class ResourceProfileInfoCase(
     val resourceProfileId: Int,
