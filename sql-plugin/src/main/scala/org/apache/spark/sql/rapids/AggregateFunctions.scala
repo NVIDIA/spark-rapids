@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, BinaryOp, ColumnVector, DType, GroupByScanAggregation, NullPolicy, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
+import ai.rapids.cudf.{Aggregation, BinaryOp, ColumnVector, DType, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -257,9 +257,9 @@ abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
   val offset: Int
 
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(Aggregation.nth(offset, includeNulls))
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(Aggregation.nth(offset, includeNulls))
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
   override lazy val updateAggregate: Aggregation = Aggregation.nth(offset, includeNulls)
   override lazy val mergeAggregate: Aggregation = Aggregation.nth(offset, includeNulls)
 }
