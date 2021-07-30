@@ -50,31 +50,20 @@ object NotSupported extends SupportLevel {
 
 /**
  * Both Spark and the plugin support this.
- * @param asterisks true if we need to include an asterisks because for Decimal or Timestamp
- *                  types because they are not 100% supported.
  */
-class Supported(val asterisks: Boolean = false) extends SupportLevel {
+class Supported() extends SupportLevel {
   override def htmlTag: String = s"<td>$text</td>"
-  override def text: String = {
-    if (asterisks) {
-      "S*"
-    } else {
-      "S"
-    }
-  }
+  override def text: String = "S"
 }
 
 /**
  * The plugin partially supports this type.
- * @param asterisks true if we need to include an asterisks for Decimal or Timestamp types because
- *                  they re not 100% supported.
  * @param missingNestedTypes nested types that are not supported
  * @param needsLitWarning true if we need to warn that we only support a literal value when Spark
  *                        does not.
  * @param note any other notes we want to include about not complete support.
  */
 class PartiallySupported(
-    val asterisks: Boolean = false,
     val missingNestedTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
     val needsLitWarning: Boolean = false,
     val note: Option[String] = None) extends SupportLevel {
@@ -96,13 +85,7 @@ class PartiallySupported(
 
   // don't include the extra info in the supported text field for now
   // as the qualification tool doesn't use it
-  override def text: String = {
-    if (asterisks) {
-      "PS*"
-    } else {
-      "PS"
-    }
-  }
+  override def text: String = "PS"
 }
 
 /**
@@ -441,7 +424,14 @@ final class TypeSig private(
         }
       }
 
-      val needsAsterisks = dataType == TypeEnum.TIMESTAMP
+      if (dataType == TypeEnum.TIMESTAMP) {
+        val msg = s"UTC is only supported TZ for TIMESTAMP"
+        note = if (note.isEmpty) {
+          Some(msg)
+        } else {
+          Some(note.get + "; " + msg)
+        }
+      }
 
       dataType match {
         case TypeEnum.ARRAY | TypeEnum.MAP | TypeEnum.STRUCT =>
@@ -456,21 +446,27 @@ final class TypeSig private(
             }
           }
 
-          val needsAsterisksFromSubTypes = nestedTypes.contains(TypeEnum.TIMESTAMP)
+          if (nestedTypes.contains(TypeEnum.TIMESTAMP)) {
+            val msg = s"UTC is only supported TZ for nested TIMESTAMP"
+            note = if (note.isEmpty) {
+              Some(msg)
+            } else {
+              Some(note.get + "; " + msg)
+            }
+          }
 
           val subTypesMissing = allowed.nestedTypes -- nestedTypes
           if (subTypesMissing.isEmpty && note.isEmpty && !needsLitWarning) {
-            new Supported(needsAsterisks || needsAsterisksFromSubTypes)
+            new Supported()
           } else {
-            new PartiallySupported(needsAsterisks || needsAsterisksFromSubTypes,
-              missingNestedTypes = subTypesMissing,
+            new PartiallySupported(missingNestedTypes = subTypesMissing,
               needsLitWarning = needsLitWarning,
               note = note)
           }
         case _ if note.isDefined || needsLitWarning =>
-          new PartiallySupported(needsAsterisks, needsLitWarning = needsLitWarning, note = note)
+          new PartiallySupported(needsLitWarning = needsLitWarning, note = note)
         case _ =>
-          new Supported(needsAsterisks)
+          new Supported()
       }
     }
   }
@@ -1503,11 +1499,9 @@ object SupportedOpsDocs {
     println()
     println("|Value|Description|")
     println("|---------|----------------|")
-    println("|S| (Supported) Both Apache Spark and the RAPIDS Accelerator support this type.|")
-    println("|S*| (Supported with limitations) Typically this refers to general limitations with `Timestamp`|")
+    println("|S| (Supported) Both Apache Spark and the RAPIDS Accelerator support this type fully.|")
     println("| | (Not Applicable) Neither Spark not the RAPIDS Accelerator support this type in this situation.|")
     println("|_PS_| (Partial Support) Apache Spark supports this type, but the RAPIDS Accelerator only partially supports it. An explanation for what is missing will be included with this.|")
-    println("|_PS*_| (Partial Support with limitations) Like regular Partial Support but with general limitations on `Timestamp` types.|")
     println("|**NS**| (Not Supported) Apache Spark supports this type but the RAPIDS Accelerator does not.")
     println()
     println("# SparkPlan or Executor Nodes")
@@ -1545,8 +1539,6 @@ object SupportedOpsDocs {
       }
     }
     println("</table>")
-    println("* As was stated previously Timestamp is only supported in the")
-    println("UTC time zone.")
     println()
     println("# Expression and SQL Functions")
     println("Inside each node in the DAG there can be one or more trees of expressions")
@@ -1621,8 +1613,6 @@ object SupportedOpsDocs {
       }
     }
     println("</table>")
-    println("* As was stated previously Timestamp is only supported in the")
-    println("UTC time zone.")
     println()
     println("## Casting")
     println("The above table does not show what is and is not supported for cast.")
