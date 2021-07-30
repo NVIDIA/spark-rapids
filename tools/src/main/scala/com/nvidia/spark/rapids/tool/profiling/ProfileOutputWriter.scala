@@ -89,7 +89,8 @@ object ProfileOutputWriter extends Logging {
     val escapedSchema = schema.map(escapeMetaCharacters)
 
     val schemaAndData = escapedSchema +: rows.map { row =>
-      row.map { cell =>
+      val strRow = row.map(_.toString)
+      strRow.map { cell =>
         logWarning("cell value is: " + cell)
         val str = cell match {
           case null => "null"
