@@ -146,18 +146,19 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerBlockManagerAdded): Unit = {
     logDebug("Processing event: " + event.getClass)
-
     if (event.blockManagerId.executorId.equals("driver")) {
-      logWarning("block manager id for driver: " + event.blockManagerId.executorId)
+      logDebug("block manager id for driver added")
+      // skipping
+    } else {
+      val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
+      exec.hostPort = event.blockManagerId.hostPort
+      event.maxOnHeapMem.foreach { _ =>
+        exec.totalOnHeap = event.maxOnHeapMem.get
+        exec.totalOffHeap = event.maxOffHeapMem.get
+      }
+      exec.isActive = true
+      exec.maxMemory = event.maxMem
     }
-    val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
-    exec.hostPort = event.blockManagerId.hostPort
-    event.maxOnHeapMem.foreach { _ =>
-      exec.totalOnHeap = event.maxOnHeapMem.get
-      exec.totalOffHeap = event.maxOffHeapMem.get
-    }
-    exec.isActive = true
-    exec.maxMemory = event.maxMem
   }
 
   override def doSparkListenerBlockManagerRemoved(
@@ -219,16 +220,11 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerExecutorAdded): Unit = {
     logDebug("Processing event: " + event.getClass)
-
-    if (event.executorId.equals("driver")) {
-      logWarning("exec added  id for driver: " + event.executorId)
-    }
     val exec = app.getOrCreateExecutor(event.executorId, event.time)
     exec.host = event.executorInfo.executorHost
     exec.isActive = true
     exec.totalCores = event.executorInfo.totalCores
     val rpId = event.executorInfo.resourceProfileId
-    logWarning("resource profile id is: " + rpId)
     exec.resources = event.executorInfo.resourcesInfo
     exec.resourceProfileId = rpId
   }
@@ -237,10 +233,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerExecutorRemoved): Unit = {
     logDebug("Processing event: " + event.getClass)
-
-    if (event.executorId.equals("driver")) {
-      logWarning("exec removed id for driver: " + event.executorId)
-    }
     val exec = app.getOrCreateExecutor(event.executorId, event.time)
     exec.isActive = false
     exec.removeTime = event.time
