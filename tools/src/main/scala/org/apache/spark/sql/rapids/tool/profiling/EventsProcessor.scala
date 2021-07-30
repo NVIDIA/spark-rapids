@@ -147,6 +147,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       event: SparkListenerBlockManagerAdded): Unit = {
     logDebug("Processing event: " + event.getClass)
 
+    if (event.blockManagerId.executorId.equals("driver")) {
+      logWarning("block manager id for driver: " + event.blockManagerId.executorId)
+    }
     val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
     exec.hostPort = event.blockManagerId.hostPort
     event.maxOnHeapMem.foreach { _ =>
@@ -217,6 +220,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       event: SparkListenerExecutorAdded): Unit = {
     logDebug("Processing event: " + event.getClass)
 
+    if (event.executorId.equals("driver")) {
+      logWarning("exec added  id for driver: " + event.executorId)
+    }
     val exec = app.getOrCreateExecutor(event.executorId, event.time)
     exec.host = event.executorInfo.executorHost
     exec.isActive = true
@@ -232,6 +238,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       event: SparkListenerExecutorRemoved): Unit = {
     logDebug("Processing event: " + event.getClass)
 
+    if (event.executorId.equals("driver")) {
+      logWarning("exec removed id for driver: " + event.executorId)
+    }
     val exec = app.getOrCreateExecutor(event.executorId, event.time)
     exec.isActive = false
     exec.removeTime = event.time
