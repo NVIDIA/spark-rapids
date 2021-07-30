@@ -3024,11 +3024,14 @@ object GpuOverrides {
 
         override def convertToGpu(): GpuExec = {
           val Seq(left, right) = childPlans.map(_.convertIfNeeded())
-          GpuCartesianProductExec(
+          val joinExec = GpuCartesianProductExec(
             left,
             right,
-            condition.map(_.convertToGpu()),
+            None,
             conf.gpuTargetBatchSizeBytes)
+          // The GPU does not yet support conditional joins, so conditions are implemented
+          // as a filter after the join when possible.
+          condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
         }
       }),
     exec[HashAggregateExec](

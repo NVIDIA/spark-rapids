@@ -118,7 +118,6 @@ class GpuCartesianRDD(
     joinOutputRows: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    filterTime: GpuMetric,
     totalTime: GpuMetric,
     var rdd1: RDD[GpuSerializableBatch],
     var rdd2: RDD[GpuSerializableBatch])
@@ -186,7 +185,7 @@ class GpuCartesianRDD(
       GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
         batch, streamIterator, targetSize, GpuBuildLeft, boundCondition,
         numOutputRows, joinOutputRows, numOutputBatches,
-        joinTime, filterTime, totalTime)
+        joinTime, totalTime)
     }
   }
 
@@ -229,8 +228,7 @@ case class GpuCartesianProductExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
-    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME)) ++ spillMetrics
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
@@ -240,17 +238,14 @@ case class GpuCartesianProductExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-    val filterTime = gpuLongMetric(FILTER_TIME)
     val totalTime = gpuLongMetric(TOTAL_TIME)
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
 
-    if (output.isEmpty) {
+    if (output.isEmpty && boundCondition.isEmpty) {
       // special case for crossJoin.count.  Doing it this way
       // because it is more readable then trying to fit it into the
       // existing join code.
-      assert(boundCondition.isEmpty)
-
       def getRowCountAndClose(cb: ColumnarBatch): Long = {
         val ret = cb.numRows()
         cb.close()
@@ -279,7 +274,6 @@ case class GpuCartesianProductExec(
         joinOutputRows,
         numOutputRows,
         numOutputBatches,
-        filterTime,
         totalTime,
         left.executeColumnar().map(cb => new GpuSerializableBatch(cb)),
         right.executeColumnar().map(cb => new GpuSerializableBatch(cb)))
