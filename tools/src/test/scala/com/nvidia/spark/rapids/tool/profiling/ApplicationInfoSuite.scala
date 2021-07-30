@@ -185,7 +185,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val sqlMetrics = collect.printSQLPlanMetrics()
     val resultExpectation =
       new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
-    assert(sqlMetrics.size == 98)
+    assert(sqlMetrics.size == 83)
     import sparkSession.implicits._
     val df = sqlMetrics.toDF
     val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())

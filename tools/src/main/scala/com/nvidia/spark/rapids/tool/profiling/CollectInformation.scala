@@ -318,9 +318,14 @@ object CollectInformation {
 
         if ((taskMax.isDefined) || (driverMax.isDefined)) {
           val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
+          Some(SQLAccumProfileResults(app.index.toString, metric.sqlID.toString,
+                     metric.nodeID.toString, metric.nodeName, metric.accumulatorId.toString,
+                     metric.name, max.toString, metric.metricType))
+          /*
           Some(SQLAccumProfileResults(app.index, metric.sqlID,
             metric.nodeID, metric.nodeName, metric.accumulatorId,
             metric.name, max, metric.metricType))
+            */
         } else {
           None
         }
