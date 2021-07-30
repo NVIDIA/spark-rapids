@@ -135,16 +135,16 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           groupedExecs.map { case (rpId, execs) =>
             val rp = app.resourceProfIdToInfo.get(rpId)
             val execMem = rp.map(_.executorResources.get(ResourceProfile.MEMORY)
-              .map(_.amount).getOrElse(0))
+              .map(_.amount).getOrElse(0L))
             val execCores = rp.map(_.executorResources.get(ResourceProfile.CORES)
-              .map(_.amount).getOrElse(0))
+              .map(_.amount).getOrElse(0L))
             val execGpus = rp.map(_.executorResources.get(ResourceProfile.CORES)
-              .map(_.amount).getOrElse(0))
+              .map(_.amount).getOrElse(0L))
             val taskCpus = rp.map(_.taskResources.get(ResourceProfile.CPUS)
-              .map(_.amount).getOrElse(0))
+              .map(_.amount).getOrElse(0L))
             val taskGpus = rp.map(_.taskResources.get("gpu").map(_.amount).getOrElse(0))
             val execOffHeap = rp.map(_.executorResources.get(ResourceProfile.OFFHEAP_MEM)
-              .map(_.amount).getOrElse(0))
+              .map(_.amount).getOrElse(0L))
 
             val numExecutors = execs.size
             val exec = execs.head._2
