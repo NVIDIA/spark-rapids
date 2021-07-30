@@ -104,7 +104,9 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val execInfo = firstApp.executorIdToInfo.get(firstApp.executorIdToInfo.keys.head)
     assert(execInfo.isDefined && execInfo.get.totalCores.equals(8))
     val rp = firstApp.resourceProfIdToInfo.get(firstApp.resourceProfIdToInfo.keys.head)
-    assert(rp.isDefined && rp.get.executorResources(ResourceProfile.MEMORY).equals(1024L))
+    assert(rp.isDefined)
+    val memory = rp.get.executorResources(ResourceProfile.MEMORY)
+    assert(memory.amount.equals(1024L))
   }
 
   test("test rapids jar") {
