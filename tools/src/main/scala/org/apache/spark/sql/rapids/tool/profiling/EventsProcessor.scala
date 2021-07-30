@@ -148,6 +148,9 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     logDebug("Processing event: " + event.getClass)
     if (event.blockManagerId.executorId.equals("driver")) {
       logDebug("block manager id for driver added")
+      logWarning("driver on heap is: " + event.maxOffHeapMem + " offheap: " + event.maxOffHeapMem)
+      logWarning("driover max memory setting: " + event.maxMem)
+
       // skipping
     } else {
       val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
