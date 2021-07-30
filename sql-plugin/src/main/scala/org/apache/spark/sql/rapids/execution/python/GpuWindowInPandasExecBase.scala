@@ -260,7 +260,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
           function match {
             case GpuAggregateExpression(_, _, _, _, _) => collect("AGGREGATE", frame, e)
             // GpuPythonUDF is a GpuAggregateWindowFunction, so it is covered here.
-            case _: GpuAggregateWindowFunction[_] => collect("AGGREGATE", frame, e)
+            case _: GpuAggregateWindowFunction => collect("AGGREGATE", frame, e)
             // OffsetWindowFunction is not supported yet, no harm to keep it here
             case _: OffsetWindowFunction => collect("OFFSET", frame, e)
             case f => sys.error(s"Unsupported window function: $f")

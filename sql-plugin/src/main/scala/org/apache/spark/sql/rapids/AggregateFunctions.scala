@@ -17,8 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, NullPolicy, ReplacePolicy, RollingAggregation}
-import ai.rapids.cudf.Aggregation.{CollectListAggregation, CollectSetAggregation, CountAggregation, MaxAggregation, MeanAggregation, MinAggregation, SumAggregation}
+import ai.rapids.cudf.{Aggregation, BinaryOp, ColumnVector, DType, NullPolicy, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -287,7 +286,7 @@ class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
 
 case class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
-    with GpuAggregateWindowFunction[MinAggregation]
+    with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   private lazy val cudfMin = AttributeReference("min", child.dataType)()
 
@@ -310,8 +309,8 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
   // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MinAggregation] =
-    Aggregation.min().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.min().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -341,7 +340,7 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
 
 case class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
-    with GpuAggregateWindowFunction[MaxAggregation]
+    with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
 
@@ -364,8 +363,8 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MaxAggregation] =
-    Aggregation.max().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.max().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -395,7 +394,7 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
 case class GpuSum(child: Expression, resultType: DataType)
   extends GpuAggregateFunction with ImplicitCastInputTypes
       with GpuBatchedRunningWindowWithFixer
-      with GpuAggregateWindowFunction[SumAggregation]
+      with GpuAggregateWindowFunction
       with GpuRunningWindowFunction {
 
   private lazy val cudfSum = AttributeReference("sum", resultType)()
@@ -420,8 +419,8 @@ case class GpuSum(child: Expression, resultType: DataType)
   // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[SumAggregation] =
-    Aggregation.sum().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.sum().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -530,7 +529,7 @@ case class GpuPivotFirst(
 
 case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
-    with GpuAggregateWindowFunction[CountAggregation]
+    with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   // counts are Long
   private lazy val cudfCount = AttributeReference("count", LongType)()
@@ -553,8 +552,8 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
   // we could support it by doing an `Aggregation.nunique(false)`
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[CountAggregation] =
-    Aggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -585,7 +584,7 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
 }
 
 case class GpuAverage(child: Expression) extends GpuAggregateFunction
-    with GpuAggregateWindowFunction[MeanAggregation] {
+    with GpuAggregateWindowFunction {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = AttributeReference("sum", DoubleType)()
   private lazy val cudfCount = AttributeReference("count", LongType)()
@@ -649,8 +648,8 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
 
   override val windowInputProjection: Seq[Expression] = Seq(children.head)
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MeanAggregation] =
-    Aggregation.mean().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.mean().onColumn(inputs.head._2)
 }
 
 /*
@@ -753,8 +752,7 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
   }
 }
 
-trait GpuCollectBase[T <: Aggregation with RollingAggregation[T]] extends GpuAggregateFunction
-    with GpuAggregateWindowFunction[T] {
+trait GpuCollectBase extends GpuAggregateFunction with GpuAggregateWindowFunction {
 
   def childExpression: Expression
 
@@ -793,14 +791,13 @@ case class GpuCollectList(
     childExpression: Expression,
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0)
-    extends GpuCollectBase[CollectListAggregation] {
+    extends GpuCollectBase {
 
   override def prettyName: String = "collect_list"
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[CollectListAggregation] = {
-    Aggregation.collectList().onColumn(inputs.head._2)
-  }
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.collectList().onColumn(inputs.head._2)
 }
 
 /**
@@ -813,12 +810,11 @@ case class GpuCollectSet(
     childExpression: Expression,
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0)
-    extends GpuCollectBase[CollectSetAggregation] {
+    extends GpuCollectBase {
 
   override def prettyName: String = "collect_set"
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[CollectSetAggregation] = {
-    Aggregation.collectSet().onColumn(inputs.head._2)
-  }
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.collectSet().onColumn(inputs.head._2)
 }

@@ -458,8 +458,8 @@ case class BoundGpuWindowFunction(
   }
 
   def aggOverWindow(cb: ColumnarBatch,
-      windowOpts: WindowOptions): AggregationOverWindow[Nothing] = {
-    val aggFunc = windowFunc.asInstanceOf[GpuAggregateWindowFunction[_]]
+      windowOpts: WindowOptions): AggregationOverWindow = {
+    val aggFunc = windowFunc.asInstanceOf[GpuAggregateWindowFunction]
     val inputs = boundInputLocations.map { pos =>
       (cb.column(pos).asInstanceOf[GpuColumnVector].getBase, pos)
     }
@@ -682,7 +682,7 @@ class GroupedAggregations extends Arm {
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
       outputColumns: Array[cudf.ColumnVector],
-      aggIt: (Table.GroupByOperation, Seq[AggregationOverWindow[Nothing]]) => Table): Unit = {
+      aggIt: (Table.GroupByOperation, Seq[AggregationOverWindow]) => Table): Unit = {
     data.foreach {
       case (frameSpec, functions) =>
         if (frameSpec.frameType == frameType) {
