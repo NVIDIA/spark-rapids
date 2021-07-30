@@ -78,8 +78,8 @@ class PartiallySupported(
     } else {
       None
     }
-    val extraInfo = (note.toSeq ++ litOnly.toSeq ++ typeStr.toSeq).mkString("; ")
-    val allText = s"$text ($extraInfo)"
+    val extraInfo = (note.toSeq ++ litOnly.toSeq ++ typeStr.toSeq).mkString(";<br/>")
+    val allText = s"$text<br/>$extraInfo"
     s"<td><em>$allText</em></td>"
   }
 
@@ -420,7 +420,7 @@ final class TypeSig private(
         note = if (note.isEmpty) {
           Some(msg)
         } else {
-          Some(note.get + "; " + msg)
+          Some(note.get + ";<br/>" + msg)
         }
       }
 
@@ -429,7 +429,7 @@ final class TypeSig private(
         note = if (note.isEmpty) {
           Some(msg)
         } else {
-          Some(note.get + "; " + msg)
+          Some(note.get + ";<br/>" + msg)
         }
       }
 
@@ -442,7 +442,7 @@ final class TypeSig private(
             note = if (note.isEmpty) {
               Some(msg)
             } else {
-              Some(note.get + "; " + msg)
+              Some(note.get + ";<br/>" + msg)
             }
           }
 
@@ -451,7 +451,7 @@ final class TypeSig private(
             note = if (note.isEmpty) {
               Some(msg)
             } else {
-              Some(note.get + "; " + msg)
+              Some(note.get + ";<br/>" + msg)
             }
           }
 
