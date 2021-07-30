@@ -311,7 +311,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val secondRow = jobInfo(1)
     assert(secondRow.jobID === 1)
     assert(secondRow.stageIds.size === 4)
-    assert(secondRow.sqlID === 0)
+    assert(secondRow.sqlID.isDefined && secondRow.sqlID.get === 0)
   }
 
   test("test multiple resource profile in single app") {
@@ -330,13 +330,17 @@ class ApplicationInfoSuite extends FunSuite with Logging {
 
     val row0 = apps.head.resourceProfIdToInfo(0)
     assert(row0.resourceProfileId.equals(0))
-    assert(row0.executorResources.get(ResourceProfile.MEMORY).equals(20480L))
-    assert(row0.executorResources.get(ResourceProfile.CORES).equals(4))
+    val execMem0 = row0.executorResources.get(ResourceProfile.MEMORY)
+    val execCores0 = row0.executorResources.get(ResourceProfile.CORES)
+    assert(execMem0.isDefined && execMem0.get.amount === 20480L)
+    assert(execCores0.isDefined && execCores0.get.amount === 4)
 
     val row1 = apps.head.resourceProfIdToInfo(1)
     assert(row1.resourceProfileId.equals(1))
-    assert(row1.executorResources.get(ResourceProfile.MEMORY).equals(6144L))
-    assert(row1.executorResources.get(ResourceProfile.CORES).equals(2))
+    val execMem1 = row1.executorResources.get(ResourceProfile.MEMORY)
+    val execCores1 = row1.executorResources.get(ResourceProfile.CORES)
+    assert(execMem1.isDefined && execMem0.get.amount === 6144L)
+    assert(execCores1.isDefined && execCores0.get.amount === 2)
   }
 
   test("test spark2 and spark3 event logs") {
