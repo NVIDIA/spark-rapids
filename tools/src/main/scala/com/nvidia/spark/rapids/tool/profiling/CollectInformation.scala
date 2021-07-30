@@ -38,24 +38,26 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   require(apps.nonEmpty)
 
   // Print Application Information
-  def printAppInfo(): Unit = {
+  def printAppInfo(): Seq[AppInfoProfileResults] = {
     val messageHeader = "\nApplication Information:\n"
     fileWriter.foreach(_.write(messageHeader))
 
-    def fieldsToProfileResult(index: Int, app: ApplicationCase): AppInfoProfileResults = {
-      AppInfoProfileResults(index.toString, app.appName, app.appId.getOrElse(""),
-        app.sparkUser,  app.startTime.toString, app.endTimeToStr, app.durToStr,
-        app.durationStr, app.sparkVersion, app.pluginEnabled.toString)
-    }
-    val allRows = apps.map(a => fieldsToProfileResult(a.index, a.appInfo)).toList
+    val allRows = apps.map { app =>
+      val a = app.appInfo
+      AppInfoProfileResults(app.index, a.appName, a.appId,
+        a.sparkUser,  a.startTime, a.endTime, a.duration,
+        a.durationStr, a.sparkVersion, a.pluginEnabled)
+    }.toList
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols.appIndex.toLong))
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex))
       val headerNames = sortedRows.head.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headerNames, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
+      Seq.empty
     }
   }
 
@@ -281,8 +283,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter.foreach(_.write(messageHeader))
     val filtered = CollectInformation.generateSQLAccums(apps)
     if (filtered.size > 0) {
-      val sortedRows = filtered.sortBy(cols => (cols.appIndex.toLong, cols.sqlID.toLong,
-        cols.nodeID.toLong, cols.nodeName, cols.accumulatorId.toLong, cols.metricType))
+      val sortedRows = filtered.sortBy(cols => (cols.appIndex, cols.sqlID,
+        cols.nodeID, cols.nodeName, cols.accumulatorId, cols.metricType))
       val outputHeaders = sortedRows.head.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows.map(_.convertToSeq))
@@ -318,14 +320,14 @@ object CollectInformation {
 
         if ((taskMax.isDefined) || (driverMax.isDefined)) {
           val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
+          /*
           Some(SQLAccumProfileResults(app.index.toString, metric.sqlID.toString,
                      metric.nodeID.toString, metric.nodeName, metric.accumulatorId.toString,
                      metric.name, max.toString, metric.metricType))
-          /*
+                     */
           Some(SQLAccumProfileResults(app.index, metric.sqlID,
             metric.nodeID, metric.nodeName, metric.accumulatorId,
             metric.name, max, metric.metricType))
-            */
         } else {
           None
         }

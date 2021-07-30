@@ -106,30 +106,25 @@ class SQLExecutionInfoClass(
     var problematic: String = "",
     var sqlCpuTimePercent: Double = -1)
 
-/* case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
+case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
     nodeName: String, accumulatorId: Long,
-    name: String, max_value: Long, metricType: String)*/
-
-case class SQLAccumProfileResults(appIndex: String, sqlID: String, nodeID: String,
-       nodeName: String, accumulatorId: String,
-   name: String, max_value: String, metricType: String)
-{
-
+    name: String, max_value: Long, metricType: String) {
+  /*
+  case class SQLAccumProfileResults(appIndex: String, sqlID: String, nodeID: String,
+      nodeName: String, accumulatorId: String,
+      name: String, max_value: String, metricType: String) {
+  */
   val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
     "name", "max_value", "metricType")
 
-  def convertToSeq: Seq[String] = Seq(appIndex, sqlID, nodeID, nodeName, accumulatorId,
-    -      name, max_value, metricType)
   /*
+  def convertToSeq: Seq[String] = Seq(appIndex, sqlID, nodeID, nodeName, accumulatorId,
+    name, max_value, metricType)
+  */
   def convertToSeq: Seq[String] = {
-
-  // Seq(appIndex, sqlID, nodeID, nodeName, accumulatorId,
-      // name, max_value, metricType)
-
-    Seq(appIndex.toString, sqlID.toString,
-      nodeID.toString, nodeName, accumulatorId.toString,
+    Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, accumulatorId.toString,
       name, max_value.toString, metricType)
-  }*/
+  }
 }
 
 case class ResourceProfileInfoCase(
@@ -140,26 +135,14 @@ case class ResourceProfileInfoCase(
 case class BlockManagerRemovedCase(
     executorID: String, host: String, port: Int, time: Long)
 
-case class AppInfoProfileResults(appIndex:String, appName: String,
-    appId: String, sparkUser: String,
-    startTime: String, endTime: String, duration: String,
-    durationStr: String, sparkVersion: String, pluginEnabled: String) {
+case class AppInfoProfileResults(appIndex: Int, appName: String,
+    appId: Option[String], sparkUser: String,
+    startTime: Long, endTime: Option[Long], duration: Option[Long],
+    durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
 
   val outputHeaders: Seq[String] = {
     ProfileUtils.getMethods[AppInfoProfileResults]
   }
-
-  def convertToSeq: Seq[String] = {
-    Seq(appIndex, appName, appId, sparkUser,
-      startTime.toString, endTime, duration, durationStr, sparkVersion,
-      pluginEnabled.toString)
-  }
-}
-
-case class ApplicationCase(
-    appName: String, appId: Option[String], sparkUser: String,
-    startTime: Long, endTime: Option[Long], duration: Option[Long],
-    durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
 
   def endTimeToStr: String = {
     endTime match {
@@ -174,7 +157,18 @@ case class ApplicationCase(
       case None => ""
     }
   }
+
+  def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, appName, appId.getOrElse(""),
+      sparkUser,  startTime.toString, endTimeToStr, durToStr,
+      durationStr, sparkVersion, pluginEnabled.toString)
+  }
 }
+
+case class ApplicationCase(
+    appName: String, appId: Option[String], sparkUser: String,
+    startTime: Long, endTime: Option[Long], duration: Option[Long],
+    durationStr: String, sparkVersion: String, pluginEnabled: Boolean)
 
 case class SQLPlanMetricsCase(
     sqlID: Long,
