@@ -79,11 +79,14 @@ class GpuBroadcastNestedLoopJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSide)
-    ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
+    val joinExec = ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
       left, right, join,
       join.joinType,
-      condition.map(_.convertToGpu()),
+      None,
       conf.gpuTargetBatchSizeBytes)
+    // The GPU does not yet support conditional joins, so conditions are implemented
+    // as a filter after the join when possible.
+    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
   }
 }
 
@@ -215,25 +218,11 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       joinTime: GpuMetric,
-      filterTime: GpuMetric,
       totalTime: GpuMetric): Iterator[ColumnarBatch] = {
     val joinIterator =
       new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, joinTime, totalTime)
     if (boundCondition.isDefined) {
-      val condition = boundCondition.get
-      joinIterator.flatMap { cb =>
-        joinOutputRows += cb.numRows()
-        withResource(
-          GpuFilter(cb, condition, numOutputRows, numOutputBatches, filterTime)) { filtered =>
-          if (filtered.numRows == 0) {
-            // Not sure if there is a better way to work around this
-            numOutputBatches.set(numOutputBatches.value - 1)
-            None
-          } else {
-            Some(GpuColumnVector.incRefCounts(filtered))
-          }
-        }
-      }
+      throw new IllegalStateException("GPU does not support conditional joins")
     } else {
       joinIterator.map { cb =>
         joinOutputRows += cb.numRows()
@@ -296,8 +285,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
-    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME)) ++ spillMetrics
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   /** BuildRight means the right relation <=> the broadcast relation. */
   private val (streamed, broadcast) = getGpuBuildSide match {
@@ -366,7 +354,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val totalTime = gpuLongMetric(TOTAL_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val filterTime = gpuLongMetric(FILTER_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
@@ -415,7 +402,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           LazySpillableColumnarBatch(builtBatch, spillCallback, "built_batch"),
           lazyStream, targetSizeBytes, getGpuBuildSide, boundCondition,
           numOutputRows, joinOutputRows, numOutputBatches,
-          joinTime, filterTime, totalTime)
+          joinTime, totalTime)
       }
     }
   }
