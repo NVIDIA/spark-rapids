@@ -139,7 +139,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     // leave off maxTasks for now
     val rp = ResourceProfileInfoCase(event.resourceProfile.id,
       event.resourceProfile.executorResources, event.resourceProfile.taskResources)
-    app.resourceProfiles(event.resourceProfile.id) = rp
+    app.resourceProfIdToInfo(event.resourceProfile.id) = rp
   }
 
   override def doSparkListenerBlockManagerAdded(
@@ -331,7 +331,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       hasDataset = false,
       ""
     )
-    app.sqls.put(event.executionId, sqlExecution)
+    app.sqlIdToInfo.put(event.executionId, sqlExecution)
     // app.sqlStart += sqlExecution
     app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
@@ -341,7 +341,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerSQLExecutionEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
-    app.sqls.get(event.executionId).foreach { sql =>
+    app.sqlIdToInfo.get(event.executionId).foreach { sql =>
       sql.endTime = Some(event.time)
       sql.duration = ProfileUtils.OptionLongMinusLong(sql.endTime, sql.startTime)
       sql.hasDataset = app.datasetSQL.exists(_.sqlID == event.executionId)
@@ -380,14 +380,14 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       None,
       ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
     )
-    app.jobs.put(event.jobId, thisJob)
+    app.jobIdToInfo.put(event.jobId, thisJob)
   }
 
   override def doSparkListenerJobEnd(
       app: ApplicationInfo,
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
-    app.jobs.get(event.jobId).foreach { j =>
+    app.jobIdToInfo.get(event.jobId).foreach { j =>
       j.endTime = Some(event.time)
       j.duration = ProfileUtils.OptionLongMinusLong(j.endTime, j.startTime)
       val thisJobResult = event.jobResult match {

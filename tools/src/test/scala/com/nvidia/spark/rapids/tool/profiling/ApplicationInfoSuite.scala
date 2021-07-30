@@ -22,10 +22,12 @@ import java.nio.file.{Files, Paths, StandardOpenOption}
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.IOUtils
 import org.scalatest.FunSuite
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.rapids.tool.profiling._
 
@@ -39,11 +41,12 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         .getOrCreate()
   }
 
+  lazy val hadoopConf = new Configuration()
+
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
   private val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
 
-  /*
   test("test single event") {
     testSqlCompression()
   }
@@ -89,15 +92,19 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   private def testSingleEventFile(logs: Array[String]): Unit = {
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     assert(apps.size == 1)
-    assert(apps.head.sparkVersion.equals("3.1.1"))
-    assert(apps.head.gpuMode.equals(true))
-    assert(apps.head.jobStart(apps.head.index).jobID.equals(1))
-    assert(apps.head.stageSubmitted(apps.head.index).numTasks.equals(1))
-    assert(apps.head.stageSubmitted(2).stageId.equals(2))
-    assert(apps.head.taskEnd(apps.head.index).successful.equals(true))
-    assert(apps.head.taskEnd(apps.head.index).endReason.equals("Success"))
-    assert(apps.head.executors.head.totalCores.equals(8))
-    assert(apps.head.resourceProfiles.head.executorMemory.equals(1024L))
+    val firstApp = apps.head
+    assert(firstApp.sparkVersion.equals("3.1.1"))
+    assert(firstApp.gpuMode.equals(true))
+    assert(firstApp.jobIdToInfo.keys.toSeq.contains(1))
+    val stageInfo = firstApp.stageIdToInfo.get((0,0))
+    assert(stageInfo.isDefined && stageInfo.get.info.numTasks.equals(1))
+    assert(firstApp.stageIdToInfo.get((2, 0)).isDefined)
+    assert(firstApp.taskEnd(firstApp.index).successful.equals(true))
+    assert(firstApp.taskEnd(firstApp.index).endReason.equals("Success"))
+    val execInfo = firstApp.executorIdToInfo.get(firstApp.executorIdToInfo.keys.head)
+    assert(execInfo.isDefined && execInfo.get.totalCores.equals(8))
+    val rp = firstApp.resourceProfIdToInfo.get(firstApp.resourceProfIdToInfo.keys.head)
+    assert(rp.isDefined && rp.get.executorResources(ResourceProfile.MEMORY).equals(1024L))
   }
 
   test("test rapids jar") {
@@ -107,9 +114,9 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path,
-          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000),
+        hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
@@ -129,7 +136,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(sparkSession, appArgs)
+      val exit = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
     }
   }
@@ -140,22 +147,11 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
     assert(apps.head.sparkVersion.equals("2.2.3"))
     assert(apps.head.gpuMode.equals(false))
-    assert(apps.head.jobStart.size == 1)
-    assert(apps.head.jobStart.head.jobID.equals(0))
-    val stage0 = apps.head.stageSubmitted.filter(_.stageId == 0)
-    assert(stage0.head.numTasks.equals(6))
-  }
-
-  test("malformed json eventlog") {
-    val eventLog = s"$logDir/malformed_json_eventlog.zstd"
-    TrampolineUtil.withTempDir { tempDir =>
-      val appArgs = new ProfileArgs(Array(
-        "--output-directory",
-        tempDir.getAbsolutePath,
-        eventLog))
-      val exit = ProfileMain.mainInternal(sparkSession, appArgs)
-      assert(exit == 1)
-    }
+    assert(apps.head.jobIdToInfo.keys.toSeq.size == 1)
+    assert(apps.head.jobIdToInfo.keys.toSeq.contains(0))
+    val stage0 = apps.head.stageIdToInfo.get((0, 0))
+    assert(stage0.isDefined)
+    assert(stage0.get.info.numTasks.equals(6))
   }
 
   test("test no sql eventlog") {
@@ -165,11 +161,12 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
-      val exit = ProfileMain.mainInternal(sparkSession, appArgs)
+      val exit = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
     }
   }
 
+  /*
   test("test printSQLPlanMetrics") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
@@ -177,14 +174,17 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
-        EventLogPathProcessor.getEventLogInfo(path,
-          sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
 
+    val collect = new CollectInformation(apps, None, 1000)
+    val output = collect.printSQLPlanMetrics()
+
     for (app <- apps) {
+      val accums =
       val accums = app.runQuery(app.generateSQLAccums, fileWriter = None)
       val resultExpectation =
         new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
@@ -192,7 +192,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       ToolTestUtils.compareDataFrames(accums, dfExpect)
     }
   }
-
   test("test printSQLPlans") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
@@ -331,14 +330,14 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 1)
-    assert(apps.head.resourceProfiles.size == 2)
+    assert(apps.head.resourceProfIdToInfo.size == 2)
 
-    val row0= apps.head.resourceProfiles(0)
+    val row0= apps.head.resourceProfIdToInfo(0)
     assert(row0.id.equals(0))
     assert(row0.executorMemory.equals(20480L))
     assert(row0.executorCores.equals(4))
 
-    val row1= apps.head.resourceProfiles(1)
+    val row1= apps.head.resourceProfIdToInfo(1)
     assert(row1.id.equals(1))
     assert(row1.executorMemory.equals(6144L))
     assert(row1.executorCores.equals(2))
@@ -369,7 +368,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val secondRow = execinfo(1)
     assert(secondRow.isNullAt(secondRow.schema.fieldIndex("resourceProfileId")))
   }
-
+*/
   test("test filename match") {
     val matchFileName = "udf"
     val appArgs = new ProfileArgs(Array(
@@ -471,6 +470,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  /*
   test("test gds-ucx-parameters") {
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
@@ -496,4 +496,5 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
   */
+
 }

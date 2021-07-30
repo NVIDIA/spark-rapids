@@ -191,12 +191,17 @@ class ApplicationInfo(
     val index: Int)
   extends AppBase(numRows, eLogInfo, hadoopConf) with Logging {
 
-  val executors = new HashMap[String, ExecutorInfoClass]()
-  val resourceProfiles = new HashMap[Int, ResourceProfileInfoCase]()
+  // executorId to executor info
+  val executorIdToInfo = new HashMap[String, ExecutorInfoClass]()
+  // resourceprofile id to resource profile info
+  val resourceProfIdToInfo = new HashMap[Int, ResourceProfileInfoCase]()
 
-  val stages = new HashMap[(Int, Int), StageInfoClass]()
-  val jobs = new HashMap[Int, JobInfoClass]()
-  val sqls = new HashMap[Long, SQLExecutionInfoClass]()
+  // stageid, stageAttemptId to stage info
+  val stageIdToInfo = new HashMap[(Int, Int), StageInfoClass]()
+  // jobId to job info
+  val jobIdToInfo = new HashMap[Int, JobInfoClass]()
+  // sqlId to sql info
+  val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
 
   var blockManagersRemoved: ArrayBuffer[BlockManagerRemovedCase] =
      ArrayBuffer[BlockManagerRemovedCase]()
@@ -244,13 +249,13 @@ class ApplicationInfo(
   }
 
   def getOrCreateExecutor(executorId: String, addTime: Long): ExecutorInfoClass = {
-    executors.getOrElseUpdate(executorId, {
+    executorIdToInfo.getOrElseUpdate(executorId, {
       new ExecutorInfoClass(executorId, addTime)
     })
   }
 
   def getOrCreateStage(info: StageInfo): StageInfoClass = {
-    val stage = stages.getOrElseUpdate((info.stageId, info.attemptNumber),
+    val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber),
       new StageInfoClass(info))
     stage
   }
@@ -307,8 +312,8 @@ class ApplicationInfo(
       val estimatedResult = this.appEndTime match {
         case Some(t) => this.appEndTime
         case None =>
-          val jobEndTimes = jobs.map { case (_, jc) => jc.endTime }.filter(_.isDefined)
-          val sqlEndTimes = sqls.map { case (_, sc) => sc.endTime }.filter(_.isDefined)
+          val jobEndTimes = jobIdToInfo.map { case (_, jc) => jc.endTime }.filter(_.isDefined)
+          val sqlEndTimes = sqlIdToInfo.map { case (_, sc) => sc.endTime }.filter(_.isDefined)
 
           if (sqlEndTimes.size == 0 && jobEndTimes.size == 0) {
             None

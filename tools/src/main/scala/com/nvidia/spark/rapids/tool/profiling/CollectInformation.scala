@@ -121,12 +121,12 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     if (apps.size > 0) {
 
       val allRows = apps.flatMap { app =>
-        if (app.executors.size > 0) {
+        if (app.executorIdToInfo.size > 0) {
           // first see if any executors have different resourceProfile ids
-          val groupedExecs = app.executors.groupBy(_._2.resourceProfileId)
+          val groupedExecs = app.executorIdToInfo.groupBy(_._2.resourceProfileId)
 
           groupedExecs.map { case (rpId, execs) =>
-            val rp = app.resourceProfiles.get(rpId)
+            val rp = app.resourceProfIdToInfo.get(rpId)
             val execMem = rp.map(_.executorResources.get(ResourceProfile.MEMORY)
               .map(_.amount).getOrElse(0))
             val execCores = rp.map(_.executorResources.get(ResourceProfile.CORES)
@@ -175,8 +175,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val outputHeaders =
       Seq("appIndex", "jobID", "stageIds", "sqlID")
     val allRows = apps.flatMap { app =>
-      if (app.jobs.size > 0) {
-        app.jobs.map { case (jobId, j) =>
+      if (app.jobIdToInfo.size > 0) {
+        app.jobIdToInfo.map { case (jobId, j) =>
           Seq(app.index.toString, j.jobID.toString,
             s"[${j.stageIds.mkString(",")}]",
             j.sqlID.map(_.toString).getOrElse(null))
