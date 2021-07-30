@@ -316,12 +316,16 @@ object CollectInformation {
             None
         }
 
-        val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
-        SQLAccumProfileResults(app.index, metric.sqlID,
-          metric.nodeID, metric.nodeName, metric.accumulatorId,
-          metric.name, max, metric.metricType)
+        if ((taskMax.isDefined) || (driverMax.isDefined)) {
+          val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
+          Some(SQLAccumProfileResults(app.index, metric.sqlID,
+            metric.nodeID, metric.nodeName, metric.accumulatorId,
+            metric.name, max, metric.metricType))
+        } else {
+          None
+        }
       }
     }
-    allRows
+    allRows.filter(_.isDefined).map(_.get)
   }
 }
