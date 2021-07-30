@@ -446,8 +446,9 @@ def test_hash_groupby_collect_with_single_distinct(data_gen):
 
 # Queries with multiple distinct aggregations will fallback to CPU if they also contain
 # collect aggregations. Because Spark optimizer will insert expressions like `If` and `First`
-# when rewriting distinct aggregates, while `GpuIf` and `GpuFirst` doesn't support the datatype
-# of collect aggregations (ArrayType).
+# when rewriting distinct aggregates, while `GpuFirst` doesn't support the datatype of collect
+# aggregations (ArrayType).
+# TODO: support GPUFirst on ArrayType https://github.com/NVIDIA/spark-rapids/issues/3097
 @approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('SortAggregateExec',
@@ -456,16 +457,14 @@ def test_hash_groupby_collect_with_single_distinct(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
-    sql = """select a,
-                    sort_array(collect_list(b)),
-                    sort_array(collect_set(b)),
-                    count(distinct b),
-                    count(distinct c)
-            from tbl group by a"""
-    assert_gpu_and_cpu_are_equal_sql(
-        df_fun=lambda spark: gen_df(spark, data_gen, length=100),
-        table_name="tbl",
-        sql=sql)
+    def spark_fn(spark_session):
+        return gen_df(spark_session, data_gen, length=100).groupby('a').agg(
+            f.sort_array(f.collect_list('b')),
+            f.sort_array(f.collect_set('b')),
+            f.countDistinct('b'),
+            f.countDistinct('c'))
+    assert_gpu_and_cpu_are_equal_collect(spark_fn)
+    assert_gpu_fallback_collect(func=spark_fn, cpu_fallback_class_name='SortAggregateExec')
 
 @approximate_float
 @ignore_order(local=True)
@@ -477,13 +476,20 @@ def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
 @pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
 def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled):
-    conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
+    local_conf = conf.copy()
+    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
     # test without Distinct
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
-        conf=conf)
+        conf=local_conf)
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
+        cpu_fallback_class_name='ObjectHashAggregateExec',
+        conf=local_conf)
     # test with single Distinct
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -492,7 +498,16 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabl
                  f.sort_array(f.collect_set('b')),
                  f.countDistinct('c'),
                  f.count('c')),
-        conf=conf)
+        conf=local_conf)
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')),
+                 f.sort_array(f.collect_set('b')),
+                 f.countDistinct('c'),
+                 f.count('c')),
+        cpu_fallback_class_name='ObjectHashAggregateExec',
+        conf=local_conf)
 
 @approximate_float
 @ignore_order

@@ -779,12 +779,15 @@ class GpuHashAggregateIterator(
           closeOnExcept(resCols) { resCols =>
             (0 until result.getNumberOfColumns).foldLeft(resCols) { case (ret, i) =>
               val column = result.getColumn(i)
-              val rapidsType = GpuColumnVector.getRapidsType(dataTypes(i))
-              // extra type conversion check for nested types
-              if ((rapidsType.equals(DType.LIST) || rapidsType.equals(DType.STRUCT)) &&
-                  !GpuColumnVector.typeConversionAllowed(column, dataTypes(i))) {
-                throw new IllegalArgumentException(
-                  s"Can NOT convert ${column.toString} to data type ${dataTypes(i)}.")
+              val rapidsType = dataTypes(i) match {
+                case dt if GpuColumnVector.isNonNestedSupportedType(dt) =>
+                  GpuColumnVector.getNonNestedRapidsType(dataTypes(i))
+                case dt: ArrayType if GpuColumnVector.typeConversionAllowed(column, dt) =>
+                  DType.LIST
+                case dt: StructType if GpuColumnVector.typeConversionAllowed(column, dt) =>
+                  DType.STRUCT
+                case dt =>
+                  throw new IllegalArgumentException(s"Can NOT convert $column to data type $dt.")
               }
               // cast will be cheap if type matches, only does refCount++ in that case
               withResource(column.castTo(rapidsType)) { castedCol =>
@@ -943,7 +946,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
  * Base class for metadata around `SortAggregateExec` and `ObjectHashAggregateExec`, which may
  * contain TypedImperativeAggregate functions in aggregate expressions.
  */
-abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
+abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
     plan: INPUT,
     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
     conf: RapidsConf,
@@ -978,7 +981,7 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
     // are inconsistent with CPU buffers. Therefore, we have to fall back all Aggregate stages
     // to CPU once any of them did fallback, in order to guarantee no partial-accelerated
     // TypedImperativeAggregate function.
-    GpuNoHashAggregateMeta.checkAndFallbackEntirely(this)
+    GpuTypedImperativeSupportedAggregateExecMeta.checkAndFallbackEntirely(this)
   }
 
   override def convertToGpu(): GpuExec = {
@@ -1065,12 +1068,13 @@ abstract class GpuNoHashAggregateMeta[INPUT <: SparkPlan](
   }
 }
 
-object GpuNoHashAggregateMeta {
+object GpuTypedImperativeSupportedAggregateExecMeta {
 
   private val entireAggFallbackCheck = TreeNodeTag[Boolean](
     "rapids.gpu.checkAndFallbackAggregateExecEntirely")
 
-  private def checkAndFallbackEntirely(meta: GpuNoHashAggregateMeta[_]): Unit = {
+  private def checkAndFallbackEntirely(
+      meta: GpuTypedImperativeSupportedAggregateExecMeta[_]): Unit = {
     // We only run the check for final stages which contain TypedImperativeAggregate.
     val needToCheck = meta.agg.aggregateExpressions.exists(e =>
       (e.mode == Final || e.mode == Complete) &&
@@ -1125,13 +1129,13 @@ class GpuHashAggregateMeta(
     extends GpuBaseAggregateMeta(agg, agg.requiredChildDistributionExpressions,
       conf, parent, rule)
 
-class GpuSortAggregateMeta(
+class GpuSortAggregateExecMeta(
     override val agg: SortAggregateExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends GpuNoHashAggregateMeta(agg, agg.requiredChildDistributionExpressions,
-      conf, parent, rule) {
+    extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
+      agg.requiredChildDistributionExpressions, conf, parent, rule) {
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
 
@@ -1162,13 +1166,13 @@ class GpuSortAggregateMeta(
   }
 }
 
-class GpuObjectHashAggregateMeta(
+class GpuObjectHashAggregateExecMeta(
     override val agg: ObjectHashAggregateExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends GpuNoHashAggregateMeta(agg, agg.requiredChildDistributionExpressions,
-      conf, parent, rule)
+    extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
+      agg.requiredChildDistributionExpressions, conf, parent, rule)
 
 /**
  * The GPU version of HashAggregateExec

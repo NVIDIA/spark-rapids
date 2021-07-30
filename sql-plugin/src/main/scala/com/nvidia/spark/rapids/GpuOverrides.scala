@@ -3027,7 +3027,7 @@ object GpuOverrides {
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
         TypeSig.all),
-      (agg, conf, p, r) => new GpuObjectHashAggregateMeta(agg, conf, p, r)),
+      (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
@@ -3038,7 +3038,7 @@ object GpuOverrides {
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
         TypeSig.all),
-      (agg, conf, p, r) => new GpuSortAggregateMeta(agg, conf, p, r)),
+      (agg, conf, p, r) => new GpuSortAggregateExecMeta(agg, conf, p, r)),
     exec[SortExec](
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
