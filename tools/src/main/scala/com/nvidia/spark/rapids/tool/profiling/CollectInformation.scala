@@ -41,17 +41,18 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    val allRows = apps.map(a => a.appInfo.fieldsToPrint(a.index)).toList
 
+    def fieldsToProfileResult(index: Int, app: ApplicationCase): AppInfoProfileResults = {
+      AppInfoProfileResults(index.toString, app.appName, app.appId.getOrElse(""),
+        app.sparkUser,  app.startTime.toString, app.endTimeToStr, app.durToStr,
+        app.durationStr, app.sparkVersion, app.pluginEnabled.toString)
+    }
+    val allRows = apps.map(a => fieldsToProfileResult(a.index, a.appInfo)).toList
     if (allRows.size > 0) {
-      val headerNames = apps.head.appInfo.outputHeaders
       val sortedRows = allRows.sortBy(cols => (cols.appIndex.toLong))
-      val finalRows = sortedRows.map(_.convertToSeq)
-      finalRows.foreach { a =>
-        logWarning("final rows contains: " + a.mkString(","))
-      }
+      val headerNames = sortedRows.head.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        headerNames, finalRows)
+        headerNames, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
@@ -124,7 +125,6 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nExecutor Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     if (apps.size > 0) {
-
       val allRows = apps.flatMap { app =>
         if (app.executorIdToInfo.size > 0) {
           // first see if any executors have different resourceProfile ids
@@ -148,7 +148,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
             val exec = execs.head._2
             // We could print a lot more information here if we decided, more like the Spark UI
             // per executor info.
-            Seq(app.index.toString, rpId.toString, numExecutors.toString,
+            ExecutorInfoProfileResult(app.index.toString, rpId.toString, numExecutors.toString,
               exec.totalCores.toString, exec.maxMemory.toString, exec.totalOnHeap.toString,
               exec.totalOffHeap.toString,
               execMem.map(_.toString).getOrElse(null), execGpus.map(_.toString).getOrElse(null),
@@ -159,15 +159,15 @@ class CollectInformation(apps: Seq[ApplicationInfo],
           Seq.empty
         }
       }
-      val outputHeaders =
-        Seq("appIndex", "resourceProfileId", "numExecutors", "executorCores",
-          "maxMem", "maxOnHeapMem", "maxOffHeapMem", "executorMemory", "numGpusPerExecutor",
-          "executorOffHeap", "taskCpu", "taskGpu")
-
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(2).toLong))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
-      fileWriter.foreach(_.write(outStr))
+      if (allRows.size > 0) {
+        val sortedRows = allRows.sortBy(cols => (cols.appIndex.toLong, cols.numExecutors.toLong))
+        val outputHeaders = sortedRows.head.outputHeaders
+        val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+          outputHeaders, sortedRows.map(_.convertToSeq))
+        fileWriter.foreach(_.write(outStr))
+      } else {
+        fileWriter.foreach(_.write("No Executor Information Found!\n"))
+      }
     } else {
       fileWriter.foreach(_.write("No Executor Information Found!\n"))
     }

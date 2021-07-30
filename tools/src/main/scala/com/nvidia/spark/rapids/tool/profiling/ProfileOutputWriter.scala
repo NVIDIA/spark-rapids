@@ -78,19 +78,12 @@ object ProfileOutputWriter extends Logging {
     val colWidths = Array.fill(numCols)(minimumColWidth)
 
     if (rows.nonEmpty && schema.size != rows.head.size) {
-      logWarning("schema is: " + schema.mkString(","))
-      if (rows.size > 0) {
-        logWarning("one row is: " + rows.head.mkString(","))
-      } else {
-        logWarning("no rows")
-      }
       throw new IllegalArgumentException("schema must be same size as data!")
     }
     val escapedSchema = schema.map(escapeMetaCharacters)
 
     val schemaAndData = escapedSchema +: rows.map { row =>
       row.map { cell =>
-        logWarning("cell value is: " + cell)
         val str = cell match {
           case null => "null"
           case _ =>

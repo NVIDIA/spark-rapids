@@ -49,6 +49,24 @@ class ExecutorInfoClass(val executorId: String, _addTime: Long) {
   var resourceProfileId = ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
 }
 
+case class ExecutorInfoProfileResult(appIndex: String, resourceProfileId: String,
+    numExecutors: String, executorCores: String, maxMem: String, maxOnHeapMem: String,
+    maxOffHeapMem: String, executorMemory: String, numGpusPerExecutor: String,
+    executorOffHeap: String, taskCpu: String, taskGpu: String) {
+
+  val outputHeaders: Seq[String] = {
+    Seq("appIndex", "resourceProfileId", "numExecutors", "executorCores",
+      "maxMem", "maxOnHeapMem", "maxOffHeapMem", "executorMemory", "numGpusPerExecutor",
+      "executorOffHeap", "taskCpu", "taskGpu")
+  }
+
+  def convertToSeq: Seq[String] = {
+    Seq(appIndex, resourceProfileId, numExecutors, executorCores, maxMem, maxOnHeapMem,
+      maxOffHeapMem, executorMemory, numGpusPerExecutor, executorOffHeap, taskCpu,
+      taskGpu: String)
+  }
+}
+
 class JobInfoClass(val jobID: Int,
     val stageIds: Seq[Int],
     val sqlID: Option[Long],
@@ -85,10 +103,14 @@ case class ResourceProfileInfoCase(
 case class BlockManagerRemovedCase(
     executorID: String, host: String, port: Int, time: Long)
 
-case class AppInfoResults(appIndex:String, appName: String,
+case class AppInfoProfileResults(appIndex:String, appName: String,
     appId: String, sparkUser: String,
     startTime: String, endTime: String, duration: String,
     durationStr: String, sparkVersion: String, pluginEnabled: String) {
+
+  val outputHeaders: Seq[String] = {
+    ProfileUtils.getMethods[AppInfoProfileResults]
+  }
 
   def convertToSeq: Seq[String] = {
     Seq(appIndex, appName, appId, sparkUser,
@@ -102,10 +124,6 @@ case class ApplicationCase(
     startTime: Long, endTime: Option[Long], duration: Option[Long],
     durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
 
-  val outputHeaders: Seq[String] = {
-    Seq("appIndex") ++ ProfileUtils.getMethods[ApplicationCase]
-  }
-
   def endTimeToStr: String = {
     endTime match {
       case Some(t) => t.toString
@@ -118,12 +136,6 @@ case class ApplicationCase(
       case Some(t) => t.toString
       case None => ""
     }
-  }
-
-  def fieldsToPrint(index: Int): AppInfoResults = {
-    AppInfoResults(index.toString, appName, appId.getOrElse(""), sparkUser,
-      startTime.toString, endTimeToStr, durToStr, durationStr, sparkVersion,
-      pluginEnabled.toString)
   }
 }
 
