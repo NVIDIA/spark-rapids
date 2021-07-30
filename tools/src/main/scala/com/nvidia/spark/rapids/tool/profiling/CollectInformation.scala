@@ -141,8 +141,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
             val execGpus = rp.map(_.executorResources.get(ResourceProfile.CORES)
               .map(_.amount).getOrElse(0L))
             val taskCpus = rp.map(_.taskResources.get(ResourceProfile.CPUS)
-              .map(_.amount).getOrElse(0L))
-            val taskGpus = rp.map(_.taskResources.get("gpu").map(_.amount).getOrElse(0))
+              .map(_.amount).getOrElse(0.toDouble))
+            val taskGpus = rp.map(_.taskResources.get("gpu").map(_.amount).getOrElse(0.toDouble))
             val execOffHeap = rp.map(_.executorResources.get(ResourceProfile.OFFHEAP_MEM)
               .map(_.amount).getOrElse(0L))
 
