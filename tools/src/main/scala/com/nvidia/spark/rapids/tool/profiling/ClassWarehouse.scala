@@ -88,7 +88,14 @@ case class BlockManagerRemovedCase(
 case class AppInfoResults(appIndex:String, appName: String,
     appId: String, sparkUser: String,
     startTime: String, endTime: String, duration: String,
-    durationStr: String, sparkVersion: String, pluginEnabled: String)
+    durationStr: String, sparkVersion: String, pluginEnabled: String) {
+
+  def convertToSeq: Seq[String] = {
+    Seq(appIndex, appName, appId, sparkUser,
+      startTime.toString, endTime, duration, durationStr, sparkVersion,
+      pluginEnabled.toString)
+  }
+}
 
 case class ApplicationCase(
     appName: String, appId: Option[String], sparkUser: String,
@@ -99,17 +106,23 @@ case class ApplicationCase(
     Seq("appIndex") ++ ProfileUtils.getMethods[ApplicationCase]
   }
 
+  def endTimeToStr: String = {
+    endTime match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+  }
+
+  def durToStr: String = {
+    duration match {
+      case Some(t) => t.toString
+      case None => ""
+    }
+  }
+
   def fieldsToPrint(index: Int): AppInfoResults = {
-    val endTimeStr = endTime match {
-      case Some(t) => t.toString
-      case None => ""
-    }
-    val durStr = duration match {
-      case Some(t) => t.toString
-      case None => ""
-    }
     AppInfoResults(index.toString, appName, appId.getOrElse(""), sparkUser,
-      startTime.toString, endTimeStr, durStr, durationStr, sparkVersion,
+      startTime.toString, endTimeToStr, durToStr, durationStr, sparkVersion,
       pluginEnabled.toString)
   }
 }

@@ -65,7 +65,7 @@ object ProfileOutputWriter extends Logging {
       _numRows: Int,
       truncate: Int = 20,
       schema: Seq[String],
-      rows: Seq[Seq [Any]]): String = {
+      rows: Seq[Seq[String]): String = {
     val numRows = _numRows.max(0).min(2147483632 - 1)
     val hasMoreData = rows.length - 1 > numRows
 
@@ -89,8 +89,7 @@ object ProfileOutputWriter extends Logging {
     val escapedSchema = schema.map(escapeMetaCharacters)
 
     val schemaAndData = escapedSchema +: rows.map { row =>
-      val strRow = row.map(_.toString)
-      strRow.map { cell =>
+      row.map { cell =>
         logWarning("cell value is: " + cell)
         val str = cell match {
           case null => "null"

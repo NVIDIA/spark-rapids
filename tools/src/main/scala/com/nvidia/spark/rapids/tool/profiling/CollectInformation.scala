@@ -46,7 +46,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     if (allRows.size > 0) {
       val headerNames = apps.head.appInfo.outputHeaders
       val sortedRows = allRows.sortBy(cols => (cols.appIndex.toLong))
-      val finalRows = sortedRows.map(_.productIterator.toSeq)
+      val finalRows = sortedRows.map(_.convertToSeq)
       finalRows.foreach { a =>
         logWarning("final rows contains: " + a.mkString(","))
       }
