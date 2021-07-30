@@ -222,6 +222,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     exec.isActive = true
     exec.totalCores = event.executorInfo.totalCores
     val rpId = event.executorInfo.resourceProfileId
+    logWarning("resource profile id is: " + rpId)
     exec.resources = event.executorInfo.resourcesInfo
     exec.resourceProfileId = rpId
   }
