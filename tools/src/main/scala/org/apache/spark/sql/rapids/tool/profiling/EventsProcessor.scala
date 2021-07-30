@@ -152,11 +152,15 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     } else {
       val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
       exec.hostPort = event.blockManagerId.hostPort
-      event.maxOnHeapMem.foreach { _ =>
-        exec.totalOnHeap = event.maxOnHeapMem.get
-        exec.totalOffHeap = event.maxOffHeapMem.get
+      logWarning("on heap is: " + event.maxOffHeapMem + " offheap: " + event.maxOffHeapMem)
+      event.maxOnHeapMem.foreach { mem =>
+        exec.totalOnHeap = mem
+      }
+      event.maxOffHeapMem.foreach { offHeap =>
+        exec.totalOffHeap = offHeap
       }
       exec.isActive = true
+      logWarning("max memory setting: " + event.maxMem)
       exec.maxMemory = event.maxMem
     }
   }
