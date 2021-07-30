@@ -146,10 +146,10 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
           outputHeaders, sortedRows.map(_.convertToSeq))
         fileWriter.foreach(_.write(outStr))
-        Some(sortedRows)
+        sortedRows
       } else {
         fileWriter.foreach(_.write("No Executor Information Found!\n"))
-        None
+        Seq.empty
       }
     } else {
       fileWriter.foreach(_.write("No Executor Information Found!\n"))
