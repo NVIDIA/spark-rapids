@@ -247,7 +247,7 @@ object GenerateTimeline {
         new TimelineStageInfo(stageId, start, end, end-start)
     }
 
-    val stageInfo = app.getStageIdToInfo.map { case ((_, _), sc) =>
+    val stageInfo = app.stageIdToInfo.map { case ((_, _), sc) =>
       val stageId = sc.info.stageId
       val submissionTime = sc.info.submissionTime.get
       val completionTime = sc.completionTime.get
@@ -262,7 +262,7 @@ object GenerateTimeline {
         (execHost, calcLayoutSlotsNeeded(taskList))
     }.toMap
 
-    val jobInfo = app.getJobIdToInfo.map { case (_, jc) =>
+    val jobInfo = app.jobIdToInfo.map { case (_, jc) =>
       val jobId = jc.jobID
       val startTime = jc.startTime
       val endTime = jc.endTime.get

@@ -57,7 +57,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     val outputHeaders = Seq("appIndex", "stageId", "attemptId", "name",
       "numTasks", "failureReason")
     val failed = apps.flatMap { app =>
-      val stagesFailed = app.getStageIdToInfo.filter { case (_, sc) =>
+      val stagesFailed = app.stageIdToInfo.filter { case (_, sc) =>
         sc.failureReason.nonEmpty
       }
       stagesFailed.map { case ((id, attId), sc) =>
@@ -82,7 +82,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     fileWriter.foreach(_.write(jobsMessageHeader))
     val outputHeaders = Seq("appIndex", "jobId", "jobResult", "failureReason")
     val failed = apps.flatMap { app =>
-      val jobsFailed = app.getJobIdToInfo.filter { case (_, jc) =>
+      val jobsFailed = app.jobIdToInfo.filter { case (_, jc) =>
         jc.jobResult.nonEmpty && !jc.jobResult.get.equals("JobSucceeded")
       }
       jobsFailed.map { case (id, jc) =>
@@ -129,7 +129,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     fileWriter.foreach(_.write(header))
     val outputHeaders = Seq("appIndex", "executorId", "time", "reason")
     val res = apps.flatMap { app =>
-      val execsRemoved = app.getExecutorIdToInfo.filter { case (_, exec) =>
+      val execsRemoved = app.executorIdToInfo.filter { case (_, exec) =>
           exec.isActive == false
       }
       execsRemoved.map { case (id, exec) =>
