@@ -279,7 +279,6 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printSQLPlanMetrics(): Seq[SQLAccumProfileResults] = {
     val messageHeader = "\nSQL Plan Metrics for Application:\n"
     fileWriter.foreach(_.write(messageHeader))
-
     val filtered = CollectInformation.generateSQLAccums(apps)
     if (filtered.size > 0) {
       val sortedRows = filtered.sortBy(cols => (cols.appIndex.toLong, cols.sqlID.toLong,
@@ -318,9 +317,9 @@ object CollectInformation {
         }
 
         val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
-        SQLAccumProfileResults(app.index.toString, metric.sqlID.toString,
-          metric.nodeID.toString, metric.nodeName, metric.accumulatorId.toString,
-          metric.name, max.toString, metric.metricType)
+        SQLAccumProfileResults(app.index, metric.sqlID,
+          metric.nodeID, metric.nodeName, metric.accumulatorId,
+          metric.name, max, metric.metricType)
       }
     }
     allRows
