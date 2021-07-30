@@ -83,12 +83,27 @@ class JobInfoClass(val jobID: Int,
 case class JobInfoProfileResult(
     appIndex: Int,
     jobID: Int,
-    stageIds: String,
+    stageIds: Seq[Int],
     sqlID: Option[Long]) {
-
   val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID")
   def convertToSeq: Seq[String] = {
-    Seq(appIndex.toString, jobID.toString, stageIds, sqlID.map(_.toString).getOrElse(null))
+    val stageIdStr = s"[${stageIds.mkString(",")}]"
+    Seq(appIndex.toString, jobID.toString, stageIdStr, sqlID.map(_.toString).getOrElse(null))
+  }
+}
+
+case class RapidsJarProfileResult(appIndex: Int, jar: String) {
+  val outputHeaders = Seq("appIndex", "Rapids4Spark jars")
+  def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, jar)
+  }
+}
+
+case class DataSourceProfileResult(appIndex: Int, sqlID: Long, format: String,
+    location: String, pushedFilters: String, schema: String) {
+  val outputHeaders = Seq("appIndex", "sqlID", "format", "location", "pushedFilters", "schema")
+  def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, sqlID.toString, format, location, pushedFilters, schema)
   }
 }
 
@@ -112,10 +127,8 @@ class SQLExecutionInfoClass(
 case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
     nodeName: String, accumulatorId: Long,
     name: String, max_value: Long, metricType: String) {
-
   val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
     "name", "max_value", "metricType")
-
   def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, accumulatorId.toString,
       name, max_value.toString, metricType)
@@ -134,7 +147,6 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
     appId: Option[String], sparkUser: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],
     durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
-
   val outputHeaders: Seq[String] = {
     ProfileUtils.getMethods[AppInfoProfileResults]
   }
@@ -256,3 +268,13 @@ case class DataSourceCase(
     location: String,
     pushedFilters: String,
     schema: String)
+
+case class FailedTaskProfileResults(appIndex: Int, stageId: Int, stageAttemptId: Int,
+    taskId: Long, taskAttemptId: Int, endReason: String) {
+  val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId",
+    "attempt", "failureReason")
+  def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, stageId.toString, stageAttemptId.toString,
+      taskId.toString, taskAttemptId.toString, ProfileUtils.truncateFailureStr(endReason))
+  }
+}

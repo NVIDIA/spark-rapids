@@ -35,16 +35,15 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     val failed = apps.flatMap { app =>
       val tasksFailed = app.taskEnd.filter(_.successful == false)
       tasksFailed.map { t =>
-        Seq(app.index.toString, t.stageId.toString, t.stageAttemptId.toString,
-          t.taskId.toString, t.attempt.toString,
-          ProfileUtils.truncateFailureStr(t.endReason))
+        FailedTaskProfileResults(app.index, t.stageId, t.stageAttemptId,
+          t.taskId, t.attempt, ProfileUtils.truncateFailureStr(t.endReason))
       }
     }
     if (failed.size > 0) {
       val sortedRows = failed.sortBy(cols =>
-        (cols(0).toLong, cols(1).toLong, cols(2).toLong, cols(3).toLong, cols(4).toLong))
+        (cols.appIndex, cols.stageId, cols.stageAttemptId, cols.taskId, cols.taskAttemptId))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Failed Tasks Found!\n"))

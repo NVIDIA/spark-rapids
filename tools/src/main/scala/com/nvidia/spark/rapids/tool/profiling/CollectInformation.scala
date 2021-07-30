@@ -22,8 +22,6 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.resource.ResourceProfile
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 case class StageMetrics(numTasks: Int, duration: String)
@@ -34,8 +32,6 @@ case class StageMetrics(numTasks: Int, duration: String)
  */
 class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
-
-  require(apps.nonEmpty)
 
   // Print Application Information
   def printAppInfo(): Seq[AppInfoProfileResults] = {
@@ -50,9 +46,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }.toList
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols.appIndex))
-      val headerNames = sortedRows.head.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        headerNames, sortedRows.map(_.convertToSeq))
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
@@ -63,25 +58,23 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
   // Print rapids-4-spark and cuDF jar if CPU Mode is on.
   def printRapidsJAR(): Unit = {
-    val headers = Seq("appIndex", "Rapids4Spark jars")
     fileWriter.foreach(_.write("\nRapids Accelerator Jar and cuDF Jar:\n"))
     val allRows = apps.flatMap { app =>
       if (app.gpuMode) {
         // Look for rapids-4-spark and cuDF jar
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
-
         val cols = (rapidsJar.keys ++ cuDFJar.keys).toSeq
-        val rowsWithAppindex = cols.map(jar => Seq(app.index.toString, jar))
+        val rowsWithAppindex = cols.map(jar => RapidsJarProfileResult(app.index, jar))
         rowsWithAppindex
       } else {
         Seq.empty
       }
     }
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1)))
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.jar))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        headers, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr + "\n"))
     } else {
       fileWriter.foreach(_.write("No Rapids 4 Spark Jars Found!\n"))
@@ -89,15 +82,13 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 
   // Print read data schema information
-  def printDataSourceInfo(): Unit = {
+  def printDataSourceInfo(): Seq[DataSourceProfileResult] = {
     val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    val outputHeaders =
-      Seq("appIndex", "sqlID", "format", "location", "pushedFilters", "schema")
     val allRows = apps.flatMap { app =>
       if (app.dataSourceInfo.size > 0) {
         app.dataSourceInfo.map { ds =>
-          Seq(app.index.toString, ds.sqlID.toString, ds.format, ds.location,
+          DataSourceProfileResult(app.index, ds.sqlID, ds.format, ds.location,
             ds.pushedFilters, ds.schema)
         }
       } else {
@@ -105,57 +96,48 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       }
     }
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(3), cols(5)))
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.sqlID,
+        cols.location, cols.schema))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+      Seq.empty
     }
   }
 
-  def getDataSourceInfo(app: ApplicationInfo, sparkSession: SparkSession): DataFrame = {
-    import sparkSession.implicits._
-    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"), asc("schema"),
-      asc("pushedFilters"))
-    df.withColumn("appIndex", lit(app.index.toString))
-      .select("appIndex", df.columns:_*)
-  }
-
   // Print executor related information
-  def printExecutorInfo(): Unit = {
+  def printExecutorInfo(): Seq[ExecutorInfoProfileResult] = {
     val messageHeader = "\nExecutor Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    if (apps.size > 0) {
-      val allRows = apps.flatMap { app =>
-        if (app.executorIdToInfo.size > 0) {
-          // first see if any executors have different resourceProfile ids
-          val groupedExecs = app.executorIdToInfo.groupBy(_._2.resourceProfileId)
+    val filtered = apps.filter(_.executorIdToInfo.size > 0)
+    if (filtered.size > 0) {
+      val allRows = filtered.flatMap { app =>
+        // first see if any executors have different resourceProfile ids
+        val groupedExecs = app.executorIdToInfo.groupBy(_._2.resourceProfileId)
+        groupedExecs.map { case (rpId, execs) =>
+          val rp = app.resourceProfIdToInfo.get(rpId)
+          val execMem = rp.map(_.executorResources.get(ResourceProfile.MEMORY)
+            .map(_.amount).getOrElse(0L))
+          val execCores = rp.map(_.executorResources.get(ResourceProfile.CORES)
+            .map(_.amount).getOrElse(0L))
+          val execGpus = rp.map(_.executorResources.get(ResourceProfile.CORES)
+            .map(_.amount).getOrElse(0L))
+          val taskCpus = rp.map(_.taskResources.get(ResourceProfile.CPUS)
+            .map(_.amount).getOrElse(0.toDouble))
+          val taskGpus = rp.map(_.taskResources.get("gpu").map(_.amount).getOrElse(0.toDouble))
+          val execOffHeap = rp.map(_.executorResources.get(ResourceProfile.OFFHEAP_MEM)
+            .map(_.amount).getOrElse(0L))
 
-          groupedExecs.map { case (rpId, execs) =>
-            val rp = app.resourceProfIdToInfo.get(rpId)
-            val execMem = rp.map(_.executorResources.get(ResourceProfile.MEMORY)
-              .map(_.amount).getOrElse(0L))
-            val execCores = rp.map(_.executorResources.get(ResourceProfile.CORES)
-              .map(_.amount).getOrElse(0L))
-            val execGpus = rp.map(_.executorResources.get(ResourceProfile.CORES)
-              .map(_.amount).getOrElse(0L))
-            val taskCpus = rp.map(_.taskResources.get(ResourceProfile.CPUS)
-              .map(_.amount).getOrElse(0.toDouble))
-            val taskGpus = rp.map(_.taskResources.get("gpu").map(_.amount).getOrElse(0.toDouble))
-            val execOffHeap = rp.map(_.executorResources.get(ResourceProfile.OFFHEAP_MEM)
-              .map(_.amount).getOrElse(0L))
-
-            val numExecutors = execs.size
-            val exec = execs.head._2
-            // We could print a lot more information here if we decided, more like the Spark UI
-            // per executor info.
-            ExecutorInfoProfileResult(app.index, rpId, numExecutors,
-              exec.totalCores, exec.maxMemory, exec.totalOnHeap,
-              exec.totalOffHeap, execMem, execGpus, execOffHeap, taskCpus, taskGpus)
-          }
-        } else {
-          Seq.empty
+          val numExecutors = execs.size
+          val exec = execs.head._2
+          // We could print a lot more information here if we decided, more like the Spark UI
+          // per executor info.
+          ExecutorInfoProfileResult(app.index, rpId, numExecutors,
+            exec.totalCores, exec.maxMemory, exec.totalOnHeap,
+            exec.totalOffHeap, execMem, execGpus, execOffHeap, taskCpus, taskGpus)
         }
       }
       if (allRows.size > 0) {
@@ -164,11 +146,14 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
           outputHeaders, sortedRows.map(_.convertToSeq))
         fileWriter.foreach(_.write(outStr))
+        sortedRows
       } else {
         fileWriter.foreach(_.write("No Executor Information Found!\n"))
+        Seq.empty
       }
     } else {
       fileWriter.foreach(_.write("No Executor Information Found!\n"))
+      Seq.empty
     }
   }
 
@@ -180,9 +165,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val allRows = apps.flatMap { app =>
       if (app.jobIdToInfo.size > 0) {
         app.jobIdToInfo.map { case (jobId, j) =>
-          JobInfoProfileResult(app.index, j.jobID,
-            s"[${j.stageIds.mkString(",")}]",
-            j.sqlID)
+          JobInfoProfileResult(app.index, j.jobID, j.stageIds, j.sqlID)
         }
       } else {
         Seq.empty
@@ -317,11 +300,6 @@ object CollectInformation {
 
         if ((taskMax.isDefined) || (driverMax.isDefined)) {
           val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
-          /*
-          Some(SQLAccumProfileResults(app.index.toString, metric.sqlID.toString,
-                     metric.nodeID.toString, metric.nodeName, metric.accumulatorId.toString,
-                     metric.name, max.toString, metric.metricType))
-                     */
           Some(SQLAccumProfileResults(app.index, metric.sqlID,
             metric.nodeID, metric.nodeName, metric.accumulatorId,
             metric.name, max, metric.metricType))
