@@ -38,7 +38,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   require(apps.nonEmpty)
 
   // Print Application Information
-  def printAppInfo(): Seq[AppInfoResults] = {
+  def printAppInfo(): Unit = {
     val messageHeader = "\nApplication Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     val allRows = apps.map(a => a.appInfo.fieldsToPrint(a.index)).toList
@@ -46,14 +46,16 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     if (allRows.size > 0) {
       val headerNames = apps.head.appInfo.outputHeaders
       val sortedRows = allRows.sortBy(cols => (cols.appIndex.toLong))
-      val finalRows = sortedRows.map(_.productIterator.toSeq).toSeq
+      val finalRows = sortedRows.map(_.productIterator.toSeq)
+      finalRows.foreach { a =>
+        logWarning("final rows contains: " + a.mkString(","))
+      }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         headerNames, finalRows)
       fileWriter.foreach(_.write(outStr))
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
     }
-    allResults
   }
 
   // Print rapids-4-spark and cuDF jar if CPU Mode is on.
