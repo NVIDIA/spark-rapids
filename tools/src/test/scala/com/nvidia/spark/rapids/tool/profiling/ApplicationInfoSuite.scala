@@ -339,8 +339,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(row1.resourceProfileId.equals(1))
     val execMem1 = row1.executorResources.get(ResourceProfile.MEMORY)
     val execCores1 = row1.executorResources.get(ResourceProfile.CORES)
-    assert(execMem1.isDefined && execMem0.get.amount === 6144L)
-    assert(execCores1.isDefined && execCores0.get.amount === 2)
+    assert(execMem1.isDefined && execMem1.get.amount === 6144L)
+    assert(execCores1.isDefined && execCores1.get.amount === 2)
   }
 
   test("test spark2 and spark3 event logs") {
