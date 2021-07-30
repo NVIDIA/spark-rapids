@@ -167,9 +167,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       assert(exit == 0)
     }
   }
-
-  /*
-
+  
   test("test printSQLPlanMetrics") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
@@ -184,18 +182,17 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
 
     val collect = new CollectInformation(apps, None, 1000)
-    val output = collect.printSQLPlanMetrics()
-
-    for (app <- apps) {
-      val accums =
-      val accums = app.runQuery(app.generateSQLAccums, fileWriter = None)
-      val resultExpectation =
-        new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
-      val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
-      ToolTestUtils.compareDataFrames(accums, dfExpect)
-    }
+    val sqlMetrics = collect.printSQLPlanMetrics()
+    val resultExpectation =
+      new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
+    assert(sqlMetrics.size == 1)
+    import sparkSession.implicits._
+    val df = sqlMetrics.toDF
+    val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
+    ToolTestUtils.compareDataFrames(df, dfExpect)
   }
 
+  /*
 
   test("test printSQLPlans") {
     TrampolineUtil.withTempDir { tempOutputDir =>

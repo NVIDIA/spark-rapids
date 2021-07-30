@@ -209,44 +209,41 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val outputHeaders = ArrayBuffer("propertyName")
     val props = HashMap[String, ArrayBuffer[String]]()
     var numApps = 0
-    apps.foreach { app =>
-      if (app.sparkProperties.size > 0) {
-        numApps += 1
-        outputHeaders += s"appIndex_${app.index}"
-        val rapidsRelated = app.sparkProperties.filterKeys { key =>
-          key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
+    val filtered = apps.filter(_.sparkProperties.size > 0)
+    filtered.foreach { app =>
+      numApps += 1
+      outputHeaders += s"appIndex_${app.index}"
+      val rapidsRelated = app.sparkProperties.filterKeys { key =>
+        key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
           key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.server.enabled")
-        }
-        val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
-        val existDiff = props.keys.toSeq.diff(inter)
-        val newDiff = rapidsRelated.keys.toSeq.diff(inter)
+      }
+      val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
+      val existDiff = props.keys.toSeq.diff(inter)
+      val newDiff = rapidsRelated.keys.toSeq.diff(inter)
 
-        // first update intersecting
-        inter.foreach { k =>
-          val appVals = props.getOrElse(k, ArrayBuffer[String]())
-          appVals += rapidsRelated.getOrElse(k, "null")
-        }
+      // first update intersecting
+      inter.foreach { k =>
+        val appVals = props.getOrElse(k, ArrayBuffer[String]())
+        appVals += rapidsRelated.getOrElse(k, "null")
+      }
 
-        // this app doesn't contain a key that was in another app
-        existDiff.foreach { k =>
-          val appVals = props.getOrElse(k, ArrayBuffer[String]())
-          appVals += "null"
-        }
+      // this app doesn't contain a key that was in another app
+      existDiff.foreach { k =>
+        val appVals = props.getOrElse(k, ArrayBuffer[String]())
+        appVals += "null"
+      }
 
-        // this app contains a key not in other apps
-        newDiff.foreach { k =>
-          // we need to fill if some apps didn't have it
-          val appVals = ArrayBuffer[String]()
-          appVals ++= Seq.fill(numApps - 1)("null")
-          appVals += rapidsRelated.getOrElse(k, "null")
+      // this app contains a key not in other apps
+      newDiff.foreach { k =>
+        // we need to fill if some apps didn't have it
+        val appVals = ArrayBuffer[String]()
+        appVals ++= Seq.fill(numApps - 1)("null")
+        appVals += rapidsRelated.getOrElse(k, "null")
 
-          props.put(k, appVals)
-        }
-      } else {
-        // Seq.empty
+        props.put(k, appVals)
       }
     }
-    if (apps.size > 0) {
+    if (props.size > 0) {
       val allRows = props.map { case(k, v) => Seq(k) ++ v }.toSeq
       val sortedRows = allRows.sortBy(cols => (cols(0)))
       if (sortedRows.size > 0) {
@@ -279,7 +276,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 
   // Print SQL Plan Metrics
-  def printSQLPlanMetrics(): Unit = {
+  def printSQLPlanMetrics(): Seq[SQLAccumProfileResults] = {
     val messageHeader = "\nSQL Plan Metrics for Application:\n"
     fileWriter.foreach(_.write(messageHeader))
 
@@ -291,8 +288,10 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No SQL Plan Metrics Found!\n"))
+      Seq.empty
     }
   }
 }
