@@ -85,11 +85,10 @@ case class ResourceProfileInfoCase(
 case class BlockManagerRemovedCase(
     executorID: String, host: String, port: Int, time: Long)
 
-case class AppInfoResults(appIndex:Int, appName: String, appId: Option[String],
-    sparkUser: String,
-    startTime: Long, endTime: Option[Long], duration: Option[Long],
-    durationStr: String, sparkVersion: String, pluginEnabled: Boolean)
-
+case class AppInfoResults(appIndex:String, appName: String,
+    appId: String, sparkUser: String,
+    startTime: String, endTime: String, duration: String,
+    durationStr: String, sparkVersion: String, pluginEnabled: String)
 
 case class ApplicationCase(
     appName: String, appId: Option[String], sparkUser: String,
@@ -100,7 +99,7 @@ case class ApplicationCase(
     Seq("appIndex") ++ ProfileUtils.getMethods[ApplicationCase]
   }
 
-  def fieldsToPrint(index: Int): Seq[String] = {
+  def fieldsToPrint(index: Int): AppInfoResults = {
     val endTimeStr = endTime match {
       case Some(t) => t.toString
       case None => ""
@@ -109,23 +108,9 @@ case class ApplicationCase(
       case Some(t) => t.toString
       case None => ""
     }
-    Seq(index.toString, appName, appId.getOrElse(""), sparkUser,
+    AppInfoResults(index.toString, appName, appId.getOrElse(""), sparkUser,
       startTime.toString, endTimeStr, durStr, durationStr, sparkVersion,
       pluginEnabled.toString)
-  }
-
-  def toResult(index: Int): AppInfoResults = {
-    val endTimeStr = endTime match {
-      case Some(t) => t.toString
-      case None => ""
-    }
-    val durStr = duration match {
-      case Some(t) => t.toString
-      case None => ""
-    }
-    AppInfoResults(index, appName, appId, sparkUser,
-      startTime, endTime, duration, durationStr, sparkVersion,
-      pluginEnabled)
   }
 }
 

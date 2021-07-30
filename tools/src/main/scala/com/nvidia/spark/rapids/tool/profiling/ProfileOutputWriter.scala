@@ -65,7 +65,7 @@ object ProfileOutputWriter extends Logging {
       _numRows: Int,
       truncate: Int = 20,
       schema: Seq[String],
-      rows: Seq[Seq [String]]): String = {
+      rows: Seq[Seq [Any]]): String = {
     val numRows = _numRows.max(0).min(2147483632 - 1)
     val hasMoreData = rows.length - 1 > numRows
 
