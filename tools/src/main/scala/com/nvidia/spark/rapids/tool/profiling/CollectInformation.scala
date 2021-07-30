@@ -132,6 +132,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
             .map(_.amount).getOrElse(0L))
 
           val numExecutors = execs.size
+          logWarning("all executors is: " + execs.values)
           val exec = execs.head._2
           // We could print a lot more information here if we decided, more like the Spark UI
           // per executor info.
