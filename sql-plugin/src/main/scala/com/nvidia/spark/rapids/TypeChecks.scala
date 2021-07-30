@@ -427,16 +427,37 @@ final class TypeSig private(
     } else if (!isSupportedType(dataType)) {
       NotSupported
     } else {
-      val note = notes.get(dataType)
+      var note = notes.get(dataType)
       val needsLitWarning = litOnlyTypes.contains(dataType) &&
           !allowed.litOnlyTypes.contains(dataType)
-      val needsAsterisks = dataType == TypeEnum.TIMESTAMP ||
-        (dataType == TypeEnum.DECIMAL && maxAllowedDecimalPrecision < DecimalType.MAX_PRECISION)
+      val lowerPrecision =
+        dataType == TypeEnum.DECIMAL && maxAllowedDecimalPrecision < DecimalType.MAX_PRECISION
+      if (lowerPrecision) {
+        val msg = s"max DECIMAL precision of $maxAllowedDecimalPrecision"
+        note = if (note.isEmpty) {
+          Some(msg)
+        } else {
+          Some(note.get + "; " + msg)
+        }
+      }
+
+      val needsAsterisks = dataType == TypeEnum.TIMESTAMP
+
       dataType match {
         case TypeEnum.ARRAY | TypeEnum.MAP | TypeEnum.STRUCT =>
-          val needsAsterisksFromSubTypes = nestedTypes.contains(TypeEnum.TIMESTAMP) ||
-              (nestedTypes.contains(TypeEnum.DECIMAL) &&
-                  maxAllowedDecimalPrecision < DecimalType.MAX_PRECISION)
+          val subTypeLowerPrecision = nestedTypes.contains(TypeEnum.DECIMAL) &&
+              maxAllowedDecimalPrecision < DecimalType.MAX_PRECISION
+          if (subTypeLowerPrecision) {
+            val msg = s"max nested DECIMAL precision of $maxAllowedDecimalPrecision"
+            note = if (note.isEmpty) {
+              Some(msg)
+            } else {
+              Some(note.get + "; " + msg)
+            }
+          }
+
+          val needsAsterisksFromSubTypes = nestedTypes.contains(TypeEnum.TIMESTAMP)
+
           val subTypesMissing = allowed.nestedTypes -- nestedTypes
           if (subTypesMissing.isEmpty && note.isEmpty && !needsLitWarning) {
             new Supported(needsAsterisks || needsAsterisksFromSubTypes)
@@ -1401,10 +1422,11 @@ object SupportedOpsDocs {
     println("# General limitations")
     println("## `Decimal`")
     println("The `Decimal` type in Spark supports a precision")
-    println("up to 38 digits (128-bits). The RAPIDS Accelerator stores values up to 64-bits and as such only")
+    println("up to 38 digits (128-bits). The RAPIDS Accelerator in most cases stores values up to")
+    println("64-bits and will support 128-bit in the future. As such the accelerator currently only")
     println(s"supports a precision up to ${DType.DECIMAL64_MAX_PRECISION} digits. Note that")
-    println("decimals are disabled by default in the plugin, because it is supported by a small")
-    println("number of operations presently, which can result in a lot of data movement to and")
+    println("decimals are disabled by default in the plugin, because it is supported by a relatively")
+    println("small number of operations presently. This can result in a lot of data movement to and")
     println("from the GPU, slowing down processing in some cases.")
     println("Result `Decimal` precision and scale follow the same rule as CPU mode in Apache Spark:")
     println()
@@ -1422,10 +1444,15 @@ object SupportedOpsDocs {
     println(" *   e1 union e2  max(s1, s2) + max(p1-s1, p2-s2)         max(s1, s2)")
     println("```")
     println()
-    println("However Spark inserts `PromotePrecision` to CAST both sides to the same type.")
+    println("However, Spark inserts `PromotePrecision` to CAST both sides to the same type.")
     println("GPU mode may fall back to CPU even if the result Decimal precision is within 18 digits.")
     println("For example, `Decimal(8,2)` x `Decimal(6,3)` resulting in `Decimal (15,5)` runs on CPU,")
     println("because due to `PromotePrecision`, GPU mode assumes the result is `Decimal(19,6)`.")
+    println("There are even extreme cases where Spark can temporarily return a Decimal value")
+    println("larger than what can be stored in 128-bits and then uses the `CheckOverflow`")
+    println("operator to round it to a desired precision and scale. This means that even when")
+    println("the accelerator supports 128-bit decimal, we might not be able to support all")
+    println("operations that Spark can support.")
     println()
     println("## `Timestamp`")
     println("Timestamps in Spark will all be converted to the local time zone before processing")
@@ -1477,10 +1504,10 @@ object SupportedOpsDocs {
     println("|Value|Description|")
     println("|---------|----------------|")
     println("|S| (Supported) Both Apache Spark and the RAPIDS Accelerator support this type.|")
-    println("|S*| (Supported with limitations) Typically this refers to general limitations with `Timestamp` or `Decimal`|")
+    println("|S*| (Supported with limitations) Typically this refers to general limitations with `Timestamp`|")
     println("| | (Not Applicable) Neither Spark not the RAPIDS Accelerator support this type in this situation.|")
     println("|_PS_| (Partial Support) Apache Spark supports this type, but the RAPIDS Accelerator only partially supports it. An explanation for what is missing will be included with this.|")
-    println("|_PS*_| (Partial Support with limitations) Like regular Partial Support but with general limitations on `Timestamp` or `Decimal` types.|")
+    println("|_PS*_| (Partial Support with limitations) Like regular Partial Support but with general limitations on `Timestamp` types.|")
     println("|**NS**| (Not Supported) Apache Spark supports this type but the RAPIDS Accelerator does not.")
     println()
     println("# SparkPlan or Executor Nodes")
@@ -1518,11 +1545,8 @@ object SupportedOpsDocs {
       }
     }
     println("</table>")
-    // TODO clarify this all...
-    println("* As was stated previously Decimal is only supported up to a precision of")
-    println(s"${DType.DECIMAL64_MAX_PRECISION} and Timestamp is only supported in the")
-    println("UTC time zone. Decimals are off by default due to performance impact in")
-    println("some cases.")
+    println("* As was stated previously Timestamp is only supported in the")
+    println("UTC time zone.")
     println()
     println("# Expression and SQL Functions")
     println("Inside each node in the DAG there can be one or more trees of expressions")
@@ -1597,10 +1621,8 @@ object SupportedOpsDocs {
       }
     }
     println("</table>")
-    println("* as was state previously Decimal is only supported up to a precision of")
-    println(s"${DType.DECIMAL64_MAX_PRECISION} and Timestamp is only supported in the")
-    println("UTC time zone. Decimals are off by default due to performance impact in")
-    println("some cases.")
+    println("* As was stated previously Timestamp is only supported in the")
+    println("UTC time zone.")
     println()
     println("## Casting")
     println("The above table does not show what is and is not supported for cast.")
