@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -314,23 +314,21 @@ def test_length():
                 'CHAR_LENGTH(a)',
                 'CHARACTER_LENGTH(a)'))
 
-# Once the xfail is fixed this can replace test_initcap_space
 @incompat
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/120')
 def test_initcap():
     # Because we don't use the same unicode version we need to limit
     # the charicter set to something more reasonable
     # upper and lower should cover the corner cases, this is mostly to
     # see if there are issues with spaces
-    gen = mk_str_gen('([aAbB]{0,5}[ \r\n\t]{1,2}){1,5}')
+    gen = mk_str_gen('([aAbB1357ȺéŸ_@%-]{0,15}[ \r\n\t]{1,2}){1,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.initcap(f.col('a'))))
 
 @incompat
-def test_initcap_space():
-    # we see a lot more space delim
-    gen = StringGen('([aAbB]{0,5}[ ]{1,2}){1,5}')
+@pytest.mark.xfail(reason='Spark initcap will not convert ŉ to ʼN')
+def test_initcap_special_chars():
+    gen = mk_str_gen('ŉ([aAbB13ȺéŸ]{0,5}){1,5}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).select(
                 f.initcap(f.col('a'))))

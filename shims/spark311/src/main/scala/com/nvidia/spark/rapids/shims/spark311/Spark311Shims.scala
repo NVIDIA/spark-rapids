@@ -204,14 +204,22 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
-            TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -219,14 +227,22 @@ class Spark311Shims extends Spark301Shims {
     // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-        TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
-            TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -348,19 +364,12 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested()
-          .withPsNote(TypeEnum.DECIMAL,
-            "Negative scales aren't supported at the moment even with " +
-              "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. This is because Parquet " +
-              "doesn't support negative scale for decimal values"),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
           TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
-            }
-            if (SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
-              willNotWorkOnGpu("Parquet doesn't support negative scales for Decimal values")
             }
           }
 
@@ -374,20 +383,33 @@ class Spark311Shims extends Spark301Shims {
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
+            TypeSig.STRUCT + TypeSig.MAP)
+          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
+          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
+          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL), TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
+            TypeSig.STRUCT + TypeSig.MAP)
+          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
+          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
+          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL)
+          , TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-            TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
+            TypeSig.STRUCT + TypeSig.MAP)
+          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
+          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
+          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL), TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
@@ -449,11 +471,16 @@ class Spark311Shims extends Spark301Shims {
     new ShuffleManagerShim
   }
 
-  override def copyParquetBatchScanExec(
+  override def copyBatchScanExec(
       batchScanExec: GpuBatchScanExec,
       queryUsesInputFile: Boolean): GpuBatchScanExec = {
-    val scan = batchScanExec.scan.asInstanceOf[GpuParquetScan]
-    val scanCopy = scan.copy(queryUsesInputFile=queryUsesInputFile)
+    val scanCopy = batchScanExec.scan match {
+      case parquetScan: GpuParquetScan =>
+        parquetScan.copy(queryUsesInputFile=queryUsesInputFile)
+      case orcScan: GpuOrcScan =>
+        orcScan.copy(queryUsesInputFile=queryUsesInputFile)
+      case _ => throw new RuntimeException("Wrong format") // never reach here
+    }
     batchScanExec.copy(scan=scanCopy)
   }
 

@@ -447,11 +447,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
       df: SparkSession => DataFrame,
       execsAllowedNonGpu: Seq[String],
       conf: SparkConf = new SparkConf(),
-      sortBeforeRepart: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
+      sortBeforeRepart: Boolean = false,
+      skipCanonicalizationCheck: Boolean = false)(fun: DataFrame => DataFrame): Unit = {
     testSparkResultsAreEqual(testName, df,
       conf=conf,
       execsAllowedNonGpu=execsAllowedNonGpu,
-      sortBeforeRepart = sortBeforeRepart)(fun)
+      sortBeforeRepart = sortBeforeRepart,
+      skipCanonicalizationCheck = skipCanonicalizationCheck)(fun)
   }
 
   def ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
@@ -1786,9 +1788,20 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     s: SparkSession => s.read.parquet(path)
   }
 
+  def frameFromParquetWithSchema(filename: String, schema: StructType):
+      SparkSession => DataFrame = {
+    val path = TestResourceFinder.getResourcePath(filename)
+    s: SparkSession => s.read.schema(schema).parquet(path)
+  }
+
   def frameFromOrc(filename: String): SparkSession => DataFrame = {
     val path = TestResourceFinder.getResourcePath(filename)
     s: SparkSession => s.read.orc(path)
+  }
+
+  def frameFromOrcWithSchema(filename: String, schema: StructType): SparkSession => DataFrame = {
+    val path = TestResourceFinder.getResourcePath(filename)
+    s: SparkSession => s.read.schema(schema).orc(path)
   }
 
   def frameFromOrcNonNullableColumns(filename: String): SparkSession => DataFrame = {

@@ -103,11 +103,9 @@ spark-submit $BASE_SPARK_SUBMIT_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -v -r
 spark-submit $BASE_SPARK_SUBMIT_ARGS $CUDF_UDF_TEST_ARGS --jars $RAPIDS_TEST_JAR ./runtests.py -m "cudf_udf" -v -rfExXs --cudf_udf --test_type=$TEST_TYPE
 #only run cache tests with our serializer in nightly test for Spark version >= 3.1.1
 if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
-  SHIM_PACKAGE=$(echo ${SPARK_VER} | sed 's/\.//g' | sed 's/-SNAPSHOT//')
-  spark-submit ${BASE_SPARK_SUBMIT_ARGS} --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark${SHIM_PACKAGE}.ParquetCachedBatchSerializer --jars $RAPIDS_TEST_JAR \
+  spark-submit ${BASE_SPARK_SUBMIT_ARGS} --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer --jars $RAPIDS_TEST_JAR \
   ./runtests.py -v -rfExXs --std_input_path="$WORKSPACE/integration_tests/src/test/resources/" -k cache_test.py -x
 fi
 popd
 stop-slave.sh
 stop-master.sh
-

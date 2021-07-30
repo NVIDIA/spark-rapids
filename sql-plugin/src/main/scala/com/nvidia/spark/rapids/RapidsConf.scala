@@ -629,14 +629,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_STRING_TO_INTEGER = conf("spark.rapids.sql.castStringToInteger.enabled")
-    .doc("When set to true, enables casting from strings to integer types (byte, short, " +
-      "int, long) on the GPU. Casting from string to integer types on the GPU returns incorrect " +
-      "results when the string represents a number larger than Long.MaxValue or smaller than " +
-      "Long.MinValue.")
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
       .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
         "does NOT produce exact same string as spark produces, but producing strings which are " +
@@ -776,6 +768,57 @@ object RapidsConf {
     .doc("When set to false disables orc output acceleration")
     .booleanConf
     .createWithDefault(true)
+
+  // This will be deleted when COALESCING is implemented for ORC
+  object OrcReaderType extends Enumeration {
+    val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
+  }
+
+  val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
+    .doc("Sets the orc reader type. We support different types that are optimized for " +
+      "different environments. The original Spark style reader can be selected by setting this " +
+      "to PERFILE which individually reads and copies files to the GPU. Loading many small files " +
+      "individually has high overhead, and using either COALESCING or MULTITHREADED is " +
+      "recommended instead. The COALESCING reader is good when using a local file system where " +
+      "the executors are on the same nodes or close to the nodes the data is being read on. " +
+      "This reader coalesces all the files assigned to a task into a single host buffer before " +
+      "sending it down to the GPU. It copies blocks from a single file into a host buffer in " +
+      "separate threads in parallel, see " +
+      "spark.rapids.sql.format.orc.multiThreadedRead.numThreads. " +
+      "MULTITHREADED is good for cloud environments where you are reading from a blobstore " +
+      "that is totally separate and likely has a higher I/O read cost. Many times the cloud " +
+      "environments also get better throughput when you have multiple readers in parallel. " +
+      "This reader uses multiple threads to read each file in parallel and each file is sent " +
+      "to the GPU separately. This allows the CPU to keep reading while GPU is also doing work. " +
+      "See spark.rapids.sql.format.orc.multiThreadedRead.numThreads and " +
+      "spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel to control " +
+      "the number of threads and amount of memory used. " +
+      "By default this is set to AUTO so we select the reader we think is best. This will " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
+      "in the cloud. See spark.rapids.cloudSchemes.")
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(OrcReaderType.values.map(_.toString))
+    .createWithDefault(OrcReaderType.AUTO.toString)
+
+  val ORC_MULTITHREAD_READ_NUM_THREADS =
+    conf("spark.rapids.sql.format.orc.multiThreadedRead.numThreads")
+      .doc("The maximum number of threads, on the executor, to use for reading small " +
+        "orc files in parallel. This can not be changed at runtime after the executor has " +
+        "started. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.orc.reader.type.")
+      .integerConf
+      .createWithDefault(20)
+
+  val ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL =
+    conf("spark.rapids.sql.format.orc.multiThreadedRead.maxNumFilesParallel")
+      .doc("A limit on the maximum number of files per task processed in parallel on the CPU " +
+        "side before the file is sent to the GPU. This affects the amount of host memory used " +
+        "when reading the files in parallel. Used with MULTITHREADED reader, see " +
+        "spark.rapids.sql.format.orc.reader.type")
+      .integerConf
+      .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
+      .createWithDefault(Integer.MAX_VALUE)
 
   val ENABLE_CSV = conf("spark.rapids.sql.format.csv.enabled")
     .doc("When set to false disables all csv input and output acceleration. " +
@@ -943,9 +986,19 @@ object RapidsConf {
 
   val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL =
     conf("spark.rapids.shuffle.transport.earlyStart.heartbeatInterval")
-      .doc("Shuffle early start heartbeat interval (milliseconds)")
+      .doc("Shuffle early start heartbeat interval (milliseconds). " +
+        "Executors will send a heartbeat RPC message to the driver at this interval")
       .integerConf
       .createWithDefault(5000)
+
+  val SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_TIMEOUT =
+    conf("spark.rapids.shuffle.transport.earlyStart.heartbeatTimeout")
+      .doc(s"Shuffle early start heartbeat timeout (milliseconds). " +
+        s"Executors that don't heartbeat within this timeout will be considered stale. " +
+        s"This timeout must be higher than the value for " +
+        s"${SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL.key}")
+      .integerConf
+      .createWithDefault(10000)
 
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
@@ -960,33 +1013,19 @@ object RapidsConf {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
-  val SHUFFLE_UCX_ACTIVE_MESSAGES_MODE = conf("spark.rapids.shuffle.ucx.activeMessages.mode")
-    .doc("Set to 'rndv', 'eager', or 'auto' to indicate what UCX Active Message mode to " +
-      "use. We set 'rndv' (Rendezvous) by default because UCX 1.10.x doesn't support 'eager' " +
-      "fully.  This restriction can be lifted if the user is running UCX 1.11+.")
-    .stringConf
-    .checkValues(Set("rndv", "eager", "auto"))
-    .createWithDefault("rndv")
+  val SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV =
+    conf("spark.rapids.shuffle.ucx.activeMessages.forceRndv")
+      .doc("Set to true to force 'rndv' mode for all UCX Active Messages. " +
+        "This should only be required with UCX 1.10.x. UCX 1.11.x deployments should " +
+        "set to false.")
+      .booleanConf
+      .createWithDefault(false)
 
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
     .booleanConf
     .createWithDefault(true)
-
-  val SHUFFLE_UCX_LISTENER_ENABLED = conf("spark.rapids.shuffle.ucx.listener.enabled")
-    .doc("When set to true, start listener and exchange socket address." +
-      " This improves detection of remote peer failures.")
-    .internal()
-    .booleanConf
-    .createWithDefault(false)
-
-  val SHUFFLE_UCX_USE_PEER_ERR_HDNL = conf("spark.rapids.shuffle.ucx.peerErrorHandling.enabled")
-    .doc("When set to true, enable peer error handling for UCX endpoints. " +
-      "This can impact transports and protocols selected in UCX.")
-    .internal()
-    .booleanConf
-    .createWithDefault(false)
 
   val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
     .doc("Starting port to try to bind the UCX listener.")
@@ -1241,7 +1280,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar,cudf-21.08.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.10.0-SNAPSHOT.jar,cudf-21.10.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1515,6 +1554,22 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
 
+  lazy val isOrcPerFileReadEnabled: Boolean =
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.PERFILE
+
+  lazy val isOrcAutoReaderEnabled: Boolean =
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.AUTO
+
+  lazy val isOrcCoalesceFileReadEnabled: Boolean = isOrcAutoReaderEnabled ||
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.COALESCING
+
+  lazy val isOrcMultiThreadReadEnabled: Boolean = isOrcAutoReaderEnabled ||
+    OrcReaderType.withName(get(ORC_READER_TYPE)) == OrcReaderType.MULTITHREADED
+
+  lazy val orcMultiThreadReadNumThreads: Int = get(ORC_MULTITHREAD_READ_NUM_THREADS)
+
+  lazy val maxNumOrcFilesParallel: Int = get(ORC_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
@@ -1526,18 +1581,17 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleTransportEarlyStartHeartbeatInterval: Int = get(
     SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL)
 
+  lazy val shuffleTransportEarlyStartHeartbeatTimeout: Int = get(
+    SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_TIMEOUT)
+
   lazy val shuffleTransportEarlyStart: Boolean = get(SHUFFLE_TRANSPORT_EARLY_START)
 
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
-  lazy val shuffleUcxActiveMessagesMode: String = get(SHUFFLE_UCX_ACTIVE_MESSAGES_MODE)
+  lazy val shuffleUcxActiveMessagesForceRndv: Boolean = get(SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV)
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
-
-  lazy val shuffleUcxUseSockaddr: Boolean = get(SHUFFLE_UCX_LISTENER_ENABLED)
-
-  lazy val shuffleUcxUsePeerErrorHandler: Boolean = get(SHUFFLE_UCX_USE_PEER_ERR_HDNL)
 
   lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
 

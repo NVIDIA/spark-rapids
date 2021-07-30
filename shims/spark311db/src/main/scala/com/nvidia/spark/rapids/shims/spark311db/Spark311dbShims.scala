@@ -83,7 +83,7 @@ class Spark311dbShims extends Spark311Shims {
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    Seq(
+    super.getExecs ++ Seq(
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -108,10 +108,10 @@ class Spark311dbShims extends Spark311Shims {
         "Databricks-specific window function exec, for \"running\" windows, " +
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
-            TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
-                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
-                TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
-                    + TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+              TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+              TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
+              TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
             TypeSig.all),
           (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       ),
@@ -169,20 +169,33 @@ class Spark311dbShims extends Spark311Shims {
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
+            TypeSig.STRUCT + TypeSig.MAP)
+          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
+          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
+          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL), TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
+            TypeSig.STRUCT + TypeSig.MAP)
+          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
+          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
+          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL)
+          , TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
-        ), TypeSig.all),
+         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.MAP)
+          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
+          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
+          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL), TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
@@ -228,7 +241,7 @@ class Spark311dbShims extends Spark311Shims {
         " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
         (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {

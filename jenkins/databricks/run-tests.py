@@ -35,7 +35,7 @@ def main():
   print("rsync command: %s" % rsync_command)
   subprocess.check_call(rsync_command, shell = True)
 
-  ssh_command = "bash -c 'ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s %s %s %s 2>&1 | tee testout; if [ `echo ${PIPESTATUS[0]}` -ne 0 ]; then false; else true; fi'" % (master_addr, params.private_key_file, params.script_dest, params.jar_path, params.spark_conf)
+  ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s 'LOCAL_JAR_PATH=%s SPARK_CONF=%s BASE_SPARK_VER=%s bash %s 2>&1 | tee testout; if [ ${PIPESTATUS[0]} -ne 0 ]; then false; else true; fi'" % (master_addr, params.private_key_file, params.jar_path, params.spark_conf, params.base_spark_pom_version, params.script_dest)
   print("ssh command: %s" % ssh_command)
   subprocess.check_call(ssh_command, shell = True)
 

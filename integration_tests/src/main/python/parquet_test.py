@@ -199,7 +199,7 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
             lambda spark : readParquetCatchException(spark, data_path),
             conf=all_confs)
 
-@pytest.mark.parametrize('parquet_gens', [decimal_gens,
+@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, DecimalGen(precision=7, scale=3)], decimal_gens,
                                           [ArrayGen(DecimalGen(7,2), max_length=10)],
                                           [StructGen([['child0', DecimalGen(7, 2)]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
@@ -477,3 +477,50 @@ def test_many_column_project():
     assert_gpu_and_cpu_are_equal_collect(
         func=lambda spark: _create_wide_data_frame(spark, 1000),
         is_cpu_first=False)
+
+def setup_parquet_file_with_column_names(spark, table_name):
+    drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
+    create_query = "CREATE TABLE `{}` (`a` INT, `b` ARRAY<INT>, `c` STRUCT<`c_1`: INT, `c_2`: STRING>) USING parquet"\
+        .format(table_name)
+    insert_query = "INSERT INTO {} VALUES(13, array(2020), named_struct('c_1', 1, 'c_2', 'hello'))".format(table_name)
+    spark.sql(drop_query).collect
+    spark.sql(create_query).collect
+    spark.sql(insert_query).collect
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_disorder_read_schema_XXX(spark_tmp_table_factory, reader_confs, v1_enabled_list):
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    table_name = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark : setup_parquet_file_with_column_names(spark, table_name))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT a,b FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c,a FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c,b FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT a,c,b FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT a,b,c FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT b,c,a FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT b,c,a FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c,a,b FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c,b,a FROM {}".format(table_name)),
+        all_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT c.c_2,c.c_1,b,a FROM {}".format(table_name)),
+        all_confs)

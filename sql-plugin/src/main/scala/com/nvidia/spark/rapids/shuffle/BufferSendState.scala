@@ -16,12 +16,15 @@
 
 package com.nvidia.spark.rapids.shuffle
 
+import java.io.IOException
+
 import ai.rapids.cudf.{Cuda, MemoryBuffer}
 import com.nvidia.spark.rapids.{Arm, RapidsBuffer, ShuffleMetadata, StorageTier}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.shuffle.RapidsShuffleSendPrepareException
 
 /**
  * A helper case class to maintain the server side state in response to a transfer
@@ -29,10 +32,9 @@ import org.apache.spark.internal.Logging
  *
  * The class implements the Iterator interface.
  *
- * On next(), a set of RapidsBuffer are copied onto a bounce buffer, and the
- * `AddressLengthTag` of the bounce buffer is returned. By convention, the tag used
- * is that of the first buffer contained in the payload. Buffers are copied to the bounce
- * buffer in TransferRequest order. The receiver has the same conventions.
+ * On next(), a set of RapidsBuffer are copied onto a bounce buffer, and a
+ * `MemoryBuffer` slice of the bounce buffer is returned. Buffers are copied to the bounce
+ * buffer in `TransferRequest` order. The receiver has the same conventions.
  *
  * Synchronization with `serverStream` is outside of this class. It is assumed that the caller
  * has several `BufferSendState` iterators and on calling next on this collection, it will
@@ -55,18 +57,22 @@ class BufferSendState(
     sendBounceBuffers: SendBounceBuffers,
     requestHandler: RapidsShuffleRequestHandler,
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
-    extends Iterator[AddressLengthTag] with AutoCloseable with Logging with Arm {
+    extends AutoCloseable with Logging with Arm {
 
-  class SendBlock(val bufferId: Int,
-      val tag: Long, tableSize: Long) extends BlockWithSize {
+  class SendBlock(val bufferId: Int, tableSize: Long) extends BlockWithSize {
     override def size: Long = tableSize
   }
 
+  val peerExecutorId: Long = transaction.peerExecutorId()
+
   private[this] var isClosed = false
 
-  private[this] val (bufferMetas: Array[BufferMeta], blocksToSend: Seq[SendBlock]) = {
-    withResource(transaction.releaseMessage()) { msg =>
-      val transferRequest = ShuffleMetadata.getTransferRequest(msg.getBuffer())
+  private[this] val (peerBufferReceiveHeader: Long,
+      bufferMetas: Array[BufferMeta],
+      blocksToSend: Seq[SendBlock]) = {
+    withResource(transaction.releaseMessage()) { mtb =>
+      val transferRequest = ShuffleMetadata.getTransferRequest(mtb.getBuffer())
+      val peerBufferReceiveHeader = transferRequest.id()
 
       val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
 
@@ -76,13 +82,18 @@ class BufferSendState(
         withResource(requestHandler.acquireShuffleBuffer(
           bufferTransferRequest.bufferId())) { table =>
           bufferMetas(ix) = table.meta.bufferMeta()
-          new SendBlock(bufferTransferRequest.bufferId(),
-            bufferTransferRequest.tag(), table.size)
+          new SendBlock(bufferTransferRequest.bufferId(), table.size)
         }
       }
 
-      (bufferMetas, blocksToSend)
+      (peerBufferReceiveHeader, bufferMetas, blocksToSend)
     }
+  }
+
+  // the header to use for all sends in this `BufferSendState` (sent to us
+  // by the peer)
+  def getPeerBufferReceiveHeader: Long = {
+    peerBufferReceiveHeader
   }
 
   private[this] val windowedBlockIterator =
@@ -106,7 +117,7 @@ class BufferSendState(
     transaction
   }
 
-  def hasNext: Boolean = synchronized { hasMoreBlocks }
+  def hasMoreSends: Boolean = synchronized { hasMoreBlocks }
 
   private[this] def freeBounceBuffers(): Unit = {
     sendBounceBuffers.close()
@@ -124,9 +135,12 @@ class BufferSendState(
     if (isClosed){
       throw new IllegalStateException("ALREADY CLOSED!")
     }
-    isClosed = true
-    freeBounceBuffers()
-    releaseAcquiredToCatalog()
+    // close transaction
+    withResource(transaction) { _ =>
+      isClosed = true
+      freeBounceBuffers()
+      releaseAcquiredToCatalog()
+    }
   }
 
   case class RangeBuffer(
@@ -137,7 +151,13 @@ class BufferSendState(
     }
   }
 
-  def next(): AddressLengthTag = synchronized {
+  /**
+   * Prepares and returns a `MemoryBuffer` that can be used in a send.
+   * @return - a memory buffer slice backed by either a host or device bounce buffer, depending on
+   *         the tier location for buffers we are sending.
+   * @throws `RapidsShuffleSendPrepareException` when copies to the bounce buffer fail.
+   */
+  def getBufferToSend(): MemoryBuffer = synchronized {
     require(acquiredBuffs.isEmpty,
       "Called next without calling `releaseAcquiredToCatalog` first")
 
@@ -174,17 +194,33 @@ class BufferSendState(
           hostBounceBuffer.buffer
         }
 
-        acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
-          require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
-          rapidsBuffer.copyToMemoryBuffer(blockRange.rangeStart, bounceBuffToUse, buffOffset,
-            blockRange.rangeSize(), serverStream)
-          buffOffset += blockRange.rangeSize()
+        // `copyToMemoryBuffer` can throw if the `RapidsBuffer` is in the DISK tier and
+        // the file fails to mmap. We catch the `IOException` and attempt a retry
+        // in the server.
+        var needsCleanup = false
+        try {
+          acquiredBuffs.foreach { case RangeBuffer(blockRange, rapidsBuffer) =>
+            needsCleanup = true
+            require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
+            rapidsBuffer.copyToMemoryBuffer(blockRange.rangeStart, bounceBuffToUse, buffOffset,
+              blockRange.rangeSize(), serverStream)
+            buffOffset += blockRange.rangeSize()
+          }
+          needsCleanup = false
+        } catch {
+          case ioe: IOException =>
+            throw new RapidsShuffleSendPrepareException(
+              s"Error while copying to bounce buffer for executor ${peerExecutorId} and " +
+                  s"header ${TransportUtils.toHex(peerBufferReceiveHeader)}", ioe)
+        } finally {
+          if (needsCleanup) {
+            // we likely failed in `copyToMemoryBuffer`
+            // unacquire buffs (removing ref count)
+            releaseAcquiredToCatalog()
+          }
         }
 
-        val alt = AddressLengthTag.from(bounceBuffToUse,
-          blockRanges.head.block.tag)
-
-        alt.resetLength(buffOffset)
+        val buffSlice = bounceBuffToUse.slice(0, buffOffset)
 
         if (windowedBlockIterator.hasNext) {
           blockRanges = windowedBlockIterator.next()
@@ -193,7 +229,7 @@ class BufferSendState(
           hasMoreBlocks = false
         }
 
-        alt
+        buffSlice
       } else {
         throw new NoSuchElementException("BufferSendState is already done, yet next was called")
       }

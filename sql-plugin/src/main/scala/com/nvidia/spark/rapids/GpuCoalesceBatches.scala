@@ -369,8 +369,10 @@ abstract class AbstractGpuCoalesceIterator(
         }
       }
 
+      val isLastBatch = !(hasOnDeck || iter.hasNext)
+
       // enforce single batch limit when appropriate
-      if (goal == RequireSingleBatch && (hasOnDeck || iter.hasNext)) {
+      if (goal == RequireSingleBatch && !isLastBatch) {
         throw new IllegalStateException("A single batch is required for this operation." +
             " Please try increasing your partition count.")
       }
@@ -378,7 +380,11 @@ abstract class AbstractGpuCoalesceIterator(
       numOutputRows += numRows
       numOutputBatches += 1
       withResource(new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)) { _ =>
-        concatAllAndPutOnGPU()
+        val batch = concatAllAndPutOnGPU()
+        if (isLastBatch) {
+          GpuColumnVector.tagAsFinalBatch(batch)
+        }
+        batch
       }
     } finally {
       cleanupConcatIsDone()
@@ -548,7 +554,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     case batchingGoal: BatchedByKey =>
       batchingGoal.order
     case _ =>
-      super.outputOrdering
+      child.outputOrdering
   }
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {

@@ -151,7 +151,7 @@ else
       export PYSP_TEST_spark_master="local-cluster[$NUM_LOCAL_EXECS,$CORES_PER_EXEC,$MB_PER_EXEC]"
     else
       # If a master is not specified, use "local[*, $SPARK_TASK_MAXFAILURES]"
-      if [ -z "${PYSP_TEST_spark_master}" ] && [ "$SPARK_SUBMIT_FLAGS" != *"--master"* ]; then
+      if [ -z "${PYSP_TEST_spark_master}" ] && [[ "$SPARK_SUBMIT_FLAGS" != *"--master"* ]]; then
         export PYSP_TEST_spark_master="local[*,$SPARK_TASK_MAXFAILURES]"
       fi
     fi

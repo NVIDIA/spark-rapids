@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.mutable.ArrayBuffer
-
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 case class StageMetrics(numTasks: Int, duration: String)
@@ -64,6 +65,31 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }
   }
 
+  // Print read data schema information
+  def printDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+    val messageHeader = "\nData Source Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    apps.foreach { app =>
+      val dfWithApp = getDataSourceInfo(app, sparkSession)
+      // don't check if dataframe empty because that runs a Spark job
+      if (app.dataSourceInfo.nonEmpty) {
+        fileWriter.foreach { writer =>
+          writer.write(ToolUtils.showString(dfWithApp, numRows))
+        }
+      } else {
+        fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+      }
+    }
+  }
+
+  def getDataSourceInfo(app: ApplicationInfo, sparkSession: SparkSession): DataFrame = {
+    import sparkSession.implicits._
+    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"), asc("schema"),
+      asc("pushedFilters"))
+    df.withColumn("appIndex", lit(app.index.toString))
+      .select("appIndex", df.columns:_*)
+  }
+
   // Print executor related information
   def printExecutorInfo(): Unit = {
     val messageHeader = "\nExecutor Information:\n"
@@ -95,7 +121,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        app.runQuery(query = app.generateRapidsProperties + " order by propertyName",
+        app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
@@ -106,7 +132,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printSQLPlans(outputDirectory: String): Unit = {
     for (app <- apps) {
       val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"planDescriptions-${app.appId}")
+        s"planDescriptions-${app.appId}", "SQL Plan")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
           planFileWriter.write("\n=============================\n")
