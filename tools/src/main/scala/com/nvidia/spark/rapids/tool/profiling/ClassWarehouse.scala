@@ -49,10 +49,10 @@ class ExecutorInfoClass(val executorId: String, _addTime: Long) {
   var resourceProfileId = ResourceProfile.DEFAULT_RESOURCE_PROFILE_ID
 }
 
-case class ExecutorInfoProfileResult(appIndex: String, resourceProfileId: String,
-    numExecutors: String, executorCores: String, maxMem: String, maxOnHeapMem: String,
-    maxOffHeapMem: String, executorMemory: String, numGpusPerExecutor: String,
-    executorOffHeap: String, taskCpu: String, taskGpu: String) {
+case class ExecutorInfoProfileResult(appIndex: Int, resourceProfileId: Int,
+    numExecutors: Int, executorCores: Int, maxMem: Long, maxOnHeapMem: Long,
+    maxOffHeapMem: Long, executorMemory: Option[Long], numGpusPerExecutor: Option[Long],
+    executorOffHeap: Option[Long], taskCpu: Option[Double], taskGpu: Option[Double]) {
 
   val outputHeaders: Seq[String] = {
     Seq("appIndex", "resourceProfileId", "numExecutors", "executorCores",
@@ -60,9 +60,13 @@ case class ExecutorInfoProfileResult(appIndex: String, resourceProfileId: String
       "executorOffHeap", "taskCpu", "taskGpu")
   }
   def convertToSeq: Seq[String] = {
-    Seq(appIndex, resourceProfileId, numExecutors, executorCores, maxMem, maxOnHeapMem,
-      maxOffHeapMem, executorMemory, numGpusPerExecutor, executorOffHeap, taskCpu,
-      taskGpu: String)
+
+    Seq(appIndex.toString, resourceProfileId.toString, numExecutors.toString,
+      executorCores.toString, maxMem.toString, maxOnHeapMem.toString,
+      maxOffHeapMem.toString, executorMemory.map(_.toString).getOrElse(null),
+      numGpusPerExecutor.map(_.toString).getOrElse(null),
+      executorOffHeap.map(_.toString).getOrElse(null), taskCpu.map(_.toString).getOrElse(null),
+      taskGpu.map(_.toString).getOrElse(null))
   }
 }
 
@@ -78,14 +82,14 @@ class JobInfoClass(val jobID: Int,
     var gpuMode: Boolean)
 
 case class JobInfoProfileResult(
-    appIndex: String,
-    jobID: String,
+    appIndex: Int,
+    jobID: Int,
     stageIds: String,
-    sqlID: String) {
+    sqlID: Option[Long]) {
 
   val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID")
   def convertToSeq: Seq[String] = {
-    Seq(appIndex, jobID, stageIds, sqlID)
+    Seq(appIndex, jobID.toString, stageIds, sqlID.map(_.toString).getOrElse(null))
   }
 }
 

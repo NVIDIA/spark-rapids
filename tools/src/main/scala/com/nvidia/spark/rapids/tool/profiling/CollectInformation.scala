@@ -150,19 +150,16 @@ class CollectInformation(apps: Seq[ApplicationInfo],
             val exec = execs.head._2
             // We could print a lot more information here if we decided, more like the Spark UI
             // per executor info.
-            ExecutorInfoProfileResult(app.index.toString, rpId.toString, numExecutors.toString,
-              exec.totalCores.toString, exec.maxMemory.toString, exec.totalOnHeap.toString,
-              exec.totalOffHeap.toString,
-              execMem.map(_.toString).getOrElse(null), execGpus.map(_.toString).getOrElse(null),
-              execOffHeap.map(_.toString).getOrElse(null), taskCpus.map(_.toString).getOrElse(null),
-              taskGpus.map(_.toString).getOrElse(null))
+            ExecutorInfoProfileResult(app.index, rpId, numExecutors,
+              exec.totalCores, exec.maxMemory, exec.totalOnHeap,
+              exec.totalOffHeap, execMem, execGpus, execOffHeap, taskCpus, taskGpus)
           }
         } else {
           Seq.empty
         }
       }
       if (allRows.size > 0) {
-        val sortedRows = allRows.sortBy(cols => (cols.appIndex.toLong, cols.numExecutors.toLong))
+        val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.numExecutors))
         val outputHeaders = sortedRows.head.outputHeaders
         val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
           outputHeaders, sortedRows.map(_.convertToSeq))
@@ -183,16 +180,16 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val allRows = apps.flatMap { app =>
       if (app.jobIdToInfo.size > 0) {
         app.jobIdToInfo.map { case (jobId, j) =>
-          JobInfoProfileResult(app.index.toString, j.jobID.toString,
+          JobInfoProfileResult(app.index, j.jobID,
             s"[${j.stageIds.mkString(",")}]",
-            j.sqlID.map(_.toString).getOrElse(null))
+            j.sqlID)
         }
       } else {
         Seq.empty
       }
     }
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols.appIndex.toLong, cols.jobID.toLong))
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.jobID))
       val outputHeaders = sortedRows.head.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         outputHeaders, sortedRows.map(_.convertToSeq))
