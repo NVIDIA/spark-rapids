@@ -22,7 +22,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOverWindow, DType, GroupByOptions, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanType, Table, WindowOptions}
+import ai.rapids.cudf.{Aggregation, AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanType, Table, WindowOptions}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -412,7 +412,7 @@ trait GpuWindowBaseExec extends UnaryExecNode with GpuExec {
  * groups those two together so we can have a complete picture of how to perform these types of
  * aggregations.
  */
-case class AggAndReplace(agg: Aggregation, nullReplacePolicy: Option[ReplacePolicy])
+case class AggAndReplace[T](agg: T, nullReplacePolicy: Option[ReplacePolicy])
 
 /**
  * The class represents a window function and the locations of its deduped inputs after an initial
@@ -428,7 +428,7 @@ case class BoundGpuWindowFunction(
    * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
    *         for each value in `boundInputLocations` so that they can be zipped together.
    */
-  def scan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+  def scan(isRunningBatched: Boolean): Seq[AggAndReplace[Aggregation]] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
     aggFunc.scanAggregation(isRunningBatched)
   }
@@ -439,7 +439,7 @@ case class BoundGpuWindowFunction(
    * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
    *         for each value in `boundInputLocations` so that they can be zipped together.
    */
-  def groupByScan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+  def groupByScan(isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
     aggFunc.groupByScanAggregation(isRunningBatched)
   }
