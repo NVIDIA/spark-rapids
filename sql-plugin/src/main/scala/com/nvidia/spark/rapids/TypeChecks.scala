@@ -344,8 +344,9 @@ final class TypeSig private(
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
             (ZoneId.systemDefault().normalized() != GpuOverrides.UTC_TIMEZONE_ID)) {
-          Seq(withNested(isNested, s"$dataType is not supported in the given timezone. " +
-              s"Please set the timezone to UTC"))
+          Seq(withNested(isNested, s"$dataType is not supported when the JVM system " +
+              s"timezone is set to ${ZoneId.systemDefault()}. Set the timezone to UTC to enable " +
+              s"$dataType support"))
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isNested)
         }
@@ -507,8 +508,12 @@ object TypeSig {
   val STRING: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.STRING))
   val DECIMAL_64: TypeSig =
     new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), DType.DECIMAL64_MAX_PRECISION)
-  val DECIMAL_128_NO_OVERFLOW: TypeSig =
-    new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), DecimalType.MAX_PRECISION - 1)
+
+  /**
+   * Full support for 128 bit DECIMAL. In the future we expect to have other types with
+   * slightly less than full DECIMAL support. This are things like math operations where
+   * we cannot replicate the overflow behavior of Spark. These will be added when needed.
+   */
   val DECIMAL_128_FULL: TypeSig =
     new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), DecimalType.MAX_PRECISION)
   val NULL: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.NULL))
