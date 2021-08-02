@@ -118,9 +118,9 @@ object GenerateDot extends Logging {
 
     val sqlIdToMaxMetric = new mutable.HashMap[Long, ArrayBuffer[(Long, Long)]]()
     for (row <- accumSummary) {
-      val list = sqlIdToMaxMetric.getOrElseUpdate(row(0).toLong,
+      val list = sqlIdToMaxMetric.getOrElseUpdate(row(0),
         new ArrayBuffer[(Long, Long)]())
-      list += row(1).toLong -> row(2).toLong
+      list += row(1) -> row(2)
     }
 
     val sqlPlansMap = app.sqlPlan.map { case (sqlId, sparkPlanInfo) =>

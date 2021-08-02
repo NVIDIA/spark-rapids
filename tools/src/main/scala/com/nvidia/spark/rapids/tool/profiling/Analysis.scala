@@ -239,6 +239,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
       }
     }
+    logWarning("here 1")
     val allFiltered = allRows.filter(_.isDefined).map(_.get)
     if (allFiltered.size > 0) {
       val sortedRows = allFiltered.sortBy { cols =>
@@ -251,6 +252,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     } else {
       fileWriter.foreach(_.write("No SQL Metrics Found!\n"))
     }
+    logWarning("here 2")
+
   }
 
   def sqlMetricsAggregationDurationAndCpuTime(): Unit = {
