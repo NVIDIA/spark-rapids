@@ -33,8 +33,12 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
   def getDurations(tcs: ArrayBuffer[TaskCase]): (Long, Long, Long, Double) = {
     val durations = tcs.map(_.duration)
-    (durations.sum, durations.max, durations.min,
-      ToolUtils.calculateAverage(durations.sum, durations.size, 1))
+    if (durations.size > 0 ) {
+      (durations.sum, durations.max, durations.min,
+        ToolUtils.calculateAverage(durations.sum, durations.size, 1))
+    } else {
+      (0L, 0L, 0L, 0.toDouble)
+    }
   }
 
   // Job + Stage Level TaskMetrics Aggregation
