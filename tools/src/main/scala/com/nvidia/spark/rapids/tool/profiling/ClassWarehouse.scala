@@ -174,8 +174,8 @@ case class UnsupportedOpsProfileResult(appIndex: Int,
     "nodeDescription", "reason")
 
   override def convertToSeq: Seq[String] = {
-    Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, nodeDescription,
-      reason)
+    Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName,
+      ProfileUtils.truncateFailureStr(nodeDescription), reason)
   }
 }
 
