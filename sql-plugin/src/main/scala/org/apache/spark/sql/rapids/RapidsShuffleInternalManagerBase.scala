@@ -319,8 +319,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
     dependency match {
       case _ if shouldFallThroughOnEverything => orig
       case gpuDependency: GpuShuffleDependency[K, V, C] if gpuDependency.useRapidsShuffle =>
-        new GpuShuffleHandle(orig,
-          dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
+        new GpuShuffleHandle(orig, gpuDependency)
       case _ => orig
     }
   }
