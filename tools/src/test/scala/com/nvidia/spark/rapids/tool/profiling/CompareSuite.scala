@@ -47,7 +47,7 @@ class CompareSuite extends FunSuite {
     // none match
     assert(matchingSqlIdsRet.size === 29)
     assert(matchingSqlIdsRet.head.size == 2)
-    assert(matchingStageIdsRet === 73)
+    assert(matchingStageIdsRet.size === 73)
     assert(matchingStageIdsRet.head.size == 2)
   }
 
@@ -69,7 +69,7 @@ class CompareSuite extends FunSuite {
     assert(matchingSqlIdsRet.size === 1)
     assert(matchingSqlIdsRet.head.size == 2)
     assert(matchingSqlIdsRet.head(0) == matchingSqlIdsRet.head(1))
-    assert(matchingStageIdsRet === 4)
+    assert(matchingStageIdsRet.size === 4)
     assert(matchingStageIdsRet.head.size == 2)
     assert(matchingStageIdsRet.head(0) == matchingStageIdsRet.head(1))
 
