@@ -217,6 +217,7 @@ def test_hash_grpby_sum(data_gen, conf):
         conf=conf
     )
 
+
 @approximate_float
 @ignore_order
 @incompat
