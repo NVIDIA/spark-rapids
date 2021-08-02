@@ -299,10 +299,7 @@ object CollectInformation extends Logging {
           case None =>
             None
         }
-        accums match {
-          case Some(acc) =>
-            acc.filter(_.stageId)
-        }
+        
         val taskMax = accums match {
           case Some(acc) =>
             Some(acc.map(_.value.getOrElse(0L)).max)
