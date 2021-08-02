@@ -211,14 +211,10 @@ _init_list_no_nans_with_decimal = _init_list_no_nans + [
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-def test_hash_grpby_sum(data_gen, conf, rapids_shuffle_enabled):
-    def make_conf():
-        new_conf = conf.copy()
-        new_conf.update(rapids_shuffle_enabled)
-        return new_conf
+def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
-        conf=make_conf()
+        conf=conf
     )
 
 @approximate_float
