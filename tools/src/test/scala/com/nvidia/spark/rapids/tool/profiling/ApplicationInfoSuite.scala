@@ -128,6 +128,11 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val cuDFJar = apps.head.classpathEntries.filterKeys(_ matches ".*cudf-0.19.2-cuda11.jar.*")
     assert(rapidsJar.size == 1, "Rapids jar check")
     assert(cuDFJar.size == 1, "CUDF jar check")
+
+    val collect = new CollectInformation(apps, None, 1000)
+    val rapidsJarResults = collect.printRapidsJAR()
+    assert(rapidsJarResults.size === 1)
+    assert(rapidsJarResults.head.jar.contains("rapids-4-spark_2.12-0.5.0.jar"))
   }
 
   test("test sql and resourceprofile eventlog") {
@@ -496,5 +501,45 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       //verify gds parameters are captured.
       assert(rows.contains("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
     }
+  }
+
+  test("test executor info local mode") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/spark2-eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+
+    val collect = new CollectInformation(apps, None, 1000)
+    val execInfo = collect.printExecutorInfo()
+    assert(execInfo.size == 1)
+    assert(execInfo.head.numExecutors === 1)
+    assert(execInfo.head.maxMem === 16991335219L)
+  }
+
+  test("test executor info cluster mode") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$logDir/tasks_executors_fail_compressed_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+
+    val collect = new CollectInformation(apps, None, 1000)
+    val execInfo = collect.printExecutorInfo()
+    assert(execInfo.size == 1)
+    assert(execInfo.head.numExecutors === 8)
+    assert(execInfo.head.maxMem === 5538054144L)
   }
 }

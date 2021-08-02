@@ -57,7 +57,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 
   // Print rapids-4-spark and cuDF jar if CPU Mode is on.
-  def printRapidsJAR(): Unit = {
+  def printRapidsJAR(): Seq[RapidsJarProfileResult] = {
     fileWriter.foreach(_.write("\nRapids Accelerator Jar and cuDF Jar:\n"))
     val allRows = apps.flatMap { app =>
       if (app.gpuMode) {
@@ -76,8 +76,10 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr + "\n"))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Rapids 4 Spark Jars Found!\n"))
+      Seq.empty
     }
   }
 
