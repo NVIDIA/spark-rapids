@@ -283,6 +283,12 @@ object CollectInformation extends Logging {
     val allRows = filtered.flatMap { app =>
       app.allSQLMetrics.map { metric =>
         val accums = app.taskStageAccumMap.get(metric.accumulatorId)
+        if (metric.accumulatorId == 3170) {
+          accums.getOrElse(Seq.empty).foreach { accum =>
+            logWarning("found 3170: accums are " + accum.name + " value: " + accum.value +
+              " accum tid: " + accum.stageId + " attempt " + accum.attemptId)
+          }
+        }
         val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
         val driverMax = driverAccums match {
           case Some(acc) =>
