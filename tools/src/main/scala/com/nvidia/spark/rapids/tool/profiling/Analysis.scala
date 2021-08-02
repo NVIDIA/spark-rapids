@@ -104,23 +104,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
       }
     }
-
-    filtered.foreach { app =>
-      val res = app.jobIdToInfo.flatMap { case (id, jc) =>
-        val stageIdsInJob = jc.stageIds
-        app.stageIdToInfo.filterKeys { case (sid, _) =>
-          stageIdsInJob.contains(sid)
-        }
-      }
-      if (res.size != app.stageIdToInfo.size) {
-        logWarning("number of stages not included: " + (app.stageIdToInfo.size - res.size))
-      }
-      val missing = app.stageIdToInfo.keys.toSeq.diff(res.keys.toSeq)
-      missing.foreach { case (s, sa) =>
-        logWarning(s"missing stages $s and attempt: $sa")
-      }
-    }
-    val allStageRows = filtered.flatMap { app =>
+    val allJobStageRows = filtered.flatMap { app =>
       // TODO need to get stages not in a job
       app.jobIdToInfo.flatMap { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
@@ -181,8 +165,74 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
       }
     }
+    // stages that are missing from a job, perhaps dropped events
+    val stagesWithoutJobs = filtered.flatMap { app =>
+      val allStageinJobs = app.jobIdToInfo.flatMap { case (id, jc) =>
+        val stageIdsInJob = jc.stageIds
+        app.stageIdToInfo.filterKeys { case (sid, _) =>
+          stageIdsInJob.contains(sid)
+        }
+      }
+      val missing = app.stageIdToInfo.keys.toSeq.diff(allStageinJobs.keys.toSeq)
+      if (missing.isEmpty) {
+        Seq.empty
+      } else {
+        missing.map { case ((id, saId)) =>
+          val scOpt = app.stageIdToInfo.get((id, saId))
+          scOpt match {
+            case None =>
+              None
+            case Some(sc) =>
+              val tasksInStage = app.taskEnd.filter { tc =>
+                tc.stageId == id
+              }
+              // count duplicate task attempts
+              val numAttempts = tasksInStage.size
+              // Above is a bit out of ordinary fro spark perhaps print both
+              // val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
+              // TODO - how to deal with attempts?
 
-    val allRows = allJobRows ++ allStageRows
+              val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
+              Some(JobStageAggTaskMetrics(app.index,
+                s"stage_$id",
+                numAttempts,
+                sc.duration,
+                Option(tasksInStage.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum,
+                durSum,
+                durMax,
+                durMin,
+                durAvg,
+                Option(tasksInStage.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.executorRunTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
+                Option(tasksInStage.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.resultSize)).getOrElse(Seq(0L)).max,
+                Option(tasksInStage.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
+                Option(tasksInStage.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
+              ))
+          }
+        }
+      }
+    }
+
+    val allRows = allJobRows ++ allJobStageRows ++ stagesWithoutJobs
     val filteredRows = allRows.filter(_.isDefined).map(_.get)
     if (filteredRows.size > 0) {
       val sortedRows = filteredRows.sortBy { cols =>
