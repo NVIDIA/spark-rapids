@@ -493,7 +493,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val collect = new CollectInformation(apps, None, 1000)
     for (app <- apps) {
       val props = collect.printRapidsProperties()
-      val rows = props.head
+      val rows = props.map(_.head)
       assert(rows.length == 5) // 5 properties captured.
       // verify  ucx parameters are captured.
       assert(rows.contains("spark.executorEnv.UCX_RNDV_SCHEME"))
