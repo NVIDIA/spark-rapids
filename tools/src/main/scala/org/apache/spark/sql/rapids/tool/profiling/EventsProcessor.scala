@@ -453,7 +453,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       stage.info.submissionTime)
 
     // Parse stage accumulables
-    // TODO - do this better!
     for (res <- event.stageInfo.accumulables) {
       try {
         val value = res._2.value.getOrElse("").toString.toLong

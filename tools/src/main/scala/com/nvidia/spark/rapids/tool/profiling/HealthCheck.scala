@@ -149,7 +149,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
 
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
   def listPossibleUnsupportedSQLPlan(): Seq[UnsupportedOpsProfileResult] = {
-    val header = "\nSQL Plan HealthCheck:\n"
+    val header = "\nUnsupported SQL Plan:\n"
     fileWriter.foreach(_.write(header))
     val res = apps.flatMap { app =>
       app.unsupportedSQLplan.map { unsup =>

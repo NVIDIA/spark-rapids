@@ -339,7 +339,7 @@ case class FailedJobsProfileResults(appIndex: Int, jobId: Int,
   }
 }
 
-case class JobStageAggTaskMetrics(
+case class JobStageAggTaskMetricsProfileResult(
     appIndex: Int,
     id: String,
     numTasks: Int,
@@ -386,7 +386,7 @@ case class JobStageAggTaskMetrics(
 
   val durStr = duration match {
     case Some(dur) => dur.toString
-    case None => ""
+    case None => "null"
   }
 
   override def convertToSeq: Seq[String] = {

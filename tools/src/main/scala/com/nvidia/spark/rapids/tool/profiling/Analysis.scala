@@ -42,7 +42,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
   }
 
   // Job + Stage Level TaskMetrics Aggregation
-  def jobAndStageMetricsAggregation(): Seq[JobStageAggTaskMetrics] = {
+  def jobAndStageMetricsAggregation(): Seq[JobStageAggTaskMetricsProfileResult] = {
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
     fileWriter.foreach(_.write(messageHeader))
     val allJobRows = apps.flatMap { app =>
@@ -64,7 +64,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
           // TODO - how to deal with attempts?
           val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
-          Some(JobStageAggTaskMetrics(app.index,
+          Some(JobStageAggTaskMetricsProfileResult(app.index,
             s"job_$id",
             numTaskAttempt,
             jc.duration,
@@ -102,7 +102,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       }
     }
     val allJobStageRows = apps.flatMap { app =>
-      // TODO need to get stages not in a job
       app.jobIdToInfo.flatMap { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
         val stagesInJob = app.stageIdToInfo.filterKeys { case (sid, _) =>
@@ -122,7 +121,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             // TODO - how to deal with attempts?
 
             val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
-            Some(JobStageAggTaskMetrics(app.index,
+            Some(JobStageAggTaskMetricsProfileResult(app.index,
               s"stage_$id",
               numAttempts,
               sc.duration,
@@ -188,7 +187,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               // TODO - how to deal with attempts?
 
               val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
-              Some(JobStageAggTaskMetrics(app.index,
+              Some(JobStageAggTaskMetricsProfileResult(app.index,
                 s"stage_$id",
                 numAttempts,
                 sc.duration,

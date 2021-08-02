@@ -371,10 +371,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
 
     val secondRow = execInfos(1)
     assert(secondRow.resourceProfileId === 0)
-
-    // TODO - add more tests
-    val compare = new CompareApplications(apps, None, 1000)
-    val matchingStages = compare.findMatchingStages()
   }
 
   test("test filename match") {
