@@ -54,6 +54,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
         // don't count duplicate task attempts
         val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
+        logWarning("count duplicates " + tasksInJob.size)
 
         // TODO - how to deal with attempts?
         val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
