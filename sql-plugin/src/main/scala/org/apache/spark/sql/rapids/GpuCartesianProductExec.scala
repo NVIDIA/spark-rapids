@@ -21,7 +21,8 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
+import ai.rapids.cudf.ast
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -29,6 +30,7 @@ import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.plans.Cross
 import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.types.DataType
@@ -111,7 +113,8 @@ class GpuCartesianPartition(
 
 class GpuCartesianRDD(
     sc: SparkContext,
-    boundCondition: Option[Expression],
+    boundCondition: Option[GpuExpression],
+    numFirstTableColumns: Int,
     spillCallback: SpillCallback,
     targetSize: Long,
     joinTime: GpuMetric,
@@ -182,9 +185,9 @@ class GpuCartesianRDD(
         spillBatchBuffer.toIterator.map(LazySpillableColumnarBatch.spillOnly)
       }
 
-      GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
-        batch, streamIterator, targetSize, GpuBuildLeft, boundCondition,
-        numOutputRows, joinOutputRows, numOutputBatches,
+      GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
+        Cross, numFirstTableColumns, batch, streamIterator, targetSize, GpuBuildLeft,
+        boundCondition, spillCallback, numOutputRows, joinOutputRows, numOutputBatches,
         joinTime, totalTime)
     }
   }
@@ -265,9 +268,11 @@ case class GpuCartesianProductExec(
         numOutputBatches)
     } else {
       val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+      val numFirstTableColumns = left.output.size
 
       new GpuCartesianRDD(sparkContext,
         boundCondition,
+        numFirstTableColumns,
         spillCallback,
         targetSizeBytes,
         joinTime,

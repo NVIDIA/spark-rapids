@@ -17,14 +17,16 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.NvtxColor
+import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftExistence, LeftOuter, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
@@ -39,17 +41,25 @@ class GpuBroadcastNestedLoopJoinMeta(
     rule: DataFromReplacementRule)
     extends GpuBroadcastJoinMeta[BroadcastNestedLoopJoinExec](join, conf, parent, rule) {
 
-  val condition: Option[BaseExprMeta[_]] =
+  val conditionMeta: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = condition.toSeq
+  override val childExprs: Seq[BaseExprMeta[_]] = conditionMeta.toSeq
 
   override def tagPlanForGpu(): Unit = {
     JoinTypeChecks.tagForGpu(join.joinType, this)
-
+    conditionMeta.foreach(_.tagForAst())
     join.joinType match {
-      case Inner =>
-      case Cross =>
+      case _: InnerLike =>
+      case LeftSemi | LeftAnti =>
+        if (conditionMeta.exists(!_.canThisBeAst)) {
+          val astInfo = conditionMeta.get.explainAst(false)
+          willNotWorkOnGpu(s"AST cannot support join condition:\n$astInfo")
+        }
+        val gpuBuildSide = ShimLoader.getSparkShims.getBuildSide(join)
+        if (gpuBuildSide == GpuBuildLeft) {
+          willNotWorkOnGpu(s"build left not supported for ${join.joinType}")
+        }
       case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }
 
@@ -79,32 +89,46 @@ class GpuBroadcastNestedLoopJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSide)
+
+    val condition = conditionMeta.map(_.convertToGpu())
+    // Do not yet support AST conditions on anything but semi/anti joins
+    val isAstCondition = join.joinType match {
+      case _: InnerLike => false
+      case LeftSemi | LeftAnti =>
+        conditionMeta.foreach(_.tagForAst())
+        val isAst = conditionMeta.exists(_.canThisBeAst)
+        assert(isAst, s"Non-AST condition in ${join.joinType}")
+        isAst
+      case _ => throw new IllegalStateException(s"${join.joinType} nested loop join not supported")
+    }
+
     val joinExec = ShimLoader.getSparkShims.getGpuBroadcastNestedLoopJoinShim(
       left, right, join,
       join.joinType,
-      None,
+      if (isAstCondition) condition else None,
       conf.gpuTargetBatchSizeBytes)
-    // The GPU does not yet support conditional joins, so conditions are implemented
-    // as a filter after the join when possible.
-    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
+    if (isAstCondition) {
+      joinExec
+    } else {
+      // condition cannot be implemented via AST so fallback to a post-filter if necessary
+      condition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
+    }
   }
 }
 
-/**
- * An iterator that does a cross join against a stream of batches.
- */
-class CrossJoinIterator(
+/** Base class for the join iterators based on a nested loop join */
+abstract class NestedLoopJoinIterator(
+    joinType: JoinType,
     builtBatch: LazySpillableColumnarBatch,
     private val stream: Iterator[LazySpillableColumnarBatch],
-    val targetSize: Long,
-    val buildSide: GpuBuildSide,
+    targetSize: Long,
     private val joinTime: GpuMetric,
     private val totalTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
 
   private var nextCb: Option[ColumnarBatch] = None
   private var gathererStore: Option[JoinGatherer] = None
-
   private var closed = false
+  private val nvtxName = s"$joinType gather"
 
   def close(): Unit = {
     if (!closed) {
@@ -121,7 +145,7 @@ class CrossJoinIterator(
   TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   private def nextCbFromGatherer(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("cross join gather", NvtxColor.DARK_GREEN, joinTime)) { _ =>
+    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.DARK_GREEN, joinTime)) { _ =>
       val ret = gathererStore.map { gather =>
         val nextRows = JoinGatherer.getRowsInNextBatch(gather, targetSize)
         gather.gatherNext(nextRows)
@@ -140,35 +164,7 @@ class CrossJoinIterator(
     }
   }
 
-  private def makeGatherer(streamBatch: LazySpillableColumnarBatch): Option[JoinGatherer] = {
-    // Don't close the built side because it will be used for each stream and closed
-    // when the iterator is done.
-    val (leftBatch, rightBatch) = buildSide match {
-      case GpuBuildLeft => (LazySpillableColumnarBatch.spillOnly(builtBatch), streamBatch)
-      case GpuBuildRight => (streamBatch, LazySpillableColumnarBatch.spillOnly(builtBatch))
-    }
-
-    val leftMap = LazySpillableGatherMap.leftCross(leftBatch.numRows, rightBatch.numRows)
-    val rightMap = LazySpillableGatherMap.rightCross(leftBatch.numRows, rightBatch.numRows)
-
-    val joinGatherer = (leftBatch.numCols, rightBatch.numCols) match {
-      case (_, 0) =>
-        rightBatch.close()
-        rightMap.close()
-        JoinGatherer(leftMap, leftBatch)
-      case (0, _) =>
-        leftBatch.close()
-        leftMap.close()
-        JoinGatherer(rightMap, rightBatch)
-      case (_, _) => JoinGatherer(leftMap, leftBatch, rightMap, rightBatch)
-    }
-    if (joinGatherer.isDone) {
-      joinGatherer.close()
-      None
-    } else {
-      Some(joinGatherer)
-    }
-  }
+  protected def makeGatherer(streamBatch: LazySpillableColumnarBatch): Option[JoinGatherer]
 
   override def hasNext: Boolean = {
     if (closed) {
@@ -207,29 +203,143 @@ class CrossJoinIterator(
   }
 }
 
+/**
+ * An iterator that does a cross join against a stream of batches.
+ */
+class CrossJoinIterator(
+    builtBatch: LazySpillableColumnarBatch,
+    stream: Iterator[LazySpillableColumnarBatch],
+    targetSize: Long,
+    buildSide: GpuBuildSide,
+    private val joinTime: GpuMetric,
+    private val totalTime: GpuMetric)
+    extends NestedLoopJoinIterator(
+      Cross,
+      builtBatch,
+      stream,
+      targetSize,
+      joinTime,
+      totalTime) {
+
+  override def makeGatherer(streamBatch: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    // Don't close the built side because it will be used for each stream and closed
+    // when the iterator is done.
+    val (leftBatch, rightBatch) = buildSide match {
+      case GpuBuildLeft => (LazySpillableColumnarBatch.spillOnly(builtBatch), streamBatch)
+      case GpuBuildRight => (streamBatch, LazySpillableColumnarBatch.spillOnly(builtBatch))
+    }
+
+    val leftMap = LazySpillableGatherMap.leftCross(leftBatch.numRows, rightBatch.numRows)
+    val rightMap = LazySpillableGatherMap.rightCross(leftBatch.numRows, rightBatch.numRows)
+
+    val joinGatherer = (leftBatch.numCols, rightBatch.numCols) match {
+      case (_, 0) =>
+        rightBatch.close()
+        rightMap.close()
+        JoinGatherer(leftMap, leftBatch)
+      case (0, _) =>
+        leftBatch.close()
+        leftMap.close()
+        JoinGatherer(rightMap, rightBatch)
+      case (_, _) => JoinGatherer(leftMap, leftBatch, rightMap, rightBatch)
+    }
+    if (joinGatherer.isDone) {
+      joinGatherer.close()
+      None
+    } else {
+      Some(joinGatherer)
+    }
+  }
+}
+
+class ConditionalSemiOrAntiJoinIterator(
+    joinType: JoinType,
+    builtBatch: LazySpillableColumnarBatch,
+    stream: Iterator[LazySpillableColumnarBatch],
+    targetSize: Long,
+    condition: ast.CompiledExpression,
+    spillCallback: SpillCallback,
+    joinTime: GpuMetric,
+    totalTime: GpuMetric)
+    extends NestedLoopJoinIterator(
+      joinType,
+      builtBatch,
+      stream,
+      targetSize,
+      joinTime,
+      totalTime) {
+  private[this] var compiledExpr: Option[ast.CompiledExpression] = Some(condition)
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+
+  override def makeGatherer(streamBatch: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    withResource(GpuColumnVector.from(streamBatch.getBatch)) { leftTable =>
+      withResource(GpuColumnVector.from(builtBatch.getBatch)) { rightTable =>
+        val map = joinType match {
+          case LeftSemi =>
+            compiledExpr.map(leftTable.conditionalLeftSemiJoinGatherMap(rightTable, _, false))
+                .getOrElse(leftTable.leftSemiJoinGatherMap(rightTable, false))
+          case LeftAnti =>
+            compiledExpr.map(leftTable.conditionalLeftAntiJoinGatherMap(rightTable, _, false))
+                .getOrElse(leftTable.leftAntiJoinGatherMap(rightTable, false))
+          case _ =>
+            throw new IllegalStateException(s"Unexpected join type $joinType")
+        }
+        withResource(map) { map =>
+          val lazyMap = LazySpillableGatherMap(map, spillCallback, "left_map")
+          val gatherer = JoinGatherer(lazyMap, streamBatch)
+          if (gatherer.isDone) {
+            gatherer.close()
+            None
+          } else {
+            Some(gatherer)
+          }
+        }
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    super.close()
+    compiledExpr.foreach(_.close())
+    compiledExpr = None
+  }
+}
+
 object GpuBroadcastNestedLoopJoinExecBase extends Arm {
-  def innerLikeJoin(
+  def nestedLoopJoin(
+      joinType: JoinType,
+      numFirstTableColumns: Int,
       builtBatch: LazySpillableColumnarBatch,
       stream: Iterator[LazySpillableColumnarBatch],
       targetSize: Long,
       buildSide: GpuBuildSide,
-      boundCondition: Option[Expression],
+      boundCondition: Option[GpuExpression],
+      spillCallback: SpillCallback,
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       joinTime: GpuMetric,
       totalTime: GpuMetric): Iterator[ColumnarBatch] = {
-    val joinIterator =
+    val joinIterator = if (boundCondition.isEmpty) {
+      // A nested loop join with no condition directly in the join is treated like a cross join.
       new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, joinTime, totalTime)
-    if (boundCondition.isDefined) {
-      throw new IllegalStateException("GPU does not support conditional joins")
     } else {
-      joinIterator.map { cb =>
+      val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns)
+          .asInstanceOf[ast.Expression].compile()
+      joinType match {
+        case LeftAnti | LeftSemi =>
+          assert(buildSide == GpuBuildRight)
+          new ConditionalSemiOrAntiJoinIterator(joinType, builtBatch, stream, targetSize,
+            compiledAst, spillCallback, joinTime, totalTime)
+        case _ =>
+          throw new UnsupportedOperationException("not supported yet")
+      }
+    }
+    joinIterator.map { cb =>
         joinOutputRows += cb.numRows()
         numOutputRows += cb.numRows()
         numOutputBatches += 1
         cb
-      }
     }
   }
 
@@ -356,23 +466,24 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
-    val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
+    // Determine which table will be first in the join and bind the references accordingly
+    // so the AST column references match the appropriate table.
+    val (firstTable, secondTable) = joinType match {
+      case RightOuter => (right, left)
+      case _ => (left, right)
+    }
+    val numFirstTableColumns = firstTable.output.size
+    val boundCondition = condition.map {
+      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output)
+    }
 
     val buildTime = gpuLongMetric(BUILD_TIME)
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
 
-    joinType match {
-      case _: InnerLike => // The only thing we support right now
-      case _ => throw new IllegalArgumentException(s"$joinType + $getGpuBuildSide is not" +
-          " supported and should be run on the CPU")
-    }
-
     val broadcastRelation =
       broadcastExchange.executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-    if (output.isEmpty) {
-      assert(boundCondition.isEmpty)
-
+    if (output.isEmpty && boundCondition.isEmpty) {
       lazy val buildCount: Int = computeBuildRowCount(broadcastRelation, buildTime, buildDataSize)
 
       def getRowCountAndClose(cb: ColumnarBatch): Long = {
@@ -392,19 +503,20 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       lazy val builtBatch: ColumnarBatch =
         makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
       val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+      val nestedLoopJoinType = joinType
       streamed.executeColumnar().mapPartitions { streamedIter =>
         val lazyStream = streamedIter.map { cb =>
           withResource(cb) { cb =>
             LazySpillableColumnarBatch(cb, spillCallback, "stream_batch")
           }
         }
-        GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
+        GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
+          nestedLoopJoinType, numFirstTableColumns,
           LazySpillableColumnarBatch(builtBatch, spillCallback, "built_batch"),
           lazyStream, targetSizeBytes, getGpuBuildSide, boundCondition,
-          numOutputRows, joinOutputRows, numOutputBatches,
+          spillCallback, numOutputRows, joinOutputRows, numOutputBatches,
           joinTime, totalTime)
       }
     }
   }
 }
-
