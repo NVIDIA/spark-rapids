@@ -286,7 +286,8 @@ object CollectInformation extends Logging {
         if (metric.accumulatorId == 3170) {
           accums.getOrElse(Seq.empty).foreach { accum =>
             logWarning("found 3170: accums are " + accum.name + " value: " + accum.value +
-              " accum tid: " + accum.stageId + " attempt " + accum.attemptId)
+              " accum stageid: " + accum.stageId + " accum taskid: " + accum.taskId +
+              " attempt " + accum.attemptId)
           }
         }
         val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
