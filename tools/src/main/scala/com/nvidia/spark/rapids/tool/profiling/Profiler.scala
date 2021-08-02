@@ -122,6 +122,9 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
             case None =>
               logInfo("No application to process. Exiting")
           }
+        } catch {
+          case e: Exception =>
+            logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
         } finally {
           textFileWriter.close()
         }

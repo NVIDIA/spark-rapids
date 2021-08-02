@@ -167,6 +167,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     val filtered = apps.filter(app =>
       (app.taskEnd.size > 0) && (app.jobIdToInfo.size > 0) &&
         (app.stageIdToInfo.size > 0) && (app.sqlIdToInfo.size > 0))
+    logWarning("here 3 num: " + filtered.size)
+
     val allRows = filtered.flatMap { app =>
       // TODO - how to deal with attempts?
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
