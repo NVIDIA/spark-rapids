@@ -144,25 +144,17 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerBlockManagerAdded): Unit = {
     logDebug("Processing event: " + event.getClass)
-    if (event.blockManagerId.executorId.equals("driver")) {
-      logDebug("block manager id for driver added")
-      logWarning("driver on heap is: " + event.maxOffHeapMem + " offheap: " + event.maxOffHeapMem)
-      logWarning("driover max memory setting: " + event.maxMem)
-      app.driverInfo = Some(DriverInfo(event.blockManagerId.executorId, event.maxMem,
-        event.maxOnHeapMem.getOrElse(-1), event.maxOffHeapMem.getOrElse(-1)))
-
-    } else {
-      val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
-      exec.hostPort = event.blockManagerId.hostPort
-      event.maxOnHeapMem.foreach { mem =>
-        exec.totalOnHeap = mem
-      }
-      event.maxOffHeapMem.foreach { offHeap =>
-        exec.totalOffHeap = offHeap
-      }
-      exec.isActive = true
-      exec.maxMemory = event.maxMem
+    // note that one block manager is for driver as well
+    val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
+    exec.hostPort = event.blockManagerId.hostPort
+    event.maxOnHeapMem.foreach { mem =>
+      exec.totalOnHeap = mem
     }
+    event.maxOffHeapMem.foreach { offHeap =>
+      exec.totalOffHeap = offHeap
+    }
+    exec.isActive = true
+    exec.maxMemory = event.maxMem
   }
 
   override def doSparkListenerBlockManagerRemoved(
