@@ -205,7 +205,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       --all                         Apply multiple event log filtering criteria and process
                                     only logs for which all conditions are satisfied.
                                     Example: <Filter1> <Filter2> <Filter3> --all -> result
-                                    is <Filter1> OR <Filter2> OR <Filter3>. Default is all=true.                              
+                                    is <Filter1> AND <Filter2> AND <Filter3>. Default is all=true.
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on
                                     application start timestamp, unique
                                     application name or filesystem timestamp.

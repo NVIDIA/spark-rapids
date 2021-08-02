@@ -75,7 +75,6 @@ class AppFilterImpl(
     val filterAppName = appArgs.applicationName.getOrElse("")
     val filterCriteria = appArgs.filterCriteria.getOrElse("")
     val userName = appArgs.userName.getOrElse("")
-    //val logicFilter = appArgs.logicFilter.getOrElse("all")
     val logicFilter = if (appArgs.any()) {
       "any"
     } else {
