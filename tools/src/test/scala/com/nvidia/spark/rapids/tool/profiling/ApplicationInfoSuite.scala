@@ -358,17 +358,18 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 2)
     val collect = new CollectInformation(apps, None, 1000)
     val execInfos = collect.printExecutorInfo()
-    val compare = new CompareApplications(apps, None, 1000)
-    val matchingStages = compare.findMatchingStages()
     // just the fact it worked makes sure we can run with both files
     // since we give them indexes above they should be in the right order
     // and spark2 event info should be second
     val firstRow = execInfos.head
     assert(firstRow.resourceProfileId === 0)
 
-    // TODO - this was null, change?
     val secondRow = execInfos(1)
     assert(secondRow.resourceProfileId === 0)
+
+    // TODO - add more tests
+    val compare = new CompareApplications(apps, None, 1000)
+    val matchingStages = compare.findMatchingStages()
   }
 
   test("test filename match") {

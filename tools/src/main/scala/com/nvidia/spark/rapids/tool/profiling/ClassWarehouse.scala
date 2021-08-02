@@ -28,6 +28,11 @@ import org.apache.spark.scheduler.StageInfo
  * used for profiling and qualification.
  */
 
+trait ProfileResult {
+  val outputHeaders: Seq[String]
+  def convertToSeq: Seq[String]
+}
+
 class ExecutorInfoClass(val executorId: String, _addTime: Long) {
   var hostPort: String = null
   var host: String = null
@@ -52,14 +57,15 @@ class ExecutorInfoClass(val executorId: String, _addTime: Long) {
 case class ExecutorInfoProfileResult(appIndex: Int, resourceProfileId: Int,
     numExecutors: Int, executorCores: Int, maxMem: Long, maxOnHeapMem: Long,
     maxOffHeapMem: Long, executorMemory: Option[Long], numGpusPerExecutor: Option[Long],
-    executorOffHeap: Option[Long], taskCpu: Option[Double], taskGpu: Option[Double]) {
+    executorOffHeap: Option[Long], taskCpu: Option[Double],
+    taskGpu: Option[Double]) extends ProfileResult {
 
-  val outputHeaders: Seq[String] = {
+  override val outputHeaders: Seq[String] = {
     Seq("appIndex", "resourceProfileId", "numExecutors", "executorCores",
       "maxMem", "maxOnHeapMem", "maxOffHeapMem", "executorMemory", "numGpusPerExecutor",
       "executorOffHeap", "taskCpu", "taskGpu")
   }
-  def convertToSeq: Seq[String] = {
+  override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, resourceProfileId.toString, numExecutors.toString,
       executorCores.toString, maxMem.toString, maxOnHeapMem.toString,
       maxOffHeapMem.toString, executorMemory.map(_.toString).getOrElse(null),
@@ -84,25 +90,26 @@ case class JobInfoProfileResult(
     appIndex: Int,
     jobID: Int,
     stageIds: Seq[Int],
-    sqlID: Option[Long]) {
-  val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID")
-  def convertToSeq: Seq[String] = {
+    sqlID: Option[Long]) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID")
+  override def convertToSeq: Seq[String] = {
     val stageIdStr = s"[${stageIds.mkString(",")}]"
     Seq(appIndex.toString, jobID.toString, stageIdStr, sqlID.map(_.toString).getOrElse(null))
   }
 }
 
-case class RapidsJarProfileResult(appIndex: Int, jar: String) {
-  val outputHeaders = Seq("appIndex", "Rapids4Spark jars")
-  def convertToSeq: Seq[String] = {
+case class RapidsJarProfileResult(appIndex: Int, jar: String)  extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "Rapids4Spark jars")
+  override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, jar)
   }
 }
 
 case class DataSourceProfileResult(appIndex: Int, sqlID: Long, format: String,
-    location: String, pushedFilters: String, schema: String) {
-  val outputHeaders = Seq("appIndex", "sqlID", "format", "location", "pushedFilters", "schema")
-  def convertToSeq: Seq[String] = {
+    location: String, pushedFilters: String, schema: String) extends ProfileResult {
+  override val outputHeaders =
+    Seq("appIndex", "sqlID", "format", "location", "pushedFilters", "schema")
+  override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, sqlID.toString, format, location, pushedFilters, schema)
   }
 }
@@ -126,10 +133,10 @@ class SQLExecutionInfoClass(
 
 case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
     nodeName: String, accumulatorId: Long,
-    name: String, max_value: Long, metricType: String) {
-  val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
+    name: String, max_value: Long, metricType: String) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
     "name", "max_value", "metricType")
-  def convertToSeq: Seq[String] = {
+  override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, accumulatorId.toString,
       name, max_value.toString, metricType)
   }
@@ -146,8 +153,9 @@ case class BlockManagerRemovedCase(
 case class AppInfoProfileResults(appIndex: Int, appName: String,
     appId: Option[String], sparkUser: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],
-    durationStr: String, sparkVersion: String, pluginEnabled: Boolean) {
-  val outputHeaders: Seq[String] = {
+    durationStr: String, sparkVersion: String,
+    pluginEnabled: Boolean)  extends ProfileResult {
+  override val outputHeaders: Seq[String] = {
     ProfileUtils.getMethods[AppInfoProfileResults]
   }
 
@@ -165,7 +173,7 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
     }
   }
 
-  def convertToSeq: Seq[String] = {
+  override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, appName, appId.getOrElse(""),
       sparkUser,  startTime.toString, endTimeToStr, durToStr,
       durationStr, sparkVersion, pluginEnabled.toString)
@@ -276,5 +284,239 @@ case class FailedTaskProfileResults(appIndex: Int, stageId: Int, stageAttemptId:
   def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, stageId.toString, stageAttemptId.toString,
       taskId.toString, taskAttemptId.toString, ProfileUtils.truncateFailureStr(endReason))
+  }
+}
+
+case class JobStageAggTaskMetrics(
+    appIndex: Int,
+    id: String,
+    numTasks: Int,
+    duration: Option[Long],
+    diskBytesSpilledSum: Long,
+    durationSum: Long,
+    durationMax: Long,
+    durationMin: Long,
+    durationAvg: Double,
+    executorCPUTimeSum: Long,
+    executorDeserializeCpuTimeSum: Long,
+    executorDeserializeTimeSum: Long,
+    executorRunTimeSum: Long,
+    gettingResultTimeSum: Long,
+    inputBytesReadSum: Long,
+    inputRecordsReadSum: Long,
+    jvmGCTimeSum: Long,
+    memoryBytesSpilledSum: Long,
+    outputBytesWrittenSum: Long,
+    outputRecordsWrittenSum: Long,
+    peakExecutionMemoryMax: Long,
+    resultSerializationTimeSum: Long,
+    resultSizeMax: Long,
+    srFetchWaitTimeSum: Long,
+    srLocalBlocksFetchedSum: Long,
+    srcLocalBytesReadSum: Long,
+    srRemoteBlocksFetchSum: Long,
+    srRemoteBytesReadSum: Long,
+    srRemoteBytesReadToDiskSum: Long,
+    srTotalBytesReadSum: Long,
+    swBytesWrittenSum: Long,
+    swRecordsWrittenSum: Long,
+    swWriteTimeSum: Long) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "ID", "numTasks", "Duration", "diskBytesSpilled_sum",
+    "duration_sum", "duration_max", "duration_min",
+    "duration_avg", "executorCPUTime_sum", "executorDeserializeCPUTime_sum",
+    "executorDeserializeTime_sum", "executorRunTime_sum", "gettingResultTime_sum",
+    "input_bytesRead_sum", "input_recordsRead_sum", "jvmGCTime_sum",
+    "memoryBytesSpilled_sum", "output_bytesWritten_sum", "output_recordsWritten_sum",
+    "peakExecutionMemory_max", "resultSerializationTime_sum", "resultSize_max",
+    "sr_fetchWaitTime_sum", "sr_localBlocksFetched_sum", "sr_localBytesRead_sum",
+    "sr_remoteBlocksFetched_sum", "sr_remoteBytesRead_sum", "sr_remoteBytesReadToDisk_sum",
+    "sr_totalBytesRead_sum", "sw_bytesWritten_sum", "sw_recordsWritten_sum", "sw_writeTime_sum")
+
+  val durStr = duration match {
+    case Some(dur) => dur.toString
+    case None => ""
+  }
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString,
+      id,
+      numTasks.toString,
+      durStr,
+      diskBytesSpilledSum.toString,
+      durationSum.toString,
+      durationMax.toString,
+      durationMin.toString,
+      durationAvg.toString,
+      executorCPUTimeSum.toString,
+      executorDeserializeCpuTimeSum.toString,
+      executorDeserializeTimeSum.toString,
+      executorRunTimeSum.toString,
+      gettingResultTimeSum.toString,
+      inputBytesReadSum.toString,
+      inputRecordsReadSum.toString,
+      jvmGCTimeSum.toString,
+      memoryBytesSpilledSum.toString,
+      outputBytesWrittenSum.toString,
+      outputRecordsWrittenSum.toString,
+      peakExecutionMemoryMax.toString,
+      resultSerializationTimeSum.toString,
+      resultSizeMax.toString,
+      srFetchWaitTimeSum.toString,
+      srLocalBlocksFetchedSum.toString,
+      srcLocalBytesReadSum.toString,
+      srRemoteBlocksFetchSum.toString,
+      srRemoteBytesReadSum.toString,
+      srRemoteBytesReadToDiskSum.toString,
+      srTotalBytesReadSum.toString,
+      swBytesWrittenSum.toString,
+      swRecordsWrittenSum.toString,
+      swWriteTimeSum.toString)
+  }
+}
+
+case class SQLTaskAggMetrics(
+    appIndex: Int,
+    appId: String,
+    sqlId: Long,
+    description: String,
+    numTasks: Int,
+    duration: Option[Long],
+    executorCpuTime: Long,
+    executorRunTime: Long,
+    executorCpuRatio: Double,
+    diskBytesSpilledSum: Long,
+    durationSum: Long,
+    durationMax: Long,
+    durationMin: Long,
+    durationAvg: Double,
+    executorCPUTimeSum: Long,
+    executorDeserializeCpuTimeSum: Long,
+    executorDeserializeTimeSum: Long,
+    executorRunTimeSum: Long,
+    gettingResultTimeSum: Long,
+    inputBytesReadSum: Long,
+    inputRecordsReadSum: Long,
+    jvmGCTimeSum: Long,
+    memoryBytesSpilledSum: Long,
+    outputBytesWrittenSum: Long,
+    outputRecordsWrittenSum: Long,
+    peakExecutionMemoryMax: Long,
+    resultSerializationTimeSum: Long,
+    resultSizeMax: Long,
+    srFetchWaitTimeSum: Long,
+    srLocalBlocksFetchedSum: Long,
+    srcLocalBytesReadSum: Long,
+    srRemoteBlocksFetchSum: Long,
+    srRemoteBytesReadSum: Long,
+    srRemoteBytesReadToDiskSum: Long,
+    srTotalBytesReadSum: Long,
+    swBytesWrittenSum: Long,
+    swRecordsWrittenSum: Long,
+    swWriteTimeSum: Long) extends ProfileResult {
+
+  override val outputHeaders = Seq("appIndex", "appID", "sqlID", "description", "numTasks",
+    "Duration", "executorCPUTime", "executorRunTime", "executorCPURatio",
+    "executorCPURatio", "diskBytesSpilled_sum", "duration_sum", "duration_max", "duration_min",
+    "duration_avg", "executorCPUTime_sum", "executorDeserializeCPUTime_sum",
+    "executorDeserializeTime_sum", "executorRunTime_sum", "gettingResultTime_sum",
+    "input_bytesRead_sum", "input_recordsRead_sum", "jvmGCTime_sum",
+    "memoryBytesSpilled_sum", "output_bytesWritten_sum", "output_recordsWritten_sum",
+    "peakExecutionMemory_max", "resultSerializationTime_sum", "resultSize_max",
+    "sr_fetchWaitTime_sum", "sr_localBlocksFetched_sum", "sr_localBytesRead_sum",
+    "sr_remoteBlocksFetched_sum", "sr_remoteBytesRead_sum", "sr_remoteBytesReadToDisk_sum",
+    "sr_totalBytesRead_sum", "sw_bytesWritten_sum", "sw_recordsWritten_sum", "sw_writeTime_sum")
+
+  val durStr = duration match {
+    case Some(dur) => dur.toString
+    case None => ""
+  }
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString,
+      appId,
+      sqlId.toString,
+      description,
+      numTasks.toString,
+      durStr,
+      executorCpuTime.toString,
+      executorRunTime.toString,
+      executorCpuRatio.toString,
+      diskBytesSpilledSum.toString,
+      durationSum.toString,
+      durationMax.toString,
+      durationMin.toString,
+      durationAvg.toString,
+      executorCPUTimeSum.toString,
+      executorDeserializeCpuTimeSum.toString,
+      executorDeserializeTimeSum.toString,
+      executorRunTimeSum.toString,
+      gettingResultTimeSum.toString,
+      inputBytesReadSum.toString,
+      inputRecordsReadSum.toString,
+      jvmGCTimeSum.toString,
+      memoryBytesSpilledSum.toString,
+      outputBytesWrittenSum.toString,
+      outputRecordsWrittenSum.toString,
+      peakExecutionMemoryMax.toString,
+      resultSerializationTimeSum.toString,
+      resultSizeMax.toString,
+      srFetchWaitTimeSum.toString,
+      srLocalBlocksFetchedSum.toString,
+      srcLocalBytesReadSum.toString,
+      srRemoteBlocksFetchSum.toString,
+      srRemoteBytesReadSum.toString,
+      srRemoteBytesReadToDiskSum.toString,
+      srTotalBytesReadSum.toString,
+      swBytesWrittenSum.toString,
+      swRecordsWrittenSum.toString,
+      swWriteTimeSum.toString)
+  }
+}
+
+case class SQLDurationExecutorTime(appIndex: Int, appId: String, sqlID: Long,
+    duration: Option[Long], containsDataset: Boolean, appDuration: Option[Long],
+    potentialProbs: String, executorCpuRatio: Double) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "App ID", "sqlID", "SQL Duration",
+    "Contains Dataset Op", "App Duration", "Potential Problems", "Executor CPU Time Percent")
+  val durStr = duration match {
+    case Some(dur) => dur.toString
+    case None => ""
+  }
+  val appDurStr = appDuration match {
+    case Some(dur) => dur.toString
+    case None => ""
+  }
+  val execCpuTimePercent = if (executorCpuRatio == -1) {
+    "null"
+  } else {
+    executorCpuRatio.toString
+  }
+ override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, appId, sqlID.toString, durStr, containsDataset.toString,
+      appDurStr, potentialProbs, execCpuTimePercent)
+  }
+}
+
+case class ShuffleSkewInfo(appIndex: Int, stageId: Long, stageAttemptId: Long, taskId: Long,
+    taskAttemptId: Long, taskDuration: Long, avgDuration: Double, taskShuffleReadMB: Long,
+    avgShuffleReadMB: Double, taskPeakMemoryMB: Long,
+    successful: Boolean, reason: String) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId", "attempt",
+    "taskDurationSec", "avgDurationSec", "taskShuffleReadMB", "avgShuffleReadMB",
+    "taskPeakMemoryMB", "successful", "reason")
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString,
+      stageId.toString,
+      stageAttemptId.toString,
+      taskId.toString,
+      taskAttemptId.toString,
+      f"${taskDuration.toDouble / 1000}%1.2f",
+      f"${avgDuration / 1000}%1.1f",
+      f"${taskShuffleReadMB.toDouble / 1024 / 1024}%1.2f",
+      f"${avgShuffleReadMB / 1024 / 1024}%1.2f",
+      f"${taskPeakMemoryMB.toDouble / 1024 / 1024}%1.2f",
+      successful.toString,
+      ProfileUtils.truncateFailureStr(reason))
   }
 }
