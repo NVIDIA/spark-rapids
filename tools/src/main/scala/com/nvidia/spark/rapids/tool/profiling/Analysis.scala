@@ -149,7 +149,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     val allRows = allJobRows ++ allStageRows
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy { cols =>
-        val sortDur = cols.duration.getOrElse(0)
+        val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.id)
       }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
@@ -242,7 +242,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     val allFiltered = allRows.filter(_.isDefined).map(_.get)
     if (allFiltered.size > 0) {
       val sortedRows = allFiltered.sortBy { cols =>
-        val sortDur = cols.duration.getOrElse(0)
+        val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.sqlId)
       }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
@@ -269,7 +269,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy { cols =>
-        val sortDur = cols.duration.getOrElse(0)
+        val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, cols.sqlID, sortDur)
       }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
