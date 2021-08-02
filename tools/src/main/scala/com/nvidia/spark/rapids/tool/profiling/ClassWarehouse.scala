@@ -155,7 +155,7 @@ case class BlockManagerRemovedCase(
 
 case class BlockManagerRemovedProfileResult(appIndex: Int,
     executorID: String, time: Long) extends ProfileResult {
-  override val outputHeaders = Seq("appIndex", "executorId", "time")
+  override val outputHeaders = Seq("appIndex", "executorID", "time")
   override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, executorID, time.toString)
   }
@@ -331,7 +331,7 @@ case class FailedStagesProfileResults(appIndex: Int, stageId: Int, stageAttemptI
 
 case class FailedJobsProfileResults(appIndex: Int, jobId: Int,
     jobResult: String, endReason: String) extends ProfileResult {
-  override val outputHeaders = Seq("appIndex", "jobId", "jobResult", "failureReason")
+  override val outputHeaders = Seq("appIndex", "jobID", "jobResult", "failureReason")
 
   override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, jobId.toString,

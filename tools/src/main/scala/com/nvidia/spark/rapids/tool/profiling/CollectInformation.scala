@@ -275,7 +275,8 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 }
 
-object CollectInformation {
+object CollectInformation extends Logging {
+
   def generateSQLAccums(apps: Seq[ApplicationInfo]): Seq[SQLAccumProfileResults] = {
     val filtered = apps.filter(a => ((a.taskStageAccumMap.size > 0 || a.driverAccumMap.size > 0) &&
       a.allSQLMetrics.size > 0))
@@ -294,6 +295,10 @@ object CollectInformation {
             Some(acc.map(_.value.getOrElse(0L)).max)
           case None =>
             None
+        }
+
+        if (metric.accumulatorId == 3170) {
+          logWarning("found 3170: task Max: " + taskMax + " driver max: " + driverMax)
         }
 
         if ((taskMax.isDefined) || (driverMax.isDefined)) {
