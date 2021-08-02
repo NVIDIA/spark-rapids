@@ -286,28 +286,12 @@ def test_substring():
                 'SUBSTRING(a, 1, NULL)',
                 'SUBSTRING(a, 0, 0)'))
 
-def test_repeat_scalar_and_scalar():
-    gen_s = StringGen(nullable=False)
-    (s,) = gen_scalars_for_sql(gen_s, 1)
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen_s).selectExpr(
-                'repeat(NULL, NULL)',
-                'repeat(NULL, -1)',
-                'repeat(NULL, 0)',
-                'repeat(NULL, 1)',
-                'repeat({}, -10)'.format(s),
-                'repeat({}, 0)'.format(s),
-                'repeat({}, 10)'.format(s),
-                'repeat({}, NULL)'.format(s)
-            ))
-
 def test_repeat_scalar_and_column():
     gen_s = StringGen(nullable=False)
     gen_r = IntegerGen(min_val=-100, max_val=100, special_cases=[0], nullable=True)
     (s,) = gen_scalars_for_sql(gen_s, 1)
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen_r).selectExpr(
-                'repeat(NULL, a)',
                 'repeat({}, a)'.format(s)
             ))
 
@@ -317,8 +301,7 @@ def test_repeat_column_and_scalar():
             lambda spark: unary_op_df(spark, gen_s).selectExpr(
                 'repeat(a, -10)',
                 'repeat(a, 0)',
-                'repeat(a, 10)',
-                'repeat(a, NULL)'
+                'repeat(a, 10)'
             ))
 
 def test_repeat_column_and_column():
