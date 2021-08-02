@@ -224,6 +224,15 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     filesystem timestamp). 100-oldest-filesystem
                                     (for processing oldest 100 event logsbased
                                     on filesystem timestamp).
+  -l, --logic-filter <arg>          Filter event logs where any or all filter criteria
+                                    based on application names. Default is all.
+                                    Example: <Filter1> <Filter2> <Filter3>
+                                    --logicFilter any -> processes logs for which  +
+                                    any condition is satisfied. i.e result is <Filter1> OR
+                                    <Filter2> OR <Filter3>.
+                                    <Filter1> <Filter2> <Filter3> --logicFilter all ->
+                                    processes logs for which all are conditions are satisfied.
+                                    i.e result is <Filter1> AND <Filter2> AND <Filter3>
   -m, --match-event-logs  <arg>     Filter event logs whose filenames contain
                                     the input string. Filesystem based filtering
                                     happens before any application based
