@@ -42,12 +42,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
   }
 
   // Job + Stage Level TaskMetrics Aggregation
-  def jobAndStageMetricsAggregation(): Unit = {
+  def jobAndStageMetricsAggregation(): Seq[JobStageAggTaskMetrics] = {
     val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
     fileWriter.foreach(_.write(messageHeader))
-    val filtered = apps.filter(app =>
-      (app.taskEnd.size > 0) && (app.jobIdToInfo.size > 0) && (app.stageIdToInfo.size > 0))
-    val allJobRows = filtered.flatMap { app =>
+    val allJobRows = apps.flatMap { app =>
       app.jobIdToInfo.map { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
         val stagesInJob = app.stageIdToInfo.filterKeys { case (sid, _) =>
@@ -104,7 +102,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
       }
     }
-    val allJobStageRows = filtered.flatMap { app =>
+    val allJobStageRows = apps.flatMap { app =>
       // TODO need to get stages not in a job
       app.jobIdToInfo.flatMap { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
@@ -166,7 +164,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       }
     }
     // stages that are missing from a job, perhaps dropped events
-    val stagesWithoutJobs = filtered.flatMap { app =>
+    val stagesWithoutJobs = apps.flatMap { app =>
       val allStageinJobs = app.jobIdToInfo.flatMap { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
         app.stageIdToInfo.filterKeys { case (sid, _) =>
@@ -242,21 +240,20 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Job/Stage Metrics Found!\n"))
+      Seq.empty
     }
+
   }
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
-  def sqlMetricsAggregation(): Unit = {
+  def sqlMetricsAggregation(): Seq[SQLTaskAggMetrics] = {
     val messageHeader = "\nSQL level aggregated task metrics:\n"
     fileWriter.foreach(_.write(messageHeader))
-    val filtered = apps.filter(app =>
-      (app.taskEnd.size > 0) && (app.jobIdToInfo.size > 0) &&
-        (app.stageIdToInfo.size > 0) && (app.sqlIdToInfo.size > 0))
-    logWarning("here 3 num: " + filtered.size)
 
-    val allRows = filtered.flatMap { app =>
+    val allRows = apps.flatMap { app =>
       // TODO - how to deal with attempts?
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         val jcs = app.jobIdToInfo.filter { case (_, jc) =>
@@ -329,7 +326,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
       }
     }
-    logWarning("here 1")
     val allFiltered = allRows.filter(_.isDefined).map(_.get)
     if (allFiltered.size > 0) {
       val sortedRows = allFiltered.sortBy { cols =>
@@ -339,19 +335,18 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No SQL Metrics Found!\n"))
+      Seq.empty
     }
-    logWarning("here 2")
-
   }
 
-  def sqlMetricsAggregationDurationAndCpuTime(): Unit = {
+  def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTime] = {
     val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
     fileWriter.foreach(_.write(messageHeader))
 
-    val filtered = apps.filter(app => (app.sqlIdToInfo.size > 0))
-    val allRows = filtered.flatMap { app =>
+    val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         // Potential problems not properly track, add it later
         SQLDurationExecutorTime(app.index, app.appId, sqlId, sqlCase.duration,
@@ -368,21 +363,22 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
+      Seq.empty
     }
   }
 
   private case class AverageStageInfo(avgDuration: Double, avgShuffleReadBytes: Double)
 
-  def shuffleSkewCheck(): Unit = {
+  def shuffleSkewCheck(): Seq[ShuffleSkewInfo] = {
     val messageHeader = s"\nShuffle Skew Check:" +
       " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
     fileWriter.foreach(_.write(messageHeader))
 
     // TODO - how expensive on large number tasks?
-    val filtered = apps.filter(app => (app.taskEnd.size > 0) && (app.stageIdToInfo.size > 0))
-    val allRows = filtered.flatMap { app =>
+    val allRows = apps.flatMap { app =>
       val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
         (tc.stageId, tc.stageAttemptId)
       }
@@ -429,8 +425,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
+      Seq.empty
     }
   }
 }
