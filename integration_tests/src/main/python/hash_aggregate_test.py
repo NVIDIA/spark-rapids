@@ -14,7 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql,\
+    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from functools import reduce
 from pyspark.sql.types import *
@@ -433,6 +435,11 @@ def test_hash_groupby_collect_with_single_distinct(data_gen):
                  f.countDistinct('c'),
                  f.count('c')))
 
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_single_distinct_collect(data_gen):
     # test distinct collect with other aggregations
     sql = """select a,
                     sort_array(collect_list(distinct b)),
@@ -463,7 +470,6 @@ def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
             f.sort_array(f.collect_set('b')),
             f.countDistinct('b'),
             f.countDistinct('c'))
-    assert_gpu_and_cpu_are_equal_collect(spark_fn)
     assert_gpu_fallback_collect(func=spark_fn, cpu_fallback_class_name='SortAggregateExec')
 
 @approximate_float
@@ -479,34 +485,53 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabl
     local_conf = conf.copy()
     local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
     # test without Distinct
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
-        conf=local_conf)
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a')
-            .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
-        cpu_fallback_class_name='ObjectHashAggregateExec',
+        exist_classes='CollectList,CollectSet',
+        non_exist_classes='GpuCollectList,GpuCollectSet',
         conf=local_conf)
     # test with single Distinct
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_list('b')),
                  f.sort_array(f.collect_set('b')),
                  f.countDistinct('c'),
                  f.count('c')),
+        exist_classes='CollectList,CollectSet',
+        non_exist_classes='GpuCollectList,GpuCollectSet',
         conf=local_conf)
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a')
-            .agg(f.sort_array(f.collect_list('b')),
-                 f.sort_array(f.collect_set('b')),
-                 f.countDistinct('c'),
-                 f.count('c')),
-        cpu_fallback_class_name='ObjectHashAggregateExec',
+
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'HashAggregateExec',
+               'HashPartitioning', 'SortArray', 'Alias', 'Literal',
+               'CollectList', 'CollectSet', 'Max', 'AggregateExpression')
+@pytest.mark.parametrize('conf', [_nans_float_conf_final, _nans_float_conf_partial], ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
+def test_hash_groupby_collect_partial_replace_fallback_with_other_agg(conf, aqe_enabled):
+    # This test is to ensure "associated fallback" will not affect another Aggregate plans.
+    local_conf = conf.copy()
+    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
+
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: gen_df(spark, [('k1', RepeatSeqGen(LongGen(), length=20)),
+                                     ('k2', RepeatSeqGen(LongGen(), length=20)),
+                                     ('v', LongRangeGen())], length=100),
+        exist_classes='GpuMax,Max,CollectList,CollectSet',
+        non_exist_classes='GpuObjectHashAggregateExec,GpuCollectList,GpuCollectSet',
+        table_name='table',
+        sql="""
+    select k1,
+        sort_array(collect_set(k2)),
+        sort_array(collect_list(max_v))
+    from
+        (select k1, k2,
+            max(v) as max_v
+        from table group by k1, k2
+        )t
+    group by k1""",
         conf=local_conf)
 
 @approximate_float

@@ -1076,9 +1076,8 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
   private def checkAndFallbackEntirely(
       meta: GpuTypedImperativeSupportedAggregateExecMeta[_]): Unit = {
     // We only run the check for final stages which contain TypedImperativeAggregate.
-    val needToCheck = meta.agg.aggregateExpressions.exists(e =>
-      (e.mode == Final || e.mode == Complete) &&
-          e.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]])
+    val needToCheck = meta.agg.aggregateExpressions.exists(e => e.mode == Final &&
+        e.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]])
     if (!needToCheck) return
     // Avoid duplicated check and fallback.
     val checked = meta.agg.getTagValue[Boolean](entireAggFallbackCheck).contains(true)
