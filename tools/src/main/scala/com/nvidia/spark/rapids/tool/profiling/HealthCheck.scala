@@ -154,7 +154,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     val res = apps.flatMap { app =>
       app.unsupportedSQLplan.map { unsup =>
         UnsupportedOpsProfileResult(app.index, unsup.sqlID, unsup.nodeID, unsup.nodeName,
-          unsup.nodeDesc, unsup.reason)
+          ProfileUtils.truncateFailureStr(unsup.nodeDesc), unsup.reason)
       }
     }
     if (res.size > 0) {
