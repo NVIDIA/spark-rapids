@@ -191,6 +191,7 @@ class ApplicationInfo(
     val index: Int)
   extends AppBase(numRows, eLogInfo, hadoopConf) with Logging {
 
+  var driverInfo: Option[DriverInfo] = None
   // executorId to executor info
   val executorIdToInfo = new HashMap[String, ExecutorInfoClass]()
   // resourceprofile id to resource profile info

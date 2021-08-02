@@ -33,6 +33,9 @@ trait ProfileResult {
   def convertToSeq: Seq[String]
 }
 
+case class DriverInfo(val executorId: String, maxMemory: Long, totalOnHeap: Long,
+    totalOffHeap: Long)
+
 class ExecutorInfoClass(val executorId: String, _addTime: Long) {
   var hostPort: String = null
   var host: String = null

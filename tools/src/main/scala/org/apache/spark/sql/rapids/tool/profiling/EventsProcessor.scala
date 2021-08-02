@@ -20,9 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.tool.profiling._
-
+import com.nvidia.spark.rapids.tool.profiling.{ExecutorInfoClass, _}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
@@ -148,8 +146,11 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     logDebug("Processing event: " + event.getClass)
     if (event.blockManagerId.executorId.equals("driver")) {
       logDebug("block manager id for driver added")
+      logWarning("driver on heap is: " + event.maxOffHeapMem + " offheap: " + event.maxOffHeapMem)
+      logWarning("driover max memory setting: " + event.maxMem)
+      app.driverInfo = Some(DriverInfo(event.blockManagerId.executorId, event.maxMem,
+        event.maxOnHeapMem.getOrElse(-1), event.maxOffHeapMem.getOrElse(-1)))
 
-      // skipping
     } else {
       val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
       exec.hostPort = event.blockManagerId.hostPort
