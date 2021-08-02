@@ -178,7 +178,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 
   // Print Rapids related Spark Properties
-  def printRapidsProperties(): Unit = {
+  def printRapidsProperties(): Seq[Seq[String]] = {
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     fileWriter.foreach(_.write(messageHeader))
     val outputHeaders = ArrayBuffer("propertyName")
@@ -225,11 +225,14 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
           outputHeaders, sortedRows)
         fileWriter.foreach(_.write(outStr))
+        sortedRows
       } else {
         fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+        Seq.empty
       }
     } else {
       fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+      Seq.empty
     }
   }
 

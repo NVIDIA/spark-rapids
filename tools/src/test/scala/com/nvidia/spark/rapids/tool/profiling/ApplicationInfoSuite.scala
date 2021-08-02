@@ -472,7 +472,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
-  /*
   test("test gds-ucx-parameters") {
     val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =
@@ -486,17 +485,16 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 1)
+    val collect = new CollectInformation(apps, None, 1000)
     for (app <- apps) {
-      val rows = app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
-        fileWriter = None).collect()
+      val props = collect.printRapidsProperties()
+      val rows = props.head
       assert(rows.length == 5) // 5 properties captured.
       // verify  ucx parameters are captured.
-      assert(rows(0)(0).equals("spark.executorEnv.UCX_RNDV_SCHEME"))
+      assert(rows.contains("spark.executorEnv.UCX_RNDV_SCHEME"))
 
       //verify gds parameters are captured.
-      assert(rows(1)(0).equals("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
+      assert(rows.contains("spark.rapids.memory.gpu.direct.storage.spill.alignedIO"))
     }
   }
-  */
-
 }
