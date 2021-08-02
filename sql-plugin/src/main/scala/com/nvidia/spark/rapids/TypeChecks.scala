@@ -244,7 +244,7 @@ final class TypeSig private(
         meta.willNotWorkOnGpu(s"$name only supports $dt if it is a literal value")
       }
       if (typeMeta.typeConverted) {
-        meta.addConvertedDataType(expr.getClass.getSimpleName, typeMeta)
+        meta.addConvertedDataType(expr, typeMeta)
       }
     }
   }
@@ -569,7 +569,7 @@ case class ContextChecks(
               s"produces an unsupported type $dt")
         }
         if (meta.typeMeta.typeConverted) {
-          meta.addConvertedDataType(expr.prettyName, meta.typeMeta)
+          meta.addConvertedDataType(expr, meta.typeMeta)
         }
       case None =>
         if (!meta.ignoreUnsetDataTypes) {
