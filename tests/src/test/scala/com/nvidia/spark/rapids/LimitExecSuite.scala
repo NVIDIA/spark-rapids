@@ -55,6 +55,7 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
       results.map(row => if (row.isNullAt(0)) 0 else row.getInt(0)).toSeq.toDF("c0")
     }
   }
+
   testSparkResultsAreEqual("collect with limit, repart=4", testData,
     conf = enableCollectLimitExec(), repart = 4) {
     frame => {
@@ -66,5 +67,23 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
 
   private def testData(spark: SparkSession): DataFrame = {
     FuzzerUtils.generateDataFrame(spark, FuzzerUtils.createSchema(Seq(DataTypes.IntegerType)), 100)
+  }
+
+  testSparkResultsAreEqual("nested limit", testNested, conf = new SparkConf()
+      .set("spark.sql.execution.sortBeforeRepartition", "false")) {
+    frame => {
+      frame.limit(2).repartition(2)
+    }
+  }
+
+  private def testNested(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq(
+      (1, ("2", Seq(("2", "2")).toMap, Array(1L, 2L)), Array[Int]()),
+      (3, ("4", Seq(("4", "4")).toMap, Array(3L, 4L)), Array(3)),
+      (5, ("6", Seq(("6", "6")).toMap, Array(5L, 6L)), Array(5)),
+      (7, ("8", Seq(("8", "8")).toMap, Array(7L, 8L)), Array(7)),
+      (9, ("10", Seq(("10", "10")).toMap, Array(9L, 10L)), Array(9)))
+        .toDF("a", "b", "c")
   }
 }

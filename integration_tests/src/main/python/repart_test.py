@@ -128,6 +128,7 @@ def test_coalesce_df(num_parts, length):
     pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
     pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
     pytest.param([('a', ArrayGen(string_gen))]),
+    pytest.param([('m', simple_string_to_string_map_gen)]),
 ], ids=idfn)
 @pytest.mark.parametrize('num_parts', [1, 10, 2345], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
