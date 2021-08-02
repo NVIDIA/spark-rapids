@@ -110,9 +110,6 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     val messageHeader = "\nExecutor Information:\n"
     fileWriter.foreach(_.write(messageHeader))
     val filtered = apps.filter(_.executorIdToInfo.size > 0)
-    if (filtered.size == 0) {
-      logWarning("probably local mode, driver info: " + apps.head.driverInfo)
-    }
     if (filtered.size > 0) {
       val allRows = filtered.flatMap { app =>
         // first see if any executors have different resourceProfile ids
