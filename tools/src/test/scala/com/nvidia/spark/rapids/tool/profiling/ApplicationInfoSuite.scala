@@ -22,7 +22,6 @@ import java.nio.file.{Files, Paths, StandardOpenOption}
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.IOUtils
 import org.scalatest.FunSuite
 
