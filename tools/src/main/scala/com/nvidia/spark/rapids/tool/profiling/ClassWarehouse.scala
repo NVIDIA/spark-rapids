@@ -416,7 +416,7 @@ case class SQLTaskAggMetrics(
 
   override val outputHeaders = Seq("appIndex", "appID", "sqlID", "description", "numTasks",
     "Duration", "executorCPUTime", "executorRunTime", "executorCPURatio",
-    "executorCPURatio", "diskBytesSpilled_sum", "duration_sum", "duration_max", "duration_min",
+    "diskBytesSpilled_sum", "duration_sum", "duration_max", "duration_min",
     "duration_avg", "executorCPUTime_sum", "executorDeserializeCPUTime_sum",
     "executorDeserializeTime_sum", "executorRunTime_sum", "gettingResultTime_sum",
     "input_bytesRead_sum", "input_recordsRead_sum", "jvmGCTime_sum",
