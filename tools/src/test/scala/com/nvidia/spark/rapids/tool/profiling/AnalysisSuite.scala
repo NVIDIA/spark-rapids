@@ -92,7 +92,7 @@ class AnalysisSuite extends FunSuite {
       .add("sqlDuration",LongType,true)
       .add("containsDataset",BooleanType,true)
       .add("appDuration",LongType,true)
-      .add("problematic",StringType,true)
+      .add("potentialProbs",StringType,true)
       .add("executorCpuTime",DoubleType,true)
     val actualDf = sqlAggDurCpu.toDF
 

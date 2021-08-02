@@ -486,12 +486,12 @@ case class SQLDurationExecutorTime(appIndex: Int, appId: String, sqlID: Long,
     case Some(dur) => dur.toString
     case None => ""
   }
-  val execCpuTimePercent = if (executorCpuRatio == -1) {
+  val execCpuTimePercent = if (executorCpuRatio == -1.0) {
     "null"
   } else {
     executorCpuRatio.toString
   }
-  val potStr = if (potentialProbs.isEmpty) {
+  val potentialStr = if (potentialProbs.isEmpty) {
     "null"
   } else {
     potentialProbs
@@ -499,7 +499,7 @@ case class SQLDurationExecutorTime(appIndex: Int, appId: String, sqlID: Long,
 
   override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, appId, sqlID.toString, durStr, containsDataset.toString,
-      appDurStr, potStr, execCpuTimePercent)
+      appDurStr, potentialStr, execCpuTimePercent)
   }
 }
 
