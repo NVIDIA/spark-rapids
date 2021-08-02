@@ -114,7 +114,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       startIndex: Int = 1): Unit = {
     class ProfileProcessThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.LOG_FILE_NAME + index,
+        val textFileWriter = new ToolTextFileWriter(outputDir,
+          s"${Profiler.LOG_FILE_NAME_PREFIX}_$index.log",
           "Profile summary")
         try {
           // we just skip apps that don't process cleanly
@@ -243,6 +244,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
 object Profiler {
   // This tool's output log file name
-  val LOG_FILE_NAME = "rapids_4_spark_tools_output.log"
+  val LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_output"
+  val LOG_FILE_NAME = s"$LOG_FILE_NAME_PREFIX.log"
   val SUBDIR = "rapids_4_spark_profile"
 }
