@@ -198,6 +198,14 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     use ~APPLICATION_NAME. i.e Select all event
                                     logs except the ones which have application
                                     name as the input string.
+      --any                         Apply multiple event log filtering criteria and process
+                                    only logs for which any condition is satisfied.
+                                    Example: <Filter1> <Filter2> <Filter3> --any -> result
+                                    is <Filter1> OR <Filter2> OR <Filter3>
+      --all                         Apply multiple event log filtering criteria and process
+                                    only logs for which all conditions are satisfied.
+                                    Example: <Filter1> <Filter2> <Filter3> --all -> result
+                                    is <Filter1> OR <Filter2> OR <Filter3>. Default is all=true.                              
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on
                                     application start timestamp, unique
                                     application name or filesystem timestamp.
@@ -224,15 +232,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     filesystem timestamp). 100-oldest-filesystem
                                     (for processing oldest 100 event logsbased
                                     on filesystem timestamp).
-  -l, --logic-filter <arg>          Filter event logs where any or all filter criteria
-                                    based on application names. Default is all.
-                                    Example: <Filter1> <Filter2> <Filter3>
-                                    --logicFilter any -> processes logs for which  +
-                                    any condition is satisfied. i.e result is <Filter1> OR
-                                    <Filter2> OR <Filter3>.
-                                    <Filter1> <Filter2> <Filter3> --logicFilter all ->
-                                    processes logs for which all are conditions are satisfied.
-                                    i.e result is <Filter1> AND <Filter2> AND <Filter3>
   -m, --match-event-logs  <arg>     Filter event logs whose filenames contain
                                     the input string. Filesystem based filtering
                                     happens before any application based

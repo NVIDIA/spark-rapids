@@ -67,19 +67,23 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           "regular expression, substring, or exact match. For filtering based on complement " +
           "of application name, use ~APPLICATION_NAME. i.e Select all event logs except the ones " +
           "which have application name as the input string.")
+  val any: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Apply multiple event log filtering criteria and process only logs for which any " +
+          "condition is satisfied." +
+          "Example: <Filter1> <Filter2> <Filter3> --any -> result is <Filter1> OR " +
+          "<Filter2> OR <Filter3>")
+  val all: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Apply multiple event log filtering criteria and process only logs for which all " +
+          "conditions are satisfied." +
+          "Example: <Filter1> <Filter2> <Filter3> --all -> result is <Filter1> AND " +
+          "<Filter2> AND <Filter3>. Default is all=true")
   val startAppTime: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose application start occurred within the past specified " +
         "time period. Valid time periods are min(minute),h(hours),d(days),w(weeks)," +
         "m(months). If a period is not specified it defaults to days.")
-  val logicFilter: ScallopOption[String] =
-    opt[String](required = false,
-      descr = "Filter event logs where any or all filter criteria based on application names. " +
-          "Default is all." +
-          "Example: <Filter1> <Filter2> <Filter3> --logicFilter any -> processes logs for which " +
-          "any condition is satisfied. i.e result is <Filter1> OR <Filter2> OR <Filter3>" +
-          "<Filter1> <Filter2> <Filter3> --logicFilter all -> processes logs for which all are " +
-          "conditions are satisfied. i.e result is <Filter1> AND <Filter2> AND <Filter3>")
   val matchEventLogs: ScallopOption[String] =
     opt[String](required = false,
       descr = "Filter event logs whose filenames contain the input string. Filesystem " +
@@ -128,11 +132,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         || crit.endsWith("-oldest") || crit.endsWith("-newest")) => Right(Unit)
     case _ => Left("Error, the filter criteria must end with -newest, -oldest, " +
         "-newest-filesystem, -oldest-filesystem, -newest-per-app-name or -oldest-per-app-name")
-  }
-
-  validate(logicFilter) {
-    case logicFilter if (logicFilter.endsWith("any") || logicFilter.endsWith("all")) => Right(Unit)
-    case _ => Left("Error, logFilter must end with any or all")
   }
 
   validate(timeout) {

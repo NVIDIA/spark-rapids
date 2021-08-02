@@ -75,7 +75,12 @@ class AppFilterImpl(
     val filterAppName = appArgs.applicationName.getOrElse("")
     val filterCriteria = appArgs.filterCriteria.getOrElse("")
     val userName = appArgs.userName.getOrElse("")
-    val logicFilter = appArgs.logicFilter.getOrElse("all")
+    //val logicFilter = appArgs.logicFilter.getOrElse("all")
+    val logicFilter = if (appArgs.any()) {
+      "any"
+    } else {
+      "all"
+    }
 
     val appNameFiltered = if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
       val filtered = if (filterAppName.startsWith(NEGATE)) {
@@ -92,7 +97,7 @@ class AppFilterImpl(
    // If `any` is specified as logicFilter config, then store the value in variable which is used
    // later for final computation.
    val appNameFilteredForDisjunction = if (appArgs.applicationName.isSupplied &&
-       filterAppName.nonEmpty && appArgs.logicFilter.isSupplied
+       filterAppName.nonEmpty && appArgs.any()
        && logicFilter.contains("any")) {
       appNameFiltered
     } else {
@@ -100,7 +105,7 @@ class AppFilterImpl(
     }
 
     val userNameFiltered = if (appArgs.userName.isSupplied && userName.nonEmpty) {
-      val appNamelogicFiltered = if (appArgs.logicFilter.isSupplied &&
+      val appNamelogicFiltered = if (appArgs.any() &&
           logicFilter.contains("any")) {
         apps
       } else {
@@ -121,7 +126,7 @@ class AppFilterImpl(
 
     val appTimeFiltered = if (appArgs.startAppTime.isSupplied) {
       val msTimeToFilter = AppFilterImpl.parseAppTimePeriodArgs(appArgs)
-      val logicFiltered = if (appArgs.logicFilter.isSupplied && logicFilter.contains("any")) {
+      val logicFiltered = if (appArgs.any()) {
         apps
       } else {
         userNameFiltered
@@ -142,7 +147,7 @@ class AppFilterImpl(
 
     // If `any` is specified as logicFilter, add all filtered results which is equivalent to
     // applying OR on filters.
-    val finalLogicFiltered = if(appArgs.logicFilter.isSupplied && logicFilter.contains("any") ) {
+    val finalLogicFiltered = if(appArgs.any()) {
       (userNameFiltered ++ appTimeFiltered ++ appNameFilteredForDisjunction).toSet.toSeq
     } else {
       appTimeFiltered

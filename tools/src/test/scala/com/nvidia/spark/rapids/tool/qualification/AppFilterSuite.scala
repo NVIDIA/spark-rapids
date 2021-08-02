@@ -552,83 +552,68 @@ class AppFilterSuite extends FunSuite {
   test("Test disjunction all filters") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++
-          startTimePeriod("3w") ++ userName("user1") ++ logicFilter("any"),
-      7)
+          startTimePeriod("3w") ++ userName("user1"), expectedFilterSize = 7, "any")
   }
 
   test("Test disjunction no appName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++
-          startTimePeriod("2w") ++ userName("user3") ++ logicFilter("any"),
-      6)
+          startTimePeriod("2w") ++ userName("user3"),      6, "any")
   }
 
   test("Test disjunction no starttime") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1")
-          ++ logicFilter("any"),
-      6)
+      filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1"),
+      6, "any")
   }
 
   test("Test disjunction no userName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++
-          startTimePeriod("2w") ++ logicFilter("any"),
-      6)
+          startTimePeriod("2w"), 6, "any")
   }
 
   test("Test disjunction only userName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterCriteria("10-newest") ++ userName("user1")
-          ++ logicFilter("any"),
-      3)
+      filterCriteria("10-newest") ++ userName("user1"), 3, "any")
   }
 
   test("Test disjunction only appName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterAppName("nds") ++ logicFilter("any"),
-      5)
+      filterAppName("nds"), 5, "any")
   }
 
   test("Test conjunction all filters") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++
-          startTimePeriod("3w") ++ userName("user1") ++ logicFilter("all"),
-      2)
+          startTimePeriod("3w") ++ userName("user1"), 2, "all")
   }
 
   test("Test conjunction no appName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++
-          startTimePeriod("2w") ++ userName("user3") ++ logicFilter("all"),
-      0)
+          startTimePeriod("2w") ++ userName("user3"), 0, "all")
   }
 
   test("Test conjunction no starttime") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1")
-          ++ logicFilter("all"),
-      2)
+      filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1"), 2)
   }
 
   test("Test conjunction no userName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++
-          startTimePeriod("2w") ++ logicFilter("all"),
-      3)
+          startTimePeriod("2w"), 3, "all")
   }
 
   test("Test conjunction only userName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterCriteria("10-newest") ++ userName("user1")
-          ++ logicFilter("all"),
-      3)
+      filterCriteria("10-newest") ++ userName("user1"), 3)
   }
 
   test("Test conjunction only appName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterAppName("nds") ++ logicFilter("all"),
-      5)
+      filterAppName("nds"), 5)
   }
 
   def filterCriteria(filterCrit: String): Array[String] = {
@@ -655,7 +640,8 @@ class AppFilterSuite extends FunSuite {
   private def testConjunctionAndDisjunction(
       apps: Array[TestConjunctionAndDisjunction],
       filtersToApply: Array[String],
-      expectedFilterSize: Int): Unit = {
+      expectedFilterSize: Int,
+      logicFilter: String = "all"): Unit = {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
 
@@ -673,7 +659,8 @@ class AppFilterSuite extends FunSuite {
 
         val allArgs = Array(
           "--output-directory",
-          outpath.getAbsolutePath()
+          outpath.getAbsolutePath(),
+          "--"+logicFilter
         )
 
         val appArgs = new QualificationArgs(allArgs ++ filtersToApply ++ fileNames)
