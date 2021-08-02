@@ -396,21 +396,47 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       app: ApplicationInfo,
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
-    app.jobIdToInfo.get(event.jobId).foreach { j =>
-      j.endTime = Some(event.time)
-      j.duration = ProfileUtils.OptionLongMinusLong(j.endTime, j.startTime)
-      val thisJobResult = event.jobResult match {
+
+    def jobResult(res: JobResult): String = {
+      res match {
         case JobSucceeded => "JobSucceeded"
         case _: JobFailed => "JobFailed"
         case _ => "Unknown"
       }
-      j.jobResult = Some(thisJobResult)
-      val thisFailedReason = event.jobResult match {
+    }
+
+    def failedReason(res: JobResult): String = {
+      res match {
         case JobSucceeded => ""
         case jobFailed: JobFailed => jobFailed.exception.toString
         case _ => ""
       }
-      j.failedReason = Some(thisFailedReason)
+    }
+    
+    app.jobIdToInfo.get(event.jobId) match {
+      case Some(j) =>
+        j.endTime = Some(event.time)
+        j.duration = ProfileUtils.OptionLongMinusLong(j.endTime, j.startTime)
+        val thisJobResult = jobResult(event.jobResult)
+        j.jobResult = Some(thisJobResult)
+        val thisFailedReason = failedReason(event.jobResult)
+        j.failedReason = Some(thisFailedReason)
+      case None =>
+        val thisJobResult = jobResult(event.jobResult)
+        val thisFailedReason = failedReason(event.jobResult)
+        val thisJob = new JobInfoClass(
+          event.jobId,
+          Seq.empty,
+          None,
+          Map.empty,
+          event.time,  // put end time as start time
+          Some(event.time),
+          Some(thisJobResult),
+          Some(thisFailedReason),
+          None,
+          app.gpuMode
+        )
+        app.jobIdToInfo.put(event.jobId, thisJob)
     }
   }
 

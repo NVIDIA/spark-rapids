@@ -97,11 +97,14 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       }
     }
     val allStageRows = filtered.flatMap { app =>
+      // TODO need to get stages not in a job
       app.jobIdToInfo.flatMap { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
         val stagesInJob = app.stageIdToInfo.filterKeys { case (sid, _) =>
           stageIdsInJob.contains(sid)
         }
+        logWarning(s"stages in $id job: " + stagesInJob.keys.map(_._1).mkString(","))
+
         stagesInJob.map { case ((id, said), sc) =>
           val tasksInStage = app.taskEnd.filter { tc =>
             tc.stageId == id
@@ -252,7 +255,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     if (allFiltered.size > 0) {
       val sortedRows = allFiltered.sortBy { cols =>
         val sortDur = cols.duration.getOrElse(0L)
-        (cols.appIndex, -(sortDur), cols.sqlId)
+        (cols.appIndex, -(sortDur), cols.sqlId, cols.executorCpuTime)
       }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
