@@ -315,21 +315,13 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
     // Always register with the wrapped handler so we can write to it ourselves if needed
     val orig = wrapped.registerShuffle(shuffleId, dependency)
-    var shouldUseRapidsShuffle = false
 
-    if (!shouldFallThroughOnEverything) {
-      shouldUseRapidsShuffle = dependency match {
-        case gpuDependency: GpuShuffleDependency[K, V, C] =>
-          gpuDependency.useRapidsShuffle
-        case _ => false
-      }
-    }
-
-    if (shouldUseRapidsShuffle) {
-      new GpuShuffleHandle(orig,
-        dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
-    } else {
-      orig
+    dependency match {
+      case _ if shouldFallThroughOnEverything => orig
+      case gpuDependency: GpuShuffleDependency[K, V, C] if gpuDependency.useRapidsShuffle =>
+        new GpuShuffleHandle(orig,
+          dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
+      case _ => orig
     }
   }
 
