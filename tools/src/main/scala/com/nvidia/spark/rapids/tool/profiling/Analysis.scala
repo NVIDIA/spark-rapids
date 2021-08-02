@@ -52,15 +52,17 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val tasksInJob = app.taskEnd.filter { tc =>
           stagesInJob.contains(tc.stageId)
         }
-        // don't count duplicate task attempts
-        val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
+        // count duplicate task attempts
+        val numTaskAttempt = tasksInJob.size
+        // Above is a bit out of ordinary fro spark perhaps print both
+        // val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
         logWarning("count duplicates " + tasksInJob.size)
 
         // TODO - how to deal with attempts?
         val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
         JobStageAggTaskMetrics(app.index,
           s"job_$id",
-          uniqueTasks.size,
+          numTaskAttempt,
           jc.duration,
           tasksInJob.map(_.diskBytesSpilled).sum,
           durSum,
@@ -104,14 +106,16 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           val tasksInStage = app.taskEnd.filter { tc =>
             tc.stageId == id
           }
-          // don't count duplicate task attempts
-          val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
+          // count duplicate task attempts
+          val numAttempts = tasksInStage.size
+          // Above is a bit out of ordinary fro spark perhaps print both
+          // val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
           // TODO - how to deal with attempts?
 
           val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
           JobStageAggTaskMetrics(app.index,
             s"stage_$id",
-            uniqueTasks.size,
+            numAttempts,
             sc.duration,
             tasksInStage.map(_.diskBytesSpilled).sum,
             durSum,
@@ -188,8 +192,9 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             None
           } else {
             // don't count duplicate task attempts ???
-            val uniqueTasks = tasksInSQL.groupBy(tc => tc.taskId)
-            
+            // val uniqueTasks = tasksInSQL.groupBy(tc => tc.taskId)
+            // count all attempts
+            val numAttempts = tasksInSQL.size
 
             val diskBytes = tasksInSQL.map(_.diskBytesSpilled).sum
             val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
@@ -203,7 +208,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               app.appId,
               sqlId,
               sqlCase.description,
-              uniqueTasks.size,
+              numAttempts,
               sqlCase.duration,
               execCpuTime,
               execRunTime,
