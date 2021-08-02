@@ -53,51 +53,55 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val stagesInJob = app.stageIdToInfo.filterKeys { case (sid, _) =>
           stageIdsInJob.contains(sid)
         }.keys.map(_._1).toSeq
-        val tasksInJob = app.taskEnd.filter { tc =>
-          stagesInJob.contains(tc.stageId)
-        }
-        // count duplicate task attempts
-        val numTaskAttempt = tasksInJob.size
-        // Above is a bit out of ordinary fro spark perhaps print both
-        // val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
-        logWarning("count duplicates " + tasksInJob.size)
+        if (stagesInJob.isEmpty) {
+          None
+        } else {
+          val tasksInJob = app.taskEnd.filter { tc =>
+            stagesInJob.contains(tc.stageId)
+          }
+          // count duplicate task attempts
+          val numTaskAttempt = tasksInJob.size
+          // Above is a bit out of ordinary fro spark perhaps print both
+          // val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
+          logWarning("count duplicates " + tasksInJob.size)
 
-        // TODO - how to deal with attempts?
-        val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
-        JobStageAggTaskMetrics(app.index,
-          s"job_$id",
-          numTaskAttempt,
-          jc.duration,
-          tasksInJob.map(_.diskBytesSpilled).sum,
-          durSum,
-          durMax,
-          durMin,
-          durAvg,
-          tasksInJob.map(_.executorCPUTime).sum,
-          tasksInJob.map(_.executorDeserializeCPUTime).sum,
-          tasksInJob.map(_.executorDeserializeTime).sum,
-          tasksInJob.map(_.executorRunTime).sum,
-          tasksInJob.map(_.gettingResultTime).sum,
-          tasksInJob.map(_.input_bytesRead).sum,
-          tasksInJob.map(_.input_recordsRead).sum,
-          tasksInJob.map(_.jvmGCTime).sum,
-          tasksInJob.map(_.memoryBytesSpilled).sum,
-          tasksInJob.map(_.output_bytesWritten).sum,
-          tasksInJob.map(_.output_recordsWritten).sum,
-          tasksInJob.map(_.peakExecutionMemory).max,
-          tasksInJob.map(_.resultSerializationTime).sum,
-          tasksInJob.map(_.resultSize).max,
-          tasksInJob.map(_.sr_fetchWaitTime).sum,
-          tasksInJob.map(_.sr_localBlocksFetched).sum,
-          tasksInJob.map(_.sr_localBytesRead).sum,
-          tasksInJob.map(_.sr_remoteBlocksFetched).sum,
-          tasksInJob.map(_.sr_remoteBytesRead).sum,
-          tasksInJob.map(_.sr_remoteBytesReadToDisk).sum,
-          tasksInJob.map(_.sr_totalBytesRead).sum,
-          tasksInJob.map(_.sw_bytesWritten).sum,
-          tasksInJob.map(_.sw_recordsWritten).sum,
-          tasksInJob.map(_.sw_writeTime).sum
-        )
+          // TODO - how to deal with attempts?
+          val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
+          Some(JobStageAggTaskMetrics(app.index,
+            s"job_$id",
+            numTaskAttempt,
+            jc.duration,
+            tasksInJob.map(_.diskBytesSpilled).sum,
+            durSum,
+            durMax,
+            durMin,
+            durAvg,
+            tasksInJob.map(_.executorCPUTime).sum,
+            tasksInJob.map(_.executorDeserializeCPUTime).sum,
+            tasksInJob.map(_.executorDeserializeTime).sum,
+            tasksInJob.map(_.executorRunTime).sum,
+            tasksInJob.map(_.gettingResultTime).sum,
+            tasksInJob.map(_.input_bytesRead).sum,
+            tasksInJob.map(_.input_recordsRead).sum,
+            tasksInJob.map(_.jvmGCTime).sum,
+            tasksInJob.map(_.memoryBytesSpilled).sum,
+            tasksInJob.map(_.output_bytesWritten).sum,
+            tasksInJob.map(_.output_recordsWritten).sum,
+            tasksInJob.map(_.peakExecutionMemory).max,
+            tasksInJob.map(_.resultSerializationTime).sum,
+            tasksInJob.map(_.resultSize).max,
+            tasksInJob.map(_.sr_fetchWaitTime).sum,
+            tasksInJob.map(_.sr_localBlocksFetched).sum,
+            tasksInJob.map(_.sr_localBytesRead).sum,
+            tasksInJob.map(_.sr_remoteBlocksFetched).sum,
+            tasksInJob.map(_.sr_remoteBytesRead).sum,
+            tasksInJob.map(_.sr_remoteBytesReadToDisk).sum,
+            tasksInJob.map(_.sr_totalBytesRead).sum,
+            tasksInJob.map(_.sw_bytesWritten).sum,
+            tasksInJob.map(_.sw_recordsWritten).sum,
+            tasksInJob.map(_.sw_writeTime).sum
+          ))
+        }
       }
     }
 
@@ -121,58 +125,67 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         }
         logWarning(s"stages in $id job: " + stagesInJob.keys.map(_._1).mkString(","))
 
-        stagesInJob.map { case ((id, said), sc) =>
-          val tasksInStage = app.taskEnd.filter { tc =>
-            tc.stageId == id
-          }
-          // count duplicate task attempts
-          val numAttempts = tasksInStage.size
-          // Above is a bit out of ordinary fro spark perhaps print both
-          // val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
-          // TODO - how to deal with attempts?
+        if (stagesInJob.isEmpty) {
+          None
+        } else {
+          stagesInJob.map { case ((id, said), sc) =>
+            val tasksInStage = app.taskEnd.filter { tc =>
+              tc.stageId == id
+            }
+            // count duplicate task attempts
+            val numAttempts = tasksInStage.size
+            // Above is a bit out of ordinary fro spark perhaps print both
+            // val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
+            // TODO - how to deal with attempts?
 
-          val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
-          JobStageAggTaskMetrics(app.index,
-            s"stage_$id",
-            numAttempts,
-            sc.duration,
-            tasksInStage.map(_.diskBytesSpilled).sum,
-            durSum,
-            durMax,
-            durMin,
-            durAvg,
-            tasksInStage.map(_.executorCPUTime).sum,
-            tasksInStage.map(_.executorDeserializeCPUTime).sum,
-            tasksInStage.map(_.executorDeserializeTime).sum,
-            tasksInStage.map(_.executorRunTime).sum,
-            tasksInStage.map(_.gettingResultTime).sum,
-            tasksInStage.map(_.input_bytesRead).sum,
-            tasksInStage.map(_.input_recordsRead).sum,
-            tasksInStage.map(_.jvmGCTime).sum,
-            tasksInStage.map(_.memoryBytesSpilled).sum,
-            tasksInStage.map(_.output_bytesWritten).sum,
-            tasksInStage.map(_.output_recordsWritten).sum,
-            tasksInStage.map(_.peakExecutionMemory).max,
-            tasksInStage.map(_.resultSerializationTime).sum,
-            tasksInStage.map(_.resultSize).max,
-            tasksInStage.map(_.sr_fetchWaitTime).sum,
-            tasksInStage.map(_.sr_localBlocksFetched).sum,
-            tasksInStage.map(_.sr_localBytesRead).sum,
-            tasksInStage.map(_.sr_remoteBlocksFetched).sum,
-            tasksInStage.map(_.sr_remoteBytesRead).sum,
-            tasksInStage.map(_.sr_remoteBytesReadToDisk).sum,
-            tasksInStage.map(_.sr_totalBytesRead).sum,
-            tasksInStage.map(_.sw_bytesWritten).sum,
-            tasksInStage.map(_.sw_recordsWritten).sum,
-            tasksInStage.map(_.sw_writeTime).sum
-          )
+            val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
+            Some(JobStageAggTaskMetrics(app.index,
+              s"stage_$id",
+              numAttempts,
+              sc.duration,
+              tasksInStage.reduceOption(_.diskBytesSpilled + _.diskBytesSpilled).getOrElse(0L),
+              durSum,
+              durMax,
+              durMin,
+              durAvg,
+              tasksInStage.reduceOption(_.executorCPUTime + _.executorCPUTime).getOrElse(0L),
+              tasksInStage.reduceOption(_.executorDeserializeCPUTime + _.executorDeserializeCPUTime)
+                .getOrElse(0L),
+              tasksInStage.reduceOption(_.executorDeserializeTime + _.executorDeserializeTime)
+                .getOrElse(0L),
+              tasksInStage.reduceOption(_.executorRunTime + _.executorRunTime).getOrElse(0L),
+              tasksInStage.reduceOption(_.gettingResultTime + _.gettingResultTime).getOrElse(0L,
+              tasksInStage.reduceOption(_.input_bytesRead + _.input_bytesRead).getOrElse(0L),
+              tasksInStage.reduceOption(_.input_recordsRead + _.input_recordsRead).getOrElse(0L),
+              tasksInStage.reduceOption(_.jvmGCTime + _.jvmGCTime).getOrElse(0L),
+              tasksInStage.reduceOption(_.memoryBytesSpilled + _.memoryBytesSpilled).getOrElse(0L),
+              tasksInStage.reduceOption(_.output_bytesWritten + _.output_bytesWritten).getOrElse(0L),
+              tasksInStage.reduceOption(_.output_recordsWritten + _.output_recordsWritten).getOrElse(0L),
+              tasksInStage.reduceOption(_.peakExecutionMemory max _.peakExecutionMemory).getOrElse(0L),
+              tasksInStage.reduceOption(_.resultSerializationTime + _.resultSerializationTime)
+                .getOrElse(0L),
+              tasksInStage.reduceOption(_.resultSize max _.resultSize).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_fetchWaitTime + _.sr_fetchWaitTime).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_localBlocksFetched + _.sr_localBlocksFetched).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_localBytesRead + _.sr_localBytesRead).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_remoteBlocksFetched + _.sr_remoteBlocksFetched).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_remoteBytesRead + _.sr_remoteBytesRead).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_remoteBytesReadToDisk + _.sr_remoteBytesReadToDisk)
+                .getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_totalBytesRead + _.sr_totalBytesRead).getOrElse(0L),
+              tasksInStage.reduceOption(_.sw_bytesWritten + _.sw_bytesWritten).getOrElse(0L),
+              tasksInStage.reduceOption(_.sw_recordsWritten + _.sw_recordsWritten).getOrElse(0L),
+              tasksInStage.reduceOption(_.sw_writeTime + _.sw_writeTime).getOrElse(0L)
+            ))
+          }
         }
       }
     }
 
     val allRows = allJobRows ++ allStageRows
-    if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy { cols =>
+    val filteredRows = allRows.filter(_.isDefined).map(_.get)
+    if (filteredRows.size > 0) {
+      val sortedRows = filteredRows.sortBy { cols =>
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.id)
       }
