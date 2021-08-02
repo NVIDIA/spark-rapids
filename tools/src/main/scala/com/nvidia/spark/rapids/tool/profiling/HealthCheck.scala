@@ -27,11 +27,9 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     numOutputRows: Int) {
 
   // Function to list all failed tasks , stages and jobs.
-  def listFailedTasks(): Unit = {
+  def listFailedTasks(): Seq[FailedTaskProfileResults] = {
     val tasksMessageHeader = s"\nFailed tasks:\n"
     fileWriter.foreach(_.write(tasksMessageHeader))
-    val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId",
-      "attempt", "failureReason")
     val failed = apps.flatMap { app =>
       val tasksFailed = app.taskEnd.filter(_.successful == false)
       tasksFailed.map { t =>
@@ -45,124 +43,129 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Failed Tasks Found!\n"))
+      Seq.empty
     }
   }
 
-  def listFailedStages(): Unit = {
+  def listFailedStages(): Seq[FailedStagesProfileResults] = {
     val stagesMessageHeader = s"\nFailed stages:\n"
     fileWriter.foreach(_.write(stagesMessageHeader))
-    val outputHeaders = Seq("appIndex", "stageId", "attemptId", "name",
-      "numTasks", "failureReason")
     val failed = apps.flatMap { app =>
       val stagesFailed = app.stageIdToInfo.filter { case (_, sc) =>
         sc.failureReason.nonEmpty
       }
       stagesFailed.map { case ((id, attId), sc) =>
         val failureStr = sc.failureReason.getOrElse("")
-        Seq(app.index.toString, id.toString, attId.toString,
-          sc.info.name, sc.info.numTasks.toString,
+        FailedStagesProfileResults(app.index, id, attId,
+          sc.info.name, sc.info.numTasks,
           ProfileUtils.truncateFailureStr(failureStr))
       }
     }
     if (failed.size > 0) {
-      val sortedRows = failed.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong))
+      val sortedRows = failed.sortBy(cols => (cols.appIndex, cols.stageId,
+        cols.stageAttemptId))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Failed Stages Found!\n"))
+      Seq.empty
     }
   }
 
-  def listFailedJobs(): Unit = {
+  def listFailedJobs(): Seq[FailedJobsProfileResults] = {
     val jobsMessageHeader = s"\nFailed jobs:\n"
     fileWriter.foreach(_.write(jobsMessageHeader))
-    val outputHeaders = Seq("appIndex", "jobId", "jobResult", "failureReason")
     val failed = apps.flatMap { app =>
       val jobsFailed = app.jobIdToInfo.filter { case (_, jc) =>
         jc.jobResult.nonEmpty && !jc.jobResult.get.equals("JobSucceeded")
       }
       jobsFailed.map { case (id, jc) =>
         val failureStr = jc.failedReason.getOrElse("")
-        Seq(app.index.toString, id.toString, jc.jobResult.getOrElse("Unknown"),
+        FailedJobsProfileResults(app.index, id, jc.jobResult.getOrElse("Unknown"),
           ProfileUtils.truncateFailureStr(failureStr))
       }
     }
     if (failed.size > 0) {
       val sortedRows = failed.sortBy { cols =>
-        (cols(0).toLong, cols(1).toLong, cols(2))
+        (cols.appIndex, cols.jobId, cols.jobResult)
       }
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Failed Jobs Found!\n"))
+      Seq.empty
     }
   }
 
-
-  def listRemovedBlockManager(): Unit = {
+  def listRemovedBlockManager(): Seq[BlockManagerRemovedProfileResult] = {
     val header = "\nRemoved BlockManager(s):\n"
     fileWriter.foreach(_.write(header))
-    val outputHeaders = Seq("appIndex", "executorId", "time")
     val res = apps.flatMap { app =>
       app.blockManagersRemoved.map { bm =>
-        Seq(app.index.toString, bm.executorID.toString, bm.time.toString)
+        BlockManagerRemovedProfileResult(app.index, bm.executorID, bm.time)
       }
     }
     if (res.size > 0) {
-      val sortedRows = res.sortBy(cols => (cols(0).toLong, cols(1).toLong))
+      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID)
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Removed BlockManagers Found!\n"))
+      Seq.empty
     }
   }
 
-
-  def listRemovedExecutors(): Unit = {
+  def listRemovedExecutors(): Seq[ExecutorsRemovedProfileResult] = {
     val header = "\nRemoved Executors(s):\n"
     fileWriter.foreach(_.write(header))
-    val outputHeaders = Seq("appIndex", "executorId", "time", "reason")
     val res = apps.flatMap { app =>
       val execsRemoved = app.executorIdToInfo.filter { case (_, exec) =>
           exec.isActive == false
       }
       execsRemoved.map { case (id, exec) =>
-        Seq(app.index.toString, id, exec.removeTime.toString, exec.removeReason)
+        ExecutorsRemovedProfileResult(app.index, id, exec.removeTime, exec.removeReason)
       }
     }
     if (res.size > 0) {
-      val sortedRows = res.sortBy(cols => (cols(0).toLong, cols(1).toLong))
+      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID)
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Removed Executors Found!\n"))
+      Seq.empty
     }
   }
 
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
-  def listPossibleUnsupportedSQLPlan(): Unit = {
+  def listPossibleUnsupportedSQLPlan(): Seq[UnsupportedOpsProfileResult] = {
     val header = "\nSQL Plan HealthCheck:\n"
     fileWriter.foreach(_.write(header))
-    val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "nodeDescription", "reason")
     val res = apps.flatMap { app =>
       app.unsupportedSQLplan.map { unsup =>
-        Seq(app.index.toString, unsup.sqlID.toString, unsup.nodeID.toString, unsup.nodeName,
+        UnsupportedOpsProfileResult(app.index, unsup.sqlID, unsup.nodeID, unsup.nodeName,
           unsup.nodeDesc, unsup.reason)
       }
     }
     if (res.size > 0) {
-      val sortedRows = res.sortBy(cols => (cols(0).toLong, cols(1).toLong, cols(2).toLong))
+      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID)
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
-        outputHeaders, sortedRows)
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
+      sortedRows
     } else {
       fileWriter.foreach(_.write("No Unsupported SQL Ops Found!\n"))
+      Seq.empty
     }
   }
 }

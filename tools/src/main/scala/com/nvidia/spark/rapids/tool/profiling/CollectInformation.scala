@@ -43,7 +43,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       AppInfoProfileResults(app.index, a.appName, a.appId,
         a.sparkUser,  a.startTime, a.endTime, a.duration,
         a.durationStr, a.sparkVersion, a.pluginEnabled)
-    }.toList
+    }
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols.appIndex))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
@@ -85,14 +85,11 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printDataSourceInfo(): Seq[DataSourceProfileResult] = {
     val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    val allRows = apps.flatMap { app =>
-      if (app.dataSourceInfo.size > 0) {
-        app.dataSourceInfo.map { ds =>
-          DataSourceProfileResult(app.index, ds.sqlID, ds.format, ds.location,
-            ds.pushedFilters, ds.schema)
-        }
-      } else {
-        Seq.empty
+    val filtered = apps.filter(_.dataSourceInfo.size > 0)
+    val allRows = filtered.flatMap { app =>
+      app.dataSourceInfo.map { ds =>
+        DataSourceProfileResult(app.index, ds.sqlID, ds.format, ds.location,
+          ds.pushedFilters, ds.schema)
       }
     }
     if (allRows.size > 0) {
@@ -161,14 +158,10 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printJobInfo(): Seq[JobInfoProfileResult] = {
     val messageHeader = "\nJob Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-
-    val allRows = apps.flatMap { app =>
-      if (app.jobIdToInfo.size > 0) {
-        app.jobIdToInfo.map { case (jobId, j) =>
-          JobInfoProfileResult(app.index, j.jobID, j.stageIds, j.sqlID)
-        }
-      } else {
-        Seq.empty
+    val filtered = apps.filter(_.jobIdToInfo.size > 0)
+    val allRows = filtered.flatMap { app =>
+      app.jobIdToInfo.map { case (jobId, j) =>
+        JobInfoProfileResult(app.index, j.jobID, j.stageIds, j.sqlID)
       }
     }
     if (allRows.size > 0) {

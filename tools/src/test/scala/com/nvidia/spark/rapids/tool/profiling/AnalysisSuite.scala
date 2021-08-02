@@ -82,6 +82,7 @@ class AnalysisSuite extends FunSuite {
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     val analysis = new Analysis(apps, None, 1000)
+    // have to call this to set all the fields properly
     analysis.sqlMetricsAggregation()
     import sparkSession.implicits._
     val sqlAggDurCpu = analysis.sqlMetricsAggregationDurationAndCpuTime()

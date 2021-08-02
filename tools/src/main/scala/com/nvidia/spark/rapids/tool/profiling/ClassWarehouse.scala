@@ -150,6 +150,35 @@ case class ResourceProfileInfoCase(
 case class BlockManagerRemovedCase(
     executorID: String, host: String, port: Int, time: Long)
 
+case class BlockManagerRemovedProfileResult(appIndex: Int,
+    executorID: String, time: Long) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "executorId", "time")
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, executorID, time.toString)
+  }
+}
+
+case class ExecutorsRemovedProfileResult(appIndex: Int,
+    executorID: String, time: Long, reason: String) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "executorId", "time", "reason")
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, executorID, time.toString, reason)
+  }
+}
+
+case class UnsupportedOpsProfileResult(appIndex: Int,
+    sqlID: Long, nodeID: Long, nodeName: String, nodeDescription: String,
+    reason: String) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName",
+    "nodeDescription", "reason")
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, nodeDescription,
+      reason)
+  }
+}
+
 case class AppInfoProfileResults(appIndex: Int, appName: String,
     appId: Option[String], sparkUser: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],
@@ -278,12 +307,32 @@ case class DataSourceCase(
     schema: String)
 
 case class FailedTaskProfileResults(appIndex: Int, stageId: Int, stageAttemptId: Int,
-    taskId: Long, taskAttemptId: Int, endReason: String) {
-  val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId",
+    taskId: Long, taskAttemptId: Int, endReason: String) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId",
     "attempt", "failureReason")
-  def convertToSeq: Seq[String] = {
+  override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, stageId.toString, stageAttemptId.toString,
       taskId.toString, taskAttemptId.toString, ProfileUtils.truncateFailureStr(endReason))
+  }
+}
+
+case class FailedStagesProfileResults(appIndex: Int, stageId: Int, stageAttemptId: Int,
+    name: String, numTasks: Int, endReason: String) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "stageId", "attemptId", "name",
+    "numTasks", "failureReason")
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, stageId.toString, stageAttemptId.toString,
+      name, numTasks.toString, ProfileUtils.truncateFailureStr(endReason))
+  }
+}
+
+case class FailedJobsProfileResults(appIndex: Int, jobId: Int,
+    jobResult: String, endReason: String) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "jobId", "jobResult", "failureReason")
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, jobId.toString,
+      jobResult, ProfileUtils.truncateFailureStr(endReason))
   }
 }
 
