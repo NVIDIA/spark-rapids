@@ -113,7 +113,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       }
     }
     if (res.size > 0) {
-      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID)
+      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
@@ -136,7 +136,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       }
     }
     if (res.size > 0) {
-      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID)
+      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
@@ -158,7 +158,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       }
     }
     if (res.size > 0) {
-      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID)
+      val sortedRows = res.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID))
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))

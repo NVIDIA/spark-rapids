@@ -36,6 +36,8 @@ class HealthCheckSuite extends FunSuite {
         .getOrCreate()
   }
 
+  lazy val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
+
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
@@ -46,14 +48,14 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
 
-    val healthCheck = new HealthCheck(apps, None, 1000)=
+    val healthCheck = new HealthCheck(apps, None, 1000)
     for (app <- apps) {
       val failedTasks = healthCheck.listFailedTasks()
       import sparkSession.implicits._
@@ -89,7 +91,7 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
@@ -124,7 +126,7 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1

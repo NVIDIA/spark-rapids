@@ -41,7 +41,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         .getOrCreate()
   }
 
-  lazy val hadoopConf = new Configuration()
+  lazy val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
 
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
