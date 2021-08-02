@@ -154,21 +154,26 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               tasksInStage.reduceOption(_.executorDeserializeTime + _.executorDeserializeTime)
                 .getOrElse(0L),
               tasksInStage.reduceOption(_.executorRunTime + _.executorRunTime).getOrElse(0L),
-              tasksInStage.reduceOption(_.gettingResultTime + _.gettingResultTime).getOrElse(0L,
+              tasksInStage.reduceOption(_.gettingResultTime + _.gettingResultTime).getOrElse(0L),
               tasksInStage.reduceOption(_.input_bytesRead + _.input_bytesRead).getOrElse(0L),
               tasksInStage.reduceOption(_.input_recordsRead + _.input_recordsRead).getOrElse(0L),
               tasksInStage.reduceOption(_.jvmGCTime + _.jvmGCTime).getOrElse(0L),
               tasksInStage.reduceOption(_.memoryBytesSpilled + _.memoryBytesSpilled).getOrElse(0L),
-              tasksInStage.reduceOption(_.output_bytesWritten + _.output_bytesWritten).getOrElse(0L),
-              tasksInStage.reduceOption(_.output_recordsWritten + _.output_recordsWritten).getOrElse(0L),
-              tasksInStage.reduceOption(_.peakExecutionMemory max _.peakExecutionMemory).getOrElse(0L),
+              tasksInStage.reduceOption(_.output_bytesWritten + _.output_bytesWritten)
+                .getOrElse(0L),
+              tasksInStage.reduceOption(_.output_recordsWritten + _.output_recordsWritten)
+                .getOrElse(0L),
+              tasksInStage.reduceOption(_.peakExecutionMemory max _.peakExecutionMemory)
+                .getOrElse(0L),
               tasksInStage.reduceOption(_.resultSerializationTime + _.resultSerializationTime)
                 .getOrElse(0L),
               tasksInStage.reduceOption(_.resultSize max _.resultSize).getOrElse(0L),
               tasksInStage.reduceOption(_.sr_fetchWaitTime + _.sr_fetchWaitTime).getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_localBlocksFetched + _.sr_localBlocksFetched).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_localBlocksFetched + _.sr_localBlocksFetched)
+                .getOrElse(0L),
               tasksInStage.reduceOption(_.sr_localBytesRead + _.sr_localBytesRead).getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_remoteBlocksFetched + _.sr_remoteBlocksFetched).getOrElse(0L),
+              tasksInStage.reduceOption(_.sr_remoteBlocksFetched + _.sr_remoteBlocksFetched)
+                .getOrElse(0L),
               tasksInStage.reduceOption(_.sr_remoteBytesRead + _.sr_remoteBytesRead).getOrElse(0L),
               tasksInStage.reduceOption(_.sr_remoteBytesReadToDisk + _.sr_remoteBytesReadToDisk)
                 .getOrElse(0L),
