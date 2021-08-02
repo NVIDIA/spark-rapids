@@ -115,6 +115,10 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       if (res.size != app.stageIdToInfo.size) {
         logWarning("number of stages not included: " + (app.stageIdToInfo.size - res.size))
       }
+      val missing = app.stageIdToInfo.keys.toSeq.diff(res.keys.toSeq)
+      missing.foreach { case (s, sa) =>
+        logWarning(s"missing stages $s and attempt: $sa")
+      }
     }
     val allStageRows = filtered.flatMap { app =>
       // TODO need to get stages not in a job
