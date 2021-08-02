@@ -971,8 +971,9 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SHUFFLE_MANAGER_ENABLED = conf("spark.rapids.shuffle.enabled")
-    .doc("Enable the RAPIDS Shuffle Manager at runtime. When set to false, " +
-      "the built-in Spark shuffle will be used.")
+    .doc("Enable or disable the RAPIDS Shuffle Manager at runtime. " +
+      "The [RAPIDS Shuffle Manager](additional-functionality/rapids-shuffle.md) must " +
+      "already be configured. When set to `false`, the built-in Spark shuffle will be used. ")
     .booleanConf
     .createWithDefault(true)
 
