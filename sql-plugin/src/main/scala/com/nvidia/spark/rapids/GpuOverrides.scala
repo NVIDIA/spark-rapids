@@ -2914,7 +2914,10 @@ object GpuOverrides {
       }),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
-      ExecChecks(pluginSupportedOrderableSig + TypeSig.STRUCT.nested(), TypeSig.all),
+      // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
+      // The types below are allowed as inputs and outputs.
+      ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
+          TypeSig.MAP).nested(), TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =
