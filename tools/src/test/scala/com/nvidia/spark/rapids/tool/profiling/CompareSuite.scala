@@ -71,7 +71,8 @@ class CompareSuite extends FunSuite {
     assert(matchingSqlIdsRet.head(0) == matchingSqlIdsRet.head(1))
     assert(matchingStageIdsRet.size === 4)
     assert(matchingStageIdsRet.head.size == 2)
-    assert(matchingStageIdsRet.head(0) == matchingStageIdsRet.head(1))
+    val firstRow = matchingStageIdsRet.head
+    assert(firstRow(0) == firstRow(1))
 
   }
 }
