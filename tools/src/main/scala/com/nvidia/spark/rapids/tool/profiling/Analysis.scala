@@ -71,35 +71,35 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             s"job_$id",
             numTaskAttempt,
             jc.duration,
-            tasksInJob.map(_.diskBytesSpilled).sum,
+            Option(tasksInJob.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum,
             durSum,
             durMax,
             durMin,
             durAvg,
-            tasksInJob.map(_.executorCPUTime).sum,
-            tasksInJob.map(_.executorDeserializeCPUTime).sum,
-            tasksInJob.map(_.executorDeserializeTime).sum,
-            tasksInJob.map(_.executorRunTime).sum,
-            tasksInJob.map(_.gettingResultTime).sum,
-            tasksInJob.map(_.input_bytesRead).sum,
-            tasksInJob.map(_.input_recordsRead).sum,
-            tasksInJob.map(_.jvmGCTime).sum,
-            tasksInJob.map(_.memoryBytesSpilled).sum,
-            tasksInJob.map(_.output_bytesWritten).sum,
-            tasksInJob.map(_.output_recordsWritten).sum,
-            tasksInJob.map(_.peakExecutionMemory).max,
-            tasksInJob.map(_.resultSerializationTime).sum,
-            tasksInJob.map(_.resultSize).max,
-            tasksInJob.map(_.sr_fetchWaitTime).sum,
-            tasksInJob.map(_.sr_localBlocksFetched).sum,
-            tasksInJob.map(_.sr_localBytesRead).sum,
-            tasksInJob.map(_.sr_remoteBlocksFetched).sum,
-            tasksInJob.map(_.sr_remoteBytesRead).sum,
-            tasksInJob.map(_.sr_remoteBytesReadToDisk).sum,
-            tasksInJob.map(_.sr_totalBytesRead).sum,
-            tasksInJob.map(_.sw_bytesWritten).sum,
-            tasksInJob.map(_.sw_recordsWritten).sum,
-            tasksInJob.map(_.sw_writeTime).sum
+            Option(tasksInJob.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.executorRunTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
+            Option(tasksInJob.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.resultSize)).getOrElse(Seq(0L)).max,
+            Option(tasksInJob.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
+            Option(tasksInJob.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
           ))
         }
       }
@@ -143,44 +143,35 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               s"stage_$id",
               numAttempts,
               sc.duration,
-              tasksInStage.reduceOption(_.diskBytesSpilled + _.diskBytesSpilled).getOrElse(0L),
+              Option(tasksInStage.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum,
               durSum,
               durMax,
               durMin,
               durAvg,
-              tasksInStage.reduceOption(_.executorCPUTime + _.executorCPUTime).getOrElse(0L),
-              tasksInStage.reduceOption(_.executorDeserializeCPUTime + _.executorDeserializeCPUTime)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.executorDeserializeTime + _.executorDeserializeTime)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.executorRunTime + _.executorRunTime).getOrElse(0L),
-              tasksInStage.reduceOption(_.gettingResultTime + _.gettingResultTime).getOrElse(0L),
-              tasksInStage.reduceOption(_.input_bytesRead + _.input_bytesRead).getOrElse(0L),
-              tasksInStage.reduceOption(_.input_recordsRead + _.input_recordsRead).getOrElse(0L),
-              tasksInStage.reduceOption(_.jvmGCTime + _.jvmGCTime).getOrElse(0L),
-              tasksInStage.reduceOption(_.memoryBytesSpilled + _.memoryBytesSpilled).getOrElse(0L),
-              tasksInStage.reduceOption(_.output_bytesWritten + _.output_bytesWritten)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.output_recordsWritten + _.output_recordsWritten)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.peakExecutionMemory max _.peakExecutionMemory)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.resultSerializationTime + _.resultSerializationTime)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.resultSize max _.resultSize).getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_fetchWaitTime + _.sr_fetchWaitTime).getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_localBlocksFetched + _.sr_localBlocksFetched)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_localBytesRead + _.sr_localBytesRead).getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_remoteBlocksFetched + _.sr_remoteBlocksFetched)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_remoteBytesRead + _.sr_remoteBytesRead).getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_remoteBytesReadToDisk + _.sr_remoteBytesReadToDisk)
-                .getOrElse(0L),
-              tasksInStage.reduceOption(_.sr_totalBytesRead + _.sr_totalBytesRead).getOrElse(0L),
-              tasksInStage.reduceOption(_.sw_bytesWritten + _.sw_bytesWritten).getOrElse(0L),
-              tasksInStage.reduceOption(_.sw_recordsWritten + _.sw_recordsWritten).getOrElse(0L),
-              tasksInStage.reduceOption(_.sw_writeTime + _.sw_writeTime).getOrElse(0L)
+              Option(tasksInStage.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.executorRunTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
+              Option(tasksInStage.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.resultSize)).getOrElse(Seq(0L)).max,
+              Option(tasksInStage.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInStage.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
             ))
           }
         }
@@ -233,9 +224,9 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             // count all attempts
             val numAttempts = tasksInSQL.size
 
-            val diskBytes = tasksInSQL.map(_.diskBytesSpilled).sum
-            val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
-            val execRunTime = tasksInSQL.map(_.executorRunTime).sum
+            val diskBytes = Option(tasksInSQL.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum
+            val execCpuTime = Option(tasksInSQL.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum
+            val execRunTime = Option(tasksInSQL.map(_.executorRunTime)).getOrElse(Seq(0L)).sum
             val execCPURatio = ToolUtils.calculateDurationPercent(execCpuTime, execRunTime)
             // TODO - set this here make sure we don't get it again until later
             sqlCase.sqlCpuTimePercent = execCPURatio
@@ -256,29 +247,29 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               durMin,
               durAvg,
               execCpuTime,
-              tasksInSQL.map(_.executorDeserializeCPUTime).sum,
-              tasksInSQL.map(_.executorDeserializeTime).sum,
+              Option(tasksInSQL.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
               execRunTime,
-              tasksInSQL.map(_.gettingResultTime).sum,
-              tasksInSQL.map(_.input_bytesRead).sum,
-              tasksInSQL.map(_.input_recordsRead).sum,
-              tasksInSQL.map(_.jvmGCTime).sum,
-              tasksInSQL.map(_.memoryBytesSpilled).sum,
-              tasksInSQL.map(_.output_bytesWritten).sum,
-              tasksInSQL.map(_.output_recordsWritten).sum,
-              tasksInSQL.map(_.peakExecutionMemory).max,
-              tasksInSQL.map(_.resultSerializationTime).sum,
-              tasksInSQL.map(_.resultSize).max,
-              tasksInSQL.map(_.sr_fetchWaitTime).sum,
-              tasksInSQL.map(_.sr_localBlocksFetched).sum,
-              tasksInSQL.map(_.sr_localBytesRead).sum,
-              tasksInSQL.map(_.sr_remoteBlocksFetched).sum,
-              tasksInSQL.map(_.sr_remoteBytesRead).sum,
-              tasksInSQL.map(_.sr_remoteBytesReadToDisk).sum,
-              tasksInSQL.map(_.sr_totalBytesRead).sum,
-              tasksInSQL.map(_.sw_bytesWritten).sum,
-              tasksInSQL.map(_.sw_recordsWritten).sum,
-              tasksInSQL.map(_.sw_writeTime).sum
+              Option(tasksInSQL.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
+              Option(tasksInSQL.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.resultSize)).getOrElse(Seq(0L)).max,
+              Option(tasksInSQL.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
+              Option(tasksInSQL.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
             ))
           }
         }
