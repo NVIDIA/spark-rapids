@@ -148,14 +148,11 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     logDebug("Processing event: " + event.getClass)
     if (event.blockManagerId.executorId.equals("driver")) {
       logDebug("block manager id for driver added")
-      logWarning("driver on heap is: " + event.maxOffHeapMem + " offheap: " + event.maxOffHeapMem)
-      logWarning("driover max memory setting: " + event.maxMem)
 
       // skipping
     } else {
       val exec = app.getOrCreateExecutor(event.blockManagerId.executorId, event.time)
       exec.hostPort = event.blockManagerId.hostPort
-      logWarning("on heap is: " + event.maxOffHeapMem + " offheap: " + event.maxOffHeapMem)
       event.maxOnHeapMem.foreach { mem =>
         exec.totalOnHeap = mem
       }
@@ -163,7 +160,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
         exec.totalOffHeap = offHeap
       }
       exec.isActive = true
-      logWarning("max memory setting: " + event.maxMem)
       exec.maxMemory = event.maxMem
     }
   }

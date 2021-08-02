@@ -109,8 +109,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val stagesInJob = app.stageIdToInfo.filterKeys { case (sid, _) =>
           stageIdsInJob.contains(sid)
         }
-        logWarning(s"stages in $id job: " + stagesInJob.keys.map(_._1).mkString(","))
-
         if (stagesInJob.isEmpty) {
           None
         } else {
