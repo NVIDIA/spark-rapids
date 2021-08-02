@@ -44,7 +44,34 @@ class CompareSuite extends FunSuite {
     assert(apps.size == 2)
     val compare = new CompareApplications(apps, None, 1000)
     val (matchingSqlIdsRet, matchingStageIdsRet) = compare.findMatchingStages()
-    assert(matchingSqlIdsRet.size === 80)
-    assert(matchingStageIdsRet === 80)
+    // none match
+    assert(matchingSqlIdsRet.size === 29)
+    assert(matchingSqlIdsRet.head.size == 2)
+    assert(matchingStageIdsRet === 73)
+    assert(matchingStageIdsRet.head.size == 2)
+  }
+
+  test("test 2 app runs event logs compare") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs = new ProfileArgs(Array(s"$logDir/rapids_join_eventlog2.zstd",
+      s"$logDir/rapids_join_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 2)
+    val compare = new CompareApplications(apps, None, 1000)
+    val (matchingSqlIdsRet, matchingStageIdsRet) = compare.findMatchingStages()
+    // all match
+    assert(matchingSqlIdsRet.size === 1)
+    assert(matchingSqlIdsRet.head.size == 2)
+    assert(matchingSqlIdsRet.head(0) == matchingSqlIdsRet.head(1))
+    assert(matchingStageIdsRet === 4)
+    assert(matchingStageIdsRet.head.size == 2)
+    assert(matchingStageIdsRet.head(0) == matchingStageIdsRet.head(1))
+
   }
 }

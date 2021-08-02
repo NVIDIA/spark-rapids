@@ -61,7 +61,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           val numTaskAttempt = tasksInJob.size
           // Above is a bit out of ordinary fro spark perhaps print both
           // val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
-          logWarning("count duplicates " + tasksInJob.size)
 
           // TODO - how to deal with attempts?
           val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
