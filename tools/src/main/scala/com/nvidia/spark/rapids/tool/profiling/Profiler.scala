@@ -49,13 +49,16 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     if (appArgs.compare()) {
       val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.LOG_FILE_NAME,
         "Profile summary")
-      // create all the apps in parallel since we need the info for all of them to compare
-      val apps = createApps(eventLogInfos)
-      if (apps.isEmpty) {
-        logInfo("No application to process. Exiting")
-      } else {
-        processApps(apps, printPlans = false, textFileWriter)
-        apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
+      try {
+        // create all the apps in parallel since we need the info for all of them to compare
+        val apps = createApps(eventLogInfos)
+        if (apps.isEmpty) {
+          logInfo("No application to process. Exiting")
+        } else {
+          processApps(apps, printPlans = false, textFileWriter)
+        }
+      } finally {
+        textFileWriter.close()
       }
     } else {
       var index: Int = 1

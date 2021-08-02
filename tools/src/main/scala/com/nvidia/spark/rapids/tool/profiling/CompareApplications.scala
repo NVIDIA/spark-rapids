@@ -33,6 +33,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
   require(apps.size > 1)
 
   def findMatchingStages(): (Seq[Seq[String]], Seq[Seq[String]]) = {
+    logWarning("in finding match stages")
     val normalizedByAppId = apps.map { app =>
       val normalized = app.sqlPlan.mapValues { plan =>
         SparkPlanInfoWithStage(plan, app.accumIdToStageId).normalizeForStageComparison
@@ -138,6 +139,8 @@ class CompareApplications(apps: Seq[ApplicationInfo],
         info.get(appId).map(_.toString).getOrElse("")
       }
     }
+
+    logWarning("in finding match stages 3")
 
     fileWriter.foreach(_.write("\nMatching Stage IDs Across Applications:\n"))
     val matchingStageIdsRet = if (matchingStageData.size > 0) {
