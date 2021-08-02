@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD

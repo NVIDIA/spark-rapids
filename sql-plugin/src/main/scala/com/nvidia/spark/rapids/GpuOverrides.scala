@@ -2651,11 +2651,11 @@ object GpuOverrides {
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
-        TypeSig.ARRAY.nested(TypeSig.STRUCT
-          + TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
-        TypeSig.ARRAY.nested(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
         override val supportOuter: Boolean = true
@@ -2666,12 +2666,12 @@ object GpuOverrides {
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
-        TypeSig.ARRAY.nested(TypeSig.STRUCT
-          + TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
-        TypeSig.ARRAY.nested(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
-        TypeSig.ARRAY.nested(TypeSig.all)),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
         override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
@@ -2848,8 +2848,8 @@ object GpuOverrides {
     exec[GenerateExec] (
       "The backend for operations that generate more output rows than input rows like explode",
       ExecChecks(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.ARRAY.nested(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all),
       (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
     exec[ProjectExec](
