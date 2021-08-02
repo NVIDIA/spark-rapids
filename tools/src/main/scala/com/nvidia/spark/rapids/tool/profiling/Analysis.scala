@@ -96,6 +96,18 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         )
       }
     }
+
+    filtered.foreach { app =>
+      val res = app.jobIdToInfo.flatMap { case (id, jc) =>
+        val stageIdsInJob = jc.stageIds
+        app.stageIdToInfo.filterKeys { case (sid, _) =>
+          stageIdsInJob.contains(sid)
+        }
+      }
+      if (res.size != app.stageIdToInfo.size) {
+        logWarning("number of stages not included: " + (app.stageIdToInfo.size - res.size))
+      }
+    }
     val allStageRows = filtered.flatMap { app =>
       // TODO need to get stages not in a job
       app.jobIdToInfo.flatMap { case (id, jc) =>

@@ -412,7 +412,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
         case _ => ""
       }
     }
-    
+
     app.jobIdToInfo.get(event.jobId) match {
       case Some(j) =>
         j.endTime = Some(event.time)
