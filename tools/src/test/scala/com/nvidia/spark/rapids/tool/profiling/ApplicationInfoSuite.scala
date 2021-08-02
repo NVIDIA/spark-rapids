@@ -131,8 +131,9 @@ class ApplicationInfoSuite extends FunSuite with Logging {
 
     val collect = new CollectInformation(apps, None, 1000)
     val rapidsJarResults = collect.printRapidsJAR()
-    assert(rapidsJarResults.size === 1)
-    assert(rapidsJarResults.head.jar.contains("rapids-4-spark_2.12-0.5.0.jar"))
+    assert(rapidsJarResults.size === 2)
+    assert(rapidsJarResults.filter(_.jar.contains("rapids-4-spark_2.12-0.5.0.jar")).size === 1)
+    assert(rapidsJarResults.filter(_.jar.contains("cudf-0.19.2-cuda11.jar")).size === 1)
   }
 
   test("test sql and resourceprofile eventlog") {
