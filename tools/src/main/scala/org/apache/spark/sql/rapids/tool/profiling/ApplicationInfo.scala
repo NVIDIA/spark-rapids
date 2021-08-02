@@ -226,7 +226,7 @@ class ApplicationInfo(
   var driverAccumMap: mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]] =
     mutable.HashMap[Long, ArrayBuffer[DriverAccumCase]]()
 
-  // acum id to task stage accum info
+  // accum id to task stage accum info
   var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
