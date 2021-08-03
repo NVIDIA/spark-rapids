@@ -296,7 +296,12 @@ object CollectInformation extends Logging {
             val filtered = accums.filter { a =>
               stageIdsForSQL.contains(a.stageId)
             }
-            Option(filtered.map(_.value.getOrElse(0L))).getOrElse(Seq(0L)).max
+            val accumValues = filtered.map(_.value.getOrElse(0L))
+            if (accumValues.isEmpty) {
+              0L
+            } else {
+              accumValues.max
+            }
           case None => 0L
         }
 
@@ -323,7 +328,7 @@ object CollectInformation extends Logging {
           case None =>
             None
         }
-        logWarning("task new max is: " + taskNewMax + " task old max was : " + taskMax)
+        logWarning("accum: " + metric.accumulatorId + " task new max is: " + taskNewMax + " task old max was : " + taskMax)
 
 
         if (metric.accumulatorId == 3170) {
