@@ -20,7 +20,9 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
-import com.nvidia.spark.rapids.tool.profiling.{ExecutorInfoClass, _}
+
+import com.nvidia.spark.rapids.tool.profiling._
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerDriverAccumUpdates, SparkListenerSQLAdaptiveExecutionUpdate, SparkListenerSQLAdaptiveSQLMetricUpdates, SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
@@ -256,14 +258,12 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     // Parse task accumulables
     for (res <- event.taskInfo.accumulables) {
       try {
-        // TODO - assuming these are long and "" won't convert to a Long
-        val value = res.value.getOrElse("").toString.toLong
+        val value = res.value.getOrElse(0L).toString.toLong
         val thisMetric = TaskStageAccumCase(
           event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
           res.id, res.name, Some(value), res.internal)
         val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
           ArrayBuffer[TaskStageAccumCase]())
-        // TODO - what about attempt?
         app.accumIdToStageId.put(res.id, event.stageId)
         arrBuf += thisMetric
       } catch {
@@ -462,7 +462,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
           None, res._2.id, res._2.name, Some(value), res._2.internal)
         val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res._2.id,
           ArrayBuffer[TaskStageAccumCase]())
-        // TODO - what about attempt?
         app.accumIdToStageId.put(res._2.id, event.stageInfo.stageId)
         arrBuf += thisMetric
       } catch {

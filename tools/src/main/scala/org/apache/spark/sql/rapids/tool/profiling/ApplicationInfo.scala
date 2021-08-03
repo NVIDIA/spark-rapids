@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import scala.collection.{immutable, mutable, Map}
+import scala.collection.{mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
@@ -309,7 +309,6 @@ class ApplicationInfo(
               }
             }
           }
-
         }
       }
     }

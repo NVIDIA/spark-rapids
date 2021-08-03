@@ -85,24 +85,12 @@ object GenerateDot extends Logging {
   }
 
   def apply(app: ApplicationInfo, outputDirectory: String): Unit = {
-    // TODO - doing twice
     val accums = CollectInformation.generateSQLAccums(Seq(app))
-
-    // Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
-    //       "name", "max_value", "metricType")
-    // Seq(app.index.toString, metric.sqlID.toString, metric.nodeID.toString,
-    //              metric.nodeName, metric.accumulatorId.toString, metric.name,
-    //              max.toString, metric.metricType)
-    // TODO - double check
     val accumSummary = accums.map { a =>
       Seq(a.sqlID, a.accumulatorId, a.max_value)
     }
-
     val accumIdToStageId = app.accumIdToStageId
-
     val formatter = java.text.NumberFormat.getIntegerInstance
-
-    // TODO - what about stage attempt id?
     val stageIdToStageMetrics = app.taskEnd.groupBy(task => task.stageId).mapValues { tasks =>
       val durations = tasks.map(_.duration)
       val numTasks = durations.length
