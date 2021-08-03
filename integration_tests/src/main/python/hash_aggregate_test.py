@@ -399,6 +399,9 @@ _gen_data_for_collect_op = [[
     ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op
 ]
 
+# We wrapped sort_array functions on collect_list/collect_set because the orders of collected lists/sets are not
+# deterministic. The annotation `ignore_order` only affects on the order between rows, while with collect ops we also
+# need to guarantee the consistency of the row-wise order (the orders within each array produced by collect ops).
 @approximate_float
 @ignore_order(local=True)
 @incompat

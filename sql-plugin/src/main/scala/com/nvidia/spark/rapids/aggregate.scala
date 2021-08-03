@@ -981,6 +981,13 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
     // are inconsistent with CPU buffers. Therefore, we have to fall back all Aggregate stages
     // to CPU once any of them did fallback, in order to guarantee no partial-accelerated
     // TypedImperativeAggregate function.
+    //
+    // This fallback procedure adapts AQE. As what GpuExchanges do, it leverages the
+    // `gpuSupportedTag` to store the information about whether instances are GPU-supported
+    // or not, which is produced by the side effect of `willNotWorkOnGpu`. When AQE is on,
+    // during the preparation stage, there will be a run of GpuOverrides on the entire plan to
+    // trigger these side effects if necessary, before AQE splits the entire query into several
+    // query stages.
     GpuTypedImperativeSupportedAggregateExecMeta.checkAndFallbackEntirely(this)
   }
 
