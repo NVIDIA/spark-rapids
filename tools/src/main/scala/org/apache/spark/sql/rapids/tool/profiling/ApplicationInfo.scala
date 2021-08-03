@@ -230,9 +230,6 @@ class ApplicationInfo(
   var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
-  lazy val accumIdToStageIdtom: immutable.Map[Long, Int] =
-    taskStageAccumMap.values.flatMap(accum => accum.map( a => (a.accumulatorId, a.stageId))).toMap
-
   val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()

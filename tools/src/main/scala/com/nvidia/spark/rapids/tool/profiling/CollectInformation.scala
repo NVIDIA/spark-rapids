@@ -289,7 +289,6 @@ object CollectInformation extends Logging {
           jc.sqlID.getOrElse(-1) == sqlId
         }
         val stageIdsForSQL = jobsForSql.flatMap(_._2.stageIds).toSeq
-
         val accumsOpt = app.taskStageAccumMap.get(metric.accumulatorId)
         val taskMax = accumsOpt match {
           case Some(accums) =>
@@ -306,10 +305,19 @@ object CollectInformation extends Logging {
         }
 
         // TODO - how to tell if these are for write sql?
-        val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
-        val driverMax = driverAccums match {
-          case Some(acc) =>
-            Some(acc.map(_.value).max)
+        // local mode driver gets updates
+        val driverAccumsOpt = app.driverAccumMap.get(metric.accumulatorId)
+        val driverMax = driverAccumsOpt match {
+          case Some(accums) =>
+            val filtered = accums.filter { a =>
+              a.sqlID == sqlId
+            }
+            val accumValues = filtered.map(_.value)
+            if (accumValues.isEmpty) {
+              None
+            } else {
+              Some(accumValues.max)
+            }
           case None =>
             None
         }

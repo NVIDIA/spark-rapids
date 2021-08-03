@@ -256,6 +256,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     // Parse task accumulables
     for (res <- event.taskInfo.accumulables) {
       try {
+        // TODO - assuming these are long and "" won't convert to a Long
         val value = res.value.getOrElse("").toString.toLong
         val thisMetric = TaskStageAccumCase(
           event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
