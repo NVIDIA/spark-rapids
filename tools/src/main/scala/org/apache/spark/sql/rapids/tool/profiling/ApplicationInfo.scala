@@ -299,9 +299,10 @@ class ApplicationInfo(
               val allMetric = SQLMetricInfoCase(sqlID, adaptiveMetric.name,
                 adaptiveMetric.accumulatorId, adaptiveMetric.metricType, node.id,
                 node.name, node.desc)
+              // could make this more efficient but seems ok for now
               val exists = allSQLMetrics.filter { a =>
                 ((a.accumulatorId == adaptiveMetric.accumulatorId) && (a.sqlID == sqlID)
-                  && (a.nodeID == node.id))
+                  && (a.nodeID == node.id && adaptiveMetric.metricType == a.metricType))
               }
               if (exists.isEmpty) {
                 allSQLMetrics += allMetric
