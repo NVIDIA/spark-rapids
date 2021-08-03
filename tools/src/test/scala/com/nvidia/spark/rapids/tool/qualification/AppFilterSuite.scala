@@ -561,11 +561,17 @@ class AppFilterSuite extends FunSuite {
           startTimePeriod("2w") ++ userName("user3"),      6, "any")
   }
 
-  test("Test disjunction no starttime") {
+  test("Test disjunction no startTime") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1"),
       6, "any")
   }
+
+  /*test("Test disjunction 5-newest-filesystem and no startTime") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("5-newest-filesystem") ++ filterAppName("Nds") ++ userName("user1"),
+      4, "any")
+  }*/
 
   test("Test disjunction no userName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
@@ -595,7 +601,7 @@ class AppFilterSuite extends FunSuite {
           startTimePeriod("2w") ++ userName("user3"), 0, "all")
   }
 
-  test("Test conjunction no starttime") {
+  test("Test conjunction no startTime") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1"), 2)
   }
@@ -633,10 +639,6 @@ class AppFilterSuite extends FunSuite {
     Array("--user-name", name)
   }
 
-  def logicFilter(lFilter: String): Array[String] = {
-    Array("--logic-filter", lFilter)
-  }
-
   private def testConjunctionAndDisjunction(
       apps: Array[TestConjunctionAndDisjunction],
       filtersToApply: Array[String],
@@ -660,7 +662,7 @@ class AppFilterSuite extends FunSuite {
         val allArgs = Array(
           "--output-directory",
           outpath.getAbsolutePath(),
-          "--"+logicFilter
+          s"--$logicFilter"
         )
 
         val appArgs = new QualificationArgs(allArgs ++ filtersToApply ++ fileNames)

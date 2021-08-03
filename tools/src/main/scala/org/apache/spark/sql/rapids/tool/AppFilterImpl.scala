@@ -75,13 +75,8 @@ class AppFilterImpl(
     val filterAppName = appArgs.applicationName.getOrElse("")
     val filterCriteria = appArgs.filterCriteria.getOrElse("")
     val userName = appArgs.userName.getOrElse("")
-    val logicFilter = if (appArgs.any()) {
-      "any"
-    } else {
-      "all"
-    }
 
-    val appNameFiltered = if (appArgs.applicationName.isSupplied && filterAppName.nonEmpty) {
+    val appNameFiltered = if (filterAppName.nonEmpty) {
       val filtered = if (filterAppName.startsWith(NEGATE)) {
         // remove ~ before passing it into the containsAppName function
         apps.filterNot(app => containsAppName(app, filterAppName.substring(1)))
@@ -95,30 +90,19 @@ class AppFilterImpl(
 
    // If `any` is specified as logicFilter config, then store the value in variable which is used
    // later for final computation.
-   val appNameFilteredForDisjunction = if (appArgs.applicationName.isSupplied &&
-       filterAppName.nonEmpty && appArgs.any()
-       && logicFilter.contains("any")) {
-      appNameFiltered
-    } else {
-       Seq.empty[AppFilterReturnParameters]
-    }
+   val appNameFilteredForDisjunction = if (filterAppName.nonEmpty && appArgs.any()) {
+     appNameFiltered
+   } else {
+     Seq.empty[AppFilterReturnParameters]
+   }
 
-    val userNameFiltered = if (appArgs.userName.isSupplied && userName.nonEmpty) {
-      val appNamelogicFiltered = if (appArgs.any() &&
-          logicFilter.contains("any")) {
+    val userNameFiltered = if (userName.nonEmpty) {
+      val appNamelogicFiltered = if (appArgs.any()) {
         apps
       } else {
         appNameFiltered
       }
-
-      val filtered = appNamelogicFiltered.filter { app =>
-        if (app.appInfo.isDefined) {
-          app.appInfo.get.userName.contains(userName)
-        } else {
-          false
-        }
-      }
-      filtered
+      appNamelogicFiltered.filter(_.appInfo.exists(_.userName.contains(userName)))
     } else {
       appNameFiltered
     }
@@ -130,29 +114,20 @@ class AppFilterImpl(
       } else {
         userNameFiltered
       }
-
-      val filtered = logicFiltered.filter { app =>
-        val appStartOpt = app.appInfo.map(_.startTime)
-        if (appStartOpt.isDefined) {
-          appStartOpt.get >= msTimeToFilter
-        } else {
-          false
-        }
-      }
-      filtered
+      logicFiltered.filter(_.appInfo.exists(_.startTime >= msTimeToFilter))
     } else {
       userNameFiltered
     }
 
     // If `any` is specified as logicFilter, add all filtered results which is equivalent to
     // applying OR on filters.
-    val finalLogicFiltered = if(appArgs.any()) {
+    val finalLogicFiltered = if (appArgs.any()) {
       (userNameFiltered ++ appTimeFiltered ++ appNameFilteredForDisjunction).toSet.toSeq
     } else {
       appTimeFiltered
     }
 
-    val appCriteriaFiltered = if (appArgs.filterCriteria.isSupplied && filterCriteria.nonEmpty) {
+    val appCriteriaFiltered = if (filterCriteria.nonEmpty) {
       if (filterCriteria.endsWith("-newest") || filterCriteria.endsWith("-oldest")) {
         val filteredInfo = filterCriteria.split("-")
         val numberofEventLogs = filteredInfo(0).toInt
