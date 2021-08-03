@@ -29,7 +29,7 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   private lazy val conf = SparkEnv.get.conf
 
-  lazy val isRapidsShuffleConfigured: Boolean = {
+  private lazy val isRapidsShuffleConfigured: Boolean = {
     conf.contains("spark.shuffle.manager") &&
       conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
@@ -78,10 +78,25 @@ object GpuShuffleEnv extends Logging {
   // Functions below get called from the driver or executors
   //
 
-  def isRapidsShuffleEnabled: Boolean = {
+  def isExternalShuffleEnabled: Boolean = {
+    SparkEnv.get.blockManager.externalShuffleServiceEnabled
+  }
+
+  def isRapidsShuffleAvailable: Boolean = {
+    // the driver has `mgr` defined when this is checked
     val isRapidsManager = mgr.isDefined
-    val externalShuffle = SparkEnv.get.blockManager.externalShuffleServiceEnabled
-    isRapidsManager && !externalShuffle
+    // executors have `env` defined when this is checked
+    // in tests
+    val isConfiguredInEnv = if (env != null) {
+      env.isRapidsShuffleConfigured
+    } else {
+      false
+    }
+    (isConfiguredInEnv || isRapidsManager) && !isExternalShuffleEnabled
+  }
+
+  def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {
+    conf.shuffleManagerEnabled && isRapidsShuffleAvailable
   }
 
   def setRapidsShuffleManager(
