@@ -259,9 +259,9 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   def printSQLPlanMetrics(): Seq[SQLAccumProfileResults] = {
     val messageHeader = "\nSQL Plan Metrics for Application:\n"
     fileWriter.foreach(_.write(messageHeader))
-    val filtered = CollectInformation.generateSQLAccums(apps)
-    if (filtered.size > 0) {
-      val sortedRows = filtered.sortBy(cols => (cols.appIndex, cols.sqlID,
+    val sqlAccums = CollectInformation.generateSQLAccums(apps)
+    if (sqlAccums.size > 0) {
+      val sortedRows = sqlAccums.sortBy(cols => (cols.appIndex, cols.sqlID,
         cols.nodeID, cols.nodeName, cols.accumulatorId, cols.metricType))
       val outputHeaders = sortedRows.head.outputHeaders
       val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
@@ -278,10 +278,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 object CollectInformation extends Logging {
 
   def generateSQLAccums(apps: Seq[ApplicationInfo]): Seq[SQLAccumProfileResults] = {
-    val filtered = apps.filter(a => ((a.taskStageAccumMap.size > 0 || a.driverAccumMap.size > 0) &&
-      a.allSQLMetrics.size > 0))
-
-    val allRows = filtered.flatMap { app =>
+    val allRows = apps.flatMap { app =>
       app.allSQLMetrics.map { metric =>
         val sqlId = metric.sqlID
         val jobsForSql = app.jobIdToInfo.filter { case (_, jc) =>
@@ -304,7 +301,6 @@ object CollectInformation extends Logging {
           case None => None
         }
 
-        // TODO - how to tell if these are for write sql?
         // local mode driver gets updates
         val driverAccumsOpt = app.driverAccumMap.get(metric.accumulatorId)
         val driverMax = driverAccumsOpt match {
@@ -320,11 +316,6 @@ object CollectInformation extends Logging {
             }
           case None =>
             None
-        }
-
-
-        if (metric.accumulatorId == 3170) {
-          logWarning("found 3170: task Max: " + taskMax + " driver max: " + driverMax)
         }
 
         if ((taskMax.isDefined) || (driverMax.isDefined)) {
