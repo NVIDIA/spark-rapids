@@ -297,7 +297,7 @@ object CollectInformation extends Logging {
           }
           case None => Seq.empty
         }
-        val taskNewMax = Option(sqlAccums.map(_.value.getOrElse(0L))).getOrElse(Seq(0)).max
+        val taskNewMax = Option(sqlAccums.map(_.value.getOrElse(0L))).getOrElse(Seq(0L)).max
 
         if (metric.accumulatorId == 3170) {
           accumsOpt.getOrElse(Seq.empty).foreach { accum =>
