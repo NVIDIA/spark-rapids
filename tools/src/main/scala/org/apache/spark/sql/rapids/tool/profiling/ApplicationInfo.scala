@@ -288,13 +288,10 @@ class ApplicationInfo(
 
           allSQLMetrics += allMetric
           if (this.sqlPlanMetricsAdaptive.nonEmpty) {
-            logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive)" +
-              s" for appID=$appId")
             val adaptive = sqlPlanMetricsAdaptive.filter { adaptiveMetric =>
               adaptiveMetric.sqlID == sqlID && adaptiveMetric.accumulatorId == metric.accumulatorId
             }
             adaptive.foreach { adaptiveMetric =>
-              logWarning(s"adaptive adding: $sqlID ${adaptiveMetric.accumulatorId} ${node.id}")
               val allMetric = SQLMetricInfoCase(sqlID, adaptiveMetric.name,
                 adaptiveMetric.accumulatorId, adaptiveMetric.metricType, node.id,
                 node.name, node.desc)
@@ -305,7 +302,6 @@ class ApplicationInfo(
               }
               if (exists.isEmpty) {
                 allSQLMetrics += allMetric
-                logWarning("metrics already exists: " + exists)
               }
             }
           }
