@@ -305,15 +305,6 @@ object CollectInformation extends Logging {
           case None => None
         }
 
-        // val taskNewMax = Option(sqlAccums.map(_.value.getOrElse(0L))).getOrElse(Seq(0L)).max
-
-        if (metric.accumulatorId == 3170) {
-          accumsOpt.getOrElse(Seq.empty).foreach { accum =>
-            logWarning("found 3170: accums are " + accum.name + " value: " + accum.value +
-              " accum stageid: " + accum.stageId + " accum taskid: " + accum.taskId +
-              " attempt " + accum.attemptId)
-          }
-        }
         // TODO - how to tell if these are for write sql?
         val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
         val driverMax = driverAccums match {
