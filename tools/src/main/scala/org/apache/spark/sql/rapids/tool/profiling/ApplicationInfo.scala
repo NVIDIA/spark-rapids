@@ -303,10 +303,10 @@ class ApplicationInfo(
                 ((a.accumulatorId == adaptiveMetric.accumulatorId) && (a.sqlID == sqlID)
                   && (a.nodeID == node.id))
               }
-              if (exists.nonEmpty) {
+              if (exists.isEmpty) {
+                allSQLMetrics += allMetric
                 logWarning("metrics already exists: " + exists)
               }
-              allSQLMetrics += allMetric
             }
           }
 

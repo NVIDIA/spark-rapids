@@ -498,15 +498,8 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     logDebug("Processing event: " + event.getClass)
     val SparkListenerSQLAdaptiveSQLMetricUpdates(sqlID, sqlPlanMetrics) = event
     val metrics = sqlPlanMetrics.map { metric =>
-      // TODO - how get node info?
-      /*SQLMetricInfoCase(sqlID, metric.name,
-        metric.accumulatorId, metric.metricType, node.id,
-        node.name, node.desc)
-        */
-
       SQLPlanMetricsCase(sqlID, metric.name,
         metric.accumulatorId, metric.metricType)
-
     }
     app.sqlPlanMetricsAdaptive ++= metrics
 
