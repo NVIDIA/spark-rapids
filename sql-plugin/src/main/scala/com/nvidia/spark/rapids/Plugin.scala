@@ -33,7 +33,7 @@ import org.apache.spark.sql.{DataFrame, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.util.QueryExecutionListener
@@ -330,6 +330,28 @@ object ExecutionPlanCaptureCallback {
     assertDidFallBack(executedPlan, fallbackCpuClass)
   }
 
+  def assertContains(gpuPlan: SparkPlan, className: String): Unit = {
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
+    assert(containsPlan(executedPlan, className),
+      s"Could not find $className in the Spark plan\n$executedPlan")
+  }
+
+  def assertContains(df: DataFrame, gpuClass: String): Unit = {
+    val executedPlan = df.queryExecution.executedPlan
+    assertContains(executedPlan, gpuClass)
+  }
+
+  def assertNotContain(gpuPlan: SparkPlan, className: String): Unit = {
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
+    assert(!containsPlan(executedPlan, className),
+      s"We found $className in the Spark plan\n$executedPlan")
+  }
+
+  def assertNotContain(df: DataFrame, gpuClass: String): Unit = {
+    val executedPlan = df.queryExecution.executedPlan
+    assertNotContain(executedPlan, gpuClass)
+  }
+
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
     !exp.isInstanceOf[GpuExpression] &&
       PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
@@ -340,6 +362,21 @@ object ExecutionPlanCaptureCallback {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
     !executedPlan.isInstanceOf[GpuExec] && PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
       executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
+  }
+
+  private def containsExpression(exp: Expression, className: String): Boolean = {
+    PlanUtils.getBaseNameFromClass(exp.getClass.getName) == className ||
+        exp.children.exists(containsExpression(_, className))
+  }
+
+  private def containsPlan(plan: SparkPlan, className: String): Boolean = {
+    val p = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan)) match {
+      case p: QueryStageExec => p.plan
+      case p => p
+    }
+    PlanUtils.sameClass(p, className) ||
+        p.expressions.exists(containsExpression(_, className)) ||
+        p.children.exists(containsPlan(_, className))
   }
 }
 

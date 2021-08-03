@@ -297,8 +297,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Year"></a>spark.rapids.sql.expression.Year|`year`|Returns the year from a date or timestamp|true|None|
 <a name="sql.expression.AggregateExpression"></a>spark.rapids.sql.expression.AggregateExpression| |Aggregate expression|true|None|
 <a name="sql.expression.Average"></a>spark.rapids.sql.expression.Average|`avg`, `mean`|Average aggregate operator|true|None|
-<a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, only supported in rolling window in current.|true|None|
-<a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, only supported in rolling window in current.|true|None|
+<a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, not supported in reduction.|true|None|
+<a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, not supported in reduction.|true|None|
 <a name="sql.expression.Count"></a>spark.rapids.sql.expression.Count|`count`|Count aggregate operator|true|None|
 <a name="sql.expression.First"></a>spark.rapids.sql.expression.First|`first_value`, `first`|first aggregate operator|true|None|
 <a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|`last`, `last_value`|last aggregate operator|true|None|
@@ -330,6 +330,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
 <a name="sql.exec.CustomShuffleReaderExec"></a>spark.rapids.sql.exec.CustomShuffleReaderExec|A wrapper of shuffle query stage|true|None|
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
+<a name="sql.exec.ObjectHashAggregateExec"></a>spark.rapids.sql.exec.ObjectHashAggregateExec|The backend for hash based aggregations supporting TypedImperativeAggregate functions|true|None|
 <a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
 <a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
 <a name="sql.exec.BatchScanExec"></a>spark.rapids.sql.exec.BatchScanExec|The backend for most file input|true|None|
