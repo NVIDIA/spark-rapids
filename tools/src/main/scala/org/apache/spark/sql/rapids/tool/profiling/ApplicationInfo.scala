@@ -285,6 +285,13 @@ class ApplicationInfo(
           val allMetric = SQLMetricInfoCase(sqlID, metric.name,
             metric.accumulatorId, metric.metricType, node.id,
             node.name, node.desc)
+          val exists = allSQLMetrics.filter { a =>
+            ((a.accumulatorId == metric.accumulatorId) && (a.sqlID == sqlID)
+              && (a.nodeID == node.id))
+          }
+          if (exists.nonEmpty) {
+            logWarning("metrics already exists: " + exists)
+          }
           allSQLMetrics += allMetric
           if (this.sqlPlanMetricsAdaptive.nonEmpty) {
             logInfo(s"Merging ${sqlPlanMetricsAdaptive.size} SQL Metrics(Adaptive)" +
