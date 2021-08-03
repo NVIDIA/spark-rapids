@@ -122,7 +122,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
             .map(_.amount).getOrElse(0L))
           val execCores = rp.map(_.executorResources.get(ResourceProfile.CORES)
             .map(_.amount).getOrElse(0L))
-          val execGpus = rp.map(_.executorResources.get(ResourceProfile.CORES)
+          val execGpus = rp.map(_.executorResources.get("gpu")
             .map(_.amount).getOrElse(0L))
           val taskCpus = rp.map(_.taskResources.get(ResourceProfile.CPUS)
             .map(_.amount).getOrElse(0.toDouble))
@@ -192,7 +192,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       outputHeaders += s"appIndex_${app.index}"
       val rapidsRelated = app.sparkProperties.filterKeys { key =>
         key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
-          key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.server.enabled")
+          key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.service.enabled")
       }
       val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
       val existDiff = props.keys.toSeq.diff(inter)

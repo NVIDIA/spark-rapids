@@ -33,7 +33,6 @@ class CompareApplications(apps: Seq[ApplicationInfo],
   require(apps.size > 1)
 
   def findMatchingStages(): (Seq[Seq[String]], Seq[Seq[String]]) = {
-    logWarning("in finding match stages")
     val normalizedByAppId = apps.map { app =>
       val normalized = app.sqlPlan.mapValues { plan =>
         SparkPlanInfoWithStage(plan, app.accumIdToStageId).normalizeForStageComparison
