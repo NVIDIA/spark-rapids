@@ -291,13 +291,16 @@ object CollectInformation extends Logging {
         val stageIdsForSQL = jobsForSql.flatMap(_._2.stageIds).toSeq
 
         val accumsOpt = app.taskStageAccumMap.get(metric.accumulatorId)
-        val sqlAccums = accumsOpt match {
-          case Some(accums) => accums.filter { a =>
-            stageIdsForSQL.contains(a.stageId)
-          }
-          case None => Seq.empty
+        val taskNewMax = accumsOpt match {
+          case Some(accums) =>
+            val filtered = accums.filter { a =>
+              stageIdsForSQL.contains(a.stageId)
+            }
+            Option(filtered.map(_.value.getOrElse(0L))).getOrElse(Seq(0L)).max
+          case None => 0L
         }
-        val taskNewMax = Option(sqlAccums.map(_.value.getOrElse(0L))).getOrElse(Seq(0L)).max
+
+        // val taskNewMax = Option(sqlAccums.map(_.value.getOrElse(0L))).getOrElse(Seq(0L)).max
 
         if (metric.accumulatorId == 3170) {
           accumsOpt.getOrElse(Seq.empty).foreach { accum =>
