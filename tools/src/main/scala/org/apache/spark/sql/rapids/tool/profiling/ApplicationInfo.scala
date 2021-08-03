@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.profiling
 
-import scala.collection.{mutable, Map}
+import scala.collection.{immutable, mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
@@ -229,6 +229,9 @@ class ApplicationInfo(
   // accum id to task stage accum info
   var taskStageAccumMap: mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
     mutable.HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
+
+  lazy val accumIdToStageIdtom: immutable.Map[Long, Int] =
+    taskStageAccumMap.values.flatMap(accum => accum.map( a => (a.accumulatorId, a.stageId))).toMap
 
   val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()

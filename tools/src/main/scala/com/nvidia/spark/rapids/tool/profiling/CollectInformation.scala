@@ -280,11 +280,16 @@ object CollectInformation extends Logging {
   def generateSQLAccums(apps: Seq[ApplicationInfo]): Seq[SQLAccumProfileResults] = {
     val filtered = apps.filter(a => ((a.taskStageAccumMap.size > 0 || a.driverAccumMap.size > 0) &&
       a.allSQLMetrics.size > 0))
+
     val allRows = filtered.flatMap { app =>
       app.allSQLMetrics.map { metric =>
+        val sqlId = metric.sqlID
         val accums = app.taskStageAccumMap.get(metric.accumulatorId)
         val stageId = app.accumIdToStageId.get(metric.accumulatorId)
+        val stageIdtom = app.accumIdToStageIdtom.get(metric.accumulatorId)
         logWarning(s"accum is: ${metric.accumulatorId} stage is is: $stageId")
+        logWarning(s"accum  tom is: ${metric.accumulatorId} stage is is: $stageIdtom")
+
         if (metric.accumulatorId == 3170) {
           accums.getOrElse(Seq.empty).foreach { accum =>
             logWarning("found 3170: accums are " + accum.name + " value: " + accum.value +
