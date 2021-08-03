@@ -293,7 +293,6 @@ class ApplicationInfo(
             val adaptive = sqlPlanMetricsAdaptive.filter { adaptiveMetric =>
               adaptiveMetric.sqlID == sqlID && adaptiveMetric.accumulatorId == metric.accumulatorId
             }
-            // TODO - need to test
             adaptive.foreach { adaptiveMetric =>
               logWarning(s"adaptive adding: $sqlID ${adaptiveMetric.accumulatorId} ${node.id}")
               val allMetric = SQLMetricInfoCase(sqlID, adaptiveMetric.name,

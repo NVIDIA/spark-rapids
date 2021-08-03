@@ -491,7 +491,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
 
-  // TODO - need tests - do we need this?
   override def doSparkListenerSQLAdaptiveSQLMetricUpdates(
       app: ApplicationInfo,
       event: SparkListenerSQLAdaptiveSQLMetricUpdates): Unit = {
@@ -502,13 +501,11 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
         metric.accumulatorId, metric.metricType)
     }
     app.sqlPlanMetricsAdaptive ++= metrics
-
   }
 
   // To process all other unknown events
   override def doOtherEvent(app: ApplicationInfo, event: SparkListenerEvent): Unit = {
     logInfo("Processing other event: " + event.getClass)
     // not used
-   //  app.otherEvents += event
   }
 }

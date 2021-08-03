@@ -123,6 +123,7 @@ class StageInfoClass(val info: StageInfo) {
   var duration: Option[Long] = None
 }
 
+// note that some things might not be set until after sqlMetricsAggregation called
 class SQLExecutionInfoClass(
     val sqlID: Long,
     val description: String,

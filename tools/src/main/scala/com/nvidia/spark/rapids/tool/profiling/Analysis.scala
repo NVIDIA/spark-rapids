@@ -59,10 +59,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           }
           // count duplicate task attempts
           val numTaskAttempt = tasksInJob.size
-          // Above is a bit out of ordinary fro spark perhaps print both
-          // val uniqueTasks = tasksInJob.groupBy(tc => tc.taskId)
 
-          // TODO - how to deal with attempts?
           val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
           Some(JobStageAggTaskMetricsProfileResult(app.index,
             s"job_$id",
@@ -116,10 +113,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             }
             // count duplicate task attempts
             val numAttempts = tasksInStage.size
-            // Above is a bit out of ordinary fro spark perhaps print both
-            // val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
-            // TODO - how to deal with attempts?
-
             val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
             Some(JobStageAggTaskMetricsProfileResult(app.index,
               s"stage_$id",
@@ -182,10 +175,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               }
               // count duplicate task attempts
               val numAttempts = tasksInStage.size
-              // Above is a bit out of ordinary fro spark perhaps print both
-              // val uniqueTasks = tasksInStage.groupBy(tc => tc.taskId)
-              // TODO - how to deal with attempts?
-
               val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
               Some(JobStageAggTaskMetricsProfileResult(app.index,
                 s"stage_$id",
@@ -250,7 +239,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     fileWriter.foreach(_.write(messageHeader))
 
     val allRows = apps.flatMap { app =>
-      // TODO - how to deal with attempts?
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         val jcs = app.jobIdToInfo.filter { case (_, jc) =>
           val jcid = jc.sqlID.getOrElse(-1)
@@ -266,8 +254,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           if (tasksInSQL.isEmpty) {
             None
           } else {
-            // don't count duplicate task attempts ???
-            // val uniqueTasks = tasksInSQL.groupBy(tc => tc.taskId)
             // count all attempts
             val numAttempts = tasksInSQL.size
 
@@ -275,7 +261,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             val execCpuTime = Option(tasksInSQL.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum
             val execRunTime = Option(tasksInSQL.map(_.executorRunTime)).getOrElse(Seq(0L)).sum
             val execCPURatio = ToolUtils.calculateDurationPercent(execCpuTime, execRunTime)
-            // TODO - set this here make sure we don't get it again until later
+
+            // set this here, so make sure we don't get it again until later
             sqlCase.sqlCpuTimePercent = execCPURatio
            
             val (durSum, durMax, durMin, durAvg) = getDurations(tasksInSQL)
@@ -373,7 +360,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
     fileWriter.foreach(_.write(messageHeader))
 
-    // TODO - how expensive on large number tasks?
     val allRows = apps.flatMap { app =>
       val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
         (tc.stageId, tc.stageAttemptId)
