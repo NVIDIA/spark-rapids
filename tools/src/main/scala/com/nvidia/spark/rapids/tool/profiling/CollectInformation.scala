@@ -283,7 +283,7 @@ object CollectInformation extends Logging {
     val allRows = filtered.flatMap { app =>
       app.allSQLMetrics.map { metric =>
         val accums = app.taskStageAccumMap.get(metric.accumulatorId)
-        val stageId = app.accumIdToStageId(metric.accumulatorId)
+        val stageId = app.accumIdToStageId.get(metric.accumulatorId)
         logWarning(s"accum is: ${metric.accumulatorId} stage is is: $stageId")
         if (metric.accumulatorId == 3170) {
           accums.getOrElse(Seq.empty).foreach { accum =>
@@ -299,7 +299,7 @@ object CollectInformation extends Logging {
           case None =>
             None
         }
-        
+
         val taskMax = accums match {
           case Some(acc) =>
             Some(acc.map(_.value.getOrElse(0L)).max)
