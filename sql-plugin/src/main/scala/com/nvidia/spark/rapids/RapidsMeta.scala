@@ -311,14 +311,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
         (cannotRunOnGpuBecauseOfSparkPlan || shouldThisBeRemoved) => "could " + replaceMessage
     case Some(v) if v.isEmpty => "will " + replaceMessage
     case Some(v) =>
-      noReplacementPossibleMessage(v mkString "; ")
+      noReplacementPossibleMessage(v.mkString("; "))
   }
 
   private def willBeRemovedInfo: String = shouldBeRemovedReasons match {
     case None => ""
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
-      val reasons = v mkString "; "
+      val reasons = v.mkString("; ")
       s" but is going to be removed because $reasons"
   }
 
@@ -327,7 +327,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
       "The data type of following expressions will be converted in GPU runtime: " +
-          (v mkString "; ")
+          (v.mkString("; "))
   }
 
   /**
@@ -811,7 +811,8 @@ class DataTypeMeta(
   def reasonForConversion: String = {
     val reasonMsg = (if (typeConverted) reason else None)
         .map(r => s", because $r").getOrElse("")
-    s"Converted ${wrapped.get} to ${dataType.get}" + reasonMsg
+    s"Converted ${wrapped.getOrElse("N/A")} to " +
+      s"${dataType.getOrElse("N/A")}" + reasonMsg
   }
 }
 
