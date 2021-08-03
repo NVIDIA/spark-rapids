@@ -29,6 +29,13 @@ in these scenarios:
   - Host-to-GPU and Disk-to-GPU: Shuffle blocks that spilled to host (or disk) but will be manifested 
   in the GPU in the downstream Spark task.
   
+The RAPIDS Shuffle Manager uses the `spark.shuffle.manager` plugin interface in Spark and it relies
+on fast connections between executors, where shuffle data is kept in a cache backed by GPU, host, or disk. 
+As such, it doesn't implement functionality to interact with the External Shuffle Service (ESS). 
+To enable the RAPIDS Shuffle Manager, users need to disable ESS using `spark.shuffle.service.enabled=false`. 
+Note that Spark's Dynamic Allocation feature requires ESS to be configured, and must also be 
+disabled with `spark.dynamicAllocation.enabled=false`.
+
 ### System Setup
 
 In order to enable the RAPIDS Shuffle Manager, UCX user-space libraries and its dependencies must 
@@ -325,6 +332,9 @@ Apache Spark 3.1.3 is: `com.nvidia.spark.rapids.spark313.RapidsShuffleManager`.
 
 Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.
+
+With the RAPIDS Shuffle Manager configured, the setting `spark.rapids.shuffle.enabled` (default on) 
+can be used to enable or disable the usage of RAPIDS Shuffle Manager during your application. 
 
 #### UCX Environment Variables
 - `UCX_TLS`: 
