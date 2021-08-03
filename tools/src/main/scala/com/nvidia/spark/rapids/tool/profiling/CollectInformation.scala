@@ -291,18 +291,18 @@ object CollectInformation extends Logging {
         val stageIdsForSQL = jobsForSql.flatMap(_._2.stageIds).toSeq
 
         val accumsOpt = app.taskStageAccumMap.get(metric.accumulatorId)
-        val taskNewMax = accumsOpt match {
+        val taskMax = accumsOpt match {
           case Some(accums) =>
             val filtered = accums.filter { a =>
               stageIdsForSQL.contains(a.stageId)
             }
             val accumValues = filtered.map(_.value.getOrElse(0L))
             if (accumValues.isEmpty) {
-              0L
+              None
             } else {
-              accumValues.max
+              Some(accumValues.max)
             }
-          case None => 0L
+          case None => None
         }
 
         // val taskNewMax = Option(sqlAccums.map(_.value.getOrElse(0L))).getOrElse(Seq(0L)).max
@@ -314,6 +314,7 @@ object CollectInformation extends Logging {
               " attempt " + accum.attemptId)
           }
         }
+        // TODO - how to tell if these are for write sql?
         val driverAccums = app.driverAccumMap.get(metric.accumulatorId)
         val driverMax = driverAccums match {
           case Some(acc) =>
@@ -321,14 +322,6 @@ object CollectInformation extends Logging {
           case None =>
             None
         }
-
-        val taskMax = accumsOpt match {
-          case Some(acc) =>
-            Some(acc.map(_.value.getOrElse(0L)).max)
-          case None =>
-            None
-        }
-        logWarning("accum: " + metric.accumulatorId + " task new max is: " + taskNewMax + " task old max was : " + taskMax)
 
 
         if (metric.accumulatorId == 3170) {
