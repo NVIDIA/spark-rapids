@@ -327,7 +327,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
       "The data type of following expressions will be converted in GPU runtime: " +
-          (v.mkString("; "))
+          v.mkString("; ")
   }
 
   /**
