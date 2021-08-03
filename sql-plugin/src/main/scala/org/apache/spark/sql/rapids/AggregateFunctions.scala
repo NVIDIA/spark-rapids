@@ -253,6 +253,50 @@ class CudfMin(ref: Expression) extends CudfAggregate(ref) {
   override def toString(): String = "CudfMin"
 }
 
+class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
+  override lazy val updateAggregate: Aggregation = Aggregation.collectList()
+  override lazy val mergeAggregate: Aggregation = Aggregation.mergeLists()
+  override def toString(): String = "CudfCollectList"
+  override def dataType: DataType = ArrayType(ref.dataType, containsNull = false)
+  override def nullable: Boolean = false
+}
+
+class CudfMergeLists(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
+  override lazy val updateAggregate: Aggregation = Aggregation.mergeLists()
+  override lazy val mergeAggregate: Aggregation = Aggregation.mergeLists()
+  override def toString(): String = "CudfMergeLists"
+}
+
+class CudfCollectSet(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
+  override lazy val updateAggregate: Aggregation = Aggregation.collectSet()
+  override lazy val mergeAggregate: Aggregation = Aggregation.mergeSets()
+  override def toString(): String = "CudfCollectSet"
+  override def dataType: DataType = ArrayType(ref.dataType, containsNull = false)
+  override def nullable: Boolean = false
+}
+
+class CudfMergeSets(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
+  override lazy val updateAggregate: Aggregation = Aggregation.mergeSets()
+  override lazy val mergeAggregate: Aggregation = Aggregation.mergeSets()
+  override def toString(): String = "CudfMergeSets"
+}
+
 abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
   val includeNulls: NullPolicy
   val offset: Int
@@ -756,7 +800,7 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
 trait GpuCollectBase[T <: Aggregation with RollingAggregation[T]] extends GpuAggregateFunction
     with GpuAggregateWindowFunction[T] {
 
-  def childExpression: Expression
+  def child: Expression
 
   // Collect operations are non-deterministic since their results depend on the
   // actual order of input rows.
@@ -764,23 +808,29 @@ trait GpuCollectBase[T <: Aggregation with RollingAggregation[T]] extends GpuAgg
 
   override def nullable: Boolean = false
 
-  override def dataType: DataType = ArrayType(childExpression.dataType, false)
+  override def dataType: DataType = ArrayType(child.dataType, containsNull = false)
 
-  override def children: Seq[Expression] = childExpression :: Nil
+  override def children: Seq[Expression] = child :: Nil
 
   // WINDOW FUNCTION
-  override val windowInputProjection: Seq[Expression] = Seq(childExpression)
+  override val windowInputProjection: Seq[Expression] = Seq(child)
 
   // Make them lazy to avoid being initialized when creating a GpuCollectOp.
   override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException
-  override lazy val updateExpressions: Seq[Expression] = throw new UnsupportedOperationException
-  override lazy val mergeExpressions: Seq[GpuExpression] = throw new UnsupportedOperationException
-  override lazy val evaluateExpression: Expression = throw new UnsupportedOperationException
-  override val inputProjection: Seq[Expression] = Seq(childExpression)
 
-  override def aggBufferAttributes: Seq[AttributeReference] = {
-    throw new UnsupportedOperationException
-  }
+  override val inputProjection: Seq[Expression] = Seq(child)
+
+  // Unlike other GpuAggregateFunction, GpuCollectFunction will change the type of input data in
+  // update stage (childType => Array[childType]). And the input type of merge expression is not
+  // same as update expression. Meanwhile, they still share the same ordinal in terms of cuDF
+  // table.
+  // Therefore, we create two separate buffers for update and merge. And they are pointed to
+  // the same ordinal since they share the same exprId.
+  protected final lazy val inputBuf: AttributeReference =
+  AttributeReference("inputBuf", child.dataType)()
+
+  protected final lazy val outputBuf: AttributeReference =
+    inputBuf.copy("outputBuf", dataType)(inputBuf.exprId, inputBuf.qualifier)
 }
 
 /**
@@ -790,10 +840,18 @@ trait GpuCollectBase[T <: Aggregation with RollingAggregation[T]] extends GpuAgg
  * with the CPU version and automated checks.
  */
 case class GpuCollectList(
-    childExpression: Expression,
+    child: Expression,
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0)
     extends GpuCollectBase[CollectListAggregation] {
+
+  override lazy val updateExpressions: Seq[GpuExpression] = new CudfCollectList(inputBuf) :: Nil
+
+  override lazy val mergeExpressions: Seq[GpuExpression] = new CudfMergeLists(outputBuf) :: Nil
+
+  override lazy val evaluateExpression: Expression = outputBuf
+
+  override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_list"
 
@@ -810,10 +868,18 @@ case class GpuCollectList(
  * with the CPU version and automated checks.
  */
 case class GpuCollectSet(
-    childExpression: Expression,
+    child: Expression,
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0)
     extends GpuCollectBase[CollectSetAggregation] {
+
+  override lazy val updateExpressions: Seq[GpuExpression] = new CudfCollectSet(inputBuf) :: Nil
+
+  override lazy val mergeExpressions: Seq[GpuExpression] = new CudfMergeSets(outputBuf) :: Nil
+
+  override lazy val evaluateExpression: Expression = outputBuf
+
+  override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_set"
 
