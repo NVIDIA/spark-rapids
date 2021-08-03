@@ -284,14 +284,23 @@ object CollectInformation extends Logging {
     val allRows = filtered.flatMap { app =>
       app.allSQLMetrics.map { metric =>
         val sqlId = metric.sqlID
-        val accums = app.taskStageAccumMap.get(metric.accumulatorId)
-        val stageId = app.accumIdToStageId.get(metric.accumulatorId)
-        val stageIdtom = app.accumIdToStageIdtom.get(metric.accumulatorId)
-        logWarning(s"accum is: ${metric.accumulatorId} stage is is: $stageId")
-        logWarning(s"accum  tom is: ${metric.accumulatorId} stage is is: $stageIdtom")
+        val jobsForSql = app.jobIdToInfo.filter { case (_, jc) =>
+          val jcid = jc.sqlID.getOrElse(-1)
+          jc.sqlID.getOrElse(-1) == sqlId
+        }
+        val stageIdsForSQL = jobsForSql.flatMap(_._2.stageIds).toSeq
+
+        val accumsOpt = app.taskStageAccumMap.get(metric.accumulatorId)
+        val sqlAccums = accumsOpt match {
+          case Some(accums) => accums.filter { a =>
+            stageIdsForSQL.contains(a.stageId)
+          }
+          case None => Seq.empty
+        }
+        val taskNewMax = sqlAccums.map(_.value.getOrElse(0L)).max
 
         if (metric.accumulatorId == 3170) {
-          accums.getOrElse(Seq.empty).foreach { accum =>
+          accumsOpt.getOrElse(Seq.empty).foreach { accum =>
             logWarning("found 3170: accums are " + accum.name + " value: " + accum.value +
               " accum stageid: " + accum.stageId + " accum taskid: " + accum.taskId +
               " attempt " + accum.attemptId)
@@ -305,12 +314,14 @@ object CollectInformation extends Logging {
             None
         }
 
-        val taskMax = accums match {
+        val taskMax = accumsOpt match {
           case Some(acc) =>
             Some(acc.map(_.value.getOrElse(0L)).max)
           case None =>
             None
         }
+        logWarning("task new max is: " + taskNewMax + " task old max was : " + taskMax)
+
 
         if (metric.accumulatorId == 3170) {
           logWarning("found 3170: task Max: " + taskMax + " driver max: " + driverMax)
