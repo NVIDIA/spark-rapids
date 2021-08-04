@@ -114,23 +114,25 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       startIndex: Int = 1): Unit = {
     class ProfileProcessThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val textFileWriter = new ToolTextFileWriter(outputDir,
-          s"${Profiler.LOG_FILE_NAME_PREFIX}_$index.log",
-          "Profile summary")
         try {
           // we just skip apps that don't process cleanly
           val appOpt = createApp(path, numOutputRows, index, hadoopConf)
           appOpt match {
             case Some(app) =>
-              processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter)
+              val textFileWriter = new ToolTextFileWriter(outputDir,
+                s"${app.appId}-${Profiler.LOG_FILE_NAME_PREFIX}.log",
+                "Profile summary")
+              try {
+                processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter)
+              } finally {
+                textFileWriter.close()
+              }
             case None =>
               logInfo("No application to process. Exiting")
           }
         } catch {
           case e: Exception =>
             logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
-        } finally {
-          textFileWriter.close()
         }
       }
     }

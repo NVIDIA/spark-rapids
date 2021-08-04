@@ -392,8 +392,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   called rapids_4_spark_profile. It will
                                   overwrite any existing files with the same
                                   name.
-  -p, --print-plans               Print the SQL plans to a file starting with
-                                  'planDescriptions-'. Default is false
+  -p, --print-plans               Print the SQL plans to a file named
+                                  '{APPLICATION_ID}-planDescriptions.log'.
+                                  Default is false.
   -t, --timeout  <arg>            Maximum time in seconds to wait for the event
                                   logs to be processed. Default is 24 hours
                                   (86400 seconds) and must be greater than 3

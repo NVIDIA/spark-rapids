@@ -58,7 +58,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Generate query visualizations in DOT format. Default is false")
   val printPlans: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Print the SQL plans to a file starting with 'planDescriptions-'. Default is false")
+      descr = "Print the SQL plans to a file named '{APPLICATION_ID}-planDescriptions.log'." +
+        " Default is false.")
   val generateTimeline: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Write an SVG graph out for the full application timeline.")
