@@ -63,7 +63,7 @@ object ProfileMain extends Logging {
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName, "Profile summary")
     try {
       // Get the event logs required to process
-      val (eventLogFsFiltered, allLogs) = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      val (eventLogFsFiltered, _) = EventLogPathProcessor.processAllPaths(filterN.toOption,
         matchEventLogs.toOption, eventlogPaths, sparkSession.sparkContext.hadoopConfiguration)
       if (eventLogFsFiltered.isEmpty) {
         logWarning("No event logs to process after checking paths, exiting!")

@@ -72,13 +72,13 @@ object QualificationMain extends Logging {
         return (1, Seq[QualificationSummaryInfo]())
     }
 
-    val (eventLogFsFiltered, alleventLogs) = EventLogPathProcessor.processAllPaths(
+    val (eventLogFsFiltered, allEventLogs) = EventLogPathProcessor.processAllPaths(
       filterN.toOption, matchEventLogs.toOption, eventlogPaths, hadoopConf)
 
     val filteredLogs = if (argsContainsAppFilters(appArgs)) {
       val appFilter = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
       val finaleventlogs = if (appArgs.any() && argsContainsFSFilters(appArgs)) {
-        (appFilter.filterEventLogs(alleventLogs, appArgs) ++ eventLogFsFiltered).toSet.toSeq
+        (appFilter.filterEventLogs(allEventLogs, appArgs) ++ eventLogFsFiltered).toSet.toSeq
       } else {
         appFilter.filterEventLogs(eventLogFsFiltered, appArgs)
       }
