@@ -1327,28 +1327,27 @@ object ExprChecks {
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
   /**
-   * An aggregation check where window operations are supported by the plugin, but Spark
-   * also supports group by and reduction on these.
-   * This is now really for 'collect_list' which is only supported by windowing.
+   * An aggregation check where group by and window operations are supported by the plugin, but
+   * Spark also supports reduction on these.
    */
-  def aggNotGroupByOrReduction(
+  def aggNotReduction(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
-    val notWindowParamCheck = paramCheck.map { pc =>
+    val noneParamCheck = paramCheck.map { pc =>
       ParamCheck(pc.name, TypeSig.none, pc.spark)
     }
-    val notWindowRepeat = repeatingParamCheck.map { pc =>
+    val noneRepeatCheck = repeatingParamCheck.map { pc =>
       RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
     }
     ExprChecksImpl(Map(
-      (GroupByAggExprContext,
-        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
       (ReductionAggExprContext,
-        ContextChecks(TypeSig.none, sparkOutputSig, notWindowParamCheck, notWindowRepeat)),
+          ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
+      (GroupByAggExprContext,
+          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
-        ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
   }
 }
 

@@ -49,6 +49,28 @@ class GpuShuffleMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(shuffle.outputPartitioning, conf, Some(this)))
 
+  // Propagate possible type conversions on the output attributes of map-side plans to
+  // reduce-side counterparts. We can pass through the outputs of child because Shuffle will
+  // not change the data schema. And we need to pass through because Shuffle itself and
+  // reduce-side plans may failed to pass the type check for tagging CPU data types rather
+  // than their GPU counterparts.
+  //
+  // Taking AggregateExec with TypedImperativeAggregate function as example:
+  //    Assume I have a query: SELECT a, COLLECT_LIST(b) FROM table GROUP BY a, which physical plan
+  //    looks like:
+  //    ObjectHashAggregate(keys=[a#10], functions=[collect_list(b#11, 0, 0)],
+  //                        output=[a#10, collect_list(b)#17])
+  //      +- Exchange hashpartitioning(a#10, 200), true, [id=#13]
+  //        +- ObjectHashAggregate(keys=[a#10], functions=[partial_collect_list(b#11, 0, 0)],
+  //                               output=[a#10, buf#21])
+  //          +- LocalTableScan [a#10, b#11]
+  //
+  //    We will override the data type of buf#21 in GpuNoHashAggregateMeta. Otherwise, the partial
+  //    Aggregate will fall back to CPU because buf#21 produce a GPU-unsupported type: BinaryType.
+  //    Just like the partial Aggregate, the ShuffleExchange will also fall back to CPU unless we
+  //    apply the same type overriding as its child plan: the partial Aggregate.
+  override protected val useOutputAttributesOfChild: Boolean = true
+
   override def tagPlanForGpu(): Unit = {
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this exchange can run on GPU
@@ -100,10 +122,17 @@ abstract class GpuShuffleExchangeExecBase(
     child: SparkPlan) extends Exchange with GpuExec {
   import GpuMetric._
 
+  private lazy val useRapidsShuffle = {
+    outputPartitioning match {
+      case gpuPartitioning: GpuPartitioning => gpuPartitioning.usesRapidsShuffle
+      case _ => false
+    }
+  }
+
   // Shuffle produces a lot of small output batches that should be coalesced together.
   // This coalesce occurs on the GPU and should always be done when using RAPIDS shuffle.
   // Normal shuffle performs the coalesce on the CPU to optimize the transfers to the GPU.
-  override def coalesceAfter: Boolean = GpuShuffleEnv.isRapidsShuffleEnabled
+  override def coalesceAfter: Boolean = useRapidsShuffle
 
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
@@ -149,6 +178,7 @@ abstract class GpuShuffleExchangeExecBase(
       outputPartitioning,
       sparkTypes,
       serializer,
+      useRapidsShuffle,
       allMetrics,
       writeMetrics,
       additionalMetrics)
@@ -179,6 +209,7 @@ object GpuShuffleExchangeExec {
       newPartitioning: Partitioning,
       sparkTypes: Array[DataType],
       serializer: Serializer,
+      useRapidsShuffle: Boolean,
       metrics: Map[String, GpuMetric],
       writeMetrics: Map[String, SQLMetric],
       additionalMetrics: Map[String, GpuMetric])
@@ -277,6 +308,7 @@ object GpuShuffleExchangeExec {
       sparkTypes,
       serializer,
       shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics),
+      useRapidsShuffle = useRapidsShuffle,
       metrics = GpuMetric.unwrap(additionalMetrics))
 
     dependency

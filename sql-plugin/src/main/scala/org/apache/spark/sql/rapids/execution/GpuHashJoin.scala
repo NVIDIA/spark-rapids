@@ -17,7 +17,7 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{Aggregation, DType, GatherMap, NullPolicy, NvtxColor, Table}
+import ai.rapids.cudf.{DType, GatherMap, GroupByAggregation, NullPolicy, NvtxColor, ReductionAggregation, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
@@ -356,7 +356,7 @@ class HashJoinIterator(
   private def countGroups(keys: ColumnarBatch): Table = {
     withResource(GpuColumnVector.from(keys)) { keysTable =>
       keysTable.groupBy(0 until keysTable.getNumberOfColumns: _*)
-          .aggregate(Aggregation.count(NullPolicy.INCLUDE).onColumn(0))
+          .aggregate(GroupByAggregation.count(NullPolicy.INCLUDE).onColumn(0))
     }
   }
 
@@ -370,7 +370,7 @@ class HashJoinIterator(
     // the join type, data skew or even if the keys actually match.
     val averageStreamSizeExpansion = withResource(countGroups(builtKeys)) { builtCount =>
       val counts = builtCount.getColumn(builtCount.getNumberOfColumns - 1)
-      withResource(counts.reduce(Aggregation.mean(), DType.FLOAT64)) { scalarAverage =>
+      withResource(counts.reduce(ReductionAggregation.mean(), DType.FLOAT64)) { scalarAverage =>
         scalarAverage.getDouble
       }
     }
