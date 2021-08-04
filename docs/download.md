@@ -18,6 +18,48 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
+## Release v21.06.1
+This is a patch release to address an issue with the plugin in the Databricks 7.3 ML LTS runtime.
+
+Hardware Requirements:
+
+	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
+
+Software Requirements:
+
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
+
+	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
+
+	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
+
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+
+	Python 3.6+, Scala 2.12, Java 8
+
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+### Download v21.06.1
+* Download the [RAPIDS
+  Accelerator for Apache Spark 21.06.1 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.06.1/rapids-4-spark_2.12-21.06.1.jar)
+* Download the [RAPIDS cuDF 21.06.1 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.06.1/cudf-21.06.1-cuda11.jar)
+
+This package is built against CUDA 11.2 and has [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+on Tesla datacenter GPUs with CUDA 11.0 and 11.2.  For those using other types of GPUs which
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
+need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
+
+### Release Notes
+This release patches the plugin to address a backwards incompatible change to Parquet filters made
+by Databricks in the Databricks 7.3 ML LTS runtime.  More information is in [issue
+3098](https://github.com/NVIDIA/spark-rapids/issues/3098) in the RAPIDS Spark repository.  See the
+[Release v21.06.0](#release-v21060) release notes for more detail about new features in 21.06.
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
 ## Release v21.06.0
 Starting with release 21.06.0, the project is moving to calendar versioning, with the first two
 digits representing the year, the second two digits representing the month, and the last digit
