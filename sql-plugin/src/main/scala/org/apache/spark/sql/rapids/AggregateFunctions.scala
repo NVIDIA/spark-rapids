@@ -258,8 +258,8 @@ class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {
     throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
   override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
-  override lazy val updateAggregate: Aggregation = Aggregation.collectList()
-  override lazy val mergeAggregate: Aggregation = Aggregation.mergeLists()
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.collectList()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeLists()
   override def toString(): String = "CudfCollectList"
   override def dataType: DataType = ArrayType(ref.dataType, containsNull = false)
   override def nullable: Boolean = false
@@ -270,8 +270,8 @@ class CudfMergeLists(ref: Expression) extends CudfAggregate(ref) {
     throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
   override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
-  override lazy val updateAggregate: Aggregation = Aggregation.mergeLists()
-  override lazy val mergeAggregate: Aggregation = Aggregation.mergeLists()
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.mergeLists()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeLists()
   override def toString(): String = "CudfMergeLists"
 }
 
@@ -280,8 +280,8 @@ class CudfCollectSet(ref: Expression) extends CudfAggregate(ref) {
     throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
   override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
-  override lazy val updateAggregate: Aggregation = Aggregation.collectSet()
-  override lazy val mergeAggregate: Aggregation = Aggregation.mergeSets()
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.collectSet()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeSets()
   override def toString(): String = "CudfCollectSet"
   override def dataType: DataType = ArrayType(ref.dataType, containsNull = false)
   override def nullable: Boolean = false
@@ -292,8 +292,8 @@ class CudfMergeSets(ref: Expression) extends CudfAggregate(ref) {
     throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
   override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
-  override lazy val updateAggregate: Aggregation = Aggregation.mergeSets()
-  override lazy val mergeAggregate: Aggregation = Aggregation.mergeSets()
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.mergeSets()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeSets()
   override def toString(): String = "CudfMergeSets"
 }
 
