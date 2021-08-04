@@ -48,8 +48,8 @@ object ProfileMain extends Logging {
 
     // Get the event logs required to process
     val (eventLogFsFiltered, _) = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths, sparkSession.sparkContext.hadoopConfiguration)
-    if (eventLogInfos.isEmpty) {
+      matchEventLogs.toOption, eventlogPaths, hadoopConf)
+    if (eventLogFsFiltered.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return 0
     }
