@@ -21,7 +21,7 @@ import java.time.ZoneId
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
@@ -29,7 +29,6 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -672,18 +671,18 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   /**
-   * Gets output attributes of current SparkPlanMeta, which is supposed to be called
-   * in the tag methods of ExecChecks.
+   * Gets output attributes of current SparkPlanMeta, which is supposed to be called during
+   * type checking for the current plan.
    *
-   * By default, it simply returns the output of wrapped plan. But for specific plans, they can
-   * override outputTypeMetas to apply custom conversions on the output of wrapped plan.
+   * By default, it simply returns the output of wrapped plan. For specific plans, they can
+   * override outputTypeMetas to apply custom conversions on the output of wrapped plan. For plans
+   * which just pass through the schema of childPlan, they can set useOutputAttributesOfChild to
+   * true, in order to propagate the custom conversions of childPlan if they exist.
    */
   def outputAttributes: Seq[Attribute] = outputTypeMetas match {
     case Some(typeMetas) =>
-      if (typeMetas.length != wrapped.output.length) {
-        throw new IllegalArgumentException(
-          "The length of outputTypeMetas doesn't match to the length of plan's output")
-      }
+      require(typeMetas.length == wrapped.output.length,
+        "The length of outputTypeMetas doesn't match to the length of plan's output")
       wrapped.output.zip(typeMetas).map {
         case (ar, meta) if meta.typeConverted =>
           addConvertedDataType(ar.name, meta)
@@ -692,6 +691,21 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         case (ar, _) =>
           ar
       }
+    case None if useOutputAttributesOfChild =>
+      require(wrapped.children.length == 1,
+        "useOutputAttributesOfChild ONLY works on UnaryPlan")
+      // We will check whether the child plan can be replaced or not. We only pass through the
+      // outputAttributes of the child plan when it is GPU enabled. Otherwise, we should fetch the
+      // outputAttributes from the wrapped plan, because type overriding of RapidsMeta is
+      // specialized for the GPU runtime.
+      //
+      // We can safely call childPlan.canThisBeReplaced here, because outputAttributes is called
+      // via tagSelfForGpu. At this point, tagging of the child plan has already happened.
+      if (childPlans.head.canThisBeReplaced) {
+        childPlans.head.outputAttributes
+      } else {
+        wrapped.output
+      }
     case None =>
       wrapped.output
   }
@@ -699,7 +713,12 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   /**
    * Overrides this method to implement custom conversions for specific plans.
    */
-  protected def outputTypeMetas: Option[Seq[DataTypeMeta]] = None
+  protected lazy val outputTypeMetas: Option[Seq[DataTypeMeta]] = None
+
+  /**
+   * Whether to pass through the outputAttributes of childPlan's meta, only for UnaryPlan
+   */
+  protected val useOutputAttributesOfChild: Boolean = false
 }
 
 /**
@@ -818,13 +837,13 @@ object DataTypeMeta {
   /**
    * create DataTypeMeta from Expression
    */
-  def apply(expr: Expression): DataTypeMeta = {
+  def apply(expr: Expression, overrideType: Option[DataType]): DataTypeMeta = {
     val wrapped = try {
       Some(expr.dataType)
     } catch {
       case _: java.lang.UnsupportedOperationException => None
     }
-    new DataTypeMeta(wrapped)
+    new DataTypeMeta(wrapped, overrideType)
   }
 }
 
@@ -857,9 +876,20 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * tag methods of expression-level type checks.
    *
    * By default, it simply returns the data type of wrapped expression. But for specific
-   * expressions, they can override this method to apply custom transitions on the data type.
+   * expressions, they can easily override data type for type checking through calling the
+   * method `overrideDataType`.
    */
-  def typeMeta: DataTypeMeta = DataTypeMeta(wrapped.asInstanceOf[Expression])
+  def typeMeta: DataTypeMeta = DataTypeMeta(wrapped.asInstanceOf[Expression], overrideType)
+
+  /**
+   * Overrides the data type of the wrapped expression during type checking.
+   *
+   * NOTICE: This method will NOT modify the wrapped expression itself. Therefore, the actual
+   * transition on data type is still necessary when converting this expression to GPU.
+   */
+  def overrideDataType(dt: DataType): Unit = overrideType = Some(dt)
+
+  private var overrideType: Option[DataType] = None
 
   lazy val context: ExpressionContext = expr match {
     case _: LambdaFunction => LambdaExprContext
@@ -942,6 +972,24 @@ abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
     convertToGpu(childExprs.map(_.convertToGpu()))
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
+}
+
+/**
+ * Base class for metadata around `TypedImperativeAggregate`.
+ */
+abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends ImperativeAggExprMeta[INPUT](expr, conf, parent, rule) {
+
+  /**
+   * Returns aggregation buffer with the actual data type under GPU runtime. This method is
+   * called to override the data types of typed imperative aggregation buffers during GPU
+   * overriding.
+   */
+  def aggBufferAttribute: AttributeReference
 }
 
 /**

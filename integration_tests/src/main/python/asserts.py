@@ -301,6 +301,53 @@ def assert_gpu_fallback_write(write_func,
 
     assert_equal(from_cpu, from_gpu)
 
+def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
+        exist_classes='',
+        non_exist_classes='',
+        conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT_WITH_DATAFRAME')
+
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    from_cpu, cpu_df = with_cpu_session(bring_back, conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
+    gpu_end = time.time()
+    jvm = spark_jvm()
+    for clz in exist_classes.split(','):
+        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
+    for clz in non_exist_classes.split(','):
+        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
+        gpu_end - gpu_start, cpu_end - cpu_start))
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
+    assert_equal(from_cpu, from_gpu)
+
+def assert_cpu_and_gpu_are_equal_sql_with_capture(df_fun,
+        sql,
+        table_name,
+        exist_classes='',
+        non_exist_classes='',
+        conf=None,
+        debug=False):
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        if debug:
+            return data_gen.debug_df(spark.sql(sql))
+        else:
+            return spark.sql(sql)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(do_it_all, exist_classes, non_exist_classes, conf)
+
 def assert_gpu_fallback_collect(func,
         cpu_fallback_class_name,
         conf={}):
