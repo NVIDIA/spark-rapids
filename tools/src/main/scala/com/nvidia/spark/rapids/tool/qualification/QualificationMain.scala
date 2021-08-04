@@ -72,15 +72,19 @@ object QualificationMain extends Logging {
         return (1, Seq[QualificationSummaryInfo]())
     }
 
-    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths, hadoopConf)
+    val (eventLogFsFiltered, alleventLogs) = EventLogPathProcessor.processAllPaths(
+      filterN.toOption, matchEventLogs.toOption, eventlogPaths, hadoopConf)
 
     val filteredLogs = if (argsContainsAppFilters(appArgs)) {
       val appFilter = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
-      val finaleventlogs = appFilter.filterEventLogs(eventLogInfos, appArgs)
+      val finaleventlogs = if (appArgs.any() && argsContainsFSFilters(appArgs)) {
+        (appFilter.filterEventLogs(alleventLogs, appArgs) ++ eventLogFsFiltered).toSet.toSeq
+      } else {
+        appFilter.filterEventLogs(eventLogFsFiltered, appArgs)
+      }
       finaleventlogs
     } else {
-      eventLogInfos
+      eventLogFsFiltered
     }
 
     if (filteredLogs.isEmpty) {
@@ -92,6 +96,12 @@ object QualificationMain extends Logging {
       nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
     val res = qual.qualifyApps(filteredLogs)
     (0, res)
+  }
+
+  def argsContainsFSFilters(appArgs: QualificationArgs): Boolean = {
+    val filterCriteria = appArgs.filterCriteria.toOption
+    appArgs.matchEventLogs.isSupplied ||
+        (filterCriteria.isDefined && filterCriteria.get.endsWith("-filesystem"))
   }
 
   def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {

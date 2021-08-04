@@ -536,13 +536,13 @@ class AppFilterSuite extends FunSuite {
   private val appsNameConjunctionAndDisjunctionToTest = Array(
     TestConjunctionAndDisjunction("app-ndshours18", msHoursAgo(16), "Ndshours18",
       msHoursAgo(18), 1, "user1"),
-    TestConjunctionAndDisjunction("app-ndsweeks-1", msWeeksAgo(1), "ndsweeks",
+    TestConjunctionAndDisjunction("app-Ndsweeks-1", msWeeksAgo(1), "ndsweeks",
       msWeeksAgo(1), 1, "user1"),
     TestConjunctionAndDisjunction("app-ndsweeks-2", msWeeksAgo(2), "Ndsweeks",
       msWeeksAgo(2), 2, "user2"),
     TestConjunctionAndDisjunction("app-ndsweeks-3", msWeeksAgo(3), "ndsweeks",
       msWeeksAgo(3), 3, "user3"),
-    TestConjunctionAndDisjunction("app-nds86-1", msDaysAgo(3), "nds86",
+    TestConjunctionAndDisjunction("app-Nds86-1", msDaysAgo(3), "nds86",
       msDaysAgo(4), 1, "user1"),
     TestConjunctionAndDisjunction("app-nds86-2", msDaysAgo(6), "nds86",
       msWeeksAgo(1), 2, "user2"),
@@ -567,12 +567,6 @@ class AppFilterSuite extends FunSuite {
       6, "any")
   }
 
-  /*test("Test disjunction 5-newest-filesystem and no startTime") {
-    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterCriteria("5-newest-filesystem") ++ filterAppName("Nds") ++ userName("user1"),
-      4, "any")
-  }*/
-
   test("Test disjunction no userName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++
@@ -587,6 +581,18 @@ class AppFilterSuite extends FunSuite {
   test("Test disjunction only appName") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterAppName("nds"), 5, "any")
+  }
+
+  test("Test disjunction match fileName or appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterAppName("Nds"),
+      5, "any")
+  }
+
+  test("Test disjunction match filename, 10-newest-filesystem and appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterCriteria("10-newest-filesystem") ++ filterAppName("nds"),
+      7, "any")
   }
 
   test("Test conjunction all filters") {
@@ -622,13 +628,28 @@ class AppFilterSuite extends FunSuite {
       filterAppName("nds"), 5)
   }
 
+  test("Test conjunction match fileName and appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterAppName("Nds"),
+      2, "all")
+  }
+
+  test("Test conjunction match filename, 10-newest-filesystem and appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterCriteria("10-newest-filesystem") ++ filterAppName("nds"),
+      3, "all")
+  }
+
   def filterCriteria(filterCrit: String): Array[String] = {
     Array("--filter-criteria", filterCrit)
   }
 
   def filterAppName(appName: String): Array[String] = {
-    Array("--application-name",
-      appName)
+    Array("--application-name", appName)
+  }
+
+  def matchFileName(appName:String): Array[String] = {
+    Array("--match-event-logs", appName)
   }
 
   def startTimePeriod(startPeriod: String): Array[String] = {

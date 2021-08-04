@@ -159,7 +159,7 @@ object EventLogPathProcessor extends Logging {
       filterNLogs: Option[String],
       matchlogs: Option[String],
       eventLogsPaths: List[String],
-      hadoopConf: Configuration): Seq[EventLogInfo] = {
+      hadoopConf: Configuration): (Seq[EventLogInfo], Seq[EventLogInfo]) = {
 
     val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, hadoopConf)).toMap
 
@@ -186,7 +186,7 @@ object EventLogPathProcessor extends Logging {
     } else {
       matchedLogs
     }
-    filteredLogs.keys.toSeq
+    (filteredLogs.keys.toSeq, logsWithTimestamp.keys.toSeq)
   }
 
   def filterByAppCriteria(filterNLogs: Option[String]): Boolean = {

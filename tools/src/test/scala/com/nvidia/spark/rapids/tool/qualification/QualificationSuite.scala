@@ -253,8 +253,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog"
     ))
 
-    val eventLogInfo = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+    val (eventLogInfo, allLogs) = EventLogPathProcessor.processAllPaths(
+      appArgs.filterCriteria.toOption, appArgs.matchEventLogs.toOption, appArgs.eventlog(),
       sparkSession.sparkContext.hadoopConfiguration)
 
     val appFilter = new AppFilterImpl(1000, sparkSession.sparkContext.hadoopConfiguration,
@@ -274,8 +274,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog"
     ))
 
-    val eventLogInfo = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
-      appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+    val (eventLogInfo, allLogs) = EventLogPathProcessor.processAllPaths(
+      appArgs.filterCriteria.toOption, appArgs.matchEventLogs.toOption, appArgs.eventlog(),
       sparkSession.sparkContext.hadoopConfiguration)
 
     val appFilter = new AppFilterImpl(1000, sparkSession.sparkContext.hadoopConfiguration,
