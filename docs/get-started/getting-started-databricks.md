@@ -48,7 +48,7 @@ cluster.
    version:
     - [Databricks 7.3 LTS
 ML](https://docs.databricks.com/release-notes/runtime/7.3ml.html#system-environment) runs CUDA 10.1
-Update 2. Users wishing to try 21.06 or later on Databricks 7.3 LTS ML will need to install the
+Update 2. Users wishing to try 21.06.1 or later on Databricks 7.3 LTS ML will need to install the
 CUDA 11.0 toolkit on the cluster.  This can be done with the [generate-init-script-cuda11.ipynb
 ](../demo/Databricks/generate-init-script-cuda11.ipynb) init script, which installs both the RAPIDS
 Spark plugin and the CUDA 11 toolkit. 

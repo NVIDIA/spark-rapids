@@ -1788,9 +1788,20 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     s: SparkSession => s.read.parquet(path)
   }
 
+  def frameFromParquetWithSchema(filename: String, schema: StructType):
+      SparkSession => DataFrame = {
+    val path = TestResourceFinder.getResourcePath(filename)
+    s: SparkSession => s.read.schema(schema).parquet(path)
+  }
+
   def frameFromOrc(filename: String): SparkSession => DataFrame = {
     val path = TestResourceFinder.getResourcePath(filename)
     s: SparkSession => s.read.orc(path)
+  }
+
+  def frameFromOrcWithSchema(filename: String, schema: StructType): SparkSession => DataFrame = {
+    val path = TestResourceFinder.getResourcePath(filename)
+    s: SparkSession => s.read.schema(schema).orc(path)
   }
 
   def frameFromOrcNonNullableColumns(filename: String): SparkSession => DataFrame = {
