@@ -52,8 +52,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       try {
         // create all the apps in parallel since we need the info for all of them to compare
         val apps = createApps(eventLogInfos)
-        if (apps.isEmpty) {
-          logInfo("No application to process. Exiting")
+        if (apps.size < 2) {
+          logInfo("At least 2 applications are required for comparison mode. Exiting!")
         } else {
           processApps(apps, printPlans = false, textFileWriter)
         }
