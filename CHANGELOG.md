@@ -3,6 +3,11 @@ Generated on 2021-08-04
 
 ## Release 21.06.1
 
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3098](https://github.com/NVIDIA/spark-rapids/issues/3098)|[BUG] Databricks parquetFilters build failure|
+
 ### PRs
 |||
 |:---|:---|
