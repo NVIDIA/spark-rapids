@@ -845,8 +845,8 @@ def test_nested_part_fallback(part_gen):
 def test_window_ride_along(ride_along):
     assert_gpu_and_cpu_are_equal_sql(
             lambda spark : gen_df(spark, [('a', LongRangeGen()), ('b', ride_along)]),
-        "window_agg_table",
-        'select *,'
-        ' row_number() over (order by a) as row_num '
-        'from window_agg_table ',
-        conf = allow_negative_scale_of_decimal_conf)
+            "window_agg_table",
+            'select *,'
+            ' row_number() over (order by a) as row_num '
+            'from window_agg_table ',
+            conf = allow_negative_scale_of_decimal_conf)
