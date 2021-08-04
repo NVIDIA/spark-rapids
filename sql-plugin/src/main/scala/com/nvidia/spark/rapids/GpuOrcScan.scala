@@ -393,6 +393,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
 
   /**
    * Cast columns with precision that can be stored in an int to DECIMAL32, to save space.
+   * Besides the plugin makes the assumption that if the precision is small enough to fit
+   * in a DECIMAL32, then CUDF has it stored as a DECIMAL32. Getting this wrong may lead
+   * to a number of problems later on.
    *
    * @param table the input table, will be closed after returning.
    * @param schema the schema of the table
@@ -1170,7 +1173,7 @@ private case class GpuOrcFileFilterHandler(
      * @param fileSchema input file's ORC schema
      * @param readSchema ORC schema for what will be read
      * @param isCaseAware true if field names are case-sensitive
-     * @return read schema mapped to the file's field names
+     * @return read schema if check passes.
      */
     private def checkSchemaCompatibility(
         fileSchema: TypeDescription,
@@ -1187,19 +1190,48 @@ private case class GpuOrcFileFilterHandler(
 
       val readerFieldNames = readSchema.getFieldNames.asScala
       val readerChildren = readSchema.getChildren.asScala
-      val newReadSchema = TypeDescription.createStruct()
       readerFieldNames.zip(readerChildren).foreach { case (readField, readType) =>
         val (fileType, fileFieldName) = fileTypesMap.getOrElse(readField, (null, null))
-        if (readType != fileType) {
+        // When column pruning is enabled, the readType is not always equal to the fileType,
+        // may be part of the fileType. e.g.
+        //     read type: struct<c_1:string>
+        //     file type: struct<c_1:string,c_2:bigint,c_3:smallint>
+        if (!isSchemaCompatible(fileType, readType)) {
           throw new QueryExecutionException("Incompatible schemas for ORC file" +
             s" at ${partFile.filePath}\n" +
             s" file schema: $fileSchema\n" +
             s" read schema: $readSchema")
         }
-        newReadSchema.addField(fileFieldName, fileType)
       }
+      // To support nested column pruning, the original read schema (pruned) should be
+      // returned, instead of creating a new schema from the children of the file schema,
+      // who may contain more nested columns than read schema, causing mismatch between the
+      // pruned data and the pruned schema.
+      readSchema
+    }
 
-      newReadSchema
+    /**
+     * The read schema is compatible with the file schema only when
+     *   1) They are equal to each other
+     *   2) The read schema is part of the file schema for struct types.
+     *
+     * @param fileSchema input file's ORC schema
+     * @param readSchema ORC schema for what will be read
+     * @return true if they are compatible, otherwise false
+     */
+    private def isSchemaCompatible(
+        fileSchema: TypeDescription,
+        readSchema: TypeDescription): Boolean = {
+      fileSchema == readSchema ||
+        fileSchema != null && readSchema != null &&
+          fileSchema.getCategory == readSchema.getCategory && {
+          if (readSchema.getChildren != null) {
+            readSchema.getChildren.asScala.forall(rc =>
+              fileSchema.getChildren.asScala.exists(fc => isSchemaCompatible(fc, rc)))
+          } else {
+            false
+          }
+        }
     }
 
     /**
