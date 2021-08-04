@@ -123,8 +123,9 @@ abstract class RapidsBufferStore(
    * (i.e.: this method will not take ownership of the incoming buffer object).
    * This does not need to update the catalog, the caller is responsible for that.
    * @param buffer data from another store
-   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. It will be closed
-   *                     by this method
+   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. The ownership
+   *                     for `memoryBuffer` is transferred to this store. The store may close
+   *                     `memoryBuffer` if necessary.
    * @param stream CUDA stream to use for copy or null
    * @return new buffer that was created
    */
@@ -201,8 +202,9 @@ abstract class RapidsBufferStore(
    * adding a reference to the existing buffer and later closing it when the transfer completes.
    * @note DO NOT close the buffer unless adding a reference!
    * @param buffer data from another store
-   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. It will be closed
-   *                     by this method
+   * @param memoryBuffer memory buffer obtained from the specified Rapids buffer. The ownership
+   *                     for `memoryBuffer` is transferred to this store. The store may close
+   *                     `memoryBuffer` if necessary.
    * @param stream CUDA stream to use or null
    * @return new buffer tracking the data in this store
    */

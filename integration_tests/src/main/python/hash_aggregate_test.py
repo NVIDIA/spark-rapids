@@ -14,7 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql,\
+    assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from functools import reduce
 from pyspark.sql.types import *
@@ -375,6 +377,166 @@ def test_hash_reduction_pivot_without_nans(data_gen, conf):
             .agg(f.sum('c')),
         conf=conf)
 
+_repeat_agg_column_for_collect_op = [
+    RepeatSeqGen(BooleanGen(), length=15),
+    RepeatSeqGen(IntegerGen(), length=15),
+    RepeatSeqGen(LongGen(), length=15),
+    RepeatSeqGen(ShortGen(), length=15),
+    RepeatSeqGen(DateGen(), length=15),
+    RepeatSeqGen(TimestampGen(), length=15),
+    RepeatSeqGen(ByteGen(), length=15),
+    RepeatSeqGen(StringGen(), length=15),
+    RepeatSeqGen(FloatGen(), length=15),
+    RepeatSeqGen(DoubleGen(), length=15),
+    RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15),
+    # case to verify the NAN_UNEQUAL strategy
+    RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5),
+]
+
+_gen_data_for_collect_op = [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', value_gen),
+    ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op
+]
+
+# We wrapped sort_array functions on collect_list/collect_set because the orders of collected lists/sets are not
+# deterministic. The annotation `ignore_order` only affects on the order between rows, while with collect ops we also
+# need to guarantee the consistency of the row-wise order (the orders within each array produced by collect ops).
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
+def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')), f.count('b')),
+        conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_collect_set(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_set('b')), f.count('b')))
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_collect_with_single_distinct(data_gen):
+    # test collect_ops with other distinct aggregations
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')),
+                 f.sort_array(f.collect_set('b')),
+                 f.countDistinct('c'),
+                 f.count('c')))
+
+@approximate_float
+@ignore_order(local=True)
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_single_distinct_collect(data_gen):
+    # test distinct collect with other aggregations
+    sql = """select a,
+                    sort_array(collect_list(distinct b)),
+                    sort_array(collect_set(b)),
+                    count(distinct b),
+                    count(c)
+            from tbl group by a"""
+    assert_gpu_and_cpu_are_equal_sql(
+        df_fun=lambda spark: gen_df(spark, data_gen, length=100),
+        table_name="tbl", sql=sql)
+
+# Queries with multiple distinct aggregations will fallback to CPU if they also contain
+# collect aggregations. Because Spark optimizer will insert expressions like `If` and `First`
+# when rewriting distinct aggregates, while `GpuFirst` doesn't support the datatype of collect
+# aggregations (ArrayType).
+# TODO: support GPUFirst on ArrayType https://github.com/NVIDIA/spark-rapids/issues/3097
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('SortAggregateExec',
+               'SortArray', 'Alias', 'Literal', 'First', 'If', 'EqualTo', 'Count',
+               'CollectList', 'CollectSet', 'AggregateExpression')
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
+    def spark_fn(spark_session):
+        return gen_df(spark_session, data_gen, length=100).groupby('a').agg(
+            f.sort_array(f.collect_list('b')),
+            f.sort_array(f.collect_set('b')),
+            f.countDistinct('b'),
+            f.countDistinct('c'))
+    assert_gpu_fallback_collect(func=spark_fn, cpu_fallback_class_name='SortAggregateExec')
+
+@approximate_float
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
+               'HashPartitioning', 'SortArray', 'Alias', 'Literal',
+               'Count', 'CollectList', 'CollectSet', 'AggregateExpression')
+@incompat
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
+def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled):
+    local_conf = conf.copy()
+    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
+    # test without Distinct
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
+        exist_classes='CollectList,CollectSet',
+        non_exist_classes='GpuCollectList,GpuCollectSet',
+        conf=local_conf)
+    # test with single Distinct
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.sort_array(f.collect_list('b')),
+                 f.sort_array(f.collect_set('b')),
+                 f.countDistinct('c'),
+                 f.count('c')),
+        exist_classes='CollectList,CollectSet',
+        non_exist_classes='GpuCollectList,GpuCollectSet',
+        conf=local_conf)
+
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'HashAggregateExec',
+               'HashPartitioning', 'SortArray', 'Alias', 'Literal',
+               'CollectList', 'CollectSet', 'Max', 'AggregateExpression')
+@pytest.mark.parametrize('conf', [_nans_float_conf_final, _nans_float_conf_partial], ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
+def test_hash_groupby_collect_partial_replace_fallback_with_other_agg(conf, aqe_enabled):
+    # This test is to ensure "associated fallback" will not affect another Aggregate plans.
+    local_conf = conf.copy()
+    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
+
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: gen_df(spark, [('k1', RepeatSeqGen(LongGen(), length=20)),
+                                     ('k2', RepeatSeqGen(LongGen(), length=20)),
+                                     ('v', LongRangeGen())], length=100),
+        exist_classes='GpuMax,Max,CollectList,CollectSet',
+        non_exist_classes='GpuObjectHashAggregateExec,GpuCollectList,GpuCollectSet',
+        table_name='table',
+        sql="""
+    select k1,
+        sort_array(collect_set(k2)),
+        sort_array(collect_list(max_v))
+    from
+        (select k1, k2,
+            max(v) as max_v
+        from table group by k1, k2
+        )t
+    group by k1""",
+        conf=local_conf)
+
 @approximate_float
 @ignore_order
 @incompat
@@ -724,3 +886,47 @@ def test_struct_count_distinct_cast(cast_struct_tostring, key_data_gen):
     assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct, {
         'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
     })
+
+@ignore_order(local=True)
+def test_reduction_nested_struct():
+    def do_it(spark):
+        df = unary_op_df(spark, StructGen([('aa', StructGen([('aaa', IntegerGen(min_val=0, max_val=4))]))]))
+        return df.agg(f.sum(df.a.aa.aaa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@ignore_order(local=True)
+def test_reduction_nested_array():
+    def do_it(spark):
+        df = unary_op_df(spark, ArrayGen(StructGen([('aa', IntegerGen(min_val=0, max_val=4))])))
+        return df.agg(f.sum(df.a[1].aa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+# The map here is a child not a top level, because we only support GetMapValue on String to String maps.
+@ignore_order(local=True)
+def test_reduction_nested_map():
+    def do_it(spark):
+        df = unary_op_df(spark, ArrayGen(MapGen(StringGen('a{1,5}', nullable=False), StringGen('[ab]{1,5}'))))
+        return df.agg(f.min(df.a[1]["a"]))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@ignore_order(local=True)
+def test_agg_nested_struct():
+    def do_it(spark):
+        df = two_col_df(spark, StringGen('k{1,5}'), StructGen([('aa', StructGen([('aaa', IntegerGen(min_val=0, max_val=4))]))]))
+        return df.groupBy('a').agg(f.sum(df.b.aa.aaa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@ignore_order(local=True)
+def test_agg_nested_array():
+    def do_it(spark):
+        df = two_col_df(spark, StringGen('k{1,5}'), ArrayGen(StructGen([('aa', IntegerGen(min_val=0, max_val=4))])))
+        return df.groupBy('a').agg(f.sum(df.b[1].aa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+# The map here is a child not a top level, because we only support GetMapValue on String to String maps.
+@ignore_order(local=True)
+def test_agg_nested_map():
+    def do_it(spark):
+        df = two_col_df(spark, StringGen('k{1,5}'), ArrayGen(MapGen(StringGen('a{1,5}', nullable=False), StringGen('[ab]{1,5}'))))
+        return df.groupBy('a').agg(f.min(df.b[1]["a"]))
+    assert_gpu_and_cpu_are_equal_collect(do_it)

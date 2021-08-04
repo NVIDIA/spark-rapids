@@ -47,14 +47,14 @@ object ProfileMain extends Logging {
     val hadoopConf = new Configuration()
 
     // Get the event logs required to process
-    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths, hadoopConf)
+    val (eventLogFsFiltered, _) = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      matchEventLogs.toOption, eventlogPaths, sparkSession.sparkContext.hadoopConfiguration)
     if (eventLogInfos.isEmpty) {
       logWarning("No event logs to process after checking paths, exiting!")
       return 0
     }
     val profiler = new Profiler(hadoopConf, appArgs)
-    profiler.profile(eventLogInfos)
+    profiler.profile(eventLogFsFiltered)
     0
   }
 }

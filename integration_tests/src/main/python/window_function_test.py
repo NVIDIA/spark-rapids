@@ -819,14 +819,13 @@ def test_window_aggs_for_rows_collect_set():
         ) t
         ''')
 
-
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]]), ArrayGen(long_gen)], ids=meta_idfn('partBy:'))
 # For arrays the sort and hash partition are also not supported
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'AggregateExpression', 'Count', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'Literal', 'SortExec', 'SortOrder', 'ShuffleExchangeExec', 'HashPartitioning')
-def test_nested_part_fallbck(part_gen):
+def test_nested_part_fallback(part_gen):
     data_gen = [
             ('a', RepeatSeqGen(part_gen, length=20)),
             ('b', LongRangeGen()),
@@ -838,3 +837,16 @@ def test_nested_part_fallbck(part_gen):
             .withColumn('rn', f.count('c').over(window_spec))
 
     assert_gpu_fallback_collect(do_it, 'WindowExec')
+
+# In a distributed setup the order of the partitions returend might be different, so we must ignore the order
+# but small batch sizes can make sort very slow, so do the final order by locally
+@ignore_order(local=True)
+@pytest.mark.parametrize('ride_along', all_basic_gens + decimal_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+def test_window_ride_along(ride_along):
+    assert_gpu_and_cpu_are_equal_sql(
+            lambda spark : gen_df(spark, [('a', LongRangeGen()), ('b', ride_along)]),
+            "window_agg_table",
+            'select *,'
+            ' row_number() over (order by a) as row_num '
+            'from window_agg_table ',
+            conf = allow_negative_scale_of_decimal_conf)

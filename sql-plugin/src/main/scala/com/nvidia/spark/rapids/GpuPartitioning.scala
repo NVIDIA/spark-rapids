@@ -29,8 +29,13 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPartitioning extends Partitioning with Arm {
-  private[this] val maxCompressionBatchSize =
-    new RapidsConf(SQLConf.get).shuffleCompressionMaxBatchMemory
+  private[this] val (maxCompressionBatchSize, _useRapidsShuffle) = {
+    val rapidsConf = new RapidsConf(SQLConf.get)
+    (rapidsConf.shuffleCompressionMaxBatchMemory,
+      GpuShuffleEnv.shouldUseRapidsShuffle(rapidsConf))
+  }
+
+  def usesRapidsShuffle: Boolean = _useRapidsShuffle
 
   def sliceBatch(vectors: Array[RapidsHostColumnVector], start: Int, end: Int): ColumnarBatch = {
     var ret: ColumnarBatch = null
@@ -46,7 +51,6 @@ trait GpuPartitioning extends Partitioning with Arm {
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // The first index will always be 0, so we need to skip it.
     val batches = if (numRows > 0) {
-      val dataTypes = partitionColumns.map(_.dataType())
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
       closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
         val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
@@ -97,8 +101,8 @@ trait GpuPartitioning extends Partitioning with Arm {
 
   def sliceInternalGpuOrCpu(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
-    val rapidsShuffleEnabled = GpuShuffleEnv.isRapidsShuffleEnabled
-    val nvtxRangeKey = if (rapidsShuffleEnabled) {
+    val sliceOnGpu = usesRapidsShuffle
+    val nvtxRangeKey = if (sliceOnGpu) {
       "sliceInternalOnGpu"
     } else {
       "sliceInternalOnCpu"
@@ -107,7 +111,7 @@ trait GpuPartitioning extends Partitioning with Arm {
     // for large number of small splits.
     val sliceRange = new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)
     try {
-      if (rapidsShuffleEnabled) {
+      if (sliceOnGpu) {
         sliceInternalOnGpu(numRows, partitionIndexes, partitionColumns)
       } else {
         sliceInternalOnCpu(numRows, partitionIndexes, partitionColumns)

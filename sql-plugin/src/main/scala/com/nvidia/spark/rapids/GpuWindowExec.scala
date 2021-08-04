@@ -22,7 +22,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOverWindow, DType, GroupByOptions, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanType, Table, WindowOptions}
+import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, ShortType, StructType}
+import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, MapType, ShortType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -93,14 +93,15 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         .foreach(_ => willNotWorkOnGpu("Unexpected query plan with Windowing functions; " +
             "cannot convert for GPU execution. " +
             "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
-    val unsupported = partitionSpec.map(_.wrapped.dataType).filter {
+    val unsupportedKeys = partitionSpec.map(_.wrapped.dataType).exists {
       case _: StructType => true
       case _: ArrayType => true
+      case _: MapType => true
       case _ => false
-    }.distinct
+    }
 
-    if (unsupported.nonEmpty) {
-      willNotWorkOnGpu(s"nested partition by keys are not supported $unsupported")
+    if (unsupportedKeys) {
+      willNotWorkOnGpu(s"nested partition by keys are not supported")
     }
   }
 
@@ -412,7 +413,7 @@ trait GpuWindowBaseExec extends UnaryExecNode with GpuExec {
  * groups those two together so we can have a complete picture of how to perform these types of
  * aggregations.
  */
-case class AggAndReplace(agg: Aggregation, nullReplacePolicy: Option[ReplacePolicy])
+case class AggAndReplace[T](agg: T, nullReplacePolicy: Option[ReplacePolicy])
 
 /**
  * The class represents a window function and the locations of its deduped inputs after an initial
@@ -428,7 +429,7 @@ case class BoundGpuWindowFunction(
    * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
    *         for each value in `boundInputLocations` so that they can be zipped together.
    */
-  def scan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+  def scan(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
     aggFunc.scanAggregation(isRunningBatched)
   }
@@ -439,7 +440,7 @@ case class BoundGpuWindowFunction(
    * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
    *         for each value in `boundInputLocations` so that they can be zipped together.
    */
-  def groupByScan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+  def groupByScan(isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
     aggFunc.groupByScanAggregation(isRunningBatched)
   }
@@ -458,8 +459,8 @@ case class BoundGpuWindowFunction(
   }
 
   def aggOverWindow(cb: ColumnarBatch,
-      windowOpts: WindowOptions): AggregationOverWindow[Nothing] = {
-    val aggFunc = windowFunc.asInstanceOf[GpuAggregateWindowFunction[_]]
+      windowOpts: WindowOptions): AggregationOverWindow = {
+    val aggFunc = windowFunc.asInstanceOf[GpuAggregateWindowFunction]
     val inputs = boundInputLocations.map { pos =>
       (cb.column(pos).asInstanceOf[GpuColumnVector].getBase, pos)
     }
@@ -480,7 +481,7 @@ object GroupedAggregations extends Arm {
       col: cudf.ColumnVector,
       dataType: DataType): GpuColumnVector = {
     dataType match {
-      case _: ArrayType | _: StructType =>
+      case _: ArrayType | _: StructType | _: MapType =>
         GpuColumnVector.from(col, dataType).incRefCount()
       case other =>
         val dtype = GpuColumnVector.getNonNestedRapidsType(other)
@@ -682,7 +683,7 @@ class GroupedAggregations extends Arm {
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
       outputColumns: Array[cudf.ColumnVector],
-      aggIt: (Table.GroupByOperation, Seq[AggregationOverWindow[Nothing]]) => Table): Unit = {
+      aggIt: (Table.GroupByOperation, Seq[AggregationOverWindow]) => Table): Unit = {
     data.foreach {
       case (frameSpec, functions) =>
         if (frameSpec.frameType == frameType) {

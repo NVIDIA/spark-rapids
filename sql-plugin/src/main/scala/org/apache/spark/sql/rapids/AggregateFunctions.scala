@@ -17,8 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, NullPolicy, ReplacePolicy, RollingAggregation}
-import ai.rapids.cudf.Aggregation.{CollectListAggregation, CollectSetAggregation, CountAggregation, MaxAggregation, MeanAggregation, MinAggregation, SumAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -186,8 +185,8 @@ abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable {
   def getOrdinal(ref: Expression): Int = ref.asInstanceOf[GpuBoundReference].ordinal
   val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar
   val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar
-  val updateAggregate: Aggregation
-  val mergeAggregate: Aggregation
+  val updateAggregate: GroupByAggregation
+  val mergeAggregate: GroupByAggregation
 
   def dataType: DataType = ref.dataType
   def nullable: Boolean = ref.nullable
@@ -199,8 +198,9 @@ class CudfCount(ref: Expression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => cudf.Scalar.fromLong(col.getRowCount - col.getNullCount)
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum
-  override lazy val updateAggregate: Aggregation = Aggregation.count(NullPolicy.EXCLUDE)
-  override lazy val mergeAggregate: Aggregation = Aggregation.sum()
+  override lazy val updateAggregate: GroupByAggregation =
+    GroupByAggregation.count(NullPolicy.EXCLUDE)
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.sum()
   override def toString(): String = "CudfCount"
 }
 
@@ -228,8 +228,8 @@ class CudfSum(ref: Expression) extends CudfAggregate(ref) {
 
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar = updateReductionAggregate
 
-  override lazy val updateAggregate: Aggregation = Aggregation.sum()
-  override lazy val mergeAggregate: Aggregation = Aggregation.sum()
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.sum()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.sum()
   override def toString(): String = "CudfSum"
 }
 
@@ -238,8 +238,8 @@ class CudfMax(ref: Expression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.max
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.max
-  override lazy val updateAggregate: Aggregation = Aggregation.max()
-  override lazy val mergeAggregate: Aggregation = Aggregation.max()
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.max()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.max()
   override def toString(): String = "CudfMax"
 }
 
@@ -248,9 +248,53 @@ class CudfMin(ref: Expression) extends CudfAggregate(ref) {
     (col: cudf.ColumnVector) => col.min
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.min
-  override lazy val updateAggregate: Aggregation = Aggregation.min()
-  override lazy val mergeAggregate: Aggregation = Aggregation.min()
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.min()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.min()
   override def toString(): String = "CudfMin"
+}
+
+class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.collectList()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeLists()
+  override def toString(): String = "CudfCollectList"
+  override def dataType: DataType = ArrayType(ref.dataType, containsNull = false)
+  override def nullable: Boolean = false
+}
+
+class CudfMergeLists(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("MergeLists is not yet supported in reduction")
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.mergeLists()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeLists()
+  override def toString(): String = "CudfMergeLists"
+}
+
+class CudfCollectSet(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CollectSet is not yet supported in reduction")
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.collectSet()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeSets()
+  override def toString(): String = "CudfCollectSet"
+  override def dataType: DataType = ArrayType(ref.dataType, containsNull = false)
+  override def nullable: Boolean = false
+}
+
+class CudfMergeSets(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
+  override lazy val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMergeSets is not yet supported in reduction")
+  override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.mergeSets()
+  override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeSets()
+  override def toString(): String = "CudfMergeSets"
 }
 
 abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
@@ -258,11 +302,13 @@ abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
   val offset: Int
 
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(Aggregation.nth(offset, includeNulls))
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(Aggregation.nth(offset, includeNulls))
-  override lazy val updateAggregate: Aggregation = Aggregation.nth(offset, includeNulls)
-  override lazy val mergeAggregate: Aggregation = Aggregation.nth(offset, includeNulls)
+    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
+  override lazy val updateAggregate: GroupByAggregation =
+    GroupByAggregation.nth(offset, includeNulls)
+  override lazy val mergeAggregate: GroupByAggregation =
+    GroupByAggregation.nth(offset, includeNulls)
 }
 
 class CudfFirstIncludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
@@ -287,7 +333,7 @@ class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
 
 case class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
-    with GpuAggregateWindowFunction[MinAggregation]
+    with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   private lazy val cudfMin = AttributeReference("min", child.dataType)()
 
@@ -310,8 +356,8 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
   // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MinAggregation] =
-    Aggregation.min().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.min().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -320,8 +366,9 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     inputProjection
 
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    Seq(AggAndReplace(Aggregation.min(), Some(ReplacePolicy.PRECEDING)))
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+    Seq(AggAndReplace(GroupByScanAggregation.min(), Some(ReplacePolicy.PRECEDING)))
 
   override def isGroupByScanSupported: Boolean = child.dataType match {
     case StringType | TimestampType | DateType => false
@@ -329,8 +376,8 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
   }
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    groupByScanAggregation(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.min(), Some(ReplacePolicy.PRECEDING)))
 
   override def isScanSupported: Boolean  = child.dataType match {
     case TimestampType | DateType => false
@@ -341,7 +388,7 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
 
 case class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
-    with GpuAggregateWindowFunction[MaxAggregation]
+    with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
 
@@ -364,8 +411,8 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MaxAggregation] =
-    Aggregation.max().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.max().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -374,8 +421,9 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     inputProjection
 
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    Seq(AggAndReplace(Aggregation.max(), Some(ReplacePolicy.PRECEDING)))
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+    Seq(AggAndReplace(GroupByScanAggregation.max(), Some(ReplacePolicy.PRECEDING)))
 
   override def isGroupByScanSupported: Boolean = child.dataType match {
     case StringType | TimestampType | DateType => false
@@ -383,8 +431,8 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   }
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    groupByScanAggregation(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.max(), Some(ReplacePolicy.PRECEDING)))
 
   override def isScanSupported: Boolean = child.dataType match {
     case TimestampType | DateType => false
@@ -395,7 +443,7 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
 case class GpuSum(child: Expression, resultType: DataType)
   extends GpuAggregateFunction with ImplicitCastInputTypes
       with GpuBatchedRunningWindowWithFixer
-      with GpuAggregateWindowFunction[SumAggregation]
+      with GpuAggregateWindowFunction
       with GpuRunningWindowFunction {
 
   private lazy val cudfSum = AttributeReference("sum", resultType)()
@@ -420,8 +468,8 @@ case class GpuSum(child: Expression, resultType: DataType)
   // GENERAL WINDOW FUNCTION
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[SumAggregation] =
-    Aggregation.sum().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.sum().onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -429,12 +477,13 @@ case class GpuSum(child: Expression, resultType: DataType)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     inputProjection
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    Seq(AggAndReplace(Aggregation.sum(), Some(ReplacePolicy.PRECEDING)))
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+    Seq(AggAndReplace(GroupByScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    groupByScanAggregation(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 }
 
 /*
@@ -530,7 +579,7 @@ case class GpuPivotFirst(
 
 case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
-    with GpuAggregateWindowFunction[CountAggregation]
+    with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   // counts are Long
   private lazy val cudfCount = AttributeReference("count", LongType)()
@@ -553,8 +602,8 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
   // we could support it by doing an `Aggregation.nunique(false)`
   override lazy val windowInputProjection: Seq[Expression] = inputProjection
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[CountAggregation] =
-    Aggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
@@ -574,18 +623,19 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
     }
   }
 
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    Seq(AggAndReplace(Aggregation.sum(), None))
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+    Seq(AggAndReplace(GroupByScanAggregation.sum(), None))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
 
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    groupByScanAggregation(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.sum(), None))
 }
 
 case class GpuAverage(child: Expression) extends GpuAggregateFunction
-    with GpuAggregateWindowFunction[MeanAggregation] {
+    with GpuAggregateWindowFunction {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
   private lazy val cudfSum = AttributeReference("sum", DoubleType)()
   private lazy val cudfCount = AttributeReference("count", LongType)()
@@ -649,8 +699,8 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
 
   override val windowInputProjection: Seq[Expression] = Seq(children.head)
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[MeanAggregation] =
-    Aggregation.mean().onColumn(inputs.head._2)
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.mean().onColumn(inputs.head._2)
 }
 
 /*
@@ -753,10 +803,9 @@ case class GpuLast(child: Expression, ignoreNulls: Boolean)
   }
 }
 
-trait GpuCollectBase[T <: Aggregation with RollingAggregation[T]] extends GpuAggregateFunction
-    with GpuAggregateWindowFunction[T] {
+trait GpuCollectBase extends GpuAggregateFunction with GpuAggregateWindowFunction {
 
-  def childExpression: Expression
+  def child: Expression
 
   // Collect operations are non-deterministic since their results depend on the
   // actual order of input rows.
@@ -764,23 +813,29 @@ trait GpuCollectBase[T <: Aggregation with RollingAggregation[T]] extends GpuAgg
 
   override def nullable: Boolean = false
 
-  override def dataType: DataType = ArrayType(childExpression.dataType, false)
+  override def dataType: DataType = ArrayType(child.dataType, containsNull = false)
 
-  override def children: Seq[Expression] = childExpression :: Nil
+  override def children: Seq[Expression] = child :: Nil
 
   // WINDOW FUNCTION
-  override val windowInputProjection: Seq[Expression] = Seq(childExpression)
+  override val windowInputProjection: Seq[Expression] = Seq(child)
 
   // Make them lazy to avoid being initialized when creating a GpuCollectOp.
   override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException
-  override lazy val updateExpressions: Seq[Expression] = throw new UnsupportedOperationException
-  override lazy val mergeExpressions: Seq[GpuExpression] = throw new UnsupportedOperationException
-  override lazy val evaluateExpression: Expression = throw new UnsupportedOperationException
-  override val inputProjection: Seq[Expression] = Seq(childExpression)
 
-  override def aggBufferAttributes: Seq[AttributeReference] = {
-    throw new UnsupportedOperationException
-  }
+  override val inputProjection: Seq[Expression] = Seq(child)
+
+  // Unlike other GpuAggregateFunction, GpuCollectFunction will change the type of input data in
+  // update stage (childType => Array[childType]). And the input type of merge expression is not
+  // same as update expression. Meanwhile, they still share the same ordinal in terms of cuDF
+  // table.
+  // Therefore, we create two separate buffers for update and merge. And they are pointed to
+  // the same ordinal since they share the same exprId.
+  protected final lazy val inputBuf: AttributeReference =
+  AttributeReference("inputBuf", child.dataType)()
+
+  protected final lazy val outputBuf: AttributeReference =
+    inputBuf.copy("outputBuf", dataType)(inputBuf.exprId, inputBuf.qualifier)
 }
 
 /**
@@ -790,17 +845,24 @@ trait GpuCollectBase[T <: Aggregation with RollingAggregation[T]] extends GpuAgg
  * with the CPU version and automated checks.
  */
 case class GpuCollectList(
-    childExpression: Expression,
+    child: Expression,
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0)
-    extends GpuCollectBase[CollectListAggregation] {
+    extends GpuCollectBase {
+
+  override lazy val updateExpressions: Seq[GpuExpression] = new CudfCollectList(inputBuf) :: Nil
+
+  override lazy val mergeExpressions: Seq[GpuExpression] = new CudfMergeLists(outputBuf) :: Nil
+
+  override lazy val evaluateExpression: Expression = outputBuf
+
+  override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_list"
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[CollectListAggregation] = {
-    Aggregation.collectList().onColumn(inputs.head._2)
-  }
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.collectList().onColumn(inputs.head._2)
 }
 
 /**
@@ -810,15 +872,22 @@ case class GpuCollectList(
  * with the CPU version and automated checks.
  */
 case class GpuCollectSet(
-    childExpression: Expression,
+    child: Expression,
     mutableAggBufferOffset: Int = 0,
     inputAggBufferOffset: Int = 0)
-    extends GpuCollectBase[CollectSetAggregation] {
+    extends GpuCollectBase {
+
+  override lazy val updateExpressions: Seq[GpuExpression] = new CudfCollectSet(inputBuf) :: Nil
+
+  override lazy val mergeExpressions: Seq[GpuExpression] = new CudfMergeSets(outputBuf) :: Nil
+
+  override lazy val evaluateExpression: Expression = outputBuf
+
+  override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   override def prettyName: String = "collect_set"
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[CollectSetAggregation] = {
-    Aggregation.collectSet().onColumn(inputs.head._2)
-  }
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
+    RollingAggregation.collectSet().onColumn(inputs.head._2)
 }

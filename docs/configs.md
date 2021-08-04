@@ -10,7 +10,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar,cudf-21.08.0-SNAPSHOT-cuda11.jar' \
+${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.10.0-SNAPSHOT.jar,cudf-21.10.0-SNAPSHOT-cuda11.jar' \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.incompatibleOps.enabled=true
 ```
@@ -48,6 +48,7 @@ Name | Description | Default Value
 <a name="python.memory.gpu.allocFraction"></a>spark.rapids.python.memory.gpu.allocFraction|The fraction of total GPU memory that should be initially allocated for pooled memory for all the Python workers. It supposes to be less than (1 - $(spark.rapids.memory.gpu.allocFraction)), since the executor will share the GPU with its owning Python workers. Half of the rest will be used if not specified|None
 <a name="python.memory.gpu.maxAllocFraction"></a>spark.rapids.python.memory.gpu.maxAllocFraction|The fraction of total GPU memory that limits the maximum size of the RMM pool for all the Python workers. It supposes to be less than (1 - $(spark.rapids.memory.gpu.maxAllocFraction)), since the executor will share the GPU with its owning Python workers. when setting to 0 it means no limit.|0.0
 <a name="python.memory.gpu.pooling.enabled"></a>spark.rapids.python.memory.gpu.pooling.enabled|Should RMM in Python workers act as a pooling allocator for GPU memory, or should it just pass through to CUDA memory allocation directly. When not specified, It will honor the value of config 'spark.rapids.memory.gpu.pooling.enabled'|None
+<a name="shuffle.enabled"></a>spark.rapids.shuffle.enabled|Enable or disable the RAPIDS Shuffle Manager at runtime. The [RAPIDS Shuffle Manager](additional-functionality/rapids-shuffle.md) must already be configured. When set to `false`, the built-in Spark shuffle will be used. |true
 <a name="shuffle.transport.earlyStart"></a>spark.rapids.shuffle.transport.earlyStart|Enable early connection establishment for RAPIDS Shuffle|true
 <a name="shuffle.transport.earlyStart.heartbeatInterval"></a>spark.rapids.shuffle.transport.earlyStart.heartbeatInterval|Shuffle early start heartbeat interval (milliseconds). Executors will send a heartbeat RPC message to the driver at this interval|5000
 <a name="shuffle.transport.earlyStart.heartbeatTimeout"></a>spark.rapids.shuffle.transport.earlyStart.heartbeatTimeout|Shuffle early start heartbeat timeout (milliseconds). Executors that don't heartbeat within this timeout will be considered stale. This timeout must be higher than the value for spark.rapids.shuffle.transport.earlyStart.heartbeatInterval|10000
@@ -239,6 +240,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|`pmod`|Pmod|true|None|
 <a name="sql.expression.PosExplode"></a>spark.rapids.sql.expression.PosExplode|`posexplode_outer`, `posexplode`|Given an input array produces a sequence of rows for each value in the array.|true|None|
 <a name="sql.expression.Pow"></a>spark.rapids.sql.expression.Pow|`pow`, `power`|lhs ^ rhs|true|None|
+<a name="sql.expression.PreciseTimestampConversion"></a>spark.rapids.sql.expression.PreciseTimestampConversion| |Expression used internally to convert the TimestampType to Long and back without losing precision, i.e. in microseconds. Used in time windowing.|true|None|
 <a name="sql.expression.PromotePrecision"></a>spark.rapids.sql.expression.PromotePrecision| |PromotePrecision before arithmetic operations between DecimalType data|true|None|
 <a name="sql.expression.PythonUDF"></a>spark.rapids.sql.expression.PythonUDF| |UDF run in an external python process. Does not actually run on the GPU, but the transfer of data to/from it can be accelerated.|true|None|
 <a name="sql.expression.Quarter"></a>spark.rapids.sql.expression.Quarter|`quarter`|Returns the quarter of the year for date, in the range 1 to 4|true|None|
@@ -295,8 +297,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Year"></a>spark.rapids.sql.expression.Year|`year`|Returns the year from a date or timestamp|true|None|
 <a name="sql.expression.AggregateExpression"></a>spark.rapids.sql.expression.AggregateExpression| |Aggregate expression|true|None|
 <a name="sql.expression.Average"></a>spark.rapids.sql.expression.Average|`avg`, `mean`|Average aggregate operator|true|None|
-<a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, only supported in rolling window in current.|true|None|
-<a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, only supported in rolling window in current.|true|None|
+<a name="sql.expression.CollectList"></a>spark.rapids.sql.expression.CollectList|`collect_list`|Collect a list of non-unique elements, not supported in reduction.|true|None|
+<a name="sql.expression.CollectSet"></a>spark.rapids.sql.expression.CollectSet|`collect_set`|Collect a set of unique elements, not supported in reduction.|true|None|
 <a name="sql.expression.Count"></a>spark.rapids.sql.expression.Count|`count`|Count aggregate operator|true|None|
 <a name="sql.expression.First"></a>spark.rapids.sql.expression.First|`first_value`, `first`|first aggregate operator|true|None|
 <a name="sql.expression.Last"></a>spark.rapids.sql.expression.Last|`last`, `last_value`|last aggregate operator|true|None|
@@ -328,6 +330,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
 <a name="sql.exec.CustomShuffleReaderExec"></a>spark.rapids.sql.exec.CustomShuffleReaderExec|A wrapper of shuffle query stage|true|None|
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
+<a name="sql.exec.ObjectHashAggregateExec"></a>spark.rapids.sql.exec.ObjectHashAggregateExec|The backend for hash based aggregations supporting TypedImperativeAggregate functions|true|None|
 <a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
 <a name="sql.exec.DataWritingCommandExec"></a>spark.rapids.sql.exec.DataWritingCommandExec|Writing data|true|None|
 <a name="sql.exec.BatchScanExec"></a>spark.rapids.sql.exec.BatchScanExec|The backend for most file input|true|None|
