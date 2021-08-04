@@ -61,7 +61,8 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
 
         // assert that a file was generated
         val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
-        assert(dotDirs.length === 2)
+        // 2 dot files and one regular output log file
+        assert(dotDirs.length === 3)
 
         // assert that the generated files looks something like what we expect
         var hashAggCount = 0

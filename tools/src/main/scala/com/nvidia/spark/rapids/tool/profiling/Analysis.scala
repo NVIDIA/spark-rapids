@@ -20,7 +20,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling._
 
@@ -29,7 +28,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * from object of ApplicationInfo
  */
 class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter],
-    numOutputRows: Int) extends Logging {
+    numOutputRows: Int) {
 
   def getDurations(tcs: ArrayBuffer[TaskCase]): (Long, Long, Long, Double) = {
     val durations = tcs.map(_.duration)
