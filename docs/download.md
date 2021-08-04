@@ -77,7 +77,7 @@ Software Requirements:
 	
 	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
 	
-	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0 
+	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
 	
 	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 	
