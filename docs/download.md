@@ -19,13 +19,11 @@ that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
 ## Release v21.06.1
-This release patches the plugin to address a backwards incompatible change to Parquet filters made
-by Databricks in the Databricks 7.3 ML LTS environment.  More information in [issue
-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) in the RAPIDS Spark repository.
+This is a patch release to address an issue with the plugin in the Databricks 7.3 ML LTS runtime.
 
 Hardware Requirements:
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Architecture: NVIDIA V100, T4 or A10/A30/A100 GPUs
 
 Software Requirements:
 
@@ -55,7 +53,7 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 
 ### Release Notes
 This release patches the plugin to address a backwards incompatible change to Parquet filters made
-by Databricks in the Databricks 7.3 ML LTS environment.  More information is in [issue
+by Databricks in the Databricks 7.3 ML LTS runtime.  More information is in [issue
 3098](https://github.com/NVIDIA/spark-rapids/issues/3098) in the RAPIDS Spark repository.  See the
 [Release v21.06.0](#release-v21060) release notes for more detail about new features in 21.06.
 
