@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-07-29
+Generated on 2021-08-04
 
 ## Release 21.08
 
@@ -36,6 +36,8 @@ Generated on 2021-07-29
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#3017](https://github.com/NVIDIA/spark-rapids/issues/3017)|[BUG] orc_write_test failed in databricks runtime|
+|[#3060](https://github.com/NVIDIA/spark-rapids/issues/3060)|[BUG] ORC read can corrupt data when specified schema does not match file schema ordering|
 |[#3065](https://github.com/NVIDIA/spark-rapids/issues/3065)|[BUG] window exec tries to do too much on the GPU|
 |[#3066](https://github.com/NVIDIA/spark-rapids/issues/3066)|[BUG] Profiling tool generate dot file fails to convert|
 |[#3038](https://github.com/NVIDIA/spark-rapids/issues/3038)|[BUG] leak in `getDeviceMemoryBuffer` for the unspill case|
@@ -96,6 +98,9 @@ Generated on 2021-07-29
 ### PRs
 |||
 |:---|:---|
+|[#3124](https://github.com/NVIDIA/spark-rapids/pull/3124)|Fix merge conflict 3122 from branch-21.06 [skip ci]|
+|[#3100](https://github.com/NVIDIA/spark-rapids/pull/3100)|Update databricks 3.0.1 shim to new ParquetFilter api|
+|[#3083](https://github.com/NVIDIA/spark-rapids/pull/3083)|Initial CHANGELOG.md update for 21.08|
 |[#3079](https://github.com/NVIDIA/spark-rapids/pull/3079)|Remove the struct support in ORC reader|
 |[#3062](https://github.com/NVIDIA/spark-rapids/pull/3062)|Fix ORC read corruption when specified schema does not match file order|
 |[#3064](https://github.com/NVIDIA/spark-rapids/pull/3064)|Tweak scaladoc to callout the GDS+unspill case in copyBuffer|
@@ -258,6 +263,21 @@ Generated on 2021-07-29
 |[#2561](https://github.com/NVIDIA/spark-rapids/pull/2561)|Fixing the merge of 21.06 to 21.08 for comment changes in Profiling tool|
 |[#2558](https://github.com/NVIDIA/spark-rapids/pull/2558)|Fix cdh shim version in 21.08 [skip ci]|
 |[#2543](https://github.com/NVIDIA/spark-rapids/pull/2543)|Init branch-21.08|
+
+## Release 21.06.1
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3098](https://github.com/NVIDIA/spark-rapids/issues/3098)|[BUG] Databricks parquetFilters build failure|
+
+### PRs
+|||
+|:---|:---|
+|[#3127](https://github.com/NVIDIA/spark-rapids/pull/3127)|Update CHANGELOG for the release v21.06.1 [skip ci]|
+|[#3123](https://github.com/NVIDIA/spark-rapids/pull/3123)|Update rapids plugin version to 21.06.1 [skip ci]|
+|[#3118](https://github.com/NVIDIA/spark-rapids/pull/3118)|Fix databricks 3.0.1 for ParquetFilters api change|
+|[#3119](https://github.com/NVIDIA/spark-rapids/pull/3119)|Branch 21.06 databricks update [skip ci]|
 
 ## Release 21.06
 
