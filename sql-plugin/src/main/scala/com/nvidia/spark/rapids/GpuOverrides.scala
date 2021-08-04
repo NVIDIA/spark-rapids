@@ -2485,7 +2485,8 @@ object GpuOverrides {
           ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
     expr[StringRepeat](
-      "StringRepeat operator that repeats the given strings with numbers of times given by repeatTimes",
+      "StringRepeat operator that repeats the given strings with numbers of times " +
+        "given by repeatTimes",
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("input", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("repeatTimes", TypeSig.INT, TypeSig.INT))),
