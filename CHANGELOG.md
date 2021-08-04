@@ -1,5 +1,19 @@
 # Change log
-Generated on 2021-06-25
+Generated on 2021-08-04
+
+## Release 21.06.1
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3098](https://github.com/NVIDIA/spark-rapids/issues/3098)|[BUG] Databricks parquetFilters build failure|
+
+### PRs
+|||
+|:---|:---|
+|[#3123](https://github.com/NVIDIA/spark-rapids/pull/3123)|Update rapids plugin version to 21.06.1 [skip ci]|
+|[#3118](https://github.com/NVIDIA/spark-rapids/pull/3118)|Fix databricks 3.0.1 for ParquetFilters api change|
+|[#3119](https://github.com/NVIDIA/spark-rapids/pull/3119)|Branch 21.06 databricks update [skip ci]|
 
 ## Release 21.06
 
@@ -85,6 +99,7 @@ Generated on 2021-06-25
 ### PRs
 |||
 |:---|:---|
+|[#2817](https://github.com/NVIDIA/spark-rapids/pull/2817)|Update changelog for v21.06.0 release [skip ci]||
 |[#2806](https://github.com/NVIDIA/spark-rapids/pull/2806)|Noted testing for A10, noted that min driver ver is HW specific|
 |[#2797](https://github.com/NVIDIA/spark-rapids/pull/2797)|Update documentation for InitCap incompatibility|
 |[#2774](https://github.com/NVIDIA/spark-rapids/pull/2774)|Update changelog for 21.06 release [skip ci]|
