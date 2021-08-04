@@ -304,7 +304,9 @@ The profiling tool generates information which can be used for debugging and pro
 ### Profiling tool functions
 
 Below is the information the profiling tool reports, see [Profile tool Detailed Output and Examples](#profile-tool-detailed-output-and-examples) for more information
-and examples.
+and examples. It has 2 main modes of operation: collection and compare.  Collection mode is when no other options are specified it simply collects information
+on each application individually and outputs a file per application. Compare mode will combine all the applications information in the same tables into a single file.
+It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.
 
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
 - Application information
@@ -314,6 +316,8 @@ and examples.
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
+- Compare Mode: Matching SQL IDs Across Applications
+- Compare Mode: Matching Stage IDs Across Applications
 - Optionally : SQL Plan for each SQL query
 - Optionally : Generates DOT graphs for each SQL query
 - Optionally : Generates timeline graph for application
@@ -355,8 +359,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 
-  -c, --compare                   Compare Applications (Recommended to compare
-                                  less than 10 applications). Default is false
+  -c, --compare                   Compare Applications (Note this may require
+                                  more memory if comparing a large number of
+                                  applications). Default is false
   -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
                                   processing.eg: 100-newest-filesystem (for
                                   processing newest 100 event logs). eg:
@@ -396,7 +401,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
 ### Profiling tool output
 By default this outputs a log file under sub-directory `./rapids_4_spark_profile`.
-If running in normal collect mode, it outputs a file named `rapids_4_spark_tools_output_<app index>.log`
+If running in normal collect mode, it outputs a file named `rapids_4_spark_tools_output_<appIndex>.log`
 for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_output.log`
 will be output. The output will go into your default filesystem, it supports local filesystem or HDFS.
 There are separate files that are generated under the same sub-directory when using the options to generate query
@@ -418,12 +423,14 @@ All the metrics definitions can be found in the [executor task metrics doc](http
 
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
 - Application information
-- Datasource information
+- Data Source information
 - Executors information
 - Job, stage and SQL ID information (not in `compare` mode yet)
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
+- Compare Mode: Matching SQL IDs Across Applications
+- Compare Mode: Matching Stage IDs Across Applications
 - Optionally : SQL Plan for each SQL query
 - Optionally : Generates DOT graphs for each SQL query
 - Optionally : Generates timeline graph for application
@@ -434,8 +441,8 @@ We can input multiple Spark event logs and this tool can compare environments, e
 
 - Compare the durations/versions/gpuMode on or off:
 ```
-### A. Compare Information Collected ###
-Compare Application Information:
+### A. Information Collected ###
+Application Information:
 
 +--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------------+
 |appIndex|appName    |appId                  |startTime    |endTime      |duration|durationStr|sparkVersion|pluginEnabled|
@@ -445,15 +452,35 @@ Compare Application Information:
 +--------+-----------+-----------------------+-------------+-------------+--------+-----------+------------+-------------+
 ```
 
-- Compare Executor information:
+- Executor information:
 ```
-Compare Executor Information:
+Executor Information:
 +--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
 |appIndex|resourceProfileId|numExecutors|executorCores|maxMem     |maxOnHeapMem|maxOffHeapMem|executorMemory|numGpusPerExecutor|executorOffHeap|taskCpu|taskGpu|
 +--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
 |1       |0                |1           |4            |11264537395|11264537395 |0            |20480         |1                 |0              |1      |0.0    |
 |1       |1                |2           |2            |3247335014 |3247335014  |0            |6144          |2                 |0              |2      |2.0    |
 +--------+-----------------+------------+-------------+-----------+------------+-------------+-------------+--------------+------------------+---------------+-------+-------+
+```
+
+- Data Source information
+The details of this output differ between using a Spark Data Source V1 and Data Source V2 reader. The Data Source V2 truncates the schema, so if you see `...`, then
+the full schema is not available.
+```
+Data Source Information:
++--------+-----+-------+---------------------------------------------------------------------------------------------------------------------------+-----------------+---------------------------------------------------------------------------------------------+
+|appIndex|sqlID|format |location                                                                                                                   |pushedFilters    |schema                                                                                       |
++--------+-----+-------+---------------------------------------------------------------------------------------------------------------------------+-----------------+---------------------------------------------------------------------------------------------+
+|1       |0    |Text   |InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/integration_tests/src/test/resources/trucks-comments.csv]|[]               |value:string                                                                                 |
+|1       |1    |csv    |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/integration_tests/src/test/re...               |PushedFilters: []|_c0:string                                                                                   |
+|1       |2    |parquet|Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotscolumnsout]                                |PushedFilters: []|loan_id:bigint,monthly_reporting_period:string,servicer:string,interest_rate:double,curren...|
+|1       |3    |parquet|Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotscolumnsout]                                |PushedFilters: []|loan_id:bigint,monthly_reporting_period:string,servicer:string,interest_rate:double,curren...|
+|1       |4    |orc    |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/logscolumsout.orc]                             |PushedFilters: []|loan_id:bigint,monthly_reporting_period:string,servicer:string,interest_rate:double,curren...|
+|1       |5    |orc    |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/logscolumsout.orc]                             |PushedFilters: []|loan_id:bigint,monthly_reporting_period:string,servicer:string,interest_rate:double,curren...|
+|1       |6    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
+|1       |7    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
+|1       |8    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
++--------+-----+-------+---------------------------------------------------------------------------------------------------------------------------+-----------------+---------------------------------------------------------------------------------------------+
 ```
 
 - Matching SQL IDs Across Applications:
@@ -521,8 +548,14 @@ Compare Rapids Properties which are set explicitly:
 - List rapids-4-spark and cuDF jars based on classpath: 
 ```
 Rapids Accelerator Jar and cuDF Jar:
-/path/rapids-4-spark_2.12-0.5.0.jar
-/path/cudf-0.19-cuda10-2.jar
++--------+------------------------------------------------------------+
+|appIndex|Rapids4Spark jars                                           |
++--------+------------------------------------------------------------+
+|1       |spark://10.10.10.10:43445/jars/cudf-0.19.2-cuda11.jar       |
+|1       |spark://10.10.10.10:43445/jars/rapids-4-spark_2.12-0.5.0.jar|
+|2       |spark://10.10.10.11:41319/jars/cudf-0.19.2-cuda11.jar       |
+|2       |spark://10.10.10.11:41319/jars/rapids-4-spark_2.12-0.5.0.jar|
++--------+------------------------------------------------------------+
 ```
 
 - Job, stage and SQL ID information(not in `compare` mode yet):

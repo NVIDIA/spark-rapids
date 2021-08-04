@@ -48,8 +48,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Filter event logs whose filenames contain the input string")
   val compare: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Compare Applications (Recommended to compare less than 10 applications)." +
-          " Default is false")
+      descr = "Compare Applications (Note this may require more memory if comparing " +
+          "a large number of applications. Default is false")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows for each Application. Default is 1000")
