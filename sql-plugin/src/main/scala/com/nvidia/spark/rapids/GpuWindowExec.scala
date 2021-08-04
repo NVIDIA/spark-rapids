@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, ShortType, StructType}
+import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, MapType, ShortType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -93,14 +93,15 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         .foreach(_ => willNotWorkOnGpu("Unexpected query plan with Windowing functions; " +
             "cannot convert for GPU execution. " +
             "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
-    val unsupported = partitionSpec.map(_.wrapped.dataType).filter {
+    val unsupportedKeys = partitionSpec.map(_.wrapped.dataType).exists {
       case _: StructType => true
       case _: ArrayType => true
+      case _: MapType => true
       case _ => false
-    }.distinct
+    }
 
-    if (unsupported.nonEmpty) {
-      willNotWorkOnGpu(s"nested partition by keys are not supported $unsupported")
+    if (unsupportedKeys) {
+      willNotWorkOnGpu(s"nested partition by keys are not supported")
     }
   }
 
@@ -480,7 +481,7 @@ object GroupedAggregations extends Arm {
       col: cudf.ColumnVector,
       dataType: DataType): GpuColumnVector = {
     dataType match {
-      case _: ArrayType | _: StructType =>
+      case _: ArrayType | _: StructType | _: MapType =>
         GpuColumnVector.from(col, dataType).incRefCount()
       case other =>
         val dtype = GpuColumnVector.getNonNestedRapidsType(other)
