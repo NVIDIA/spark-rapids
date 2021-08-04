@@ -386,6 +386,25 @@ for this issue.
 To fix it you can either disable the IOMMU, or you can disable using pinned memory by setting
 [spark.rapids.memory.pinnedPool.size](configs.md#memory.pinnedPool.size) to 0.
 
+### Why am I getting a buffer overflow error when using the KryoSerializer?
+Buffer overflow will happen when trying to serialize an object larger than
+[`spark.kryoserializer.buffer.max`](https://spark.apache.org/docs/latest/configuration.html#compression-and-serialization),
+and may result in an error such as:
+```
+Caused by: com.esotericsoftware.kryo.KryoException: Buffer overflow. Available: 0, required: 636
+    at com.esotericsoftware.kryo.io.Output.require(Output.java:167)
+    at com.esotericsoftware.kryo.io.Output.writeBytes(Output.java:251)
+    at com.esotericsoftware.kryo.io.Output.write(Output.java:219)
+    at java.base/java.io.ObjectOutputStream$BlockDataOutputStream.write(ObjectOutputStream.java:1859)
+    at java.base/java.io.ObjectOutputStream.write(ObjectOutputStream.java:712)
+    at java.base/java.io.BufferedOutputStream.write(BufferedOutputStream.java:123)
+    at java.base/java.io.DataOutputStream.write(DataOutputStream.java:107)
+    ...
+```
+Try increasing the
+[`spark.kryoserializer.buffer.max`](https://spark.apache.org/docs/latest/configuration.html#compression-and-serialization)
+from a default of 64M to something larger, for example 512M.
+
 ### Is speculative execution supported?
 
 Yes, speculative execution in Spark is fine with the RAPIDS Accelerator plugin.
