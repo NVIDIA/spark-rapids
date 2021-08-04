@@ -198,6 +198,14 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     use ~APPLICATION_NAME. i.e Select all event
                                     logs except the ones which have application
                                     name as the input string.
+      --any                         Apply multiple event log filtering criteria and process
+                                    only logs for which any condition is satisfied.
+                                    Example: <Filter1> <Filter2> <Filter3> --any -> result
+                                    is <Filter1> OR <Filter2> OR <Filter3>
+      --all                         Apply multiple event log filtering criteria and process
+                                    only logs for which all conditions are satisfied.
+                                    Example: <Filter1> <Filter2> <Filter3> --all -> result
+                                    is <Filter1> AND <Filter2> AND <Filter3>. Default is all=true.
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on
                                     application start timestamp, unique
                                     application name or filesystem timestamp.

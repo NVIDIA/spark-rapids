@@ -153,13 +153,15 @@ object EventLogPathProcessor extends Logging {
    * @param matchlogs      keyword to match file names in the directory
    * @param eventLogsPaths Array of event log paths
    * @param hadoopConf     Hadoop Configuration
-   * @return EventLogInfo indicating type and location of event log
+   * @return (Seq[EventLogInfo], Seq[EventLogInfo]) - Tuple indicating paths of event logs in
+   *         filesystem. First element contains paths of event logs after applying filters and
+   *         second element contains paths of all event logs.
    */
   def processAllPaths(
       filterNLogs: Option[String],
       matchlogs: Option[String],
       eventLogsPaths: List[String],
-      hadoopConf: Configuration): Seq[EventLogInfo] = {
+      hadoopConf: Configuration): (Seq[EventLogInfo], Seq[EventLogInfo]) = {
 
     val logsWithTimestamp = eventLogsPaths.flatMap(getEventLogInfo(_, hadoopConf)).toMap
 
@@ -186,7 +188,7 @@ object EventLogPathProcessor extends Logging {
     } else {
       matchedLogs
     }
-    filteredLogs.keys.toSeq
+    (filteredLogs.keys.toSeq, logsWithTimestamp.keys.toSeq)
   }
 
   def filterByAppCriteria(filterNLogs: Option[String]): Boolean = {

@@ -496,7 +496,7 @@ class AppFilterSuite extends FunSuite {
           // scalastyle:off line.size.limit
           val supText =
             s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"user${app.userName}"}""".stripMargin
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"${app.userName}"}""".stripMargin
           // scalastyle:on line.size.limit
           Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
           new File(elogFile.toString).setLastModified(app.fsTime)
@@ -522,6 +522,171 @@ class AppFilterSuite extends FunSuite {
             userName)
         }
         val appArgs = new QualificationArgs(allArgs ++ fileNames)
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == expectedFilterSize)
+      }
+    }
+  }
+
+  case class TestConjunctionAndDisjunction(
+      fileName: String, fsTime: Long, appName: String,
+      appTime: Long, uniqueId: Int, userName: String)
+
+  private val appsNameConjunctionAndDisjunctionToTest = Array(
+    TestConjunctionAndDisjunction("app-ndshours18", msHoursAgo(16), "Ndshours18",
+      msHoursAgo(18), 1, "user1"),
+    TestConjunctionAndDisjunction("app-Ndsweeks-1", msWeeksAgo(1), "ndsweeks",
+      msWeeksAgo(1), 1, "user1"),
+    TestConjunctionAndDisjunction("app-ndsweeks-2", msWeeksAgo(2), "Ndsweeks",
+      msWeeksAgo(2), 2, "user2"),
+    TestConjunctionAndDisjunction("app-ndsweeks-3", msWeeksAgo(3), "ndsweeks",
+      msWeeksAgo(3), 3, "user3"),
+    TestConjunctionAndDisjunction("app-Nds86-1", msDaysAgo(3), "nds86",
+      msDaysAgo(4), 1, "user1"),
+    TestConjunctionAndDisjunction("app-nds86-2", msDaysAgo(6), "nds86",
+      msWeeksAgo(1), 2, "user2"),
+    TestConjunctionAndDisjunction("app-nds86-3", msDaysAgo(18), "nds86",
+      msWeeksAgo(3), 3, "user3"))
+
+  test("Test disjunction all filters") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ filterAppName("nds") ++
+          startTimePeriod("3w") ++ userName("user1"), expectedFilterSize = 7, "any")
+  }
+
+  test("Test disjunction no appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++
+          startTimePeriod("2w") ++ userName("user3"),      6, "any")
+  }
+
+  test("Test disjunction no startTime") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1"),
+      6, "any")
+  }
+
+  test("Test disjunction no userName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ filterAppName("nds") ++
+          startTimePeriod("2w"), 6, "any")
+  }
+
+  test("Test disjunction only userName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ userName("user1"), 3, "any")
+  }
+
+  test("Test disjunction only appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("nds"), 5, "any")
+  }
+
+  test("Test disjunction match fileName or appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterAppName("Nds"),
+      5, "any")
+  }
+
+  test("Test disjunction match filename, 10-newest-filesystem and appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterCriteria("10-newest-filesystem") ++ filterAppName("nds"),
+      7, "any")
+  }
+
+  test("Test conjunction all filters") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ filterAppName("nds") ++
+          startTimePeriod("3w") ++ userName("user1"), 2, "all")
+  }
+
+  test("Test conjunction no appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++
+          startTimePeriod("2w") ++ userName("user3"), 0, "all")
+  }
+
+  test("Test conjunction no startTime") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ filterAppName("nds") ++ userName("user1"), 2)
+  }
+
+  test("Test conjunction no userName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ filterAppName("nds") ++
+          startTimePeriod("2w"), 3, "all")
+  }
+
+  test("Test conjunction only userName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterCriteria("10-newest") ++ userName("user1"), 3)
+  }
+
+  test("Test conjunction only appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("nds"), 5)
+  }
+
+  test("Test conjunction match fileName and appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterAppName("Nds"),
+      2, "all")
+  }
+
+  test("Test conjunction match filename, 10-newest-filesystem and appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterCriteria("10-newest-filesystem") ++ filterAppName("nds"),
+      3, "all")
+  }
+
+  def filterCriteria(filterCrit: String): Array[String] = {
+    Array("--filter-criteria", filterCrit)
+  }
+
+  def filterAppName(appName: String): Array[String] = {
+    Array("--application-name", appName)
+  }
+
+  def matchFileName(appName:String): Array[String] = {
+    Array("--match-event-logs", appName)
+  }
+
+  def startTimePeriod(startPeriod: String): Array[String] = {
+    Array("--start-app-time", startPeriod)
+  }
+
+  def userName(name: String): Array[String] = {
+    Array("--user-name", name)
+  }
+
+  private def testConjunctionAndDisjunction(
+      apps: Array[TestConjunctionAndDisjunction],
+      filtersToApply: Array[String],
+      expectedFilterSize: Int,
+      logicFilter: String = "all"): Unit = {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val fileNames = apps.map { app =>
+          val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath, app.fileName)
+          // scalastyle:off line.size.limit
+          val supText =
+            s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"${app.userName}"}""".stripMargin
+          // scalastyle:on line.size.limit
+          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+          new File(elogFile.toString).setLastModified(app.fsTime)
+          elogFile.toString
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          s"--$logicFilter"
+        )
+
+        val appArgs = new QualificationArgs(allArgs ++ filtersToApply ++ fileNames)
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
         assert(appSum.size == expectedFilterSize)

@@ -379,7 +379,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       s"$qualLogDir/dataset_eventlog"
     ))
 
-    val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+    val (result, _) = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
       appArgs.matchEventLogs.toOption, appArgs.eventlog(),
       sparkSession.sparkContext.hadoopConfiguration)
     assert(result.length == 2)
@@ -409,7 +409,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         tempFile3.toString
       ))
 
-      val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+      val (result, _) = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
         appArgs.matchEventLogs.toOption, appArgs.eventlog(),
         sparkSession.sparkContext.hadoopConfiguration)
       assert(result.length == 2)
@@ -454,7 +454,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         tempFile4.toString
       ))
 
-      val result = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+      val (result, _) = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
         appArgs.matchEventLogs.toOption, appArgs.eventlog(),
         sparkSession.sparkContext.hadoopConfiguration)
       assert(result.length == 3)
