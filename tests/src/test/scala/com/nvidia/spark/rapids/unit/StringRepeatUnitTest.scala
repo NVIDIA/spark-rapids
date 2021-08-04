@@ -85,7 +85,7 @@ class StringRepeatUnitTest extends GpuUnitTests {
       withResource(GpuScalar(null, DataTypes.StringType)) { nullStr =>
         withResource(GpuStringRepeat(null, null).doColumnar(nullStr, intGpuColumn)) { result =>
           assertResult(intGpuColumn.getRowCount)(result.getRowCount)
-          assertResult(result.getNullCount)(result.getRowCount)
+          assertResult(result.getRowCount)(result.getNullCount)
         }
       }
     }
