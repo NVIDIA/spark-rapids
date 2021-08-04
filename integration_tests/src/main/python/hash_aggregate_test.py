@@ -886,3 +886,47 @@ def test_struct_count_distinct_cast(cast_struct_tostring, key_data_gen):
     assert_gpu_and_cpu_are_equal_collect(_count_distinct_by_struct, {
         'spark.sql.legacy.castComplexTypesToString.enabled': cast_struct_tostring == 'LEGACY'
     })
+
+@ignore_order(local=True)
+def test_reduction_nested_struct():
+    def do_it(spark):
+        df = unary_op_df(spark, StructGen([('aa', StructGen([('aaa', IntegerGen(min_val=0, max_val=4))]))]))
+        return df.agg(f.sum(df.a.aa.aaa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@ignore_order(local=True)
+def test_reduction_nested_array():
+    def do_it(spark):
+        df = unary_op_df(spark, ArrayGen(StructGen([('aa', IntegerGen(min_val=0, max_val=4))])))
+        return df.agg(f.sum(df.a[1].aa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+# The map here is a child not a top level, because we only support GetMapValue on String to String maps.
+@ignore_order(local=True)
+def test_reduction_nested_map():
+    def do_it(spark):
+        df = unary_op_df(spark, ArrayGen(MapGen(StringGen('a{1,5}', nullable=False), StringGen('[ab]{1,5}'))))
+        return df.agg(f.min(df.a[1]["a"]))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@ignore_order(local=True)
+def test_agg_nested_struct():
+    def do_it(spark):
+        df = two_col_df(spark, StringGen('k{1,5}'), StructGen([('aa', StructGen([('aaa', IntegerGen(min_val=0, max_val=4))]))]))
+        return df.groupBy('a').agg(f.sum(df.b.aa.aaa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@ignore_order(local=True)
+def test_agg_nested_array():
+    def do_it(spark):
+        df = two_col_df(spark, StringGen('k{1,5}'), ArrayGen(StructGen([('aa', IntegerGen(min_val=0, max_val=4))])))
+        return df.groupBy('a').agg(f.sum(df.b[1].aa))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+# The map here is a child not a top level, because we only support GetMapValue on String to String maps.
+@ignore_order(local=True)
+def test_agg_nested_map():
+    def do_it(spark):
+        df = two_col_df(spark, StringGen('k{1,5}'), ArrayGen(MapGen(StringGen('a{1,5}', nullable=False), StringGen('[ab]{1,5}'))))
+        return df.groupBy('a').agg(f.min(df.b[1]["a"]))
+    assert_gpu_and_cpu_are_equal_collect(do_it)
