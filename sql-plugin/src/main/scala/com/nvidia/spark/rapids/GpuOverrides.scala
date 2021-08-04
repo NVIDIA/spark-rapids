@@ -1772,14 +1772,14 @@ object GpuOverrides {
     expr[If](
       "IF expression",
       ExprChecks.projectNotLambda(
-        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
-            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
-            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
