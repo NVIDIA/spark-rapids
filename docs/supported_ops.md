@@ -7699,9 +7699,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -7720,9 +7720,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -7741,9 +7741,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -15202,6 +15202,138 @@ Accelerator support is described below.
 <th>UDT</th>
 </tr>
 <tr>
+<td rowSpan="6">StringRepeat</td>
+<td rowSpan="6">`repeat`</td>
+<td rowSpan="6">StringRepeat operator that repeats the given strings with numbers of times given by repeatTimes</td>
+<td rowSpan="6">None</td>
+<td rowSpan="3">project</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>repeatTimes</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td rowSpan="3">lambda</td>
+<td>input</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>repeatTimes</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="8">StringReplace</td>
 <td rowSpan="8">`replace`</td>
 <td rowSpan="8">StringReplace operator</td>
@@ -17949,9 +18081,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -17991,9 +18123,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18201,9 +18333,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18243,9 +18375,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18265,9 +18397,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18307,9 +18439,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18329,9 +18461,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18371,9 +18503,9 @@ Accelerator support is described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18599,9 +18731,9 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18620,7 +18752,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -18642,9 +18774,9 @@ Accelerator support is described below.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -18663,7 +18795,7 @@ Accelerator support is described below.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -18977,7 +19109,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -18998,7 +19130,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -19020,7 +19152,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -19041,7 +19173,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -19110,7 +19242,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -19131,7 +19263,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -19153,7 +19285,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -19174,7 +19306,7 @@ Accelerator support is described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>

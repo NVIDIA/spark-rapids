@@ -63,9 +63,9 @@ object ProfileMain extends Logging {
     val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName, "Profile summary")
     try {
       // Get the event logs required to process
-      val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      val (eventLogFsFiltered, _) = EventLogPathProcessor.processAllPaths(filterN.toOption,
         matchEventLogs.toOption, eventlogPaths, sparkSession.sparkContext.hadoopConfiguration)
-      if (eventLogInfos.isEmpty) {
+      if (eventLogFsFiltered.isEmpty) {
         logWarning("No event logs to process after checking paths, exiting!")
         return 0
       }
@@ -74,7 +74,7 @@ object ProfileMain extends Logging {
       // Suggest only enable compare mode if there is no more than 10 applications as input.
       if (appArgs.compare()) {
         // Create an Array of Applications(with an index starting from 1)
-        val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos,
+        val (apps, errorCode) = ApplicationInfo.createApps(eventLogFsFiltered,
           numOutputRows, sparkSession)
         if (errorCode > 0) {
           logError(s"Error parsing one of the event logs")
@@ -90,7 +90,7 @@ object ProfileMain extends Logging {
         apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
       } else {
         var index: Int = 1
-        eventLogInfos.foreach { log =>
+        eventLogFsFiltered.foreach { log =>
           // Only process 1 app at a time.
           val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(log), numOutputRows,
             sparkSession, startIndex = index)

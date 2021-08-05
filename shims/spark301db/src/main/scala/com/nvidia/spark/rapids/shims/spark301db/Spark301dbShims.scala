@@ -121,7 +121,8 @@ class Spark301dbShims extends Spark301Shims {
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-              TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+              TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested() +
+              TypeSig.psNote(TypeEnum.MAP, "Not supported as a partition by key") +
               TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
               TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
           TypeSig.all),

@@ -487,6 +487,80 @@ case class GpuInitCap(child: Expression) extends GpuUnaryExpression with Implici
     }
 }
 
+case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
+    extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  override def left: Expression = input
+  override def right: Expression = repeatTimes
+  override def dataType: DataType = input.dataType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, IntegerType)
+
+  def doColumnar(input: GpuScalar, repeatTimes: GpuColumnVector): ColumnVector = {
+    assert(input.dataType == StringType)
+
+    withResource(GpuColumnVector.from(input, repeatTimes.getRowCount.asInstanceOf[Int],
+                 input.dataType)) {
+      replicatedInput => doColumnar(replicatedInput, repeatTimes)
+    }
+  }
+
+  def doColumnar(input: GpuColumnVector, repeatTimes: GpuColumnVector): ColumnVector = {
+    val repeatTimesCV = repeatTimes.getBase
+
+    // Compute the output size to check for overflow.
+    withResource(input.getBase.repeatStringsSizes(repeatTimesCV)) { outputSizes =>
+      if (outputSizes.getTotalSize > Int.MaxValue.asInstanceOf[Long]) {
+        throw new RuntimeException("Output strings have total size exceed maximum allowed size")
+      }
+
+      // Finally repeat the strings using the pre-computed strings' sizes.
+      input.getBase.repeatStrings(repeatTimesCV, outputSizes.getStringSizes)
+    }
+  }
+
+  def doColumnar(input: GpuColumnVector, repeatTimes: GpuScalar): ColumnVector = {
+    if (!repeatTimes.isValid) {
+      // If the input scala repeatTimes is invalid, the results should be all nulls.
+      withResource(Scalar.fromNull(DType.STRING)) {
+        nullString => ColumnVector.fromScalar(nullString, input.getRowCount.asInstanceOf[Int])
+      }
+    } else {
+      assert(repeatTimes.dataType == IntegerType)
+      val repeatTimesVal = repeatTimes.getBase.getInt
+
+      // Get the input size to check for overflow for the output.
+      // Note that this is not an accurate check since the total buffer size of the input
+      // strings column may be larger than the total length of strings that will be repeated in
+      // this function.
+      val inputBufferSize = input.getBase.getData.getLength
+      if (repeatTimesVal > 0 && inputBufferSize > Int.MaxValue / repeatTimesVal) {
+        throw new RuntimeException("Output strings have total size exceed maximum allowed size")
+      }
+
+      // Finally repeat the strings.
+      input.getBase.repeatStrings(repeatTimesVal)
+    }
+  }
+
+  def doColumnar(numRows: Int, input: GpuScalar, repeatTimes: GpuScalar): ColumnVector = {
+    assert(input.dataType == StringType)
+
+    if (!repeatTimes.isValid) {
+      // If the input scala repeatTimes is invalid, the results should be all nulls.
+      withResource(Scalar.fromNull(DType.STRING)) {
+        nullString => ColumnVector.fromScalar(nullString, numRows)
+      }
+    } else {
+      assert(repeatTimes.dataType == IntegerType)
+      val repeatTimesVal = repeatTimes.getBase.getInt
+
+      withResource(input.getBase.repeatString(repeatTimesVal)) {
+        repeatedString => ColumnVector.fromScalar(repeatedString, numRows)
+      }
+    }
+  }
+
+}
+
 case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
