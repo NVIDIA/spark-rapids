@@ -15204,7 +15204,7 @@ Accelerator support is described below.
 <tr>
 <td rowSpan="6">StringRepeat</td>
 <td rowSpan="6">`repeat`</td>
-<td rowSpan="6">StringRepeat operator, which repeat the given strings by given number(s) of times</td>
+<td rowSpan="6">StringRepeat operator that repeats the given strings with numbers of times given by repeatTimes</td>
 <td rowSpan="6">None</td>
 <td rowSpan="3">project</td>
 <td>input</td>
