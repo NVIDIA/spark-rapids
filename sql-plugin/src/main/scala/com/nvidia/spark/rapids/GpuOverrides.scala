@@ -2484,6 +2484,17 @@ object GpuOverrides {
               .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
           ParamCheck("count", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new SubstringIndexMeta(in, conf, p, r)),
+    expr[StringRepeat](
+      "StringRepeat operator that repeats the given strings with numbers of times " +
+        "given by repeatTimes",
+      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("input", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("repeatTimes", TypeSig.INT, TypeSig.INT))),
+      (in, conf, p, r) => new BinaryExprMeta[StringRepeat](in, conf, p, r) {
+        override def convertToGpu(
+            input: Expression,
+            repeatTimes: Expression): GpuExpression = GpuStringRepeat(input, repeatTimes)
+      }),
     expr[StringReplace](
       "StringReplace operator",
       ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
@@ -2575,7 +2586,7 @@ object GpuOverrides {
       (a, conf, p, r) => new ExprMeta[ConcatWs](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (a.children.size <= 1) {
-            // If only a separator specified and its a column, Spark returns an empty 
+            // If only a separator specified and its a column, Spark returns an empty
             // string for all entries unless they are null, then it returns null.
             // This seems like edge case so instead of handling on GPU just fallback.
             willNotWorkOnGpu("Only specifying separator column not supported on GPU")

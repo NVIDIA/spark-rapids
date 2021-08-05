@@ -163,7 +163,9 @@ Sample output in text:
 ### How to use qualification tool
 This tool parses the Spark CPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
-in the local filesystem, HDFS, S3 or mixed.
+in the local filesystem, HDFS, S3 or mixed. Note that if you are on an HDFS cluster
+the default filesystem is likely HDFS for both the input and output so if you want to
+point to the local filesystem be sure to include `file:` in the path
 
 ```bash
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
@@ -298,7 +300,9 @@ java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP
 ### Qualification tool output
 The summary report goes to STDOUT and by default it outputs 2 files under sub-directory
 `./rapids_4_spark_qualification_output/` that contain the processed applications. The output will
-go into your default filesystem, it supports local filesystem or HDFS.
+go into your default filesystem, it supports local filesystem or HDFS.  Note that if you are on an
+HDFS cluster the default filesystem is likely HDFS for both the input and output so if you want to
+point to the local filesystem be sure to include `file:` in the path
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
 
@@ -344,7 +348,9 @@ It can also optionally output the SQL plan, the SQL graphs, and a timeline graph
 ### How to use profiling tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
-in the local filesystem, HDFS, S3 or mixed.
+in the local filesystem, HDFS, S3 or mixed. Note that if you are on an HDFS cluster
+the default filesystem is likely HDFS for both the input and output so if you want to
+point to the local filesystem be sure to include `file:` in the path
 
 ```bash
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
@@ -413,6 +419,8 @@ By default this outputs a log file under sub-directory `./rapids_4_spark_profile
 If running in normal collect mode, it outputs a file named `rapids_4_spark_tools_output_<appIndex>.log`
 for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_output.log`
 will be output. The output will go into your default filesystem, it supports local filesystem or HDFS.
+Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
+so if you want to point to the local filesystem be sure to include `file:` in the path
 There are separate files that are generated under the same sub-directory when using the options to generate query
 visualizations or printing the SQL plans.
 
