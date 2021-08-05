@@ -399,20 +399,29 @@ _gen_data_for_collect_op = [[
     ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op
 ]
 
-# We wrapped sort_array functions on collect_list/collect_set because the orders of collected lists/sets are not
-# deterministic. The annotation `ignore_order` only affects on the order between rows, while with collect ops we also
-# need to guarantee the consistency of the row-wise order (the orders within each array produced by collect ops).
-@approximate_float
+_repeat_agg_column_for_collect_list_op = [
+        RepeatSeqGen(ArrayGen(int_gen), length=15),
+        RepeatSeqGen(all_basic_struct_gen, length=15),
+        RepeatSeqGen(simple_string_to_string_map_gen, length=15)
+]
+
+_gen_data_for_collect_list_op = _gen_data_for_collect_op + [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', value_gen),
+    ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_list_op
+]
+
+# to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
-@incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
+        lambda spark: gen_df(spark, data_gen, length=100).coalesce(1)
             .groupby('a')
-            .agg(f.sort_array(f.collect_list('b')), f.count('b')),
-        conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower()})
+            .agg(f.collect_list('b')),
+        conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower(),
+            'spark.sql.shuffle.partitons': '1'})
 
 @approximate_float
 @ignore_order(local=True)
