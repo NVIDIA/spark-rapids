@@ -36,6 +36,7 @@ def test_cast_empty_string_to_int():
 # pick child types that are simple to cast. Upcasting integer values and casting them to strings
 @pytest.mark.parametrize('data_gen,to_type', [
     (ArrayGen(byte_gen), ArrayType(IntegerType())),
+    (ArrayGen(StringGen('[0-9]{1,5}')), ArrayType(IntegerType())),
     (ArrayGen(byte_gen), ArrayType(StringType())),
     (ArrayGen(byte_gen), ArrayType(DecimalType(6, 2))),
     (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(IntegerType()))),
@@ -52,5 +53,3 @@ def test_cast_empty_string_to_int():
 def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
-
-

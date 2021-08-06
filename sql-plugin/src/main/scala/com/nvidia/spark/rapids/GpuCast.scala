@@ -285,78 +285,14 @@ object GpuCast extends Arm {
       }
     }
   }
-}
 
-/**
- * Casts using the GPU
- */
-case class GpuCast(
-    child: Expression,
-    dataType: DataType,
-    ansiMode: Boolean = false,
-    timeZoneId: Option[String] = None,
-    legacyCastToString: Boolean = false)
-  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
-
-  import GpuCast._
-
-  override def toString: String = if (ansiMode) {
-    s"ansi_cast($child as ${dataType.simpleString})"
-  } else {
-    s"cast($child as ${dataType.simpleString})"
-  }
-
-  override def checkInputDataTypes(): TypeCheckResult = {
-    if (Cast.canCast(child.dataType, dataType)) {
-      TypeCheckResult.TypeCheckSuccess
-    } else {
-      TypeCheckResult.TypeCheckFailure(
-        s"cannot cast ${child.dataType.catalogString} to ${dataType.catalogString}")
-    }
-  }
-
-  override def nullable: Boolean = Cast.forceNullable(child.dataType, dataType) || child.nullable
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
-    copy(timeZoneId = Option(timeZoneId))
-
-  /**
-   * Under certain conditions during hash partitioning, Spark will attempt to replace casts
-   * with semantically equivalent expressions. This method is overridden to prevent Spark
-   * from substituting non-GPU expressions.
-   */
-  override def semanticEquals(other: Expression): Boolean = other match {
-    case g: GpuExpression =>
-      if (this == g) {
-        true
-      } else {
-        super.semanticEquals(g)
-      }
-    case _ => false
-  }
-
-  // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
-  // Otherwise behave like Expression.resolved.
-  override lazy val resolved: Boolean =
-    childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
-
-  private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
-
-  override def sql: String = dataType match {
-    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
-    // this type of casting can only be introduced by the analyzer, and can be omitted when
-    // converting back to SQL query string.
-    case _: ArrayType | _: MapType | _: StructType => child.sql
-    case _ => s"CAST(${child.sql} AS ${dataType.sql})"
-  }
-
-  override def doColumnar(input: GpuColumnVector): ColumnVector =
-    recursiveDoColumnar(input.getBase, input.dataType(), dataType)
 
   private def recursiveDoColumnar(
       input: ColumnView,
       fromDataType: DataType,
-      toDataType: DataType): ColumnVector = {
+      toDataType: DataType,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean): ColumnVector = {
 
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
       return input.copyToColumnVector()
@@ -412,7 +348,7 @@ case class GpuCast(
         castTimestampToString(input)
 
       case (StructType(fields), StringType) =>
-        castStructToString(input, fields)
+        castStructToString(input, fields, ansiMode, legacyCastToString)
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
@@ -463,7 +399,7 @@ case class GpuCast(
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
               inputWithoutNanAndInfinity =>
                 if (fromDataType == FloatType &&
-                  ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
+                    ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
                   withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
                     withResource(doubles.mul(microsPerSec, DType.INT64)) {
                       inputTimesMicrosCv =>
@@ -480,9 +416,9 @@ case class GpuCast(
           }
         }
       case (FloatType | DoubleType, dt: DecimalType) =>
-        castFloatsToDecimal(input, dt)
+        castFloatsToDecimal(input, dt, ansiMode)
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input, from, to)
+        castDecimalToDecimal(input, from, to, ansiMode)
       case (BooleanType, TimestampType) =>
         // cudf requires casting to a long first.
         withResource(input.castTo(DType.INT64)) { longs =>
@@ -519,7 +455,7 @@ case class GpuCast(
             case DateType =>
               castStringToDate(trimmed)
             case TimestampType =>
-              castStringToTimestamp(trimmed)
+              castStringToTimestamp(trimmed, ansiMode)
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -533,41 +469,44 @@ case class GpuCast(
         // string to fp64. Then, cast fp64 to target decimal type to enforce HALF_UP rounding.
         withResource(input.strip()) { trimmed =>
           withResource(castStringToFloats(trimmed, ansiMode, DType.FLOAT64)) { fp =>
-            castFloatsToDecimal(fp, dt)
+            castFloatsToDecimal(fp, dt, ansiMode)
           }
         }
       case (ShortType | IntegerType | LongType, dt: DecimalType) =>
-        castIntegralsToDecimal(input, dt)
+        castIntegralsToDecimal(input, dt, ansiMode)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
 
       case (ShortType | IntegerType | LongType, dt: DecimalType) =>
         withResource(input.copyToColumnVector()) { inputVector =>
-          castIntegralsToDecimal(inputVector, dt)
+          castIntegralsToDecimal(inputVector, dt, ansiMode)
         }
 
       case (FloatType | DoubleType, dt: DecimalType) =>
         withResource(input.copyToColumnVector()) { inputVector =>
-          castFloatsToDecimal(inputVector, dt)
+          castFloatsToDecimal(inputVector, dt, ansiMode)
         }
 
       case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.copyToColumnVector(), from, to)
+        castDecimalToDecimal(input.copyToColumnVector(), from, to, ansiMode)
 
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
-        withResource(input.getChildColumnView(0))(childView =>
-          withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo))(childColumnVector =>
-            withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())))
+        withResource(input.getChildColumnView(0)) { childView =>
+          withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo,
+            ansiMode, legacyCastToString)) { childColumnVector =>
+            withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
+          }
+        }
 
       case (from: StructType, to: StructType) =>
-        castStructToStruct(from, to, input)
+        castStructToStruct(from, to, input, ansiMode, legacyCastToString)
 
       case (from: MapType, to: MapType) =>
-        castMapToMap(from, to, input)
+        castMapToMap(from, to, input, ansiMode, legacyCastToString)
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -585,10 +524,10 @@ case class GpuCast(
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
   private def assertValuesInRange(values: ColumnView,
-    minValue: => Scalar,
-    maxValue: => Scalar,
-    inclusiveMin: Boolean = true,
-    inclusiveMax: Boolean = true): Unit = {
+      minValue: => Scalar,
+      maxValue: => Scalar,
+      inclusiveMin: Boolean = true,
+      inclusiveMax: Boolean = true): Unit = {
 
     def throwIfAny(cv: ColumnView): Unit = {
       withResource(cv) { cv =>
@@ -629,11 +568,11 @@ case class GpuCast(
    * @param inclusiveMax Whether the max value is included in the valid range or not
    */
   private def replaceOutOfRangeValues(values: ColumnView,
-    minValue: => Scalar,
-    maxValue: => Scalar,
-    replaceValue: => Scalar,
-    inclusiveMin: Boolean = true,
-    inclusiveMax: Boolean = true): ColumnVector = {
+      minValue: => Scalar,
+      maxValue: => Scalar,
+      replaceValue: => Scalar,
+      inclusiveMin: Boolean = true,
+      inclusiveMax: Boolean = true): ColumnVector = {
 
     withResource(minValue) { minValue =>
       withResource(maxValue) { maxValue =>
@@ -668,8 +607,11 @@ case class GpuCast(
     }
   }
 
-  private def castStructToString(input: ColumnView,
-    inputSchema: Array[StructField]): ColumnVector = {
+  private def castStructToString(
+      input: ColumnView,
+      inputSchema: Array[StructField],
+      ansiMode: Boolean,
+      legacyCastToString: Boolean): ColumnVector = {
 
     val (leftStr, rightStr) = if (legacyCastToString) ("[", "]") else ("{", "}")
     val emptyStr = ""
@@ -680,18 +622,19 @@ case class GpuCast(
     val numInputColumns = input.getNumChildren
 
     def doCastStructToString(
-      emptyScalar: Scalar,
-      nullScalar: Scalar,
-      sepColumn: ColumnVector,
-      spaceColumn: ColumnVector,
-      leftColumn: ColumnVector,
-      rightColumn: ColumnVector) = {
+        emptyScalar: Scalar,
+        nullScalar: Scalar,
+        sepColumn: ColumnVector,
+        spaceColumn: ColumnVector,
+        leftColumn: ColumnVector,
+        rightColumn: ColumnVector): ColumnVector = {
       withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
         // legacy: [firstCol
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType, StringType)
+          columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType, StringType,
+            ansiMode, legacyCastToString)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
           withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
@@ -699,7 +642,7 @@ case class GpuCast(
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
             val nonFirstColumn = recursiveDoColumnar(nonFirstColumnView,
-              inputSchema(nonFirstIndex).dataType, StringType)
+              inputSchema(nonFirstIndex).dataType, StringType, ansiMode, legacyCastToString)
             if (legacyCastToString) {
               // " " if non-null
               columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
@@ -799,7 +742,7 @@ case class GpuCast(
           }
         }
         withResource(sanitized.castTo(dType)) { parsedInt =>
-          withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          withResource(Scalar.fromNull(dType)) { nullVal =>
             isInt.ifElse(parsedInt, nullVal)
           }
         }
@@ -1072,7 +1015,7 @@ case class GpuCast(
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector): ColumnVector = {
+  private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()
@@ -1164,16 +1107,19 @@ case class GpuCast(
   private def castMapToMap(
       from: MapType,
       to: MapType,
-      input: ColumnView): ColumnVector = {
+      input: ColumnView,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean): ColumnVector = {
     // For cudf a map is a list of (key, value) structs, but lets keep it in ColumnView as much
     // as possible
     withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        recursiveDoColumnar(keyColumn, from.keyType, to.keyType)
+        recursiveDoColumnar(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString)
       }
       withResource(castKey) { castKey =>
         val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          recursiveDoColumnar(valueColumn, from.valueType, to.valueType)
+          recursiveDoColumnar(valueColumn, from.valueType, to.valueType,
+            ansiMode, legacyCastToString)
         }
         withResource(castValue) { castValue =>
           withResource(ColumnView.makeStructView(castKey, castValue)) { castKvStructColumn =>
@@ -1191,13 +1137,17 @@ case class GpuCast(
   private def castStructToStruct(
       from: StructType,
       to: StructType,
-      input: ColumnView): ColumnVector = {
+      input: ColumnView,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean): ColumnVector = {
     withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
       from.indices.foreach { index =>
         childColumns += recursiveDoColumnar(
           input.getChildColumnView(index),
           from(index).dataType,
-          to(index).dataType)
+          to(index).dataType,
+          ansiMode,
+          legacyCastToString)
       }
       withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
         if (input.getNullCount == 0) {
@@ -1231,7 +1181,10 @@ case class GpuCast(
     }
   }
 
-  private def castIntegralsToDecimal(input: ColumnView, dt: DecimalType): ColumnVector = {
+  private def castIntegralsToDecimal(
+      input: ColumnView,
+      dt: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
     // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
     val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
       case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
@@ -1255,7 +1208,10 @@ case class GpuCast(
     }
   }
 
-  private def castFloatsToDecimal(input: ColumnView, dt: DecimalType): ColumnVector = {
+  private def castFloatsToDecimal(
+      input: ColumnView,
+      dt: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
 
     // Approach to minimize difference between CPUCast and GPUCast:
     // step 1. cast input to FLOAT64 (if necessary)
@@ -1309,9 +1265,11 @@ case class GpuCast(
     }
   }
 
-  private def castDecimalToDecimal(input: ColumnView,
+  private def castDecimalToDecimal(
+      input: ColumnView,
       from: DecimalType,
-      to: DecimalType): ColumnVector = {
+      to: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
 
     val isFrom32Bit = DecimalType.is32BitDecimalType(from)
     val isTo32Bit = DecimalType.is32BitDecimalType(to)
@@ -1329,38 +1287,39 @@ case class GpuCast(
       } else if (to.scale > from.scale) {
         checkedInput.castTo(cudfDecimal)
       } else {
-          withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
-            rounded => rounded.castTo(cudfDecimal)
-          }
+        withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
+          rounded => rounded.castTo(cudfDecimal)
+        }
       }
     }
 
     if (to.scale <= from.scale) {
       if (!isFrom32Bit && isTo32Bit) {
         // check for overflow when 64bit => 32bit
-        withResource(checkForOverflow(input, to, isFrom32Bit)) { checkedInput =>
+        withResource(checkForOverflow(input, to, isFrom32Bit, ansiMode)) { checkedInput =>
           castCheckedDecimal(checkedInput)
         }
       } else {
         if (to.scale < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
           throw new IllegalStateException(s"Negative scale is not allowed: ${to.scale}. " +
-            s"You can use spark.sql.legacy.allowNegativeScaleOfDecimal=true " +
-            s"to enable legacy mode to allow it.")
+              s"You can use spark.sql.legacy.allowNegativeScaleOfDecimal=true " +
+              s"to enable legacy mode to allow it.")
         }
         castCheckedDecimal(input)
       }
     } else {
       //  from.scale > to.scale
-      withResource(checkForOverflow(input, to, isFrom32Bit)) { checkedInput =>
+      withResource(checkForOverflow(input, to, isFrom32Bit, ansiMode)) { checkedInput =>
         castCheckedDecimal(checkedInput)
       }
     }
   }
 
   def checkForOverflow(
-     input: ColumnView,
-     to: DecimalType,
-     isFrom32Bit: Boolean): ColumnVector = {
+      input: ColumnView,
+      to: DecimalType,
+      isFrom32Bit: Boolean,
+      ansiMode: Boolean): ColumnVector = {
 
     // Decimal numbers in general terms have two parts, a part before decimal (whole number)
     // and a part after decimal (fractional number)
@@ -1427,4 +1386,72 @@ case class GpuCast(
 
     checkedInput
   }
+}
+
+/**
+ * Casts using the GPU
+ */
+case class GpuCast(
+    child: Expression,
+    dataType: DataType,
+    ansiMode: Boolean = false,
+    timeZoneId: Option[String] = None,
+    legacyCastToString: Boolean = false)
+  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
+
+  import GpuCast._
+
+  override def toString: String = if (ansiMode) {
+    s"ansi_cast($child as ${dataType.simpleString})"
+  } else {
+    s"cast($child as ${dataType.simpleString})"
+  }
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (Cast.canCast(child.dataType, dataType)) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(
+        s"cannot cast ${child.dataType.catalogString} to ${dataType.catalogString}")
+    }
+  }
+
+  override def nullable: Boolean = Cast.forceNullable(child.dataType, dataType) || child.nullable
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  /**
+   * Under certain conditions during hash partitioning, Spark will attempt to replace casts
+   * with semantically equivalent expressions. This method is overridden to prevent Spark
+   * from substituting non-GPU expressions.
+   */
+  override def semanticEquals(other: Expression): Boolean = other match {
+    case g: GpuExpression =>
+      if (this == g) {
+        true
+      } else {
+        super.semanticEquals(g)
+      }
+    case _ => false
+  }
+
+  // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
+  // Otherwise behave like Expression.resolved.
+  override lazy val resolved: Boolean =
+    childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
+
+  private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
+
+  override def sql: String = dataType match {
+    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
+    // this type of casting can only be introduced by the analyzer, and can be omitted when
+    // converting back to SQL query string.
+    case _: ArrayType | _: MapType | _: StructType => child.sql
+    case _ => s"CAST(${child.sql} AS ${dataType.sql})"
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    recursiveDoColumnar(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString)
+
 }

@@ -165,20 +165,3 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
                                conf={'spark.sql.ansi.enabled':True,
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
-@pytest.mark.parametrize('child_gen', [
-    byte_gen,
-    string_gen,
-    decimal_gen_default,
-], ids=idfn)
-@pytest.mark.parametrize('child_to_type', [
-    FloatType(),
-    DoubleType(),
-    IntegerType(),
-], ids=idfn)
-@allow_non_gpu('ProjectExec', 'Alias', 'Cast')
-def test_array_cast_bad_from_good_to_fallback(child_gen, child_to_type):
-    def cast_array(spark):
-        df = two_col_df(spark, int_gen, ArrayGen(child_gen))
-        res = df.select(df.b.cast(ArrayType(child_to_type)))
-        return res
-    assert_gpu_and_cpu_are_equal_collect(cast_array)
