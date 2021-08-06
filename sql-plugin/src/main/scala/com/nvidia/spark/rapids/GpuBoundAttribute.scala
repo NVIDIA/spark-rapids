@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.ast
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, SortOrder}
 import org.apache.spark.sql.types.DataType
@@ -104,6 +106,14 @@ case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean
         // the type here.
         new GpuColumnVector(fb.dataType(), fb.getBase.incRefCount())
       case cv: GpuColumnVector => cv.incRefCount()
+    }
+  }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+    if (ordinal >= numFirstTableColumns) {
+      new ast.ColumnReference(ordinal - numFirstTableColumns, ast.TableReference.RIGHT)
+    } else {
+      new ast.ColumnReference(ordinal, ast.TableReference.LEFT)
     }
   }
 }

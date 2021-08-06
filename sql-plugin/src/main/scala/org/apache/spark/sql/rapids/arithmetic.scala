@@ -56,6 +56,17 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
         }
     }
   }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+    val literalZero = dataType match {
+      case LongType => ast.Literal.ofLong(0)
+      case FloatType => ast.Literal.ofFloat(0)
+      case DoubleType => ast.Literal.ofDouble(0)
+      case IntegerType => ast.Literal.ofInt(0)
+    }
+    new ast.BinaryExpression(ast.BinaryOperator.SUB, literalZero,
+      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns));
+  }
 }
 
 case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
@@ -69,6 +80,10 @@ case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
   override def sql: String = s"(+ ${child.sql})"
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = input.getBase.incRefCount()
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+    child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)
+  }
 }
 
 case class GpuAbs(child: Expression) extends CudfUnaryExpression

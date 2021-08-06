@@ -672,6 +672,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_PROJECT_AST = conf("spark.rapids.sql.projectAstEnabled")
+      .doc("Enable project operations to use cudf AST expressions when possible.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   // FILE FORMATS
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -1530,6 +1536,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
 
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
+
+  lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
