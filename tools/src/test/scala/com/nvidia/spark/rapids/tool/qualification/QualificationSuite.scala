@@ -19,13 +19,18 @@ package com.nvidia.spark.rapids.tool.qualification
 import java.io.File
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import com.nvidia.spark.rapids.tool.ToolTestUtils
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import scala.collection.mutable.ListBuffer
+import scala.io.Source
+
+import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
+import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
-import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.functions.udf
+import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -44,58 +49,246 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
+  val schema = new StructType()
+    .add("App Name", StringType, true)
+    .add("App ID", StringType, true)
+    .add("Score", DoubleType, true)
+    .add("Potential Problems", StringType, true)
+    .add("SQL Dataframe Duration", LongType, true)
+    .add("SQL Dataframe Task Duration", LongType, true)
+    .add("App Duration", LongType, true)
+    .add("Executor CPU Time Percent", DoubleType, true)
+    .add("App Duration Estimated", BooleanType, true)
+    .add("SQL Duration with Potential Problems", LongType, true)
+    .add("SQL Ids with Failures", StringType, true)
+    .add("Read Score Percent", IntegerType, true)
+    .add("Read File Format Score", DoubleType, true)
+    .add("Unsupported Read File Formats and Types", StringType, true)
+
+  def readExpectedFile(expected: File): DataFrame = {
+    ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
+      Some(schema))
+  }
+
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
       shouldReturnEmpty: Boolean = false) = {
-    Seq(true, false).foreach { hasExecCpu =>
-      TrampolineUtil.withTempDir { outpath =>
-        val resultExpectation = new File(expRoot, expectFileName)
-        val outputArgs = Array(
-          "--output-directory",
-          outpath.getAbsolutePath())
-        val allArgs = hasExecCpu match  {
-          case true => outputArgs
-          case false => outputArgs ++ Array("--no-exec-cpu-percent")
-        }
-        val appArgs = new QualificationArgs(allArgs ++ eventLogs)
+    TrampolineUtil.withTempDir { outpath =>
+      val resultExpectation = new File(expRoot, expectFileName)
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath())
 
-        val (exit, dfQualOpt) =
-          QualificationMain.mainInternal(sparkSession, appArgs, writeOutput=false,
-            dropTempViews=true)
-        assert(exit == 0)
-        if (shouldReturnEmpty) {
-          assert(dfQualOpt.isEmpty)
-        } else {
-          val schema = new StructType()
-            .add("appName",StringType,true)
-            .add("appID",StringType,true)
-            .add("dfRankTotal",DoubleType,true)
-            .add("potentialProblems",StringType,true)
-            .add("dfDurationFinal",LongType,true)
-            .add("appDuration",LongType,true)
-            .add("executorCPURatio",DoubleType,true)
-            .add("appEndDurationEstimated",BooleanType,true)
-          val dfExpectOrig =
-            ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath(),
-              Some(schema))
-          val dfExpect = if (hasExecCpu) dfExpectOrig else dfExpectOrig.drop("executorCPURatio")
-          assert(dfQualOpt.isDefined)
-          ToolTestUtils.compareDataFrames(dfQualOpt.get, dfExpect)
-        }
+      val appArgs = new QualificationArgs(allArgs ++ eventLogs)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val spark2 = sparkSession
+      import spark2.implicits._
+      val dfTmp = appSum.toDF.drop("readFileFormats")
+      val dfQual = sparkSession.createDataFrame(dfTmp.rdd, schema)
+      if (shouldReturnEmpty) {
+        assert(appSum.head.sqlDataFrameDuration == 0.0)
+      } else {
+        val dfExpect = readExpectedFile(resultExpectation)
+        assert(!dfQual.isEmpty)
+        ToolTestUtils.compareDataFrames(dfQual, dfExpect)
+      }
+    }
+  }
+
+  test("test order asc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "asc")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 4)
+      assert(appSum.head.appId.equals("local-1622043423018"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 4))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        assert(firstRow.contains("local-1621955976602"))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
+  test("test order desc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "desc")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+      assert(appSum.size == 4)
+      assert(appSum.head.appId.equals("local-1622043423018"))
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 4))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        assert(firstRow.contains("local-1622043423018"))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
+  test("test limit desc") {
+    val logFiles = Array(
+      s"$logDir/dataset_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
+      s"$logDir/udf_dataset_eventlog",
+      s"$logDir/udf_func_eventlog"
+    )
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--order",
+        "desc",
+        "-n",
+        "2")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.log"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines
+        // 4 lines of header and footer, limit is 2
+        assert(lines.size == (4 + 2))
+      } finally {
+        inputSource.close()
+      }
+    }
+  }
+
+  test("test datasource read format included") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
+    var appSum: Seq[QualificationSummaryInfo] = Seq()
+    TrampolineUtil.withTempDir { outpath =>
+      val allArgs = Array(
+        "--output-directory",
+        outpath.getAbsolutePath(),
+        "--report-read-schema")
+
+      val appArgs = new QualificationArgs(allArgs ++ logFiles)
+      val (exit, sum) = QualificationMain.mainInternal(appArgs)
+      assert(exit == 0)
+
+      val filename = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output.csv"
+      val inputSource = Source.fromFile(filename)
+      try {
+        val lines = inputSource.getLines.toSeq
+        // 1 for header, 1 for values
+        assert(lines.size == 2)
+        assert(lines.head.contains("Read Schema"))
+        assert(lines(1).contains("loan399"))
+      } finally {
+        inputSource.close()
       }
     }
   }
 
   test("skip malformed json eventlog") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val badEventLog = s"$profileLogDir/malformed_json_eventlog"
+    val badEventLog = s"$profileLogDir/malformed_json_eventlog.zstd"
     val logFiles = Array(s"$logDir/nds_q86_test", badEventLog)
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
+  }
+
+  test("spark2 eventlog") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val log = s"$profileLogDir/spark2-eventlog.zstd"
+    runQualificationTest(Array(log), "spark2_expectation.csv")
+  }
+
+  test("test appName filter") {
+    val appName = "Spark shell"
+    val appArgs = new QualificationArgs(Array(
+      "--application-name",
+      appName,
+      s"$logDir/rdd_only_eventlog",
+      s"$logDir/empty_eventlog",
+      s"$logDir/udf_dataset_eventlog"
+    ))
+
+    val eventLogInfo = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+      appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+      sparkSession.sparkContext.hadoopConfiguration)
+
+    val appFilter = new AppFilterImpl(1000, sparkSession.sparkContext.hadoopConfiguration,
+      Some(84000), 2)
+    val result = appFilter.filterEventLogs(eventLogInfo, appArgs)
+    assert(eventLogInfo.length == 3)
+    assert(result.length == 2) // 2 out of 3 have "Spark shell" as appName.
+  }
+
+  test("test appName filter - Negation") {
+    val appName = "~Spark shell"
+    val appArgs = new QualificationArgs(Array(
+      "--application-name",
+      appName,
+      s"$logDir/rdd_only_eventlog",
+      s"$logDir/empty_eventlog",
+      s"$logDir/udf_dataset_eventlog"
+    ))
+
+    val eventLogInfo = EventLogPathProcessor.processAllPaths(appArgs.filterCriteria.toOption,
+      appArgs.matchEventLogs.toOption, appArgs.eventlog(),
+      sparkSession.sparkContext.hadoopConfiguration)
+
+    val appFilter = new AppFilterImpl(1000, sparkSession.sparkContext.hadoopConfiguration,
+      Some(84000), 2)
+    val result = appFilter.filterEventLogs(eventLogInfo, appArgs)
+    assert(eventLogInfo.length == 3)
+    assert(result.length == 1) // 1 out of 3 does not has "Spark shell" as appName.
   }
 
   test("test udf event logs") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
-      s"$logDir/dsAndDf_eventlog",
+      s"$logDir/dsAndDf_eventlog.zstd",
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
@@ -127,9 +320,125 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
 
+  // event log rolling creates files under a directory
+  test("test event log rolling") {
+    val logFiles = Array(s"$logDir/eventlog_v2_local-1623876083964")
+    runQualificationTest(logFiles, "directory_test_expectation.csv")
+  }
+
+  // these test files were setup to simulator the directory structure
+  // when running on Databricks and are not really from there
+  test("test db event log rolling") {
+    val logFiles = Array(s"$logDir/db_sim_eventlog")
+    runQualificationTest(logFiles, "db_sim_test_expectation.csv")
+  }
+
   test("test nds q86 with failure test") {
     val logFiles = Array(s"$logDir/nds_q86_fail_test")
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
+  }
+
+  // this event log has both decimal and non-decimal so comes out partial
+  // it has both reading decimal, multiplication and join on decimal
+  test("test decimal problematic") {
+    val logFiles = Array(s"$logDir/decimal_part_eventlog.zstd")
+    runQualificationTest(logFiles, "decimal_part_expectation.csv")
+  }
+
+  private def createDecFile(spark: SparkSession, dir: String): Unit = {
+    import spark.implicits._
+    val dfGen = Seq("1.32").toDF("value")
+      .selectExpr("CAST(value AS DECIMAL(4, 2)) AS value")
+    dfGen.write.parquet(dir)
+  }
+
+  test("test decimal generate udf same") {
+    TrampolineUtil.withTempDir { outpath =>
+
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val tmpParquet = s"$outpath/decparquet"
+        createDecFile(sparkSession, tmpParquet)
+
+        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          val plusOne = udf((x: Int) => x + 1)
+          import spark.implicits._
+          spark.udf.register("plusOne", plusOne)
+          val df = spark.read.parquet(tmpParquet)
+          val df2 = df.withColumn("mult", $"value" * $"value")
+          val df4 = df2.withColumn("udfcol", plusOne($"value"))
+          df4
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val probApp = appSum.head
+        assert(probApp.potentialProblems.contains("UDF") &&
+          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.sqlDataFrameDuration == probApp.sqlDurationForProblematic)
+      }
+    }
+  }
+
+  test("test decimal generate udf different sql ops") {
+    TrampolineUtil.withTempDir { outpath =>
+
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val tmpParquet = s"$outpath/decparquet"
+        createDecFile(sparkSession, tmpParquet)
+
+        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          val plusOne = udf((x: Int) => x + 1)
+          import spark.implicits._
+          spark.udf.register("plusOne", plusOne)
+          val df = spark.read.parquet(tmpParquet)
+          val df2 = df.withColumn("mult", $"value" * $"value")
+          // first run sql op with decimal only
+          df2.collect()
+          // run a separate sql op using just udf
+          spark.sql("SELECT plusOne(5)").collect()
+          // Then run another sql op that doesn't use with decimal or udf
+          import spark.implicits._
+          val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
+          t1.createOrReplaceTempView("t1")
+          spark.sql("SELECT a, MAX(b) FROM t1 GROUP BY a ORDER BY a")
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val probApp = appSum.head
+        assert(probApp.potentialProblems.contains("UDF") &&
+          probApp.potentialProblems.contains("DECIMAL"))
+        assert(probApp.sqlDurationForProblematic > 0)
+        assert(probApp.sqlDataFrameDuration > probApp.sqlDurationForProblematic)
+      }
+    }
+  }
+
+  test("test read datasource v1") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
+    runQualificationTest(logFiles, "read_dsv1_expectation.csv")
+  }
+
+  test("test read datasource v2") {
+    val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+    val logFiles = Array(s"$profileLogDir/eventlog_dsv2.zstd")
+    runQualificationTest(logFiles, "read_dsv2_expectation.csv")
+  }
+
+  test("test dsv1 complex and decimal") {
+    val logFiles = Array(s"$logDir/complex_dec_eventlog.zstd")
+    runQualificationTest(logFiles, "complex_dec_expectation.csv")
   }
 
   test("sql metric agg") {
@@ -149,41 +458,25 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
-
-        // create new session for tool to use
-        val spark2 = SparkSession
-          .builder()
-          .master("local[*]")
-          .appName("Rapids Spark Profiling Tool Unit Tests")
-          .getOrCreate()
-
         val appArgs = new QualificationArgs(Array(
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))
 
-        val (exit, _) =
-          QualificationMain.mainInternal(spark2, appArgs, writeOutput = false,
-            dropTempViews = false)
+        val (exit, sumInfo) =
+          QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
-
-        val df = spark2.table("sqlAggMetricsDF")
-
-        def fieldIndex(name: String) = df.schema.fieldIndex(name)
-
-        val rows = df.collect()
-        assert(rows.length === 1)
-        val collect = rows.head
-        assert(collect.getString(fieldIndex("description")).startsWith("collect"))
 
         // parse results from listener
         val executorCpuTime = listener.executorCpuTime
         val executorRunTime = listener.completedStages
           .map(_.stageInfo.taskMetrics.executorRunTime).sum
 
+        val listenerCpuTimePercent =
+          ToolUtils.calculateDurationPercent(executorCpuTime, executorRunTime)
+
         // compare metrics from event log with metrics from listener
-        assert(collect.getLong(fieldIndex("executorCPUTime")) === executorCpuTime)
-        assert(collect.getLong(fieldIndex("executorRunTime")) === executorRunTime)
+        assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
       }
     }
   }

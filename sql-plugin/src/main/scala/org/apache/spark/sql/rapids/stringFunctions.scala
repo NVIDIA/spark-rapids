@@ -481,7 +481,10 @@ case class GpuInitCap(child: Expression) extends GpuUnaryExpression with Implici
   override def inputTypes: Seq[DataType] = Seq(StringType)
   override def dataType: DataType = StringType
   override protected def doColumnar(input: GpuColumnVector): ColumnVector =
-    input.getBase.toTitle
+    withResource(Scalar.fromString(" ")) { space =>
+      // Spark only sees the space character as a word deliminator.
+      input.getBase.capitalize(space)
+    }
 }
 
 case class GpuStringReplace(

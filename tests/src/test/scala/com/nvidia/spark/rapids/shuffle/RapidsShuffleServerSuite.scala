@@ -16,16 +16,20 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.RapidsBuffer
-import com.nvidia.spark.rapids.format.TableMeta
+import java.io.IOException
+import java.nio.ByteBuffer
 import java.util
+
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.{Arm, MetaUtils, RapidsBuffer, ShuffleMetadata}
+import com.nvidia.spark.rapids.format.TableMeta
+import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.{any, anyLong}
 import org.mockito.Mockito._
 
 import org.apache.spark.storage.ShuffleBlockBatchId
 
-class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
+class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
 
   def setupMocks(deviceBuffers: Seq[DeviceMemoryBuffer]): (RapidsShuffleRequestHandler,
       Seq[RapidsBuffer], util.HashMap[RapidsBuffer, Int]) = {
@@ -104,12 +108,12 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
-          assert(bss.hasNext)
-          val alt = bss.next()
+          assert(bss.hasMoreSends)
+          val mb = bss.getBufferToSend()
           val receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
-          assertResult(10000)(alt.length)
-          assert(!bss.hasNext)
+          assertResult(10000)(mb.getLength)
+          assert(!bss.hasMoreSends)
           bss.releaseAcquiredToCatalog()
           mockBuffers.foreach { b: RapidsBuffer =>
             // should have seen 2 closes, one for BufferSendState acquiring for metadata
@@ -121,8 +125,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assert(bb.deviceBounceBuffer.isClosed)
-    assert(transferRequest.isClosed)
-    newMocks()
+    assert(transferRequest.dbb.isClosed)
   }
 
   test("sending tables that require two bounce buffer lengths") {
@@ -136,16 +139,16 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
-          var buffs = bss.next()
+          var buffs = bss.getBufferToSend()
           var receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
-          assert(bss.hasNext)
+          assert(bss.hasMoreSends)
           bss.releaseAcquiredToCatalog()
 
-          buffs = bss.next()
+          buffs = bss.getBufferToSend()
           receiveBlocks = receiveWindow.next()
           compareRanges(bounceBuffer, receiveBlocks)
-          assert(!bss.hasNext)
+          assert(!bss.hasMoreSends)
           bss.releaseAcquiredToCatalog()
 
           mockBuffers.foreach { b: RapidsBuffer =>
@@ -158,7 +161,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assert(bb.deviceBounceBuffer.isClosed)
-    assert(transferRequest.isClosed)
+    assert(transferRequest.dbb.isClosed)
   }
 
   test("sending buffers larger than bounce buffer") {
@@ -174,12 +177,12 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           (0 until 246).foreach { _ =>
-            bss.next()
+            bss.getBufferToSend()
             val receiveBlocks = receiveWindow.next()
             compareRanges(bounceBuffer, receiveBlocks)
             bss.releaseAcquiredToCatalog()
           }
-          assert(!bss.hasNext)
+          assert(!bss.hasMoreSends)
         }
         mockBuffers.foreach { b: RapidsBuffer =>
           verify(b, times(numCloses.get(b))).close()
@@ -188,6 +191,248 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       bounceBuffer
     }
     assert(bb.deviceBounceBuffer.isClosed)
-    assert(transferRequest.isClosed)
+    assert(transferRequest.dbb.isClosed)
+  }
+
+  test("when a send fails, we un-acquire buffers that are currently being sent") {
+    val mockSendBuffer = mock[SendBounceBuffers]
+    val mockDeviceBounceBuffer = mock[BounceBuffer]
+    withResource(DeviceMemoryBuffer.allocate(123)) { buff =>
+      when(mockDeviceBounceBuffer.buffer).thenReturn(buff)
+      when(mockSendBuffer.bounceBufferSize).thenReturn(buff.getLength)
+      when(mockSendBuffer.hostBounceBuffer).thenReturn(None)
+      when(mockSendBuffer.deviceBounceBuffer).thenReturn(mockDeviceBounceBuffer)
+
+      when(mockTransport.tryGetSendBounceBuffers(any(), any()))
+        .thenReturn(Seq(mockSendBuffer))
+
+      val tr = ShuffleMetadata.buildTransferRequest(0, Seq(1))
+      when(mockTransaction.getStatus)
+        .thenReturn(TransactionStatus.Success)
+        .thenReturn(TransactionStatus.Error)
+      when(mockTransaction.releaseMessage()).thenReturn(
+        new MetadataTransportBuffer(new RefCountedDirectByteBuffer(tr)))
+
+      val mockServerConnection = mock[ServerConnection]
+      val ac = ArgumentCaptor.forClass(classOf[TransactionCallback])
+      when(mockServerConnection.send(
+        any(), any(), any(), any[MemoryBuffer](), ac.capture())).thenReturn(mockTransaction)
+
+      val mockRequestHandler = mock[RapidsShuffleRequestHandler]
+      val rapidsBuffer = mock[RapidsBuffer]
+
+      val bb = ByteBuffer.allocateDirect(123)
+      withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
+        val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
+        when(rapidsBuffer.meta).thenReturn(tableMeta)
+        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(1)))
+          .thenReturn(rapidsBuffer)
+
+        val server = new RapidsShuffleServer(
+          mockTransport,
+          mockServerConnection,
+          RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+          mockRequestHandler,
+          mockExecutor,
+          mockBssExecutor,
+          mockConf)
+
+        server.start()
+
+        val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null)
+        server.doHandleTransferRequest(Seq(bss))
+        val cb = ac.getValue.asInstanceOf[TransactionCallback]
+        cb(mockTransaction)
+        server.doHandleTransferRequest(Seq(bss)) //Error
+        cb(mockTransaction)
+        // bounce buffers are freed
+        verify(mockSendBuffer, times(1)).close()
+        // acquire 3 times, and close 3 times
+        verify(mockRequestHandler, times(3))
+          .acquireShuffleBuffer(ArgumentMatchers.eq(1))
+        verify(rapidsBuffer, times(3)).close()
+      }
+    }
+  }
+
+  test("when we fail to prepare a send, throw if nothing can be handled") {
+    val mockSendBuffer = mock[SendBounceBuffers]
+    val mockDeviceBounceBuffer = mock[BounceBuffer]
+    withResource(DeviceMemoryBuffer.allocate(123)) { buff =>
+      when(mockDeviceBounceBuffer.buffer).thenReturn(buff)
+      when(mockSendBuffer.bounceBufferSize).thenReturn(buff.getLength)
+      when(mockSendBuffer.hostBounceBuffer).thenReturn(None)
+      when(mockSendBuffer.deviceBounceBuffer).thenReturn(mockDeviceBounceBuffer)
+
+      when(mockTransport.tryGetSendBounceBuffers(any(), any()))
+          .thenReturn(Seq(mockSendBuffer))
+
+      val tr = ShuffleMetadata.buildTransferRequest(0, Seq(1))
+      when(mockTransaction.getStatus)
+          .thenReturn(TransactionStatus.Success)
+      when(mockTransaction.releaseMessage()).thenReturn(
+        new MetadataTransportBuffer(new RefCountedDirectByteBuffer(tr)))
+
+      val mockServerConnection = mock[ServerConnection]
+      val mockRequestHandler = mock[RapidsShuffleRequestHandler]
+      val rapidsBuffer = mock[RapidsBuffer]
+
+      val bb = ByteBuffer.allocateDirect(123)
+      withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
+        val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
+        when(rapidsBuffer.meta).thenReturn(tableMeta)
+        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(1)))
+            .thenReturn(rapidsBuffer)
+
+        val server = spy(new RapidsShuffleServer(
+          mockTransport,
+          mockServerConnection,
+          RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+          mockRequestHandler,
+          mockExecutor,
+          mockBssExecutor,
+          mockConf))
+
+        server.start()
+
+        val ioe = new IOException("mmap failed in test")
+
+        when(rapidsBuffer.copyToMemoryBuffer(any(), any(), any(), any(), any()))
+            .thenAnswer(_ => throw ioe)
+
+        val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null)
+        // if nothing else can be handled, we throw
+        assertThrows[IllegalStateException] {
+          try {
+            server.doHandleTransferRequest(Seq(bss))
+          } catch {
+            case e: Throwable =>
+              assertResult(1)(e.getSuppressed.length)
+              assertResult(ioe)(e.getSuppressed()(0).getCause)
+              throw e
+          }
+        }
+
+        // since nothing could be handled, we don't try again
+        verify(server, times(0)).addToContinueQueue(any())
+
+        // bounce buffers are freed
+        verify(mockSendBuffer, times(1)).close()
+
+        // acquire 2 times, 1 to make the ranges, and the 2 before the copy
+        // close 2 times corresponding to each open
+        verify(mockRequestHandler, times(2))
+            .acquireShuffleBuffer(ArgumentMatchers.eq(1))
+        verify(rapidsBuffer, times(2)).close()
+      }
+    }
+  }
+
+  test("when we fail to prepare a send, re-queue the request if anything can be handled") {
+    val mockSendBuffer = mock[SendBounceBuffers]
+    val mockDeviceBounceBuffer = mock[BounceBuffer]
+    withResource(DeviceMemoryBuffer.allocate(123)) { buff =>
+      when(mockDeviceBounceBuffer.buffer).thenReturn(buff)
+      when(mockSendBuffer.bounceBufferSize).thenReturn(buff.getLength)
+      when(mockSendBuffer.hostBounceBuffer).thenReturn(None)
+      when(mockSendBuffer.deviceBounceBuffer).thenReturn(mockDeviceBounceBuffer)
+
+      when(mockTransport.tryGetSendBounceBuffers(any(), any()))
+          .thenReturn(Seq(mockSendBuffer))
+
+      val tr = ShuffleMetadata.buildTransferRequest(0, Seq(1))
+      when(mockTransaction.getStatus)
+          .thenReturn(TransactionStatus.Success)
+      when(mockTransaction.releaseMessage()).thenReturn(
+        new MetadataTransportBuffer(new RefCountedDirectByteBuffer(tr)))
+
+      val tr2 = ShuffleMetadata.buildTransferRequest(0, Seq(2))
+      val mockTransaction2 = mock[Transaction]
+      when(mockTransaction2.getStatus)
+          .thenReturn(TransactionStatus.Success)
+      when(mockTransaction2.releaseMessage()).thenReturn(
+        new MetadataTransportBuffer(new RefCountedDirectByteBuffer(tr2)))
+
+      val mockServerConnection = mock[ServerConnection]
+      val ac = ArgumentCaptor.forClass(classOf[TransactionCallback])
+      when(mockServerConnection.send(
+        any(), any(), any(), any[MemoryBuffer](), ac.capture())).thenReturn(mockTransaction)
+
+      val mockRequestHandler = mock[RapidsShuffleRequestHandler]
+
+      def makeMockBuffer(tableId: Int, bb: ByteBuffer): RapidsBuffer = {
+        val rapidsBuffer = mock[RapidsBuffer]
+        val tableMeta = MetaUtils.buildTableMeta(tableId, 456, bb, 100)
+        when(rapidsBuffer.meta).thenReturn(tableMeta)
+        when(rapidsBuffer.size).thenReturn(tableMeta.bufferMeta().size())
+        when(mockRequestHandler.acquireShuffleBuffer(ArgumentMatchers.eq(tableId)))
+            .thenReturn(rapidsBuffer)
+        rapidsBuffer
+      }
+
+      val bb = ByteBuffer.allocateDirect(123)
+      val bb2 = ByteBuffer.allocateDirect(123)
+      withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
+        withResource(new RefCountedDirectByteBuffer(bb2)) { _ =>
+          val rapidsBuffer = makeMockBuffer(1, bb)
+          val rapidsBuffer2 = makeMockBuffer(2, bb2)
+
+          // error with copy
+          when(rapidsBuffer.copyToMemoryBuffer(any(), any(), any(), any(), any()))
+              .thenAnswer(_ => {
+                throw new IOException("mmap failed in test")
+              })
+
+          // successful copy
+          doNothing()
+              .when(rapidsBuffer2)
+              .copyToMemoryBuffer(any(), any(), any(), any(), any())
+
+          val server = spy(new RapidsShuffleServer(
+            mockTransport,
+            mockServerConnection,
+            RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+            mockRequestHandler,
+            mockExecutor,
+            mockBssExecutor,
+            mockConf))
+
+          server.start()
+
+          val bssFailed = new BufferSendState(
+            mockTransaction, mockSendBuffer, mockRequestHandler, null)
+
+          val bssSuccess = spy(new BufferSendState(
+            mockTransaction2, mockSendBuffer, mockRequestHandler, null))
+
+          when(bssSuccess.hasMoreSends)
+              .thenReturn(true) // send 1 bounce buffer length
+              .thenReturn(false)
+
+          // if something else can be handled we don't throw, and re-queue
+          server.doHandleTransferRequest(Seq(bssFailed, bssSuccess))
+
+          val cb = ac.getValue.asInstanceOf[TransactionCallback]
+          cb(mockTransaction)
+
+          verify(server, times(1)).addToContinueQueue(any())
+
+          // the bounce buffer is freed 1 time for `bssSuccess`, but not for `bssFailed`
+          verify(mockSendBuffer, times(1)).close()
+
+          // acquire/close 4 times =>
+          // we had two requests for 1 buffer, and each request acquires 2 times and closes
+          // 2 times.
+          verify(mockRequestHandler, times(2))
+              .acquireShuffleBuffer(ArgumentMatchers.eq(1))
+          verify(mockRequestHandler, times(2))
+              .acquireShuffleBuffer(ArgumentMatchers.eq(2))
+          verify(rapidsBuffer, times(2)).close()
+          verify(rapidsBuffer2, times(2)).close()
+        }
+      }
+    }
   }
 }

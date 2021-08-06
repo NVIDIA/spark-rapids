@@ -16,23 +16,21 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import com.nvidia.spark.rapids.tool.profiling._
+import com.nvidia.spark.rapids.tool.EventLogPathProcessor
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 
 /**
  * A tool to analyze Spark event logs and determine if 
  * they might be a good fit for running on the GPU.
  */
 object QualificationMain extends Logging {
-  /**
-   * Entry point from spark-submit running this as the driver.
-   */
+
   def main(args: Array[String]) {
-    val sparkSession = ProfileUtils.createSparkSession
-    val (exitCode, _) = mainInternal(sparkSession, new QualificationArgs(args))
+    val (exitCode, _) = mainInternal(new QualificationArgs(args), printStdout = true)
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -41,30 +39,64 @@ object QualificationMain extends Logging {
   /**
    * Entry point for tests
    */
-  def mainInternal(sparkSession: SparkSession, appArgs: QualificationArgs,
-      writeOutput: Boolean = true, dropTempViews: Boolean = false): (Int, Option[DataFrame]) = {
+  def mainInternal(appArgs: QualificationArgs,
+      writeOutput: Boolean = true,
+      dropTempViews: Boolean = false,
+      printStdout:Boolean = false): (Int, Seq[QualificationSummaryInfo]) = {
 
-    // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
-
-    // Get the event logs required to process
-    lazy val allPaths = ToolUtils.processAllPaths(filterN, matchEventLogs, eventlogPaths)
-
-    val includeCpuPercent = !(appArgs.noExecCpuPercent.getOrElse(false))
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
-    val dfOpt = Qualification.qualifyApps(allPaths,
-      numOutputRows, sparkSession, includeCpuPercent, dropTempViews)
-    if (dfOpt.isEmpty) {
-      logWarning(s"No Applications with SQL found in events logs: ${allPaths.mkString(",")}")
+
+    val nThreads = appArgs.numThreads.getOrElse(
+      Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
+    val timeout = appArgs.timeout.toOption
+    val readScorePercent = appArgs.readScorePercent.getOrElse(20)
+    val reportReadSchema = appArgs.reportReadSchema.getOrElse(false)
+    val order = appArgs.order.getOrElse("desc")
+
+    val hadoopConf = new Configuration()
+
+    val pluginTypeChecker = try {
+      if (readScorePercent > 0 || reportReadSchema) {
+        Some(new PluginTypeChecker())
+      } else {
+        None
+      }
+    } catch {
+      case ie: IllegalStateException =>
+        logError("Error creating the plugin type checker!", ie)
+        return (1, Seq[QualificationSummaryInfo]())
     }
-    if (writeOutput && dfOpt.isDefined) {
-      Qualification.writeQualification(dfOpt.get, outputDirectory,
-        appArgs.outputFormat.getOrElse("csv"), includeCpuPercent, numOutputRows)
+
+    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      matchEventLogs.toOption, eventlogPaths, hadoopConf)
+
+    val filteredLogs = if (argsContainsAppFilters(appArgs)) {
+      val appFilter = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
+      val finaleventlogs = appFilter.filterEventLogs(eventLogInfos, appArgs)
+      finaleventlogs
+    } else {
+      eventLogInfos
     }
-    (0, dfOpt)
+
+    if (filteredLogs.isEmpty) {
+      logWarning("No event logs to process after checking paths, exiting!")
+      return (0, Seq[QualificationSummaryInfo]())
+    }
+
+    val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
+      nThreads, order, pluginTypeChecker, readScorePercent, reportReadSchema, printStdout)
+    val res = qual.qualifyApps(filteredLogs)
+    (0, res)
   }
 
+  def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {
+    val filterCriteria = appArgs.filterCriteria.toOption
+    appArgs.applicationName.isSupplied || appArgs.startAppTime.isSupplied ||
+        (filterCriteria.isDefined && (filterCriteria.get.endsWith("-newest") ||
+            filterCriteria.get.endsWith("-oldest") || filterCriteria.get.endsWith("-per-app-name")))
+  }
 }

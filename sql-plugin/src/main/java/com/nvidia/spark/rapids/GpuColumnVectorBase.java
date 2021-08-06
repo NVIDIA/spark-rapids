@@ -26,6 +26,24 @@ import org.apache.spark.unsafe.types.UTF8String;
 abstract class GpuColumnVectorBase extends ColumnVector {
   private final static String BAD_ACCESS = "DATA ACCESS MUST BE ON A HOST VECTOR";
 
+  private boolean isFinalBatch = false;
+
+  /**
+   * Set if this is a part of the final batch for this partition or not.
+   * @param isFinal true if this is part of the final batch or false if unknown.
+   */
+  public final void setFinalBatch(boolean isFinal) {
+    isFinalBatch = isFinal;
+  }
+
+  /**
+   * Is this the final batch or is it unknown.
+   * @return true if it is known to be a part of the final batch, else false if it is unknown
+   */
+  public boolean isKnownFinalBatch() {
+    return isFinalBatch;
+  }
+
   protected GpuColumnVectorBase(DataType type) {
     super(type);
   }

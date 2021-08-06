@@ -247,7 +247,7 @@ object HostColumnarToGpu extends Logging {
  * to CuDF builders.
  */
 class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
-    goal: CoalesceGoal,
+    goal: CoalesceSizeGoal,
     schema: StructType,
     numInputRows: GpuMetric,
     numInputBatches: GpuMetric,
@@ -375,7 +375,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 /**
  * Put columnar formatted data on the GPU.
  */
-case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceGoal)
+case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
   extends UnaryExecNode
   with GpuExec {
   import GpuMetric._

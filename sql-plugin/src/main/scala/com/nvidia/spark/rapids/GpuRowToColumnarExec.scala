@@ -549,12 +549,14 @@ private object GpuRowToColumnConverter {
 class RowToColumnarIterator(
     rowIter: Iterator[InternalRow],
     localSchema: StructType,
-    localGoal: CoalesceGoal,
+    localGoal: CoalesceSizeGoal,
     converters: GpuRowToColumnConverter,
     totalTime: GpuMetric = NoopMetric,
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
-    numOutputBatches: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
+    numOutputBatches: GpuMetric = NoopMetric,
+    semaphoreWaitTime: GpuMetric = NoopMetric,
+    gpuOpTime: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] with Arm {
 
   private val targetSizeBytes = localGoal.targetSizeBytes
   private var targetRows = 0
@@ -570,7 +572,8 @@ class RowToColumnarIterator(
     buildBatch()
   }
 
-  private def buildBatch(): ColumnarBatch = {
+  private def buildBatch(): ColumnarBatch = withResource(
+    new NvtxWithMetrics("RowToColumnar", NvtxColor.CYAN, totalTime)) { _ =>
 
     // estimate the size of the first batch based on the schema
     if (targetRows == 0) {
@@ -607,9 +610,11 @@ class RowToColumnarIterator(
       // About to place data back on the GPU
       // note that TaskContext.get() can return null during unit testing so we wrap it in an
       // option here
-      Option(TaskContext.get()).foreach(GpuSemaphore.acquireIfNecessary)
+      Option(TaskContext.get())
+        .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx, semaphoreWaitTime))
 
-      val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN, totalTime)) { _=>
+      val ret = withResource(new NvtxWithMetrics("RowToColumnar", NvtxColor.GREEN,
+          gpuOpTime)) { _ =>
         builders.build(rowCount)
       }
       numInputRows += rowCount
@@ -635,7 +640,9 @@ class RowToColumnarIterator(
 object GeneratedUnsafeRowToCudfRowIterator extends Logging {
   def apply(input: Iterator[UnsafeRow],
       schema: Array[Attribute],
-      goal: CoalesceGoal,
+      goal: CoalesceSizeGoal,
+      semaphoreWaitTime: GpuMetric,
+      gpuOpTime: GpuMetric,
       totalTime: GpuMetric,
       numInputRows: GpuMetric,
       numOutputRows: GpuMetric,
@@ -644,7 +651,9 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 
     ctx.addReferenceObj("iter", input, classOf[Iterator[UnsafeRow]].getName)
     ctx.addReferenceObj("schema", schema, classOf[Array[Attribute]].getName)
-    ctx.addReferenceObj("goal", goal, classOf[CoalesceGoal].getName)
+    ctx.addReferenceObj("goal", goal, classOf[CoalesceSizeGoal].getName)
+    ctx.addReferenceObj("semaphoreWaitTime", semaphoreWaitTime, classOf[GpuMetric].getName)
+    ctx.addReferenceObj("gpuOpTime", gpuOpTime, classOf[GpuMetric].getName)
     ctx.addReferenceObj("totalTime", totalTime, classOf[GpuMetric].getName)
     ctx.addReferenceObj("numInputRows", numInputRows, classOf[GpuMetric].getName)
     ctx.addReferenceObj("numOutputRows", numOutputRows, classOf[GpuMetric].getName)
@@ -711,11 +720,13 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |  public SpecificUnsafeRowToColumnarBatchIterator(Object[] references) {
          |    super((scala.collection.Iterator<UnsafeRow>)references[0],
          |      (org.apache.spark.sql.catalyst.expressions.Attribute[])references[1],
-         |      (com.nvidia.spark.rapids.CoalesceGoal)references[2],
+         |      (com.nvidia.spark.rapids.CoalesceSizeGoal)references[2],
          |      (com.nvidia.spark.rapids.GpuMetric)references[3],
          |      (com.nvidia.spark.rapids.GpuMetric)references[4],
          |      (com.nvidia.spark.rapids.GpuMetric)references[5],
-         |      (com.nvidia.spark.rapids.GpuMetric)references[6]);
+         |      (com.nvidia.spark.rapids.GpuMetric)references[6],
+         |      (com.nvidia.spark.rapids.GpuMetric)references[7],
+         |      (com.nvidia.spark.rapids.GpuMetric)references[8]);
          |    ${ctx.initMutableStates()}
          |  }
          |
@@ -785,7 +796,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 /**
  * GPU version of row to columnar transition.
  */
-case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
+case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
   extends UnaryExecNode with GpuExec {
   import GpuMetric._
 
@@ -806,7 +817,9 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
   }
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    SEMAPHORE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SEMAPHORE_WAIT_TIME),
+    GPU_OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_OP_TIME),
+    TOTAL_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_TOTAL_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS)
   )
 
@@ -817,6 +830,8 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val totalTime = gpuLongMetric(TOTAL_TIME)
+    val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
+    val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
     val rowBased = child.execute()
 
@@ -831,13 +846,13 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceGoal)
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedUnsafeRowToCudfRowIterator(
         rowIter.asInstanceOf[Iterator[UnsafeRow]],
-        localOutput.toArray, localGoal, totalTime, numInputRows, numOutputRows,
-        numOutputBatches))
+        localOutput.toArray, localGoal, semaphoreWaitTime, gpuOpTime, totalTime,
+        numInputRows, numOutputRows, numOutputBatches))
     } else {
       val converters = new GpuRowToColumnConverter(localSchema)
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
         localSchema, localGoal, converters,
-        totalTime, numInputRows, numOutputRows, numOutputBatches))
+        totalTime, numInputRows, numOutputRows, numOutputBatches, semaphoreWaitTime, gpuOpTime))
     }
   }
 }

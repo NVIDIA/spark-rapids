@@ -22,8 +22,8 @@ package com.nvidia.spark.rapids.tool.profiling
  */
 
 case class ResourceProfileCase(
-  id: Int, exec_cpu: Int, exec_mem: Long, exec_gpu: Int,
-  exec_offheap: Long, task_cpu: Int, task_gpu: Double)
+  id: Int, executorCores: Int, executorMemory: Long, numGpusPerExecutor: Int,
+  executorOffHeap: Long, taskCpu: Int, taskGpu: Double)
 
 case class BlockManagerCase(
   executorID: String, host: String, port: Int,
@@ -115,15 +115,7 @@ case class StageCase(
     failureReason: Option[String],
     duration: Option[Long],
     durationStr: String,
-    gpuMode: Boolean,
-    executorRunTimeSum: Long,
-    executorCPUTimeSum: Long)
-
-class StageTaskQualificationSummary(
-    val stageId: Int,
-    val stageAttemptId: Int,
-    var executorRunTime: Long,
-    var executorCPUTime: Long)
+    gpuMode: Boolean)
 
 // Note: sr = Shuffle Read; sw = Shuffle Write
 // Totally 39 columns
@@ -173,3 +165,19 @@ case class DatasetSQLCase(sqlID: Long)
 case class ProblematicSQLCase(sqlID: Long, reason: String)
 
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String, nodeDesc: String)
+
+case class DataSourceCase(
+    sqlID: Long,
+    format: String,
+    location: String,
+    pushedFilters: String,
+    schema: String)
+
+case class DataSourceCompareCase(
+    appIndex: Int,
+    appId: String,
+    sqlID: Long,
+    format: String,
+    location: String,
+    pushedFilters: String,
+    schema: String)

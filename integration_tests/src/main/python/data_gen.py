@@ -16,6 +16,7 @@ import copy
 from datetime import date, datetime, timedelta, timezone
 from decimal import *
 import math
+from pyspark.context import SparkContext
 from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
@@ -616,7 +617,7 @@ def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
 
-def gen_df(spark, data_gen, length=2048, seed=0):
+def gen_df(spark, data_gen, length=2048, seed=0, num_slices=None):
     """Generate a spark dataframe from the given data generators."""
     if isinstance(data_gen, list):
         src = StructGen(data_gen, nullable=False)
@@ -632,14 +633,25 @@ def gen_df(spark, data_gen, length=2048, seed=0):
     rand = random.Random(seed)
     src.start(rand)
     data = [src.gen() for index in range(0, length)]
-    return spark.createDataFrame(data, src.data_type)
+    # We use `numSlices` to create an RDD with the specific number of partitions,
+    # which is then turned into a dataframe. If not specified, it is `None` (default spark value)
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize(data, numSlices=num_slices),
+        src.data_type)
 
-def _mark_as_lit(data, data_type = None):
-    # Sadly you cannot create a literal from just an array in pyspark
-    if isinstance(data, list):
-        return f.array([_mark_as_lit(x) for x in data])
-    if data_type is None:
-        return f.lit(data)
+def _mark_as_lit(data, data_type):
+    # To support nested types, 'data_type' is required.
+    assert data_type is not None
+
+    if isinstance(data_type, ArrayType):
+        assert isinstance(data, list)
+        # Sadly you cannot create a literal from just an array in pyspark
+        return f.array([_mark_as_lit(x, data_type.elementType) for x in data])
+    elif isinstance(data_type, StructType):
+        assert isinstance(data, tuple) and len(data) == len(data_type.fields)
+        # Sadly you cannot create a literal from just a dict/tuple in pyspark
+        children = zip(data, data_type.fields)
+        return f.struct([_mark_as_lit(x, fd.dataType).alias(fd.name) for x, fd in children])
     else:
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)
@@ -713,19 +725,20 @@ def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
 
-def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0):
+def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed)
+    return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def two_col_df(spark, a_gen, b_gen, length=2048, seed=0):
+def two_col_df(spark, a_gen, b_gen, length=2048, seed=0, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
-    return gen_df(spark, gen, length=length, seed=seed)
+    return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def binary_op_df(spark, gen, length=2048, seed=0):
-    return two_col_df(spark, gen, gen, length=length, seed=seed)
+def binary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+    return two_col_df(spark, gen, gen, length=length, seed=seed, num_slices=num_slices)
 
-def unary_op_df(spark, gen, length=2048, seed=0):
-    return gen_df(spark, StructGen([('a', gen)], nullable=False), length=length, seed=seed)
+def unary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+    return gen_df(spark, StructGen([('a', gen)], nullable=False),
+        length=length, seed=seed, num_slices=num_slices)
 
 def to_cast_string(spark_type):
     if isinstance(spark_type, ByteType):
@@ -750,6 +763,11 @@ def to_cast_string(spark_type):
         return 'STRING'
     elif isinstance(spark_type, DecimalType):
         return 'DECIMAL({}, {})'.format(spark_type.precision, spark_type.scale)
+    elif isinstance(spark_type, ArrayType):
+        return 'ARRAY<{}>'.format(to_cast_string(spark_type.elementType))
+    elif isinstance(spark_type, StructType):
+        children = [fd.name + ':' + to_cast_string(fd.dataType) for fd in spark_type.fields]
+        return 'STRUCT<{}>'.format(','.join(children))
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
@@ -760,17 +778,32 @@ def get_null_lit_string(spark_type):
         string_type = to_cast_string(spark_type)
         return 'CAST(null as {})'.format(string_type)
 
-def _convert_to_sql(t, data):
+def _convert_to_sql(spark_type, data):
     if isinstance(data, str):
         d = "'" + data.replace("'", "\\'") + "'"
     elif isinstance(data, datetime):
         d = "'" + data.strftime('%Y-%m-%d T%H:%M:%S.%f').zfill(26) + "'"
     elif isinstance(data, date):
         d = "'" + data.strftime('%Y-%m-%d').zfill(10) + "'"
+    elif isinstance(data, list):
+        assert isinstance(spark_type, ArrayType)
+        d = "array({})".format(",".join([_convert_to_sql(spark_type.elementType, x) for x in data]))
+    elif isinstance(data, tuple):
+        assert isinstance(spark_type, StructType) and len(data) == len(spark_type.fields)
+        # Format of each child: 'name',data
+        children = ["'{}'".format(fd.name) + ',' + _convert_to_sql(fd.dataType, x)
+                for fd, x in zip(spark_type.fields, data)]
+        d = "named_struct({})".format(','.join(children))
+    elif not data:
+        # data is None
+        d = "null"
     else:
-        d = str(data)
+        d = "'{}'".format(str(data))
 
-    return 'CAST({} as {})'.format(d, t)
+    if isinstance(spark_type, NullType):
+        return d
+    else:
+        return 'CAST({} as {})'.format(d, to_cast_string(spark_type))
 
 def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
     """Generate scalar values, but strings that can be used in selectExpr or SQL"""
@@ -778,8 +811,8 @@ def gen_scalars_for_sql(data_gen, count, seed=0, force_no_nulls=False):
     if isinstance(data_gen, NullGen):
         assert not force_no_nulls
         return ('null' for i in range(0, count))
-    string_type = to_cast_string(data_gen.data_type)
-    return (_convert_to_sql(string_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
+    spark_type = data_gen.data_type
+    return (_convert_to_sql(spark_type, src.gen(force_no_nulls=force_no_nulls)) for i in range(0, count))
 
 byte_gen = ByteGen()
 short_gen = ShortGen()
@@ -852,10 +885,11 @@ array_gens_sample = single_level_array_gens + nested_array_gens_sample
 all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
 
 # Some struct gens, but not all because of nesting
-struct_gens_sample = [all_basic_struct_gen,
-        StructGen([]),
+nonempty_struct_gens_sample = [all_basic_struct_gen,
         StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+struct_gens_sample = nonempty_struct_gens_sample + [StructGen([])]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
         StringGen(), max_length=10)

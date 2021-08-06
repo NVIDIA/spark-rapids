@@ -520,6 +520,13 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return emptyBatch(structFromAttributes(format));
   }
 
+  /**
+   * Create an empty batch from the give data types
+   */
+  public static ColumnarBatch emptyBatchFromTypes(DataType[] format) {
+    return emptyBatch(structFromTypes(format));
+  }
+
 
   /**
    * Create empty host column vectors from the given format.  This should only be necessary
@@ -537,6 +544,19 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static HostColumnVector[] emptyHostColumns(List<Attribute> format) {
     return emptyHostColumns(structFromAttributes(format));
+  }
+
+  private static StructType structFromTypes(DataType[] format) {
+    StructField[] fields = new StructField[format.length];
+    int i = 0;
+    for (DataType t: format) {
+      fields[i++] = new StructField(
+          String.valueOf(i), // ignored
+          t,
+          true,
+          null);
+    }
+    return new StructType(fields);
   }
 
   private static StructType structFromAttributes(List<Attribute> format) {
@@ -876,6 +896,33 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       vectors[i] = ((GpuColumnVector)batch.column(i)).getBase();
     }
     return vectors;
+  }
+
+  /**
+   * Tag a batch that it is known to be the final batch for a partition.
+   */
+  public static ColumnarBatch tagAsFinalBatch(ColumnarBatch batch) {
+    int numCols = batch.numCols();
+    for (int col = 0; col < numCols; col++) {
+      ((GpuColumnVectorBase)batch.column(col)).setFinalBatch(true);
+    }
+    return batch;
+  }
+
+  /**
+   * Check if a batch is tagged as being the final batch in a partition.
+   */
+  public static boolean isTaggedAsFinalBatch(ColumnarBatch batch) {
+    int numCols = batch.numCols();
+    if (numCols <= 0) {
+      return false;
+    }
+    for (int col = 0; col < numCols; col++) {
+      if (!((GpuColumnVectorBase)batch.column(col)).isKnownFinalBatch()) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**

@@ -16,13 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import scala.collection.mutable.{ArrayBuffer, Map}
-
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FileUtil, Path}
-
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.rapids.tool.profiling.ToolUtils
+import org.apache.spark.sql.rapids.tool.ToolUtils
 
 /**
  * object Utils provides toolkit functions
@@ -53,8 +48,8 @@ object ProfileUtils {
   }
 
   // Check if the job/stage is GPU mode is on
-  def isGPUMode(properties: collection.mutable.Map[String, String]): Boolean = {
-    ToolUtils.isGPUMode(properties)
+  def isPluginEnabled(properties: collection.mutable.Map[String, String]): Boolean = {
+    ToolUtils.isPluginEnabled(properties.toMap)
   }
 
   // Return None if either of them are None
@@ -68,21 +63,4 @@ object ProfileUtils {
     try Some(a.get - b) catch {
       case _: NoSuchElementException => None
     }
-
-  // Return an Array(Path) and Timestamp Map based on input path string
-  def stringToPath(pathString: String): Map[Path, Long] = {
-    val inputPath = new Path(pathString)
-    val uri = inputPath.toUri
-    val fs = FileSystem.get(uri, new Configuration())
-    val allStatus = fs.listStatus(inputPath).filter(s => s.isFile)
-    val pathsWithTimestamp: Map[Path, Long] = Map.empty[Path, Long]
-    if (allStatus != null) {
-      allStatus.map(a => {
-        pathsWithTimestamp += (a.getPath -> a.getModificationTime)
-      })
-      pathsWithTimestamp
-    } else {
-      null
-    }
-  }
 }

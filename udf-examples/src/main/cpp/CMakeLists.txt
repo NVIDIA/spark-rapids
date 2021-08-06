@@ -25,7 +25,7 @@ if(DEFINED GPU_ARCHS)
   endif()
 endif()
 
-project(UDFEXAMPLESJNI VERSION 21.06.1 LANGUAGES C CXX CUDA)
+project(UDFEXAMPLESJNI VERSION 21.08.0 LANGUAGES C CXX CUDA)
 
 option(PER_THREAD_DEFAULT_STREAM "Build with per-thread default stream" OFF)
 option(BUILD_UDF_BENCHMARKS "Build the benchmarks" OFF)
@@ -90,9 +90,9 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -w --expt-extended-lambda --expt-relax
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
 CPMAddPackage(NAME  cudf
-        VERSION         "21.06.01"
+        VERSION         "21.08.00"
         GIT_REPOSITORY  https://github.com/rapidsai/cudf.git
-        GIT_TAG         branch-21.06
+        GIT_TAG         branch-21.08
         GIT_SHALLOW     TRUE
         SOURCE_SUBDIR   cpp
         OPTIONS         "BUILD_TESTS OFF"

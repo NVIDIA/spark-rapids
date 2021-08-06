@@ -197,7 +197,7 @@ class RapidsCachingWriter[K, V](
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
-abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boolean)
+abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
@@ -259,6 +259,10 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
   }
 
   private lazy val localBlockManagerId = blockManager.blockManagerId
+
+  // Used to prevent stopping multiple times RAPIDS Shuffle Manager internals.
+  // see the `stop` method
+  private var stopped: Boolean = false
 
   // Code that expects the shuffle catalog to be initialized gets it this way,
   // with error checking in case we are in a bad state.
@@ -404,9 +408,12 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, isDriver: Boole
 
   override def shuffleBlockResolver: ShuffleBlockResolver = resolver
 
-  override def stop(): Unit = {
+  override def stop(): Unit = synchronized {
     wrapped.stop()
-    server.foreach(_.close())
-    transport.foreach(_.close())
+    if (!stopped) {
+      stopped = true
+      server.foreach(_.close())
+      transport.foreach(_.close())
+    }
   }
 }

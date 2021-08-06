@@ -20,18 +20,18 @@ import org.apache.hadoop.fs.{FileSystem, FSDataOutputStream, Path}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.rapids.tool.profiling._
+import org.apache.spark.sql.rapids.tool.ToolUtils
 
 /**
  * Class for writing local files, allows writing to distributed file systems.
  */
-class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Logging {
+class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
+    finalLocationText: String) extends Logging {
 
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
   private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
   // this overwrites existing path
   private var outFile: Option[FSDataOutputStream] = Some(fs.create(textOutputPath))
-  logInfo(s"Output directory: $finalOutputDir")
 
   def write(stringToWrite: String): Unit = {
     outFile.foreach(_.writeBytes(stringToWrite))
@@ -43,7 +43,7 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String) extends Lo
 
   def close(): Unit = {
     outFile.foreach { file =>
-      logInfo(s"Output location: $finalOutputDir")
+      logInfo(s"$finalLocationText output location: $textOutputPath")
       file.flush()
       file.close()
       outFile = None

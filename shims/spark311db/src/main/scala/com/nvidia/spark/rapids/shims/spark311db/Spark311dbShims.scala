@@ -83,7 +83,7 @@ class Spark311dbShims extends Spark311Shims {
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    Seq(
+    super.getExecs ++ Seq(
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -108,10 +108,10 @@ class Spark311dbShims extends Spark311Shims {
         "Databricks-specific window function exec, for \"running\" windows, " +
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
-            TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-                TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
-                TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
-                    + TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+              TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+              TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
+              TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
             TypeSig.all),
           (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       ),
@@ -228,7 +228,7 @@ class Spark311dbShims extends Spark311Shims {
         " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
         (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }
 
   override def getBuildSide(join: HashJoin): GpuBuildSide = {
