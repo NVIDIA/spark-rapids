@@ -60,19 +60,17 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
         val tempSubDir = new File(dotFileDir, Profiler.SUBDIR)
 
         // assert that a file was generated
-        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
+        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+          (f.startsWith("local") && f.endsWith(".dot"))
+        })
         // 2 dot files and one regular output log file
-        assert(dotDirs.length === 3)
+        assert(dotDirs.length === 2)
 
         // assert that the generated files looks something like what we expect
         var hashAggCount = 0
         var stageCount = 0
-        var totalDotFiles = 0
         for (file <- dotDirs) {
-          assert(file.getAbsolutePath.endsWith(".dot") || file.getAbsolutePath.endsWith(".log"))
-          if (file.getAbsolutePath.endsWith(".dot")) {
-            totalDotFiles += 1
-          }
+          assert(file.getAbsolutePath.endsWith(".dot"))
           val source = Source.fromFile(file)
           val dotFileStr = source.mkString
           source.close()
@@ -83,8 +81,6 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           hashAggCount += dotFileStr.sliding(hashAggr.length).count(_ == hashAggr)
           stageCount += dotFileStr.sliding(stageWord.length).count(_ == stageWord)
         }
-        assert(totalDotFiles == 2)
-
         assert(hashAggCount === 8, "Expected: 4 in node labels + 4 in graph label")
         assert(stageCount === 4, "Expected: UNKNOWN Stage, Initial Aggregation, " +
           "Final Aggregation, Sorting final output")

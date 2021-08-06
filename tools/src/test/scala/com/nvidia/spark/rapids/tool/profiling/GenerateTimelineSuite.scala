@@ -58,7 +58,9 @@ class GenerateTimelineSuite extends FunSuite with BeforeAndAfterAll with Logging
         val tempSubDir = new File(dotFileDir, Profiler.SUBDIR)
 
         // assert that a file was generated
-        val outputDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
+        val outputDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f => 
+          (f.startsWith("local") && f.endsWith("timeline.svg"))
+        })
         assert(outputDirs.length === 1)
 
         // assert that the generated files looks something like what we expect

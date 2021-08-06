@@ -375,7 +375,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
   -c, --compare                   Compare Applications (Note this may require
                                   more memory if comparing a large number of
-                                  applications). Default is false
+                                  applications). Default is false.
   -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
                                   processing.eg: 100-newest-filesystem (for
                                   processing newest 100 event logs). eg:
@@ -416,8 +416,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
 ### Profiling tool output
 By default this outputs a log file under sub-directory `./rapids_4_spark_profile`.
-If running in normal collect mode, it outputs a file named `rapids_4_spark_tools_output_<appIndex>.log`
-for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_output.log`
+If running in normal collect mode, it outputs a file named `{APPLICATION_ID}-profile.log`
+for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_compare.log`
 will be output. The output will go into your default filesystem, it supports local filesystem or HDFS.
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
 so if you want to point to the local filesystem be sure to include `file:` in the path
@@ -602,9 +602,9 @@ SQL Plan Metrics for Application:
 ```
 
 - Print SQL Plans (-p option):
-Prints the SQL plan as a text string to a file prefixed with `planDescriptions-`.
+Prints the SQL plan as a text string to a file ends with `-planDescriptions.log`.
 For example if your application id is app-20210507103057-0000, then the
-filename will be `planDescriptions-app-20210507103057-0000`
+filename will be `app-20210507103057-0000-planDescriptions.log`
 
 - Generate DOT graph for each SQL (-g option):
 ```
