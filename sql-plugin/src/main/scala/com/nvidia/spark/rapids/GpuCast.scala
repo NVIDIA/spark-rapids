@@ -39,9 +39,9 @@ class CastExprMeta[INPUT <: CastBase](
     rule: DataFromReplacementRule)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
-  val fromType = cast.child.dataType
-  val toType = cast.dataType
-  var legacyCastToString = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
+  val fromType: DataType = cast.child.dataType
+  val toType: DataType = cast.dataType
+  val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
 
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
@@ -49,80 +49,62 @@ class CastExprMeta[INPUT <: CastBase](
       fromDataType: DataType = fromType,
       toDataType: DataType = toType)
   : Unit = {
-    if (!conf.isCastFloatToDecimalEnabled && toDataType.isInstanceOf[DecimalType] &&
-      (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
-      willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
-        "floating point data types to decimals and this can produce results that slightly " +
-        "differ from the default behavior in Spark.  To enable this operation on the GPU, set " +
-        s"${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
-    }
-    if (!conf.isCastFloatToStringEnabled && toDataType == DataTypes.StringType &&
-      (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
-      willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
-        "converting floating point data types to strings and this can produce results that " +
-        "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
-        s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
-    }
-    if (!conf.isCastStringToFloatEnabled && cast.child.dataType == DataTypes.StringType &&
-      Seq(DataTypes.FloatType, DataTypes.DoubleType).contains(cast.dataType)) {
-      willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
-        "that casting from string to float types on the GPU returns incorrect results when the " +
-        "string represents any number \"1.7976931348623158E308\" <= x < " +
-        "\"1.7976931348623159E308\" and \"-1.7976931348623159E308\" < x <= " +
-        "\"-1.7976931348623158E308\" in both these cases the GPU returns Double.MaxValue while " +
-        "CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this operation on " +
-        "the GPU, set" + s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-    }
-    if (!conf.isCastStringToTimestampEnabled && fromDataType == DataTypes.StringType
-      && toDataType == DataTypes.TimestampType) {
-      willNotWorkOnGpu("the GPU only supports a subset of formats " +
-        "when casting strings to timestamps. Refer to the CAST documentation " +
-        "for more details. To enable this operation on the GPU, set" +
-        s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
-    }
-    // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
-    if (!conf.isCastStringToDecimalEnabled && cast.child.dataType == DataTypes.StringType &&
-        cast.dataType.isInstanceOf[DecimalType]) {
-      willNotWorkOnGpu("Currently string to decimal type on the GPU might produce results which " +
-        "slightly differed from the correct results when the string represents any number " +
-        "exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For instance, the GPU " +
-        "returns 99999999999999987 given input string \"99999999999999999\". The cause of " +
-        "divergence is that we can not cast strings containing scientific notation to decimal " +
-        "directly. So, we have to cast strings to floats firstly. Then, cast floats to decimals. " +
-        "The first step may lead to precision loss. To enable this operation on the GPU, set " +
-        s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-    }
-    if (fromDataType.isInstanceOf[StructType]) {
-      val checks = rule.getChecks.get.asInstanceOf[CastChecks]
-      fromDataType.asInstanceOf[StructType].foreach{field =>
-        recursiveTagExprForGpuCheck(field.dataType)
-        if (toDataType == StringType) {
-          if (!checks.gpuCanCast(field.dataType, toDataType)) {
-            willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
-              s"Casting ${field.dataType} to ${toDataType} not currently supported. Refer to " +
-              "CAST documentation for more details.")
+    (fromDataType, toDataType) match {
+      case (_: FloatType | _: DoubleType, _: DecimalType) if !conf.isCastFloatToDecimalEnabled =>
+        willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
+            "to convert floating point data types to decimals and this can produce results that " +
+            "slightly differ from the default behavior in Spark.  To enable this operation on " +
+            s"the GPU, set ${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
+      case (_: FloatType | _: DoubleType, _: StringType) if !conf.isCastFloatToStringEnabled =>
+        willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
+            "converting floating point data types to strings and this can produce results that " +
+            "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
+            s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
+      case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
+        willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
+            "that casting from string to float types on the GPU returns incorrect results when " +
+            "the string represents any number \"1.7976931348623158E308\" <= x < " +
+            "\"1.7976931348623159E308\" and \"-1.7976931348623159E308\" < x <= " +
+            "\"-1.7976931348623158E308\" in both these cases the GPU returns Double.MaxValue " +
+            "while CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this " +
+            s"operation on the GPU, set ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
+      case (_: StringType, _: TimestampType) if !conf.isCastStringToTimestampEnabled =>
+        willNotWorkOnGpu("the GPU only supports a subset of formats " +
+            "when casting strings to timestamps. Refer to the CAST documentation " +
+            "for more details. To enable this operation on the GPU, set" +
+            s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+      case (_: StringType, _: DecimalType) if !conf.isCastStringToDecimalEnabled =>
+        // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
+        willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
+            "results which slightly differed from the correct results when the string represents " +
+            "any number exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For " +
+            "instance, the GPU returns 99999999999999987 given input string " +
+            "\"99999999999999999\". The cause of divergence is that we can not cast strings " +
+            "containing scientific notation to decimal directly. So, we have to cast strings " +
+            "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
+            "precision loss. To enable this operation on the GPU, set " +
+            s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
+      case (structType: StructType, _) =>
+        val checks = rule.getChecks.get.asInstanceOf[CastChecks]
+        structType.foreach { field =>
+          recursiveTagExprForGpuCheck(field.dataType)
+          if (toDataType == StringType) {
+            if (!checks.gpuCanCast(field.dataType, toDataType)) {
+              willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
+                  s"Casting ${field.dataType} to $toDataType not currently supported. Refer to " +
+                  "`cast` documentation for more details.")
+            }
           }
         }
-      }
-    }
 
-    (fromDataType, toDataType) match {
-      case (
-        ArrayType(nestedFrom@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _),
-        ArrayType(nestedTo@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _)) => recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
+      case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
+        recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
 
-      case (nestedFrom@ArrayType(_, _), nestedTo@ArrayType(_, _)) =>
-        willNotWorkOnGpu(s"casting from $nestedFrom to $nestedTo is not supported")
+      case (MapType(keyFrom, valueFrom, _), MapType(keyTo, valueTo, _)) =>
+        recursiveTagExprForGpuCheck(keyFrom, keyTo)
+        recursiveTagExprForGpuCheck(valueFrom, valueTo)
 
-      case _ => ()
+      case _ =>
     }
   }
 
@@ -155,10 +137,10 @@ object GpuCast extends Arm {
     "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
     "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
 
-  val INVALID_INPUT_MESSAGE = "Column contains at least one value that is not in the " +
+  val INVALID_INPUT_MESSAGE: String = "Column contains at least one value that is not in the " +
     "required range"
 
-  val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
+  val INVALID_FLOAT_CAST_MSG: String = "At least one value is either null or is an invalid number"
 
   /**
    * Sanitization step for CAST string to date. Inserts a single zero before any
@@ -372,36 +354,23 @@ case class GpuCast(
     case _ => s"CAST(${child.sql} AS ${dataType.sql})"
   }
 
-  override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    (input.dataType(), dataType) match {
-      // Filter out casts to Decimal that utilize the ColumnVector to avoid a copy
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
-        castIntegralsToDecimal(input.getBase, dt)
-
-      case (FloatType | DoubleType, dt: DecimalType) =>
-        castFloatsToDecimal(input.getBase, dt)
-
-      case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.getBase, from, to)
-
-      case _ =>
-        recursiveDoColumnar(input.getBase, input.dataType())
-    }
-  }
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    recursiveDoColumnar(input.getBase, input.dataType())
 
   private def recursiveDoColumnar(
       input: ColumnView,
       fromDataType: DataType,
-      toDataType: DataType = dataType)
-  : ColumnVector = {
+      toDataType: DataType = dataType): ColumnVector = {
     (fromDataType, toDataType) match {
       case (NullType, to) =>
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, to)
+
       case (DateType, BooleanType | _: NumericType) =>
         // casts from date type to numerics are always null
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, toDataType)
       case (DateType, StringType) =>
         input.asStrings("%Y-%m-%d")
+
       case (TimestampType, FloatType | DoubleType) =>
         withResource(input.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromDouble(1000000)) { microsPerSec =>
@@ -440,6 +409,7 @@ case class GpuCast(
         }
       case (TimestampType, StringType) =>
         castTimestampToString(input)
+
       case (StructType(fields), StringType) =>
         castStructToString(input, fields)
 
@@ -508,6 +478,10 @@ case class GpuCast(
             }
           }
         }
+      case (FloatType | DoubleType, dt: DecimalType) =>
+        castFloatsToDecimal(input, dt)
+      case (from: DecimalType, to: DecimalType) =>
+        castDecimalToDecimal(input, from, to)
       case (BooleanType, TimestampType) =>
         // cudf requires casting to a long first.
         withResource(input.castTo(DType.INT64)) { longs =>
@@ -561,6 +535,8 @@ case class GpuCast(
             castFloatsToDecimal(fp, dt)
           }
         }
+      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
+        castIntegralsToDecimal(input, dt)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
@@ -581,23 +557,10 @@ case class GpuCast(
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
 
-      case (
-        ArrayType(nestedFrom@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _),
-        ArrayType(nestedTo@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _)) => {
-
+      case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0))(childView =>
           withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo))(childColumnVector =>
             withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())))
-      }
-
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
@@ -657,7 +620,7 @@ case class GpuCast(
    * @param inclusiveMin Whether the min value is included in the valid range or not
    * @param inclusiveMax Whether the max value is included in the valid range or not
    */
-  private def replaceOutOfRangeValues(values: ColumnVector,
+  private def replaceOutOfRangeValues(values: ColumnView,
     minValue: => Scalar,
     maxValue: => Scalar,
     replaceValue: => Scalar,
@@ -744,18 +707,17 @@ case class GpuCast(
       }
     }
 
-    withResource(
-      Seq(emptyStr, nullStr, separatorStr, spaceStr, leftStr, rightStr)
-        .safeMap(Scalar.fromString _)
-    ) { case Seq(emptyScalar, nullScalar, columnScalars@_*) =>
+    withResource(Seq(emptyStr, nullStr, separatorStr, spaceStr, leftStr, rightStr)
+        .safeMap(Scalar.fromString)) {
+      case Seq(emptyScalar, nullScalar, columnScalars@_*) =>
 
-      withResource(
-        columnScalars.safeMap(s => ColumnVector.fromScalar(s, numRows))
-      ) { case Seq(sepColumn, spaceColumn, leftColumn, rightColumn) =>
+        withResource(
+          columnScalars.safeMap(s => ColumnVector.fromScalar(s, numRows))
+        ) { case Seq(sepColumn, spaceColumn, leftColumn, rightColumn) =>
 
-        doCastStructToString(emptyScalar, nullScalar, sepColumn,
-          spaceColumn, leftColumn, rightColumn)
-      }
+          doCastStructToString(emptyScalar, nullScalar, sepColumn,
+            spaceColumn, leftColumn, rightColumn)
+        }
     }
   }
 
@@ -1191,8 +1153,25 @@ case class GpuCast(
     }
   }
 
-  private def castIntegralsToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+  private def castIntegralsToDecimalAfterCheck(input: ColumnView, dt: DecimalType): ColumnVector = {
+    if (dt.scale < 0) {
+      // Rounding is essential when scale is negative,
+      // so we apply HALF_UP rounding manually to keep align with CpuCast.
+      withResource(input.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
+        scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+      }
+    } else if (dt.scale > 0) {
+      // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
+      // before casting it to decimal in case of overflow.
+      withResource(input.castTo(DType.INT64)) { long =>
+        long.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
+      }
+    } else {
+      input.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
+    }
+  }
 
+  private def castIntegralsToDecimal(input: ColumnView, dt: DecimalType): ColumnVector = {
     // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
     val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
       case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
@@ -1200,38 +1179,23 @@ case class GpuCast(
     }
     // At first, we conduct overflow check onto input column.
     // Then, we cast checked input into target decimal type.
-    val checkedInput = if (ansiMode) {
+    if (ansiMode) {
       assertValuesInRange(input,
         minValue = Scalar.fromLong(lowBound),
         maxValue = Scalar.fromLong(upBound))
-      input.incRefCount()
+      castIntegralsToDecimalAfterCheck(input, dt)
     } else {
-      replaceOutOfRangeValues(input,
+      val checkedInput = replaceOutOfRangeValues(input,
         minValue = Scalar.fromLong(lowBound),
         maxValue = Scalar.fromLong(upBound),
         replaceValue = Scalar.fromNull(input.getType))
-    }
-
-    withResource(checkedInput) { checked =>
-      if (dt.scale < 0) {
-        // Rounding is essential when scale is negative,
-        // so we apply HALF_UP rounding manually to keep align with CpuCast.
-        withResource(checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
-          scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
-        }
-      } else if (dt.scale > 0) {
-        // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
-        // before casting it to decimal in case of overflow.
-        withResource(checked.castTo(DType.INT64)) { long =>
-          long.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
-        }
-      } else {
-        checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
+      withResource(checkedInput) { checked =>
+        castIntegralsToDecimalAfterCheck(checked, dt)
       }
     }
   }
 
-  private def castFloatsToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+  private def castFloatsToDecimal(input: ColumnView, dt: DecimalType): ColumnVector = {
 
     // Approach to minimize difference between CPUCast and GPUCast:
     // step 1. cast input to FLOAT64 (if necessary)
@@ -1269,7 +1233,7 @@ case class GpuCast(
       val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
         checked.castTo(targetType)
       } else {
-        val containerType = DecimalUtil.createCudfDecimal(dt.precision, (dt.scale + 1))
+        val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
@@ -1285,7 +1249,7 @@ case class GpuCast(
     }
   }
 
-  private def castDecimalToDecimal(input: ColumnVector,
+  private def castDecimalToDecimal(input: ColumnView,
       from: DecimalType,
       to: DecimalType): ColumnVector = {
 
@@ -1293,10 +1257,11 @@ case class GpuCast(
     val isTo32Bit = DecimalType.is32BitDecimalType(to)
     val cudfDecimal = DecimalUtil.createCudfDecimal(to.precision, to.scale)
 
-    def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
+    def castCheckedDecimal(checkedInput: ColumnView): ColumnVector = {
       if (to.scale == from.scale) {
         if (isFrom32Bit == isTo32Bit) {
-          checkedInput.incRefCount()
+          // If the input is a ColumnVector already this will just inc the reference count
+          checkedInput.copyToColumnVector()
         } else {
           // the input is already checked, just cast it
           checkedInput.castTo(cudfDecimal)
@@ -1333,7 +1298,7 @@ case class GpuCast(
   }
 
   def checkForOverflow(
-     input: ColumnVector,
+     input: ColumnView,
      to: DecimalType,
      isFrom32Bit: Boolean): ColumnVector = {
 
@@ -1377,7 +1342,7 @@ case class GpuCast(
     // if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
     // !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS)
     if (isFrom32Bit && absBoundPrecision > Decimal.MAX_INT_DIGITS) {
-      return input.incRefCount()
+      return input.copyToColumnVector()
     }
     val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
       val absBound = math.pow(10, absBoundPrecision).toLong
@@ -1391,7 +1356,7 @@ case class GpuCast(
         minValue = minValueScalar,
         maxValue = maxValueScalar,
         inclusiveMin = false, inclusiveMax = false)
-      input.incRefCount()
+      input.copyToColumnVector()
     } else {
       replaceOutOfRangeValues(input,
         minValue = minValueScalar,

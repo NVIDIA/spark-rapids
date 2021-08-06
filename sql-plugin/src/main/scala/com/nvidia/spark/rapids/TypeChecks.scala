@@ -1046,33 +1046,35 @@ class CastChecks extends ExprChecks {
   val sparkNullSig: TypeSig = all
 
   val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
-  val sparkBooleanSig: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING
+  val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
-  val sparkIntegralSig: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+  val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
   val fpChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING
-  val sparkFpSig: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING
+  val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkDateSig: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkDateSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
-  val sparkTimestampSig: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING
+  val sparkTimestampSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
   val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING + BINARY
-  val sparkStringSig: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
+  val sparkStringSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
   val decimalChecks: TypeSig = DECIMAL_64 + STRING
-  val sparkDecimalSig: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING
+  val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-  val arrayChecks: TypeSig = ARRAY.nested(FLOAT + DOUBLE + INT + ARRAY)
+  val arrayChecks: TypeSig = ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY) +
+      psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
+          "to desired child type")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 

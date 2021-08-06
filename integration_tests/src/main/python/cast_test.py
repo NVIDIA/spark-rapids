@@ -30,3 +30,20 @@ def test_cast_empty_string_to_int():
                 'CAST(a as INTEGER)',
                 'CAST(a as LONG)'))
 
+# These tests are not intended to be exhaustive. The scala test CastOpSuite should cover
+# just about everything for non-nested values. This is intended to check that the
+# recursive code in nested type checks, like arrays, is working properly. So we are going
+# pick child types that are simple to cast. Upcasting integer values and casting them to strings
+@pytest.mark.parametrize('data_gen,to_type', [
+    (ArrayGen(byte_gen), ArrayType(IntegerType())),
+    (ArrayGen(byte_gen), ArrayType(StringType())),
+    (ArrayGen(byte_gen), ArrayType(DecimalType(6, 2))),
+    (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(IntegerType()))),
+    (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(StringType()))),
+    (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(DecimalType(6, 2)))),
+    ], ids=idfn)
+def test_cast_nested(data_gen, to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
+
+
