@@ -65,7 +65,7 @@ New functionality and performance improvements for this release include:
   * Additional filtering capabilities
   * Reporting on data types
   * Reporting on read data formats
-  * Abillity to run the qualification tool on Spark 2.x logs
+  * Ability to run the qualification tool on Spark 2.x logs
   * Ability to run the tool on Apache Spark 3.x, AWS EMR 6.3.0, Dataproc 2.0, Microsoft Azure, and
     Databricks 7.3 and 8.2 logs
   * Improved qualification tool performance
