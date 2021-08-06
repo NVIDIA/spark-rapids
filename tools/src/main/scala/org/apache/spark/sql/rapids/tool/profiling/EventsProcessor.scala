@@ -336,7 +336,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       ""
     )
     app.sqlIdToInfo.put(event.executionId, sqlExecution)
-    // app.sqlStart += sqlExecution
     app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
