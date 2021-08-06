@@ -47,7 +47,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
   def profile(eventLogInfos: Seq[EventLogInfo]): Unit = {
     if (appArgs.compare()) {
-      val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.LOG_FILE_NAME,
+      val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.COMPARE_LOG_FILE_NAME,
         "Profile summary")
       try {
         // create all the apps in parallel since we need the info for all of them to compare
@@ -120,7 +120,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           appOpt match {
             case Some(app) =>
               val textFileWriter = new ToolTextFileWriter(outputDir,
-                s"${app.appId}-${Profiler.LOG_FILE_NAME_PREFIX}.log",
+                s"${app.appId}-${Profiler.PROFILE_LOG_NAME}.log",
                 "Profile summary")
               try {
                 processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter)
@@ -246,7 +246,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
 object Profiler {
   // This tool's output log file name
-  val LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_output"
-  val LOG_FILE_NAME = s"$LOG_FILE_NAME_PREFIX.log"
+  val PROFILE_LOG_NAME = "profile"
+  val COMPARE_LOG_FILE_NAME = "rapids_4_spark_tools_compare.log"
   val SUBDIR = "rapids_4_spark_profile"
 }
