@@ -190,7 +190,7 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
     pluginEnabled: Boolean)  extends ProfileResult {
   override val outputHeaders = Seq("appIndex", "appName", "appId",
     "sparkUser", "startTime", "endTime", "duration", "durationStr",
-    "durationStr", "sparkVersion", "pluginEnabled")
+    "sparkVersion", "pluginEnabled")
 
   def endTimeToStr: String = {
     endTime match {
