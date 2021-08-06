@@ -1075,13 +1075,13 @@ class CastChecks extends ExprChecks {
   val arrayChecks: TypeSig = ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL +
       ARRAY + BINARY + STRUCT + MAP) +
       psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
-          "to desired child type")
+          "the desired child type")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
   val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY +
       STRUCT + MAP) +
-      psNote(TypeEnum.MAP, "the map's kay and value must also support being cast to the " +
+      psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
       "desired child types")
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
