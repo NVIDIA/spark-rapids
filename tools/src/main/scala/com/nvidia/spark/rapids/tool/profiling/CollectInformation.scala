@@ -46,7 +46,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols.appIndex))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -73,7 +73,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     }
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.jar))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr + "\n"))
       sortedRows
@@ -97,7 +97,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.sqlID,
         cols.location, cols.schema))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -142,7 +142,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       if (allRows.size > 0) {
         val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.numExecutors))
         val outputHeaders = sortedRows.head.outputHeaders
-        val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
           outputHeaders, sortedRows.map(_.convertToSeq))
         fileWriter.foreach(_.write(outStr))
         sortedRows
@@ -169,7 +169,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
     if (allRows.size > 0) {
       val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.jobID))
       val outputHeaders = sortedRows.head.outputHeaders
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -224,7 +224,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val allRows = props.map { case(k, v) => Seq(k) ++ v }.toSeq
       val sortedRows = allRows.sortBy(cols => (cols(0)))
       if (sortedRows.size > 0) {
-        val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+        val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
           outputHeaders, sortedRows)
         fileWriter.foreach(_.write(outStr))
         sortedRows
@@ -264,7 +264,7 @@ class CollectInformation(apps: Seq[ApplicationInfo],
       val sortedRows = sqlAccums.sortBy(cols => (cols.appIndex, cols.sqlID,
         cols.nodeID, cols.nodeName, cols.accumulatorId, cols.metricType))
       val outputHeaders = sortedRows.head.outputHeaders
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows

@@ -66,14 +66,6 @@ object ProfileUtils {
       case _: NoSuchElementException => None
     }
 
-  def getCaseClassFields(inst: Any): List[String] = {
-    inst.getClass.getDeclaredFields.map(_.getName).toList
-  }
-
-  def getMethods[T: TypeTag]: Seq[String] =
-    typeOf[T].members.sorted.collect {
-      case m: MethodSymbol if m.isCaseAccessor => m.name.toString
-    }
 
   def truncateFailureStr(failureStr: String): String = {
     failureStr.substring(0, Math.min(failureStr.size, 100))

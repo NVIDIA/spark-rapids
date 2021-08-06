@@ -40,7 +40,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     if (failed.size > 0) {
       val sortedRows = failed.sortBy(cols =>
         (cols.appIndex, cols.stageId, cols.stageAttemptId, cols.taskId, cols.taskAttemptId))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -67,7 +67,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     if (failed.size > 0) {
       val sortedRows = failed.sortBy(cols => (cols.appIndex, cols.stageId,
         cols.stageAttemptId))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -94,7 +94,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
       val sortedRows = failed.sortBy { cols =>
         (cols.appIndex, cols.jobId, cols.jobResult)
       }
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -114,7 +114,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     }
     if (res.size > 0) {
       val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -137,7 +137,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     }
     if (res.size > 0) {
       val sortedRows = res.sortBy(cols => (cols.appIndex, cols.executorID))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -159,7 +159,7 @@ class HealthCheck(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWri
     }
     if (res.size > 0) {
       val sortedRows = res.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID))
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows

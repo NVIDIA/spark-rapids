@@ -25,7 +25,6 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import org.apache.commons.text.StringEscapeUtils
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.{SparkPlanInfo, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
 import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInfoWithStage}
@@ -44,7 +43,7 @@ import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInf
  *
  * See https://graphviz.org/pdf/dotguide.pdf for a description of DOT files.
  */
-object GenerateDot extends Logging {
+object GenerateDot {
   val GPU_COLOR = "#76b900" // NVIDIA Green
   val CPU_COLOR = "#0071c5"
   val TRANSITION_COLOR = "red"
@@ -126,7 +125,6 @@ object GenerateDot extends Logging {
         dotFileWriter.close()
       }
     }
-
   }
 }
 

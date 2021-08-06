@@ -124,7 +124,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
     fileWriter.foreach(_.write("\nMatching SQL IDs Across Applications:\n"))
     val matchingSqlIdsRet = if (matchingSqlData.size > 0) {
       val sortedRows = matchingSqlData
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         outputAppIds, sortedRows)
       fileWriter.foreach(_.write(outStr + "\n"))
       sortedRows
@@ -139,12 +139,10 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       }
     }
 
-    logWarning("in finding match stages 3")
-
     fileWriter.foreach(_.write("\nMatching Stage IDs Across Applications:\n"))
     val matchingStageIdsRet = if (matchingStageData.size > 0) {
       val sortedRows = matchingStageData
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         outputAppIds, sortedRows)
       fileWriter.foreach(_.write(outStr + "\n"))
       sortedRows

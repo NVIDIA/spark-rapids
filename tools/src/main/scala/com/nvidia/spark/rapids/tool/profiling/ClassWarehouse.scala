@@ -188,9 +188,9 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],
     durationStr: String, sparkVersion: String,
     pluginEnabled: Boolean)  extends ProfileResult {
-  override val outputHeaders: Seq[String] = {
-    ProfileUtils.getMethods[AppInfoProfileResults]
-  }
+  override val outputHeaders = Seq("appIndex", "appName", "appId",
+    "sparkUser", "startTime", "endTime", "duration", "durationStr",
+    "durationStr", "sparkVersion", "pluginEnabled")
 
   def endTimeToStr: String = {
     endTime match {
@@ -297,8 +297,6 @@ case class TaskCase(
     output_recordsWritten: Long)
 
 case class DatasetSQLCase(sqlID: Long)
-
-case class ProblematicSQLCase(sqlID: Long, reason: String)
 
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String,
     nodeDesc: String, reason: String)

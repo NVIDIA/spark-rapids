@@ -61,7 +61,8 @@ object ProfileOutputWriter extends Logging {
       .replaceAll("\u0007", "\\\\a")
   }
 
-  def showString(
+  // originally copied from Spark showString and modified
+  def makeFormattedString(
       _numRows: Int,
       truncate: Int = 20,
       schema: Seq[String],
@@ -138,5 +139,4 @@ object ProfileOutputWriter extends Logging {
 
     sb.toString()
   }
-
 }

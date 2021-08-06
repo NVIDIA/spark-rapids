@@ -221,7 +221,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.id)
       }
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -314,7 +314,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.sqlId, cols.executorCpuTime)
       }
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -342,7 +342,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, cols.sqlID, sortDur)
       }
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
@@ -403,7 +403,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       val sortedRows = allNonEmptyRows.sortBy { cols =>
         (cols.appIndex, cols.stageId, cols.stageAttemptId, cols.taskId, cols.taskAttemptId)
       }
-      val outStr = ProfileOutputWriter.showString(numOutputRows, 0,
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
         sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
       sortedRows
