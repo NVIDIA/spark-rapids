@@ -84,19 +84,15 @@ class CastExprMeta[INPUT <: CastBase](
             "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
             "precision loss. To enable this operation on the GPU, set " +
             s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-      case (structType: StructType, _) =>
-        val checks = rule.getChecks.get.asInstanceOf[CastChecks]
+      case (structType: StructType, StringType) =>
         structType.foreach { field =>
-          recursiveTagExprForGpuCheck(field.dataType)
-          if (toDataType == StringType) {
-            if (!checks.gpuCanCast(field.dataType, toDataType)) {
-              willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
-                  s"Casting ${field.dataType} to $toDataType not currently supported. Refer to " +
-                  "`cast` documentation for more details.")
-            }
-          }
+          recursiveTagExprForGpuCheck(field.dataType, StringType)
         }
-
+      case (fromStructType: StructType, toStructType: StructType) =>
+        fromStructType.zip(toStructType).foreach {
+          case (fromChild, toChild) =>
+            recursiveTagExprForGpuCheck(fromChild.dataType, toChild.dataType)
+        }
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
 
@@ -355,12 +351,17 @@ case class GpuCast(
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
-    recursiveDoColumnar(input.getBase, input.dataType())
+    recursiveDoColumnar(input.getBase, input.dataType(), dataType)
 
   private def recursiveDoColumnar(
       input: ColumnView,
       fromDataType: DataType,
-      toDataType: DataType = dataType): ColumnVector = {
+      toDataType: DataType): ColumnVector = {
+
+    if (DataType.equalsStructurally(fromDataType, toDataType)) {
+      return input.copyToColumnVector()
+    }
+
     (fromDataType, toDataType) match {
       case (NullType, to) =>
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, to)
@@ -561,6 +562,10 @@ case class GpuCast(
         withResource(input.getChildColumnView(0))(childView =>
           withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo))(childColumnVector =>
             withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())))
+
+      case (from: StructType, to: StructType) =>
+        castStructToStruct(from, to, input)
+
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
@@ -683,7 +688,7 @@ case class GpuCast(
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType)
+          columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType, StringType)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
           withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
@@ -691,7 +696,7 @@ case class GpuCast(
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
             val nonFirstColumn = recursiveDoColumnar(nonFirstColumnView,
-              inputSchema(nonFirstIndex).dataType)
+              inputSchema(nonFirstIndex).dataType, StringType)
             if (legacyCastToString) {
               // " " if non-null
               columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
@@ -1149,6 +1154,31 @@ case class GpuCast(
     withResource(isCorrectLength) { isCorrectLength =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
         isCorrectLength.and(isTimestamp)
+      }
+    }
+  }
+
+  private def castStructToStruct(
+      from: StructType,
+      to: StructType,
+      input: ColumnView): ColumnVector = {
+    withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
+      from.indices.foreach { index =>
+        childColumns += recursiveDoColumnar(
+          input.getChildColumnView(index),
+          from(index).dataType,
+          to(index).dataType)
+      }
+      withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
+        if (input.getNullCount == 0) {
+          casted.copyToColumnVector()
+        } else {
+          withResource(input.isNull) { isNull =>
+            withResource(GpuScalar.from(null, to)) { nullVal =>
+              isNull.ifElse(nullVal, casted)
+            }
+          }
+        }
       }
     }
   }
