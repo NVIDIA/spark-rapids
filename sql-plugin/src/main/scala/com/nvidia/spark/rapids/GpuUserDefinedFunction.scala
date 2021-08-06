@@ -68,6 +68,6 @@ trait GpuUserDefinedFunction extends GpuExpression with UserDefinedExpression wi
 
 object GpuUserDefinedFunction {
   // UDFs can support all types except UDT which does not have a clear columnar representation.
-  val udfTypeSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+  val udfTypeSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
       TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 }

@@ -48,7 +48,9 @@ basic_struct_gen_with_no_null_child = StructGen([
 
 basic_struct_gen_with_floats = StructGen([['child0', FloatGen()], ['child1', DoubleGen()]], nullable=False)
 
-struct_gens = [basic_struct_gen, basic_struct_gen_with_no_null_child]
+nested_2d_struct_gens = StructGen([['child0', basic_struct_gen]], nullable=False)
+nested_3d_struct_gens = StructGen([['child0', nested_2d_struct_gens]], nullable=False)
+struct_gens = [basic_struct_gen, basic_struct_gen_with_no_null_child, nested_2d_struct_gens, nested_3d_struct_gens]
 
 double_gen = [pytest.param(DoubleGen(), marks=[incompat])]
 

@@ -37,7 +37,7 @@ class Spark311CDHShims extends Spark311Shims {
     super.getExecs ++ Seq(
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested()
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested()
           .withPsNote(TypeEnum.DECIMAL,
             "Negative scales aren't supported at the moment even with " +
               "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. This is because Parquet " +
