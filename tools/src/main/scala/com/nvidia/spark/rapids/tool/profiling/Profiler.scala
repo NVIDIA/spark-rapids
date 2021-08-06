@@ -61,12 +61,11 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         textFileWriter.close()
       }
     } else {
-      // var index: Int = 1
       // Read each application and process it separately to save memory.
       // Memory usage will be controlled by number of threads running.
+      // use appIndex as 1 for all since we output separate file for each now
       eventLogInfos.foreach { log =>
         createAppAndProcess(Seq(log), 1)
-        //index += 1
       }
       // wait for the threads to finish processing the files
       threadPool.shutdown()
