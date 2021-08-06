@@ -3025,7 +3025,7 @@ object GpuOverrides {
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP +
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
             + TypeSig.STRUCT + TypeSig.MAP)
         .withPsNote(TypeEnum.STRUCT,
