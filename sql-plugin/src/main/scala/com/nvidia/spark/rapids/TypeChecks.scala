@@ -1073,20 +1073,23 @@ class CastChecks extends ExprChecks {
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
   val arrayChecks: TypeSig = ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL +
-      ARRAY + BINARY + STRUCT) +
+      ARRAY + BINARY + STRUCT + MAP) +
       psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
           "to desired child type")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
-  val mapChecks: TypeSig = none
+  val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY +
+      STRUCT + MAP) +
+      psNote(TypeEnum.MAP, "the map's kay and value must also support being cast to the " +
+      "desired child types")
   val sparkMapSig: TypeSig = STRING + MAP.nested(all)
 
   val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
       "being cast to string") +
-      STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+      STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT + MAP) +
       psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
-          "desired child type")
+          "desired child type(s)")
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
 
   val udtChecks: TypeSig = none

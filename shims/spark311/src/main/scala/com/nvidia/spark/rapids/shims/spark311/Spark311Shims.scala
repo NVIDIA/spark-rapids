@@ -153,13 +153,16 @@ class Spark311Shims extends Spark301Shims {
                   "to desired child type")
         override val sparkArraySig: TypeSig = ARRAY.nested(all)
 
-        override val mapChecks: TypeSig = none
+        override val mapChecks: TypeSig =
+          MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT + MAP) +
+              psNote(TypeEnum.MAP, "the map's kay and value must also support being cast to the " +
+                  "desired child types")
         override val sparkMapSig: TypeSig = MAP.nested(all)
 
         override val structChecks: TypeSig =
           STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
             psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
-                "desired child type")
+                "desired child type(s)")
         override val sparkStructSig: TypeSig = STRUCT.nested(all)
 
         override val udtChecks: TypeSig = none

@@ -44,7 +44,10 @@ def test_cast_empty_string_to_int():
     (StructGen([('a', byte_gen)]), StructType([StructField('a', IntegerType())])),
     (StructGen([('a', byte_gen), ('c', short_gen)]), StructType([StructField('b', IntegerType()), StructField('c', ShortType())])),
     (StructGen([('a', ArrayGen(byte_gen)), ('c', short_gen)]), StructType([StructField('a', ArrayType(IntegerType())), StructField('c', LongType())])),
-    (ArrayGen(StructGen([('a', byte_gen), ('b', byte_gen)])), ArrayType(StringType()))
+    (ArrayGen(StructGen([('a', byte_gen), ('b', byte_gen)])), ArrayType(StringType())),
+    (MapGen(ByteGen(nullable=False), byte_gen), MapType(StringType(), StringType())),
+    (MapGen(ShortGen(nullable=False), ArrayGen(byte_gen)), MapType(IntegerType(), ArrayType(ShortType()))),
+    (MapGen(ShortGen(nullable=False), ArrayGen(StructGen([('a', byte_gen)]))), MapType(IntegerType(), ArrayType(StructType([StructField('b', ShortType())]))))
     ], ids=idfn)
 def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(

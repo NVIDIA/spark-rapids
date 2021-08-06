@@ -566,6 +566,9 @@ case class GpuCast(
       case (from: StructType, to: StructType) =>
         castStructToStruct(from, to, input)
 
+      case (from: MapType, to: MapType) =>
+        castMapToMap(from, to, input)
+
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
     }
@@ -1154,6 +1157,33 @@ case class GpuCast(
     withResource(isCorrectLength) { isCorrectLength =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
         isCorrectLength.and(isTimestamp)
+      }
+    }
+  }
+
+  private def castMapToMap(
+      from: MapType,
+      to: MapType,
+      input: ColumnView): ColumnVector = {
+    // For cudf a map is a list of (key, value) structs, but lets keep it in ColumnView as much
+    // as possible
+    withResource(input.getChildColumnView(0)) { kvStructColumn =>
+      val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
+        recursiveDoColumnar(keyColumn, from.keyType, to.keyType)
+      }
+      withResource(castKey) { castKey =>
+        val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
+          recursiveDoColumnar(valueColumn, from.valueType, to.valueType)
+        }
+        withResource(castValue) { castValue =>
+          withResource(ColumnView.makeStructView(castKey, castValue)) { castKvStructColumn =>
+            // We don't have to worry about null in the key/value struct because they are not
+            // allowed for maps in Spark
+            withResource(input.replaceListChild(castKvStructColumn)) { replacedView =>
+              replacedView.copyToColumnVector()
+            }
+          }
+        }
       }
     }
   }
