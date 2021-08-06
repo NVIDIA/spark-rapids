@@ -147,13 +147,22 @@ class Spark311Shims extends Spark301Shims {
 
         // calendarChecks are the same
 
-        override val arrayChecks: TypeSig = none
+        override val arrayChecks: TypeSig =
+          ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+              psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
+                  "the desired child type")
         override val sparkArraySig: TypeSig = ARRAY.nested(all)
 
-        override val mapChecks: TypeSig = none
+        override val mapChecks: TypeSig =
+          MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT + MAP) +
+              psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
+                  "desired child types")
         override val sparkMapSig: TypeSig = MAP.nested(all)
 
-        override val structChecks: TypeSig = none
+        override val structChecks: TypeSig =
+          STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+            psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
+                "desired child type(s)")
         override val sparkStructSig: TypeSig = STRUCT.nested(all)
 
         override val udtChecks: TypeSig = none
