@@ -124,4 +124,15 @@ class AnalysisSuite extends FunSuite {
     val containsDs = sqlDurAndCpu.filter(_.containsDataset === true)
     assert(containsDs.isEmpty)
   }
+
+  test("test contains dataset true") {
+    val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+    val logs = Array(s"$qualLogDir/dataset_eventlog")
+
+    val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
+    val analysis = new Analysis(apps, None, 1000)
+    val sqlDurAndCpu = analysis.sqlMetricsAggregationDurationAndCpuTime()
+    val containsDs = sqlDurAndCpu.filter(_.containsDataset === true)
+    assert(containsDs.size == 1)
+  }
 }
