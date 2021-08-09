@@ -20899,6 +20899,7 @@ as `a` don't show up in the table. They are controlled by the rules for
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
 <tr>
 <td>SinglePartition$</td>
 <td>Single partitioning</td>
@@ -20922,6 +20923,7 @@ as `a` don't show up in the table. They are controlled by the rules for
 <td> </td>
 <td> </td>
 <td> </td>
+</tr>
 </table>
 
 ## Input/Output
