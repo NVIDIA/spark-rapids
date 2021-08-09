@@ -150,6 +150,15 @@ trait GpuExpression extends Expression with Arm {
     GpuCanonicalize.execute(withNewChildren(canonicalizedChildren))
   }
 
+  /**
+   * Build an equivalent representation of this expression in a cudf AST.
+   * @param numFirstTableColumns number of columns in the leftmost input table. Spark places the
+   *                             columns of all inputs in a single sequence, while cudf AST uses an
+   *                             explicit table reference to make column indices unique. This
+   *                             parameter helps translate input column references from Spark's
+   *                             single sequence into cudf's separate sequences.
+   * @return top node of the equivalent AST
+   */
   def convertToAst(numFirstTableColumns: Int): ast.AstNode =
     throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
 }

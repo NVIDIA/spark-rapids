@@ -179,28 +179,51 @@ case class GpuProjectAstExec(
     val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val outputTypes = output.map(_.dataType).toArray
     val rdd = child.executeColumnar()
-    rdd.map { cb =>
-      withResource(cb) { _ =>
-        withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
-          numOutputBatches += 1
-          numOutputRows += cb.numRows()
-          val compiledAstExprs = boundProjectList.safeMap { expr =>
-            val astExpr = expr.convertToAst(Int.MaxValue) match {
-              case e: ast.Expression => e
-              case e => new ast.UnaryExpression(ast.UnaryOperator.IDENTITY, e)
+    rdd.mapPartitions { cbIter =>
+      new Iterator[ColumnarBatch] with AutoCloseable {
+        private[this] var compiledAstExprs =
+          withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
+            boundProjectList.safeMap { expr =>
+              // Use intmax for the left table column count since there's only one input table here.
+              val astExpr = expr.convertToAst(Int.MaxValue) match {
+                case e: ast.Expression => e
+                case e => new ast.UnaryExpression(ast.UnaryOperator.IDENTITY, e)
+              }
+              astExpr.compile()
             }
-            astExpr.compile()
           }
-          val projectedTable = withResource(compiledAstExprs) { _ =>
-            withResource(GpuColumnVector.from(cb)) { table =>
-              withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
-                new Table(projectedColumns:_*)
+
+        Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+
+        override def hasNext: Boolean = {
+          if (cbIter.hasNext) {
+            true
+          } else {
+            close()
+            false
+          }
+        }
+
+        override def next(): ColumnarBatch = {
+          withResource(cbIter.next()) { cb =>
+            withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
+              numOutputBatches += 1
+              numOutputRows += cb.numRows()
+              val projectedTable = withResource(GpuColumnVector.from(cb)) { table =>
+                withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
+                  new Table(projectedColumns:_*)
+                }
+              }
+              withResource(projectedTable) { _ =>
+                GpuColumnVector.from(projectedTable, outputTypes)
               }
             }
           }
-          withResource(projectedTable) { _ =>
-            GpuColumnVector.from(projectedTable, outputTypes)
-          }
+        }
+
+        override def close(): Unit = {
+          compiledAstExprs.safeClose()
+          compiledAstExprs = Nil
         }
       }
     }

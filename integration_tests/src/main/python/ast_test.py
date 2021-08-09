@@ -73,10 +73,6 @@ def assert_binary_ast(data_descr, func, conf={}):
 def test_bitwise_not(data_descr):
     assert_unary_ast(data_descr, lambda df: df.selectExpr('~a'))
 
-@pytest.mark.parametrize('data_descr', ast_integral_descrs, ids=idfn)
-def test_bitwise_not_fallback(data_descr):
-    assert_unary_ast(data_descr, lambda df: df.selectExpr('~a'))
-
 # This just ends up being a pass through.  There is no good way to force
 # a unary positive into a plan, because it gets optimized out, but this
 # verifies that we can handle it.
