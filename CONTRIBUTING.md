@@ -201,7 +201,7 @@ manually trigger it by commenting `build`. It includes following steps,
 4. Run `mvn verify` and unit tests for multiple Spark versions in parallel. 
 Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
 
-If it fails, you can click the `Details` link of this check, and go to `Post processing -> Start post processing` to
+If it fails, you can click the `Details` link of this check, and go to `Upload log -> Jenkins log for pull request xxx (click here)` to
 find the uploaded log.
 
 ## Attribution
