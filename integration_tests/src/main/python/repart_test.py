@@ -78,7 +78,8 @@ def test_union_struct_missing_children(data_gen):
 @pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]]),
                                                 nested_struct,
                                                 struct_of_maps,
-                                                map_gens], ids=idfn)
+                                                map_gens,
+                                                array_gens_sample], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -87,7 +88,8 @@ def test_union(data_gen):
 @pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]]),
                                                 nested_struct,
                                                 struct_of_maps,
-                                                map_gens], ids=idfn)
+                                                map_gens,
+                                                array_gens_sample], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_unionAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -99,7 +101,8 @@ def test_unionAll(data_gen):
                                                 StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
                                                                       StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]]),
                                                 struct_of_maps,
-                                                map_gens], ids=idfn)
+                                                map_gens,
+                                                array_gens_sample], ids=idfn)
 @pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 # This tests the union of two DFs of structs with missing child column names. The missing child
 # column will be replaced by nulls in the output DF. This is a feature added in 3.1+
@@ -111,7 +114,8 @@ def test_union_by_missing_col_name(data_gen):
 @pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]]),
                                                 nested_struct,
                                                 struct_of_maps,
-                                                map_gens], ids=idfn)
+                                                map_gens,
+                                                array_gens_sample], ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
