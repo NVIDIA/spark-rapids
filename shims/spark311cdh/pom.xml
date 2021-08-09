@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shims_2.12</artifactId>
-        <version>21.08.0-SNAPSHOT</version>
+        <version>21.08.0</version>
 	<relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-shims-spark311cdh_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Spark 3.1.1 Cloudera Shim</name>
     <description>The RAPIDS SQL plugin for Apache Spark 3.1.1 Cloudera Shim</description>
-    <version>21.08.0-SNAPSHOT</version>
+    <version>21.08.0</version>
 
     <!-- Set 'spark.version' for the shims layer -->
     <!-- Create a separate file 'SPARK_VER.properties' in the jar to save cudf & spark version info -->
