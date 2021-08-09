@@ -189,10 +189,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   /**
    * Call this method to record information about type conversions via DataTypeMeta.
    */
-  final def addConvertedDataType(name: String, typeMeta: DataTypeMeta): Unit = {
-    val reason = s"Converted DataType of $name from ${typeMeta.wrapped.get} to " +
-        s"${typeMeta.dataType.get}, because ${typeMeta.reasonForConversion}"
-    typeConversionReasons.get.add(reason)
+  final def addConvertedDataType(expression: Expression, typeMeta: DataTypeMeta): Unit = {
+    typeConversionReasons.get.add(
+      s"$expression: ${typeMeta.reasonForConversion}")
   }
 
   /**
@@ -311,14 +310,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
         (cannotRunOnGpuBecauseOfSparkPlan || shouldThisBeRemoved) => "could " + replaceMessage
     case Some(v) if v.isEmpty => "will " + replaceMessage
     case Some(v) =>
-      noReplacementPossibleMessage(v mkString "; ")
+      noReplacementPossibleMessage(v.mkString("; "))
   }
 
   private def willBeRemovedInfo: String = shouldBeRemovedReasons match {
     case None => ""
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
-      val reasons = v mkString "; "
+      val reasons = v.mkString("; ")
       s" but is going to be removed because $reasons"
   }
 
@@ -326,8 +325,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     case None => ""
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
-      " The data type of following expressions will be converted in GPU runtime:\n" +
-          v mkString "; "
+      "The data type of following expressions will be converted in GPU runtime: " +
+          v.mkString("; ")
   }
 
   /**
@@ -385,13 +384,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       }
 
       strBuilder.append(willWorkOnGpuInfo).
-        append(willBeRemovedInfo).
-        append("\n")
+        append(willBeRemovedInfo)
 
       typeConversionInfo match {
         case info if info.isEmpty =>
-        case info => strBuilder.append(info).append("\n")
+        case info => strBuilder.append(". ").append(info)
       }
+
+      strBuilder.append("\n")
     }
     printChildren(strBuilder, depth, all)
   }
@@ -685,7 +685,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         "The length of outputTypeMetas doesn't match to the length of plan's output")
       wrapped.output.zip(typeMetas).map {
         case (ar, meta) if meta.typeConverted =>
-          addConvertedDataType(ar.name, meta)
+          addConvertedDataType(ar, meta)
           AttributeReference(ar.name, meta.dataType.get, ar.nullable, ar.metadata)(
             ar.exprId, ar.qualifier)
         case (ar, _) =>
@@ -828,8 +828,10 @@ class DataTypeMeta(
    * Returns the reason for conversion if exists
    */
   def reasonForConversion: String = {
-    val reasonMsg = (if (typeConverted) reason else None).getOrElse("")
-    s"Converted ${wrapped.get} to ${dataType.get}, because $reasonMsg"
+    val reasonMsg = (if (typeConverted) reason else None)
+        .map(r => s", because $r").getOrElse("")
+    s"Converted ${wrapped.getOrElse("N/A")} to " +
+      s"${dataType.getOrElse("N/A")}" + reasonMsg
   }
 }
 
