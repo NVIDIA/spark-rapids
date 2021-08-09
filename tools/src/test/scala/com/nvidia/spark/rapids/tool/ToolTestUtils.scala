@@ -77,8 +77,8 @@ object ToolTestUtils extends Logging {
     val diffCount = df.except(expectedDf).union(expectedDf.except(df)).count
     if (diffCount != 0) {
       logWarning("Diff expected vs actual:")
-      expectedDf.show()
-      df.show()
+      expectedDf.show(false)
+      df.show(false)
     }
     assert(diffCount == 0)
   }
@@ -103,7 +103,8 @@ object ToolTestUtils extends Logging {
       val eventLogInfo = EventLogPathProcessor
         .getEventLogInfo(path, sparkSession.sparkContext.hadoopConfiguration)
       assert(eventLogInfo.size >= 1, s"event log not parsed as expected $path")
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000),
+        sparkSession.sparkContext.hadoopConfiguration,
         eventLogInfo.head._1, index)
       index += 1
     }

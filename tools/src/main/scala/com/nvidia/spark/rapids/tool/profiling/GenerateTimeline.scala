@@ -247,9 +247,9 @@ object GenerateTimeline {
         new TimelineStageInfo(stageId, start, end, end-start)
     }
 
-    val stageInfo = app.enhancedStage.map { sc =>
-      val stageId = sc.stageId
-      val submissionTime = sc.submissionTime.get
+    val stageInfo = app.stageIdToInfo.map { case ((_, _), sc) =>
+      val stageId = sc.info.stageId
+      val submissionTime = sc.info.submissionTime.get
       val completionTime = sc.completionTime.get
       val duration = sc.duration.get
       minStartTime = Math.min(minStartTime, submissionTime)
@@ -262,7 +262,7 @@ object GenerateTimeline {
         (execHost, calcLayoutSlotsNeeded(taskList))
     }.toMap
 
-    val jobInfo = app.enhancedJob.map { jc =>
+    val jobInfo = app.jobIdToInfo.map { case (_, jc) =>
       val jobId = jc.jobID
       val startTime = jc.startTime
       val endTime = jc.endTime.get
@@ -272,7 +272,7 @@ object GenerateTimeline {
       new TimelineJobInfo(jobId, startTime, endTime, duration)
     }
 
-    val sqlInfo = app.enhancedSql.flatMap { sc =>
+    val sqlInfo = app.sqlIdToInfo.flatMap { case (_, sc) =>
       // If a SQL op fails, it may not have an end-time with it (So remove it from the graph)
       if (sc.endTime.isDefined) {
         val sqlId = sc.sqlID

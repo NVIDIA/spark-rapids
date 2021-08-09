@@ -36,6 +36,8 @@ class HealthCheckSuite extends FunSuite {
         .getOrCreate()
   }
 
+  lazy val hadoopConf = sparkSession.sparkContext.hadoopConfiguration
+
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
@@ -46,29 +48,34 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
 
+    val healthCheck = new HealthCheck(apps, None, 1000)
     for (app <- apps) {
-      val taskAccums = app.runQuery(app.getFailedTasks, fileWriter = None)
+      val failedTasks = healthCheck.listFailedTasks()
+      import sparkSession.implicits._
+      val taskAccums = failedTasks.toDF
       val tasksResultExpectation =
         new File(expRoot, "tasks_failure_eventlog_expectation.csv")
       val tasksDfExpect =
         ToolTestUtils.readExpectationCSV(sparkSession, tasksResultExpectation.getPath())
       ToolTestUtils.compareDataFrames(taskAccums, tasksDfExpect)
 
-      val stageAccums = app.runQuery(app.getFailedStages, fileWriter = None)
+      val failedStages = healthCheck.listFailedStages()
+      val stageAccums = failedStages.toDF
       val stagesResultExpectation =
         new File(expRoot, "stages_failure_eventlog_expectation.csv")
       val stagesDfExpect =
         ToolTestUtils.readExpectationCSV(sparkSession, stagesResultExpectation.getPath())
       ToolTestUtils.compareDataFrames(stageAccums, stagesDfExpect)
 
-      val jobsAccums = app.runQuery(app.getFailedJobs, fileWriter = None)
+      val failedJobs = healthCheck.listFailedJobs()
+      val jobsAccums = failedJobs.toDF
       val jobsResultExpectation =
         new File(expRoot, "jobs_failure_eventlog_expectation.csv")
       val jobsDfExpect =
@@ -84,22 +91,25 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
+    val healthCheck = new HealthCheck(apps, None, 1000)
     for (app <- apps) {
-      val blockManagersAccums = app.runQuery(app.getblockManagersRemoved, fileWriter = None)
+      val removedBMs = healthCheck.listRemovedBlockManager()
+      import sparkSession.implicits._
+      val blockManagersAccums = removedBMs.toDF
       val blockManagersResultExpectation =
         new File(expRoot, "removed_blockManagers_eventlog_expectation.csv")
       val blockManagersDfExpect =
         ToolTestUtils.readExpectationCSV(sparkSession, blockManagersResultExpectation.getPath())
       ToolTestUtils.compareDataFrames(blockManagersAccums, blockManagersDfExpect)
 
-
-      val executorRemovedAccums = app.runQuery(app.getExecutorsRemoved, fileWriter = None)
+      val removedExecs = healthCheck.listRemovedExecutors()
+      val executorRemovedAccums = removedExecs.toDF
       val executorRemovedResultExpectation =
         new File(expRoot, "executors_removed_eventlog_expectation.csv")
       val executorsRemovedDfExpect =
@@ -116,15 +126,18 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
     }
     assert(apps.size == 1)
 
+    val healthCheck = new HealthCheck(apps, None, 1000)
     for (app <- apps) {
-      val unsupportedPlanAccums = app.runQuery(app.unsupportedSQLPlan, fileWriter = None)
+      val unsupported = healthCheck.listPossibleUnsupportedSQLPlan()
+      import sparkSession.implicits._
+      val unsupportedPlanAccums = unsupported.toDF
       val unSupportedPlanExpectation =
         new File(expRoot, "unsupported_sql_eventlog_expectation.csv")
       val unSupportedPlanDfExpect =

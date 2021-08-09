@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import scala.collection.mutable.{ArrayBuffer, HashMap}
+
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.rapids.tool.ToolUtils
+import org.apache.spark.internal.Logging
+import org.apache.spark.resource.ResourceProfile
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 case class StageMetrics(numTasks: Int, duration: String)
@@ -30,109 +31,217 @@ case class StageMetrics(numTasks: Int, duration: String)
  * Such as executors, parameters, etc.
  */
 class CollectInformation(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter]) {
-
-  require(apps.nonEmpty)
+    fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
 
   // Print Application Information
-  def printAppInfo(): Unit = {
+  def printAppInfo(): Seq[AppInfoProfileResults] = {
     val messageHeader = "\nApplication Information:\n"
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"appDF_${app.index}")) {
-        app.runQuery(query = app.generateAppInfo, fileWriter = fileWriter,
-          messageHeader = messageHeader)
-      } else {
-        fileWriter.foreach(_.write("No Application Information Found!\n"))
-      }
+    fileWriter.foreach(_.write(messageHeader))
+
+    val allRows = apps.map { app =>
+      val a = app.appInfo
+      AppInfoProfileResults(app.index, a.appName, a.appId,
+        a.sparkUser,  a.startTime, a.endTime, a.duration,
+        a.durationStr, a.sparkVersion, a.pluginEnabled)
+    }
+    if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex))
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
+      fileWriter.foreach(_.write(outStr))
+      sortedRows
+    } else {
+      fileWriter.foreach(_.write("No Application Information Found!\n"))
+      Seq.empty
     }
   }
 
   // Print rapids-4-spark and cuDF jar if CPU Mode is on.
-  def printRapidsJAR(): Unit = {
-    for (app <- apps) {
+  def printRapidsJAR(): Seq[RapidsJarProfileResult] = {
+    fileWriter.foreach(_.write("\nRapids Accelerator Jar and cuDF Jar:\n"))
+    val allRows = apps.flatMap { app =>
       if (app.gpuMode) {
-        fileWriter.foreach(_.write("\nRapids Accelerator Jar and cuDF Jar:\n"))
         // Look for rapids-4-spark and cuDF jar
         val rapidsJar = app.classpathEntries.filterKeys(_ matches ".*rapids-4-spark.*jar")
         val cuDFJar = app.classpathEntries.filterKeys(_ matches ".*cudf.*jar")
-        if (rapidsJar.nonEmpty) {
-          rapidsJar.keys.foreach(k => fileWriter.foreach(_.write(s"$k\n")))
-        }
-        if (cuDFJar.nonEmpty) {
-          cuDFJar.keys.foreach(k => fileWriter.foreach(_.write(s"$k\n")))
-        }
+        val cols = (rapidsJar.keys ++ cuDFJar.keys).toSeq
+        val rowsWithAppindex = cols.map(jar => RapidsJarProfileResult(app.index, jar))
+        rowsWithAppindex
+      } else {
+        Seq.empty
       }
+    }
+    if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.jar))
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
+      fileWriter.foreach(_.write(outStr + "\n"))
+      sortedRows
+    } else {
+      fileWriter.foreach(_.write("No Rapids 4 Spark Jars Found!\n"))
+      Seq.empty
     }
   }
 
   // Print read data schema information
-  def printDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+  def printDataSourceInfo(): Seq[DataSourceProfileResult] = {
     val messageHeader = "\nData Source Information:\n"
     fileWriter.foreach(_.write(messageHeader))
-    apps.foreach { app =>
-      val dfWithApp = getDataSourceInfo(app, sparkSession)
-      // don't check if dataframe empty because that runs a Spark job
-      if (app.dataSourceInfo.nonEmpty) {
-        fileWriter.foreach { writer =>
-          writer.write(ToolUtils.showString(dfWithApp, numRows))
-        }
-      } else {
-        fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+    val filtered = apps.filter(_.dataSourceInfo.size > 0)
+    val allRows = filtered.flatMap { app =>
+      app.dataSourceInfo.map { ds =>
+        DataSourceProfileResult(app.index, ds.sqlID, ds.format, ds.location,
+          ds.pushedFilters, ds.schema)
       }
+    }
+    if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.sqlID,
+        cols.location, cols.schema))
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
+      fileWriter.foreach(_.write(outStr))
+      sortedRows
+    } else {
+      fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+      Seq.empty
     }
   }
 
-  def getDataSourceInfo(app: ApplicationInfo, sparkSession: SparkSession): DataFrame = {
-    import sparkSession.implicits._
-    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"), asc("schema"),
-      asc("pushedFilters"))
-    df.withColumn("appIndex", lit(app.index.toString))
-      .select("appIndex", df.columns:_*)
-  }
-
   // Print executor related information
-  def printExecutorInfo(): Unit = {
+  def printExecutorInfo(): Seq[ExecutorInfoProfileResult] = {
     val messageHeader = "\nExecutor Information:\n"
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
-        app.runQuery(query = app.generateExecutorInfo + " order by cast(numExecutors as long)",
-          fileWriter = fileWriter, messageHeader = messageHeader)
+    fileWriter.foreach(_.write(messageHeader))
+    val filtered = apps.filter(_.executorIdToInfo.size > 0)
+    if (filtered.size > 0) {
+      val allRows = filtered.flatMap { app =>
+        // first see if any executors have different resourceProfile ids
+        val groupedExecs = app.executorIdToInfo.groupBy(_._2.resourceProfileId)
+        groupedExecs.map { case (rpId, execs) =>
+          val rp = app.resourceProfIdToInfo.get(rpId)
+          val execMem = rp.map(_.executorResources.get(ResourceProfile.MEMORY)
+            .map(_.amount).getOrElse(0L))
+          val execCores = rp.map(_.executorResources.get(ResourceProfile.CORES)
+            .map(_.amount).getOrElse(0L))
+          val execGpus = rp.map(_.executorResources.get("gpu")
+            .map(_.amount).getOrElse(0L))
+          val taskCpus = rp.map(_.taskResources.get(ResourceProfile.CPUS)
+            .map(_.amount).getOrElse(0.toDouble))
+          val taskGpus = rp.map(_.taskResources.get("gpu").map(_.amount).getOrElse(0.toDouble))
+          val execOffHeap = rp.map(_.executorResources.get(ResourceProfile.OFFHEAP_MEM)
+            .map(_.amount).getOrElse(0L))
+
+          val numExecutors = execs.size
+          val exec = execs.head._2
+          // We could print a lot more information here if we decided, more like the Spark UI
+          // per executor info.
+          ExecutorInfoProfileResult(app.index, rpId, numExecutors,
+            exec.totalCores, exec.maxMemory, exec.totalOnHeap,
+            exec.totalOffHeap, execMem, execGpus, execOffHeap, taskCpus, taskGpus)
+        }
+      }
+      if (allRows.size > 0) {
+        val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.numExecutors))
+        val outputHeaders = sortedRows.head.outputHeaders
+        val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+          outputHeaders, sortedRows.map(_.convertToSeq))
+        fileWriter.foreach(_.write(outStr))
+        sortedRows
       } else {
         fileWriter.foreach(_.write("No Executor Information Found!\n"))
+        Seq.empty
       }
+    } else {
+      fileWriter.foreach(_.write("No Executor Information Found!\n"))
+      Seq.empty
     }
   }
 
   // Print job related information
-  def printJobInfo(): Unit = {
+  def printJobInfo(): Seq[JobInfoProfileResult] = {
     val messageHeader = "\nJob Information:\n"
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"jobDF_${app.index}")) {
-        app.runQuery(query = app.jobtoStagesSQL,
-        fileWriter = fileWriter, messageHeader = messageHeader)
-      } else {
-        fileWriter.foreach(_.write("No Job Information Found!\n"))
+    fileWriter.foreach(_.write(messageHeader))
+    val filtered = apps.filter(_.jobIdToInfo.size > 0)
+    val allRows = filtered.flatMap { app =>
+      app.jobIdToInfo.map { case (jobId, j) =>
+        JobInfoProfileResult(app.index, j.jobID, j.stageIds, j.sqlID)
       }
+    }
+    if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy(cols => (cols.appIndex, cols.jobID))
+      val outputHeaders = sortedRows.head.outputHeaders
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+        outputHeaders, sortedRows.map(_.convertToSeq))
+      fileWriter.foreach(_.write(outStr))
+      sortedRows
+    } else {
+      fileWriter.foreach(_.write("No Job Information Found!\n"))
+      Seq.empty
     }
   }
 
   // Print Rapids related Spark Properties
-  def printRapidsProperties(): Unit = {
+  def printRapidsProperties(): Seq[Seq[String]] = {
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
-    for (app <- apps) {
-      if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
-          fileWriter = fileWriter, messageHeader = messageHeader)
+    fileWriter.foreach(_.write(messageHeader))
+    val outputHeaders = ArrayBuffer("propertyName")
+    val props = HashMap[String, ArrayBuffer[String]]()
+    var numApps = 0
+    val filtered = apps.filter(_.sparkProperties.size > 0)
+    filtered.foreach { app =>
+      numApps += 1
+      outputHeaders += s"appIndex_${app.index}"
+      val rapidsRelated = app.sparkProperties.filterKeys { key =>
+        key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
+          key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.service.enabled")
+      }
+      val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
+      val existDiff = props.keys.toSeq.diff(inter)
+      val newDiff = rapidsRelated.keys.toSeq.diff(inter)
+
+      // first update intersecting
+      inter.foreach { k =>
+        val appVals = props.getOrElse(k, ArrayBuffer[String]())
+        appVals += rapidsRelated.getOrElse(k, "null")
+      }
+
+      // this app doesn't contain a key that was in another app
+      existDiff.foreach { k =>
+        val appVals = props.getOrElse(k, ArrayBuffer[String]())
+        appVals += "null"
+      }
+
+      // this app contains a key not in other apps
+      newDiff.foreach { k =>
+        // we need to fill if some apps didn't have it
+        val appVals = ArrayBuffer[String]()
+        appVals ++= Seq.fill(numApps - 1)("null")
+        appVals += rapidsRelated.getOrElse(k, "null")
+
+        props.put(k, appVals)
+      }
+    }
+    if (props.size > 0) {
+      val allRows = props.map { case(k, v) => Seq(k) ++ v }.toSeq
+      val sortedRows = allRows.sortBy(cols => (cols(0)))
+      if (sortedRows.size > 0) {
+        val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+          outputHeaders, sortedRows)
+        fileWriter.foreach(_.write(outStr))
+        sortedRows
       } else {
         fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+        Seq.empty
       }
+    } else {
+      fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+      Seq.empty
     }
   }
 
   def printSQLPlans(outputDirectory: String): Unit = {
     for (app <- apps) {
       val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"planDescriptions-${app.appId}", "SQL Plan")
+        s"${app.appId}-planDescriptions.log", "SQL Plan")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
           planFileWriter.write("\n=============================\n")
@@ -147,16 +256,78 @@ class CollectInformation(apps: Seq[ApplicationInfo],
   }
 
   // Print SQL Plan Metrics
-  def printSQLPlanMetrics(): Unit = {
-    for (app <- apps){
-      if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
-        app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"taskStageAccumDF_${app.index}") &&
-        app.allDataFrames.contains(s"jobDF_${app.index}") &&
-        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-        val messageHeader = "\nSQL Plan Metrics for Application:\n"
-        app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader=messageHeader)
+  def printSQLPlanMetrics(): Seq[SQLAccumProfileResults] = {
+    val messageHeader = "\nSQL Plan Metrics for Application:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    val sqlAccums = CollectInformation.generateSQLAccums(apps)
+    if (sqlAccums.size > 0) {
+      val sortedRows = sqlAccums.sortBy(cols => (cols.appIndex, cols.sqlID,
+        cols.nodeID, cols.nodeName, cols.accumulatorId, cols.metricType))
+      val outputHeaders = sortedRows.head.outputHeaders
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+        outputHeaders, sortedRows.map(_.convertToSeq))
+      fileWriter.foreach(_.write(outStr))
+      sortedRows
+    } else {
+      fileWriter.foreach(_.write("No SQL Plan Metrics Found!\n"))
+      Seq.empty
+    }
+  }
+}
+
+object CollectInformation extends Logging {
+
+  def generateSQLAccums(apps: Seq[ApplicationInfo]): Seq[SQLAccumProfileResults] = {
+    val allRows = apps.flatMap { app =>
+      app.allSQLMetrics.map { metric =>
+        val sqlId = metric.sqlID
+        val jobsForSql = app.jobIdToInfo.filter { case (_, jc) =>
+          val jcid = jc.sqlID.getOrElse(-1)
+          jc.sqlID.getOrElse(-1) == sqlId
+        }
+        val stageIdsForSQL = jobsForSql.flatMap(_._2.stageIds).toSeq
+        val accumsOpt = app.taskStageAccumMap.get(metric.accumulatorId)
+        val taskMax = accumsOpt match {
+          case Some(accums) =>
+            val filtered = accums.filter { a =>
+              stageIdsForSQL.contains(a.stageId)
+            }
+            val accumValues = filtered.map(_.value.getOrElse(0L))
+            if (accumValues.isEmpty) {
+              None
+            } else {
+              Some(accumValues.max)
+            }
+          case None => None
+        }
+
+        // local mode driver gets updates
+        val driverAccumsOpt = app.driverAccumMap.get(metric.accumulatorId)
+        val driverMax = driverAccumsOpt match {
+          case Some(accums) =>
+            val filtered = accums.filter { a =>
+              a.sqlID == sqlId
+            }
+            val accumValues = filtered.map(_.value)
+            if (accumValues.isEmpty) {
+              None
+            } else {
+              Some(accumValues.max)
+            }
+          case None =>
+            None
+        }
+
+        if ((taskMax.isDefined) || (driverMax.isDefined)) {
+          val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
+          Some(SQLAccumProfileResults(app.index, metric.sqlID,
+            metric.nodeID, metric.nodeName, metric.accumulatorId,
+            metric.name, max, metric.metricType))
+        } else {
+          None
+        }
       }
     }
+    allRows.filter(_.isDefined).map(_.get)
   }
 }

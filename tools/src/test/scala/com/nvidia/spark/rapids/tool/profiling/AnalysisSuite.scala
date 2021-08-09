@@ -60,15 +60,18 @@ class AnalysisSuite extends FunSuite {
       expectFileJS: String): Unit = {
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     assert(apps.size == logs.size)
-    val analysis = new Analysis(apps, None)
+    val analysis = new Analysis(apps, None, 1000)
 
-    val actualDf = analysis.sqlMetricsAggregation()
+    val sqlTaskMetrics = analysis.sqlMetricsAggregation()
     val resultExpectation = new File(expRoot,expectFile)
+    import sparkSession.implicits._
+    val actualDf = sqlTaskMetrics.toDF
     val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
     ToolTestUtils.compareDataFrames(actualDf, dfExpect)
 
-    val actualDfJS = analysis.jobAndStageMetricsAggregation()
+    val jobStageMetrics = analysis.jobAndStageMetricsAggregation()
     val resultExpectationJS = new File(expRoot, expectFileJS)
+    val actualDfJS = jobStageMetrics.toDF
     val dfExpectJS = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectationJS.getPath())
     ToolTestUtils.compareDataFrames(actualDfJS, dfExpectJS)
   }
@@ -78,10 +81,11 @@ class AnalysisSuite extends FunSuite {
     val expectFile = "rapids_duration_and_cpu_expectation.csv"
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
-    val analysis = new Analysis(apps, None)
-    val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
-    sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
-    val actualDf = analysis.sqlMetricsAggregationDurationAndCpuTime()
+    val analysis = new Analysis(apps, None, 1000)
+    // have to call this to set all the fields properly
+    analysis.sqlMetricsAggregation()
+    import sparkSession.implicits._
+    val sqlAggDurCpu = analysis.sqlMetricsAggregationDurationAndCpuTime()
     val resultExpectation = new File(expRoot, expectFile)
     val schema = new StructType()
       .add("appIndex",IntegerType,true)
@@ -90,8 +94,9 @@ class AnalysisSuite extends FunSuite {
       .add("sqlDuration",LongType,true)
       .add("containsDataset",BooleanType,true)
       .add("appDuration",LongType,true)
-      .add("problematic",StringType,true)
+      .add("potentialProbs",StringType,true)
       .add("executorCpuTime",DoubleType,true)
+    val actualDf = sqlAggDurCpu.toDF
 
     val dfExpect = sparkSession.read.option("header", "true").option("nullValue", "-")
       .schema(schema).csv(resultExpectation.getPath())
@@ -104,9 +109,9 @@ class AnalysisSuite extends FunSuite {
       ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog.zstd"), sparkSession)
     assert(apps.size == 1)
 
-    val analysis = new Analysis(apps, None)
-    val actualDf = analysis.shuffleSkewCheckSingleApp(apps.head)
-    assert(actualDf.count() == 0)
+    val analysis = new Analysis(apps, None, 1000)
+    val shuffleSkewInfo = analysis.shuffleSkewCheck()
+    assert(shuffleSkewInfo.isEmpty)
   }
 
   test("test contains dataset false") {
@@ -114,16 +119,9 @@ class AnalysisSuite extends FunSuite {
     val logs = Array(s"$qualLogDir/nds_q86_test")
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
-    val analysis = new Analysis(apps, None)
-    val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
-    sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
-    val actualDf = analysis.sqlMetricsAggregationDurationAndCpuTime()
-
-    val rows = actualDf.collect()
-    assert(rows.length === 25)
-    def fieldIndex(name: String) = actualDf.schema.fieldIndex(name)
-    rows.foreach { row =>
-      assert(row.getBoolean(fieldIndex("Contains Dataset Op")) == false)
-    }
+    val analysis = new Analysis(apps, None, 1000)
+    val sqlDurAndCpu = analysis.sqlMetricsAggregationDurationAndCpuTime()
+    val containsDs = sqlDurAndCpu.filter(_.containsDataset === true)
+    assert(containsDs.isEmpty)
   }
 }

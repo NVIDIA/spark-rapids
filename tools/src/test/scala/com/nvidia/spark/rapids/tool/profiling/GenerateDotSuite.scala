@@ -55,12 +55,15 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           dotFileDir.getAbsolutePath,
           "--generate-dot",
           eventLog))
-        ProfileMain.mainInternal(spark2, appArgs)
+        ProfileMain.mainInternal(appArgs)
 
-        val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
+        val tempSubDir = new File(dotFileDir, Profiler.SUBDIR)
 
         // assert that a file was generated
-        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
+        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+          (f.startsWith("local") && f.endsWith(".dot"))
+        })
+        // 2 dot files and one regular output log file
         assert(dotDirs.length === 2)
 
         // assert that the generated files looks something like what we expect
@@ -78,7 +81,6 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           hashAggCount += dotFileStr.sliding(hashAggr.length).count(_ == hashAggr)
           stageCount += dotFileStr.sliding(stageWord.length).count(_ == stageWord)
         }
-
         assert(hashAggCount === 8, "Expected: 4 in node labels + 4 in graph label")
         assert(stageCount === 4, "Expected: UNKNOWN Stage, Initial Aggregation, " +
           "Final Aggregation, Sorting final output")
