@@ -23,7 +23,7 @@ import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, CreateArray, Expression, Generator}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{GenerateExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.GpuCreateArray
@@ -228,22 +228,65 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
 
   // Infer result schema of GenerateExec from input schema
   protected def resultSchema(inputSchema: Array[DataType],
-    genOffset: Int,
-    includePos: Boolean = false): Array[DataType] = {
+    genOffset: Int): Array[DataType] = {
     val outputSchema = ArrayBuffer[DataType]()
     inputSchema.zipWithIndex.foreach {
       // extract output type of explode from input ArrayData
       case (dataType, index) if index == genOffset =>
-        require(dataType.isInstanceOf[ArrayType], "GpuExplode only supports ArrayData now")
-        if (includePos) {
+        if (position) {
           outputSchema += IntegerType
         }
-        outputSchema += dataType.asInstanceOf[ArrayType].elementType
+        dataType match {
+          case ArrayType(elementType, _) =>
+            outputSchema += elementType
+          case MapType(keyType, valueType, _) =>
+            outputSchema += keyType
+            outputSchema += valueType
+        }
       // map types of other required columns
       case (dataType, _) =>
         outputSchema += dataType
     }
     outputSchema.toArray
+  }
+
+  protected def convertMapOutput(exploded: Table,
+      genOffset: Int,
+      kt: DataType,
+      vt: DataType): Table = {
+    val numPos = if (position) 1 else 0
+    // scalastyle:off line.size.limit
+    // The input will look like the following, and we just want to expand the key, value in the
+    // struct into separate columns
+    // INDEX [0, genOffset)| genOffset   | genOffset + numPos | [genOffset + numPos + 1, exploded.getNumberOfColumns)
+    // SOME INPUT COLUMNS  | POS COLUMN? | STRUCT(KEY, VALUE) | MORE INPUT COLUMNS
+    // scalastyle:on line.size.limit
+    val structPos = genOffset + numPos
+    withResource (ArrayBuffer.empty[ColumnVector] ) { newColumns =>
+      (0 until exploded.getNumberOfColumns).foreach { index =>
+        if (index == structPos) {
+          val kvStructCol = exploded.getColumn(index)
+          // TODO in some cases the nulls are not being properly propagated to the child columns.
+          //  Not sure the best way to handle this. For now I am going to work around it, but
+          //  there are bugs when this is used with an array child column
+          withResource(kvStructCol.isNull) { isNull =>
+            newColumns += withResource(kvStructCol.getChildColumnView(0)) { keyView =>
+              withResource(GpuScalar.from(null, kt)) { nullKey =>
+                isNull.ifElse(nullKey, keyView)
+              }
+            }
+            newColumns += withResource(kvStructCol.getChildColumnView(1)) { valueView =>
+              withResource(GpuScalar.from(null, vt)) { nullValue =>
+                isNull.ifElse(nullValue, valueView)
+              }
+            }
+          }
+        } else {
+          newColumns += exploded.getColumn(index).incRefCount()
+        }
+      }
+      new Table(newColumns: _*)
+    }
   }
 
   override def fixedLenLazyExpressions: Seq[Expression] = child match {
@@ -344,7 +387,18 @@ case class GpuExplode(child: Expression) extends GpuExplodeBase {
       if (outer) t.explodeOuter(generatorOffset) else t.explode(generatorOffset)
     withResource(GpuColumnVector.from(inputBatch)) { table =>
       withResource(explodeFun(table)) { exploded =>
-        GpuColumnVector.from(exploded, schema)
+        child.dataType match {
+          case _: ArrayType =>
+            GpuColumnVector.from(exploded, schema)
+          case MapType(kt, vt, _) =>
+            // We need to pull the key and value of of the struct column
+            withResource(convertMapOutput(exploded, generatorOffset, kt, vt)) { fixed =>
+              GpuColumnVector.from(fixed, schema)
+            }
+          case other =>
+            throw new IllegalArgumentException(
+              s"$other is not supported as explode input right now")
+        }
       }
     }
   }
@@ -360,13 +414,23 @@ case class GpuPosExplode(child: Expression) extends GpuExplodeBase {
 
     require(inputBatch.numCols() - 1 == generatorOffset,
       "Internal Error GpuPosExplode supports one and only one input attribute.")
-    val schema = resultSchema(
-      GpuColumnVector.extractTypes(inputBatch), generatorOffset, includePos = true)
+    val schema = resultSchema(GpuColumnVector.extractTypes(inputBatch), generatorOffset)
     val explodePosFun = (t: Table) =>
       if (outer) t.explodeOuterPosition(generatorOffset) else t.explodePosition(generatorOffset)
     withResource(GpuColumnVector.from(inputBatch)) { table =>
       withResource(explodePosFun(table)) { exploded =>
-        GpuColumnVector.from(exploded, schema)
+        child.dataType match {
+          case _: ArrayType =>
+            GpuColumnVector.from(exploded, schema)
+          case MapType(kt, vt, _) =>
+            // We need to pull the key and value of of the struct column
+            withResource(convertMapOutput(exploded, generatorOffset, kt, vt)) { fixed =>
+              GpuColumnVector.from(fixed, schema)
+            }
+          case other =>
+            throw new IllegalArgumentException(
+              s"$other is not supported as explode input right now")
+        }
       }
     }
   }
