@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-08-04
+Generated on 2021-08-09
 
 ## Release 21.08
 
@@ -36,6 +36,7 @@ Generated on 2021-08-04
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#3135](https://github.com/NVIDIA/spark-rapids/issues/3135)|[BUG] Regression seen in `concatenate` in NDS with RAPIDS Shuffle Manager enabled|
 |[#3017](https://github.com/NVIDIA/spark-rapids/issues/3017)|[BUG] orc_write_test failed in databricks runtime|
 |[#3060](https://github.com/NVIDIA/spark-rapids/issues/3060)|[BUG] ORC read can corrupt data when specified schema does not match file schema ordering|
 |[#3065](https://github.com/NVIDIA/spark-rapids/issues/3065)|[BUG] window exec tries to do too much on the GPU|
@@ -98,6 +99,10 @@ Generated on 2021-08-04
 ### PRs
 |||
 |:---|:---|
+|[#3146](https://github.com/NVIDIA/spark-rapids/pull/3146)|update cudf Java binding version to 21.08.2|
+|[#3080](https://github.com/NVIDIA/spark-rapids/pull/3080)|Update docs for 21.08 release|
+|[#3136](https://github.com/NVIDIA/spark-rapids/pull/3136)|Update tool docs to explain default filesystem [skip ci]|
+|[#3128](https://github.com/NVIDIA/spark-rapids/pull/3128)|Fix merge conflict 3126 from branch-21.06 [skip ci]|
 |[#3124](https://github.com/NVIDIA/spark-rapids/pull/3124)|Fix merge conflict 3122 from branch-21.06 [skip ci]|
 |[#3100](https://github.com/NVIDIA/spark-rapids/pull/3100)|Update databricks 3.0.1 shim to new ParquetFilter api|
 |[#3083](https://github.com/NVIDIA/spark-rapids/pull/3083)|Initial CHANGELOG.md update for 21.08|

@@ -1,7 +1,7 @@
 ---
 layout: page
 title: NVTX Ranges
-nav_order: 2
+nav_order: 3
 parent: Developer Overview
 ---
 # Using NVTX Ranges with the RAPIDS Plugin for Spark

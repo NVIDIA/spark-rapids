@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Testing
-nav_order: 1
+nav_order: 2
 parent: Developer Overview
 ---
 An overview of testing can be found within the repository at:

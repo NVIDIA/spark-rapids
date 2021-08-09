@@ -1730,6 +1730,7 @@ object SupportedOpsDocs {
           TypeEnum.values.foreach { _ =>
             println(NotApplicable.htmlTag)
           }
+          println("</tr>")
           totalCount += 1
         }
       }
