@@ -347,7 +347,6 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
     app.sqlIdToInfo.get(event.executionId).foreach { sql =>
       sql.endTime = Some(event.time)
       sql.duration = ProfileUtils.OptionLongMinusLong(sql.endTime, sql.startTime)
-      sql.hasDataset = app.datasetSQL.exists(_.sqlID == event.executionId)
     }
   }
 
