@@ -67,6 +67,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[Int](required = false,
       descr = "Number of thread to use for parallel processing. The default is the " +
         "number of cores on host divided by 4.")
+  val csv: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Output in CSV format as well as text.")
   val timeout: ScallopOption[Long] =
     opt[Long](required = false,
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +

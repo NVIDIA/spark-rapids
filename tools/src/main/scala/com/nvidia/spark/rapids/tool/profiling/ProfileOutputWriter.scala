@@ -15,11 +15,70 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import org.apache.commons.lang3.StringUtils
 
-import org.apache.spark.internal.Logging
+class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: Int,
+    outputText: Boolean = true, outputCSV: Boolean = false) {
 
-object ProfileOutputWriter extends Logging {
+  private val textFileWriter = new ToolTextFileWriter(outputDir,
+    s"$filePrefix.log", "Profile summary")
+
+
+  private def writeText(messageHeader: String, outRows: Seq[ProfileResult],
+      emptyText: String): Unit = {
+    textFileWriter.write(s"\n$messageHeader:\n")
+
+    if (outRows.nonEmpty) {
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+        outRows.head.outputHeaders, outRows.map(_.convertToSeq))
+      textFileWriter.write(outStr)
+    } else {
+      textFileWriter.write(s"No $emptyText Found!\n")
+    }
+  }
+
+  private def stringIfempty(str: String): String = {
+    if (str.isEmpty) "\"\"" else str
+  }
+
+  // need to have separate CSV file per table
+  private def writeCSV(header: String, outRows: Seq[ProfileResult]): Unit = {
+
+    if (outRows.nonEmpty) {
+      if (outputCSV) {
+        val suffix = header.replace(" ", "_")
+        val csvWriter = new ToolTextFileWriter(outputDir,
+          s"${filePrefix}_${suffix}.csv", s"$header CSV:")
+        try {
+          val headerString = outRows.head.outputHeaders.mkString(",")
+          csvWriter.write(headerString + "\n")
+          val rows = outRows.map(_.convertToSeq)
+          rows.foreach { row =>
+            val formattedRow = row.map(stringIfempty(_))
+            val outStr = formattedRow.mkString(",")
+            csvWriter.write(outStr + "\n")
+          }
+        } finally {
+          csvWriter.close()
+        }
+      }
+    }
+  }
+
+  def write(headerText: String, outRows: Seq[ProfileResult], emptyText: String): Unit = {
+    writeText(headerText, outRows, emptyText)
+    writeCSV(headerText, outRows)
+  }
+
+
+  def close(): Unit = {
+    textFileWriter.close()
+  }
+
+}
+
+object ProfileOutputWriter {
 
   /**
    * Regular expression matching full width characters.

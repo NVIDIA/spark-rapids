@@ -43,6 +43,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     s"/${Profiler.SUBDIR}"
   private val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
+  private val outputCSV: Boolean = appArgs.csv()
+
   logInfo(s"Threadpool size is $nThreads")
 
   def profile(eventLogInfos: Seq[EventLogInfo]): Unit = {
@@ -52,10 +54,13 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       try {
         // create all the apps in parallel since we need the info for all of them to compare
         val apps = createApps(eventLogInfos)
+        val profileOutputWriter = new ProfileOutputWriter(outputDir,
+          Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows,
+          outputCSV = outputCSV)
         if (apps.size < 2) {
           logInfo("At least 2 applications are required for comparison mode. Exiting!")
         } else {
-          processApps(apps, printPlans = false, textFileWriter)
+          processApps(apps, printPlans = false, textFileWriter, profileOutputWriter)
         }
       } finally {
         textFileWriter.close()
@@ -116,15 +121,21 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         try {
           // we just skip apps that don't process cleanly
           val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+
           appOpt match {
             case Some(app) =>
               val textFileWriter = new ToolTextFileWriter(outputDir,
                 s"${app.appId}-${Profiler.PROFILE_LOG_NAME}.log",
                 "Profile summary")
+              val profileOutputWriter = new ProfileOutputWriter(outputDir,
+                s"${app.appId}-${Profiler.PROFILE_LOG_NAME}", numOutputRows,
+                outputCSV = outputCSV)
+
               try {
-                processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter)
+                processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter,
+                  profileOutputWriter)
               } finally {
-                textFileWriter.close()
+                profileOutputWriter.close()
               }
             case None =>
               logInfo("No application to process. Exiting")
@@ -176,11 +187,13 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
    * at a time.
    */
   private def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
-      textFileWriter: ToolTextFileWriter): Unit = {
+      textFileWriter: ToolTextFileWriter, profileOutputWriter: ProfileOutputWriter): Unit = {
 
     textFileWriter.write("### A. Information Collected ###")
     val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
-    collect.printAppInfo()
+    val appInfo = collect.getAppInfo
+    profileOutputWriter.write("Application Information", appInfo,
+      "No Application Information Found!")
     collect.printDataSourceInfo()
     collect.printExecutorInfo()
     collect.printJobInfo()
@@ -246,6 +259,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 object Profiler {
   // This tool's output log file name
   val PROFILE_LOG_NAME = "profile"
+  val COMPARE_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_compare"
   val COMPARE_LOG_FILE_NAME = "rapids_4_spark_tools_compare.log"
   val SUBDIR = "rapids_4_spark_profile"
 }

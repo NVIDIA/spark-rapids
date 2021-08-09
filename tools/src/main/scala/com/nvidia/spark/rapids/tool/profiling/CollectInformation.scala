@@ -33,11 +33,7 @@ case class StageMetrics(numTasks: Int, duration: String)
 class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
 
-  // Print Application Information
-  def printAppInfo(): Seq[AppInfoProfileResults] = {
-    val messageHeader = "\nApplication Information:\n"
-    fileWriter.foreach(_.write(messageHeader))
-
+  def getAppInfo: Seq[AppInfoProfileResults] = {
     val allRows = apps.map { app =>
       val a = app.appInfo
       AppInfoProfileResults(app.index, a.appName, a.appId,
@@ -45,14 +41,23 @@ class CollectInformation(apps: Seq[ApplicationInfo],
         a.durationStr, a.sparkVersion, a.pluginEnabled)
     }
     if (allRows.size > 0) {
-      val sortedRows = allRows.sortBy(cols => (cols.appIndex))
+      allRows.sortBy(cols => (cols.appIndex))
+    } else {
+      Seq.empty
+    }
+  }
+
+  // Print Application Information
+  def printAppInfo(): Unit = {
+    val messageHeader = "\nApplication Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    val allRows = getAppInfo
+    if (allRows.size > 0) {
       val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
+        allRows.head.outputHeaders, allRows.map(_.convertToSeq))
       fileWriter.foreach(_.write(outStr))
-      sortedRows
     } else {
       fileWriter.foreach(_.write("No Application Information Found!\n"))
-      Seq.empty
     }
   }
 
