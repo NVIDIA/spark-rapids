@@ -13,107 +13,104 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.ArrayBuffer
+import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecutor, TimeUnit}
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-import com.nvidia.spark.rapids.tool.profiling.Analysis
-import org.apache.hadoop.fs.Path
+import scala.collection.JavaConverters._
+
+import com.google.common.util.concurrent.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.tool.EventLogInfo
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.rapids.tool.profiling._
+import org.apache.spark.sql.rapids.tool.qualification._
 
 /**
- * Ranks the applications for GPU acceleration.
+ * Scores the applications for GPU acceleration and outputs the
+ * reports.
  */
-object Qualification extends Logging {
+class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
+    timeout: Option[Long], nThreads: Int, order: String,
+    pluginTypeChecker: Option[PluginTypeChecker], readScorePercent: Int,
+    reportReadSchema: Boolean, printStdout: Boolean) extends Logging {
 
-  def logApplicationInfo(app: ApplicationInfo) = {
-    logInfo(s"==============  ${app.appId} (index=${app.index})  ==============")
+  private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
+  // default is 24 hours
+  private val waitTimeInSec = timeout.getOrElse(60 * 60 * 24L)
+
+  private val threadFactory = new ThreadFactoryBuilder()
+    .setDaemon(true).setNameFormat("qualTool" + "-%d").build()
+  logInfo(s"Threadpool size is $nThreads")
+  private val threadPool = Executors.newFixedThreadPool(nThreads, threadFactory)
+    .asInstanceOf[ThreadPoolExecutor]
+
+  private class QualifyThread(path: EventLogInfo) extends Runnable {
+    def run: Unit = qualifyApp(path, numRows, hadoopConf)
   }
 
-  def qualifyApps(
-      allPaths: ArrayBuffer[Path],
-      numRows: Int,
-      sparkSession: SparkSession,
-      includeCpuPercent: Boolean,
-      dropTempViews: Boolean): Option[DataFrame] = {
-    var index: Int = 1
-    val apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
-    for (path <- allPaths.filterNot(_.getName.contains("."))) {
+  def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
+    allPaths.foreach { path =>
       try {
-        // This apps only contains 1 app in each loop.
-        val app = new ApplicationInfo(numRows, sparkSession, path, index, true)
-        apps += app
-        logApplicationInfo(app)
-        index += 1
+        threadPool.submit(new QualifyThread(path))
       } catch {
-        case e: com.fasterxml.jackson.core.JsonParseException =>
-          logWarning(s"Error parsing JSON, skipping $path")
+        case e: Exception =>
+          logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
       }
     }
-    if (apps.isEmpty) {
-      logWarning("No Applications found that contain SQL!")
-      return None
-    }
-    val analysis = new Analysis(apps, None)
-    if (includeCpuPercent) {
-      val sqlAggMetricsDF = analysis.sqlMetricsAggregationQual()
-      sqlAggMetricsDF.cache().createOrReplaceTempView("sqlAggMetricsDF")
-      // materialize table to cache
-      sqlAggMetricsDF.count()
+    // wait for the threads to finish processing the files
+    threadPool.shutdown()
+    if (!threadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
+      logError(s"Processing log files took longer then $waitTimeInSec seconds," +
+        " stopping processing any more event logs")
+      threadPool.shutdownNow()
     }
 
-    val dfOpt = constructQueryQualifyApps(apps, includeCpuPercent)
-    if (dropTempViews) {
-      sparkSession.catalog.dropTempView("sqlAggMetricsDF")
-      apps.foreach( _.dropAllTempViews())
-    }
-    dfOpt
-  }
+    // sort order and limit only applies to the report summary text file,
+    // the csv file we write the entire data in descending order
+    val allAppsSum = allApps.asScala.toSeq
+    val sortedDesc = allAppsSum.sortBy(sum => {
+        (-sum.score, -sum.sqlDataFrameDuration, -sum.appDuration)
+    })
+    val qWriter = new QualOutputWriter(outputDir, reportReadSchema, printStdout)
+    qWriter.writeCSV(sortedDesc)
 
-  def constructQueryQualifyApps(apps: ArrayBuffer[ApplicationInfo],
-      includeCpuPercent: Boolean): Option[DataFrame] = {
-    val (qualApps, nonQualApps) = apps
-      .partition { p =>
-        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
-          p.allDataFrames.contains(s"appDF_${p.index}") &&
-          p.allDataFrames.contains(s"jobDF_${p.index}")
-      }
-    val query = qualApps.map { app =>
-        includeCpuPercent match {
-          case true => "(" + app.qualificationDurationSumSQL + ")"
-          case false => "(" + app.qualificationDurationNoMetricsSQL + ")"
-        }
-      }.mkString(" union ")
-    if (nonQualApps.nonEmpty) {
-      logWarning("The following event logs were skipped: " +
-        s"${nonQualApps.map(_.eventlog).mkString(", ")}")
-    }
-    if (query.nonEmpty) {
-      Some(apps.head.runQuery(query + " order by Score desc, `App Duration` desc"))
+    val sortedForReport = if (QualificationArgs.isOrderAsc(order)) {
+      allAppsSum.sortBy(sum => {
+        (sum.score, sum.sqlDataFrameDuration, sum.appDuration)
+      })
     } else {
-      None
+      sortedDesc
     }
+    qWriter.writeReport(sortedForReport, numRows)
+    sortedDesc
   }
 
-  def writeQualification(df: DataFrame, outputDir: String,
-      format: String, includeCpuPercent: Boolean, numOutputRows: Int): Unit = {
-    val finalOutputDir = s"$outputDir/rapids_4_spark_qualification_output"
-    format match {
-      case "csv" =>
-        df.repartition(1).sortWithinPartitions(desc("Score")).write.option("header", "true").
-          mode("overwrite").csv(finalOutputDir)
-        logInfo(s"Output log location:  $finalOutputDir")
-      case "text" =>
-        val logFileName = "rapids_4_spark_qualification_output.log"
-        val textFileWriter = new ToolTextFileWriter(finalOutputDir, logFileName)
-        textFileWriter.write(df, numOutputRows)
-        textFileWriter.close()
-      case _ => logError("Invalid format")
+  private def qualifyApp(
+      path: EventLogInfo,
+      numRows: Int,
+      hadoopConf: Configuration): Unit = {
+    try {
+      val startTime = System.currentTimeMillis()
+      val app = QualAppInfo.createApp(path, numRows, hadoopConf, pluginTypeChecker,
+        readScorePercent)
+      if (!app.isDefined) {
+        logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")
+        None
+      } else {
+        val qualSumInfo = app.get.aggregateStats()
+        if (qualSumInfo.isDefined) {
+          allApps.add(qualSumInfo.get)
+          val endTime = System.currentTimeMillis()
+          logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
+        } else {
+          logWarning(s"No aggregated stats for event log at: ${path.eventLog.toString}")
+        }
+      }
+    } catch {
+      case e: Exception =>
+        logError(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
     }
   }
 }

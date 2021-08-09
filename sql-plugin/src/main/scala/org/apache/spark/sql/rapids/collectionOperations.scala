@@ -19,12 +19,12 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpressionsUtils, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuExpression, GpuExpressionsUtils, GpuLiteral, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, Literal, RowOrdering}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -165,7 +165,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
         if (failOnError) {
           withResource(lhs.getBase.getMapKeyExistence(rhs.getBase)){ keyExistenceColumn =>
             withResource(keyExistenceColumn.all()) { exist =>
-              if (exist.getBoolean) {
+              if (!exist.isValid || exist.getBoolean) {
                 lhs.getBase.getMapValue(rhs.getBase)
               } else {
                 throw new NoSuchElementException(
@@ -213,5 +213,60 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
         collectionSize.incRefCount()
       }
     }
+  }
+}
+
+case class GpuSortArray(base: Expression, ascendingOrder: Expression)
+    extends GpuBinaryExpression with ExpectsInputTypes {
+
+  override def left: Expression = base
+
+  override def right: Expression = ascendingOrder
+
+  override def dataType: DataType = base.dataType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, BooleanType)
+
+  override def checkInputDataTypes(): TypeCheckResult = base.dataType match {
+    case ArrayType(dt, _) if RowOrdering.isOrderable(dt) =>
+      ascendingOrder match {
+        // replace Literal with GpuLiteral here
+        case GpuLiteral(_: Boolean, BooleanType) =>
+          TypeCheckResult.TypeCheckSuccess
+        case order =>
+          TypeCheckResult.TypeCheckFailure(
+            s"Sort order in second argument requires a boolean literal, but found $order")
+      }
+    case ArrayType(dt, _) =>
+      val dtSimple = dt.catalogString
+      TypeCheckResult.TypeCheckFailure(
+        s"$prettyName does not support sorting array of type $dtSimple which is not orderable")
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
+        "the sort_array operator to work")
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
+        "the sort_array operator to work")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val isDescending = isDescendingOrder(rhs)
+    lhs.getBase.listSortRows(isDescending, true)
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    val isDescending = isDescendingOrder(rhs)
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { cv =>
+      cv.getBase.listSortRows(isDescending, true)
+    }
+  }
+
+  private def isDescendingOrder(scalar: GpuScalar): Boolean = scalar.getValue match {
+    case ascending: Boolean => !ascending
+    case invalidValue => throw new IllegalArgumentException(s"invalid value $invalidValue")
   }
 }

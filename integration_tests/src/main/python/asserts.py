@@ -30,6 +30,7 @@ def _assert_equal(cpu, gpu, float_check, path):
     if (t is Row):
         assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         if hasattr(cpu, "__fields__") and hasattr(gpu, "__fields__"):
+            assert cpu.__fields__ == gpu.__fields__, "CPU and GPU row have different fields at {} CPU: {} GPU: {}".format(path, cpu.__fields__, gpu.__fields__)
             for field in cpu.__fields__:
                 _assert_equal(cpu[field], gpu[field], float_check, path + [field])
         else:
@@ -401,13 +402,16 @@ def assert_gpu_and_cpu_row_counts_equal(func, conf={}, is_cpu_first=True):
     """
     _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False, is_cpu_first=True):
+def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False, is_cpu_first=True, validate_execs_in_gpu_plan=[]):
     """
     Assert that the specified SQL query produces equal results on CPU and GPU.
     :param df_fun: a function that will create the dataframe
     :param table_name: Name of table to be created with the dataframe
     :param sql: SQL query to be run on the specified table
     :param conf: Any user-specified confs. Empty by default.
+    :param debug: Boolean to indicate if the SQL output should be printed
+    :param is_cpu_first: Boolean to indicate if the CPU should be run first or not
+    :param validate_execs_in_gpu_plan: String list of expressions to be validated in the GPU plan.
     :return: Assertion failure, if results from CPU and GPU do not match.
     """
     if conf is None:
@@ -415,6 +419,9 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
     def do_it_all(spark):
         df = df_fun(spark)
         df.createOrReplaceTempView(table_name)
+        # we hold off on setting the validate execs until after creating the temp view
+
+        spark.conf.set('spark.rapids.sql.test.validateExecsInGpuPlan', ','.join(validate_execs_in_gpu_plan))
         if debug:
             return data_gen.debug_df(spark.sql(sql))
         else:

@@ -13,25 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.tool.profiling
-
-import java.io.File
-import java.util.concurrent.TimeUnit
-
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
+
+case class StageMetrics(numTasks: Int, duration: String)
 
 /**
  * CollectInformation mainly print information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
+class CollectInformation(apps: Seq[ApplicationInfo],
     fileWriter: Option[ToolTextFileWriter]) {
 
   require(apps.nonEmpty)
@@ -67,12 +65,37 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
     }
   }
 
+  // Print read data schema information
+  def printDataSourceInfo(sparkSession: SparkSession, numRows: Int): Unit = {
+    val messageHeader = "\nData Source Information:\n"
+    fileWriter.foreach(_.write(messageHeader))
+    apps.foreach { app =>
+      val dfWithApp = getDataSourceInfo(app, sparkSession)
+      // don't check if dataframe empty because that runs a Spark job
+      if (app.dataSourceInfo.nonEmpty) {
+        fileWriter.foreach { writer =>
+          writer.write(ToolUtils.showString(dfWithApp, numRows))
+        }
+      } else {
+        fileWriter.foreach(_.write("No Data Source Information Found!\n"))
+      }
+    }
+  }
+
+  def getDataSourceInfo(app: ApplicationInfo, sparkSession: SparkSession): DataFrame = {
+    import sparkSession.implicits._
+    val df = app.dataSourceInfo.toDF.sort(asc("sqlID"), asc("location"), asc("schema"),
+      asc("pushedFilters"))
+    df.withColumn("appIndex", lit(app.index.toString))
+      .select("appIndex", df.columns:_*)
+  }
+
   // Print executor related information
   def printExecutorInfo(): Unit = {
     val messageHeader = "\nExecutor Information:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"executorsDF_${app.index}")) {
-        app.runQuery(query = app.generateExecutorInfo + " order by cast(executorID as long)",
+        app.runQuery(query = app.generateExecutorInfo + " order by cast(numExecutors as long)",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Executor Information Found!\n"))
@@ -98,7 +121,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
     val messageHeader = "\nSpark Rapids parameters set explicitly:\n"
     for (app <- apps) {
       if (app.allDataFrames.contains(s"propertiesDF_${app.index}")) {
-        app.runQuery(query = app.generateRapidsProperties + " order by key",
+        app.runQuery(query = app.generateNvidiaProperties + " order by propertyName",
           fileWriter = fileWriter, messageHeader = messageHeader)
       } else {
         fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
@@ -109,7 +132,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
   def printSQLPlans(outputDirectory: String): Unit = {
     for (app <- apps) {
       val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"planDescriptions-${app.appId}")
+        s"planDescriptions-${app.appId}", "SQL Plan")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
           planFileWriter.write("\n=============================\n")
@@ -123,51 +146,8 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
     }
   }
 
-  def generateDot(outputDirectory: String, accumsOpt: Option[DataFrame]): Unit = {
-    for (app <- apps) {
-      val requiredDataFrames = Seq("sqlMetricsDF", "driverAccumDF",
-          "taskStageAccumDF", "taskStageAccumDF")
-        .map(name => s"${name}_${app.index}")
-      if (requiredDataFrames.forall(app.allDataFrames.contains)) {
-        val accums = accumsOpt.getOrElse(app.runQuery(app.generateSQLAccums))
-        val start = System.nanoTime()
-        val accumSummary = accums
-          .select(col("sqlId"), col("accumulatorId"), col("max_value"))
-          .collect()
-        val map = new mutable.HashMap[Long, ArrayBuffer[(Long,Long)]]()
-        for (row <- accumSummary) {
-          val list = map.getOrElseUpdate(row.getLong(0), new ArrayBuffer[(Long, Long)]())
-          list += row.getLong(1) -> row.getLong(2)
-        }
-
-        val sqlPlansMap = app.sqlPlan.map { case (sqlId, sparkPlanInfo) =>
-          sqlId -> ((sparkPlanInfo, app.physicalPlanDescription(sqlId)))
-        }
-        for ((sqlID,  (planInfo, physicalPlan)) <- sqlPlansMap) {
-          val dotFileWriter = new ToolTextFileWriter(outputDirectory,
-            s"${app.appId}-query-$sqlID.dot")
-          try {
-            val metrics = map.getOrElse(sqlID, Seq.empty).toMap
-            GenerateDot.generateDotGraph(QueryPlanWithMetrics(planInfo, metrics),
-              physicalPlan, None, dotFileWriter, sqlID, app.appId)
-          } finally {
-            dotFileWriter.close()
-          }
-        }
-
-        val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-        fileWriter.foreach(_.write(s"Generated DOT graphs for app ${app.appId} " +
-          s"to ${outputDirectory} in $duration second(s)\n"))
-      } else {
-        val missingDataFrames = requiredDataFrames.filterNot(app.allDataFrames.contains)
-        fileWriter.foreach(_.write(s"Could not generate DOT graph for app ${app.appId} " +
-          s"because of missing data frames: ${missingDataFrames.mkString(", ")}\n"))
-      }
-    }
-  }
-
   // Print SQL Plan Metrics
-  def printSQLPlanMetrics(shouldGenDot: Boolean, outputDir: String): Unit = {
+  def printSQLPlanMetrics(): Unit = {
     for (app <- apps){
       if (app.allDataFrames.contains(s"sqlMetricsDF_${app.index}") &&
         app.allDataFrames.contains(s"driverAccumDF_${app.index}") &&
@@ -175,11 +155,7 @@ class CollectInformation(apps: ArrayBuffer[ApplicationInfo],
         app.allDataFrames.contains(s"jobDF_${app.index}") &&
         app.allDataFrames.contains(s"sqlDF_${app.index}")) {
         val messageHeader = "\nSQL Plan Metrics for Application:\n"
-        val accums = app.runQuery(app.generateSQLAccums, fileWriter = fileWriter,
-          messageHeader=messageHeader)
-        if (shouldGenDot) {
-          generateDot(outputDir, Some(accums))
-        }
+        app.runQuery(app.generateSQLAccums, fileWriter = fileWriter, messageHeader=messageHeader)
       }
     }
   }

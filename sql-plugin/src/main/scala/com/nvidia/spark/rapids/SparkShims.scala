@@ -169,7 +169,7 @@ trait SparkShims {
 
   def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int
 
-  def copyParquetBatchScanExec(
+  def copyBatchScanExec(
       batchScanExec: GpuBatchScanExec,
       queryUsesInputFile: Boolean): GpuBatchScanExec
 

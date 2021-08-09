@@ -173,5 +173,19 @@ export SPARK_RAPIDS_AUTO_COPYRIGHTER=ON
 ```
 The default value of `SPARK_RAPIDS_AUTO_COPYRIGHTER` is `OFF`.
 
+When automatic copyright updater is enabled and you modify a file with a prior
+year in the copyright header it will be updated on `git commit` to the current year automatically.
+However, this will abort the [commit process](https://github.com/pre-commit/pre-commit/issues/532)
+with the following error message:
+```
+Update copyright year....................................................Failed
+- hook id: auto-copyrighter
+- duration: 0.01s
+- files were modified by this hook
+```
+You can confirm that the update actually has happened by either inspecting its effect with
+`git diff` first or simply reexecuting `git commit` right away. The second time no file
+modification should be triggered by the copyright year update hook and the commit should succeed.
+
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md

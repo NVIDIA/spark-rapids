@@ -272,7 +272,7 @@ from the main [columnar batch size](#columnar-batch-size) setting.  Some transco
 load CSV files then write Parquet files) need to lower this setting when using large task input
 partition sizes to avoid GPU out of memory errors.
 
-### Enable Incompatible Operations
+## Enable Incompatible Operations
 Configuration key: 
 [`spark.rapids.sql.incompatibleOps.enabled`](configs.md#sql.incompatibleOps.enabled)
 
@@ -295,3 +295,99 @@ performance.
 - [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans)
 - [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled)
 - [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled)
+
+## Metrics
+
+Custom Spark SQL Metrics are available which can help identify performance bottlenecks in a query.
+
+| Key              | Name                     | Description                                       |
+|------------------|--------------------------|---------------------------------------------------|
+| bufferTime       | buffer time              | Time spent buffering input from file data sources. |
+| buildDataSize    | build side size          | Size in bytes of the build-side of a join.        |
+| buildTime        | build time               | Time to load the build-side of a join.            |
+| collectTime      | collect time             | Time spent collecting data from child operator(s).|
+| computeAggTime   | aggregation time         | Time performing aggregation.                      |
+| concatTime       | concat batch time        | Time to concatenate batches.                      |
+| filterTime       | filter time              | Time spent applying filters within other operators, such as joins. |
+| gpuDecodeTime    | GPU decode time          | Time spent on GPU decoding encrypted or compressed data. |
+| gpuOpTime        | GPU op time              | Time that an operator spends performing computation on the GPU. |
+| joinOutputRows   | join output rows         | The number of rows produced by a join before any filter expression is applied. |
+| joinTime         | join time                | Total time for performing a join.                 |
+| numInputBatches  | input columnar batches   | Number of columnar batches that the operator received from its child operator(s). |
+| numInputRows     | input rows               | Number of rows that the operator received from its child operator(s). |
+| numOutputBatches | output columnar batches  | Number of columnar batches that the operator outputs. |
+| numOutputRows    | output rows              | Number of rows that the operator outputs.         |
+| numPartitions    | partitions               | Number of output partitions from a file scan or shuffle exchange. |
+| opTime           | op time                  | Time that an operator takes, exclusive of the time for executing or fetching results from child operators. |
+| partitionSize    | partition data size      | Total size in bytes of output partitions.         |
+| peakDevMemory    | peak device memory       | Peak GPU memory used during execution of an operator. |
+| semaphoreWaitTime| GPU semaphore wait time  | Time spent waiting for the GPU semaphore. |
+| sortTime         | sort time                | Time spent in sort operations in GpuSortExec and GpuTopN. |
+| spillData        | bytes spilled from GPU   | Total bytes spilled from GPU.                     |
+| spillDisk        | bytes spilled to disk    | Total bytes spilled from GPU to disk.             |
+| spillHost        | bytes spilled to host    | Total bytes spilled from GPU to host memory.      |
+| streamTime       | stream time              | Time spent processing stream-side of a hash join. |
+| totalTime        | total time               | Total execution time for the operator, including the time spent executing and fetching data from child operator(s). |
+
+Not all metrics are enabled by default. The configuration setting `spark.rapids.sql.metrics.level` can be set
+to `DEBUG`, `MODERATE`, or `ESSENTIAL`, with `MODERATE` being the default value. More information about this
+configuration option is available in the <a href="configs.md#sql.metrics.level">configuration</a> documentation.
+
+## Window Operations
+
+Apache Spark supports a few optimizations for different windows patterns. Generally Spark
+buffers all the data for a partition by key in memory and then loops through the rows looking for
+boundaries. When it finds a boundary change, it will then calculate the aggregation on that window.
+This ends up being `O(N^2)` where N is the size of the window. In a few cases in can improve on
+that. These optimizations include.
+
+  * Lead/Lag. In this case Spark keeps an offset pointer and can output the result from the
+    buffered data in linear time. Lead and Lag only support row based windows and set up the
+    row ranges automatically based off of the lead/lag requested.
+  * Unbounded Preceding to Unbounded Following. In this case Spark will do a single aggregation
+    and duplicate the result multiple times. This works for both row and range based windows.
+    There is no difference in the calculation in this case because the window is the size of
+    the partition by group.
+  * Unbounded Preceding to some specific bound. For this case Spark keeps running state as it
+    walks through each row and outputs an updated result each time. This also works for both
+    row and range based windows. For row based queries it just adds a row at a time. For
+    range based queries it adds rows until the order by column changes.
+  * Some specific bound to Unbounded Following. For this case Spark will still recalculate
+    aggregations for each window group. The complexity of this is `O(N^2)` but it only has to
+    check lower bounds when doing the aggregation. This also works for row or range based
+    windows, and for row based windows the performance improvement is very minimal because it
+    is just removing a row each time instead of doing a check for equality on the order by
+    columns.
+
+Some proprietary implementations have further optimizations. For example Databricks has a special
+case for running windows (rows between unbounded preceding to current row) which allows it to
+avoid caching the entire window in memory and just cache the running state in between rows.
+
+CUDF and the RAPIDS Accelerator do not have these same set of optimizations yet and so the
+performance can be different based off of the window sizes and the aggregation operations. Most
+of the time the window size is small enough that the parallelism of the GPU can offset the
+difference in the complexity of the algorithm and beat the CPU. In the general case if `N` is
+the size of the window and `G` is the parallelism of the GPU then the complexity of a window
+operations is `O(N^2/G)`. The main optimization currently supported by the RAPIDS Accelerator
+is for running window (rows between unbounded preceding and current row). This is only for a
+specific set of aggregations.
+
+  * MIN
+  * MAX
+  * SUM
+  * COUNT
+  * ROW_NUMBER
+  * RANK
+  * DENSE_RANK
+
+For these operations the GPU can use specialized hardware to do the computation in approximately
+`O(N/G * LOG(N))` time. The details of how this works is a bit complex, but it is described
+somewhat generally
+[here](https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-39-parallel-prefix-sum-scan-cuda).
+
+Some aggregations can be done in constant time like `count` on a non-nullable
+column/value, `lead` or `lag`. These allow us to compute the result in approximately `O(N/G)` time.
+For all other cases large windows, including skewed values in partition by and order by data, can
+result in slow performance. If you do run into one of these situations please file an
+[issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) so we can properly prioritize
+our work to support more optimizations.

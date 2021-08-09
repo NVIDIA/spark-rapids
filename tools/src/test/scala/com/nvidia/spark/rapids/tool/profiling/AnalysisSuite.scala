@@ -17,13 +17,11 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.File
-import java.nio.file.{Files, Paths, StandardOpenOption}
 
 import com.nvidia.spark.rapids.tool.ToolTestUtils
-import org.apache.hadoop.io.IOUtils
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types._
 
 class AnalysisSuite extends FunSuite {
@@ -40,20 +38,20 @@ class AnalysisSuite extends FunSuite {
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
   test("test sqlMetricsAggregation simple") {
-    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog"),
+    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog.zstd"),
       "rapids_join_eventlog_sqlmetricsagg_expectation.csv",
       "rapids_join_eventlog_jobandstagemetrics_expectation.csv")
   }
 
   test("test sqlMetricsAggregation second single app") {
-    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog2"),
+    testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog2.zstd"),
       "rapids_join_eventlog_sqlmetricsagg2_expectation.csv",
       "rapids_join_eventlog_jobandstagemetrics2_expectation.csv")
   }
 
   test("test sqlMetricsAggregation 2 combined") {
     testSqlMetricsAggregation(
-      Array(s"$logDir/rapids_join_eventlog", s"$logDir/rapids_join_eventlog2"),
+      Array(s"$logDir/rapids_join_eventlog.zstd", s"$logDir/rapids_join_eventlog2.zstd"),
       "rapids_join_eventlog_sqlmetricsaggmulti_expectation.csv",
       "rapids_join_eventlog_jobandstagemetricsmulti_expectation.csv")
   }
@@ -76,46 +74,7 @@ class AnalysisSuite extends FunSuite {
   }
 
   test("test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime()
-  }
-
-  test("zstd: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("zstd"))
-  }
-
-  test("snappy: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("snappy"))
-  }
-
-  test("lzf: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("lz4"))
-  }
-
-  test("lz4: test sqlMetrics duration and execute cpu time") {
-    testSqlMetricsDurationAndCpuTime(Option("lzf"))
-  }
-
-  private def testSqlMetricsDurationAndCpuTime(compressionNameOpt: Option[String] = None) = {
-    val rawLog = s"$logDir/rp_sql_eventlog"
-    compressionNameOpt.foreach { compressionName =>
-      val codec = TrampolineUtil.createCodec(sparkSession.sparkContext.getConf,
-        compressionName)
-      TrampolineUtil.withTempDir { tempDir =>
-        // copy and close streams
-        IOUtils.copyBytes(Files.newInputStream(Paths.get(rawLog)),
-          codec.compressedOutputStream(Files.newOutputStream(new File(tempDir,
-            "rp_sql_eventlog." + compressionName).toPath, StandardOpenOption.CREATE)),
-          4096, true)
-        runTestSqlMetricsDurationAndCpuTime(Array(tempDir.toString))
-      }
-    }
-
-    if (compressionNameOpt.isEmpty) {
-      runTestSqlMetricsDurationAndCpuTime(Array(rawLog))
-    }
-  }
-
-  private def runTestSqlMetricsDurationAndCpuTime(logs: Array[String]) = {
+    val logs = Array(s"$logDir/rp_sql_eventlog.zstd")
     val expectFile = "rapids_duration_and_cpu_expectation.csv"
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
@@ -142,7 +101,7 @@ class AnalysisSuite extends FunSuite {
 
   test("test shuffleSkewCheck empty") {
     val apps =
-      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog"), sparkSession)
+      ToolTestUtils.processProfileApps(Array(s"$logDir/rapids_join_eventlog.zstd"), sparkSession)
     assert(apps.size == 1)
 
     val analysis = new Analysis(apps, None)

@@ -29,7 +29,7 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, DataTypes}
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
-  private val floatAggConf: SparkConf = enableCsvConf()
+  private def floatAggConf: SparkConf = enableCsvConf()
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
       .set(RapidsConf.HAS_NANS.key, "false")
 
@@ -73,8 +73,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   def firstDf(spark: SparkSession): DataFrame = {
-    val options = FuzzerOptions(asciiStringsOnly = true, numbersAsStrings = false,
-        maxStringLen = 4)
+    val options = FuzzerOptions(maxStringLen = 4)
     val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, DataTypes.IntegerType))
     FuzzerUtils.generateDataFrame(spark, schema, 100, options, seed = 0)
       .withColumn("c2", col("c1").mod(lit(10)))
@@ -857,8 +856,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private def randomDF(dataType: DataType)(spark: SparkSession) : DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(DataTypes.StringType, dataType))
     FuzzerUtils.generateDataFrame(spark, schema, rowCount = 1000,
-      options = FuzzerOptions(numbersAsStrings = false, asciiStringsOnly = true,
-          maxStringLen = 2))
+      options = FuzzerOptions(maxStringLen = 2))
   }
 
   FLOAT_TEST_testSparkResultsAreEqual("empty df: reduction count", floatCsvDf,

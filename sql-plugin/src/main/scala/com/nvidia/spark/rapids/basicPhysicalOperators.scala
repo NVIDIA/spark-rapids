@@ -379,10 +379,6 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 
 case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME)
-  )
-
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {
     children.map(_.output).transpose.map { attrs =>
@@ -400,7 +396,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
 
   // The smallest of our children
   override def outputBatching: CoalesceGoal =
-    children.map(GpuExec.outputBatching).reduce(CoalesceGoal.min)
+    children.map(GpuExec.outputBatching).reduce(CoalesceGoal.minProvided)
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -408,20 +404,21 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
 
     sparkContext.union(children.map(_.executeColumnar())).map { batch =>
-      withResource(new NvtxWithMetrics("Union", NvtxColor.CYAN, totalTime)) { _ =>
-        numOutputBatches += 1
-        numOutputRows += batch.numRows
-        batch
-      }
+      numOutputBatches += 1
+      numOutputRows += batch.numRows
+      batch
     }
   }
 }
 
 case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     extends UnaryExecNode with GpuExec {
+
+  // This operator does not record any metrics
+  override lazy val allMetrics: Map[String, GpuMetric] = Map.empty
+
   override def output: Seq[Attribute] = child.output
 
   override def outputPartitioning: Partitioning = {
@@ -436,12 +433,13 @@ case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    if (numPartitions == 1 && child.executeColumnar().getNumPartitions < 1) {
+    val rdd = child.executeColumnar()
+    if (numPartitions == 1 && rdd.getNumPartitions < 1) {
       // Make sure we don't output an RDD with 0 partitions, when claiming that we have a
       // `SinglePartition`.
       new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, numPartitions)
     } else {
-      child.executeColumnar().coalesce(numPartitions, shuffle = false)
+      rdd.coalesce(numPartitions, shuffle = false)
     }
   }
 }

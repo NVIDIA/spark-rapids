@@ -50,15 +50,46 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
 
       // assert final results are correct
       assert(batches.hasNext)
-      val batch = batches.next()
-      assert(batch.numCols() == 5)
-      assert(batch.numRows() == 14)
-      assert(!batches.hasNext)
-      batch.close()
+      withResource(batches.next()) { batch =>
+        assert(batch.numCols() == 5)
+        assert(batch.numRows() == 14)
+        assert(GpuColumnVector.isTaggedAsFinalBatch(batch))
+        assert(!batches.hasNext)
+      }
 
       // assert metrics are correct
       assert(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_ROWS).value == 14)
       assert(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_BATCHES).value == 1)
+    })
+  }
+
+  test("test multiple output batches") {
+    withGpuSparkSession(spark => {
+      val testData = mixedDf(spark, numSlices = 1)
+      val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan,
+        TargetSize(1))
+      val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(50))
+      val rdd = gpuCoalesceBatches.doExecuteColumnar()
+      val part = rdd.partitions.head
+      val context = new MockTaskContext(taskAttemptId = 1, partitionId = 0)
+      val batches = rdd.compute(part, context)
+
+      var totalRows = 0
+      var totalBatches = 0
+      while(batches.hasNext) {
+        totalBatches += 1
+        withResource(batches.next()) { batch =>
+          assertResult(5)(batch.numCols())
+          assertResult(!batches.hasNext)(GpuColumnVector.isTaggedAsFinalBatch(batch))
+          totalRows += batch.numRows()
+        }
+      }
+      assert(totalBatches > 1)
+      assertResult(14)(totalRows)
+
+      // assert metrics are correct
+      assertResult(14)(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_ROWS).value)
+      assertResult(totalBatches)(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_BATCHES).value)
     })
   }
 
@@ -90,7 +121,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal == RequireSingleBatch)
-      assert(coalesce.goal.targetSizeBytes == Long.MaxValue)
+      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes == Long.MaxValue)
 
       assert(coalesce.longMetric(GpuMetric.NUM_OUTPUT_BATCHES).value == 1)
 
@@ -368,8 +399,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
           .asInstanceOf[GpuCoalesceBatches]
 
         assert(gpuCoalesceBatches.goal == RequireSingleBatch)
-        assert(gpuCoalesceBatches.goal.targetSizeBytes == Long.MaxValue)
-
+        assert(gpuCoalesceBatches.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes
+            == Long.MaxValue)
 
       }, conf)
     } finally {
@@ -400,7 +431,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal != RequireSingleBatch)
-      assert(coalesce.goal.targetSizeBytes == 1)
+      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes == 1)
 
       // assert the metrics start out at zero
       assert(coalesce.additionalMetrics("numInputBatches").value == 0)
@@ -459,6 +490,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     while (coalesceIter.hasNext) {
       withResource(coalesceIter.next()) { batch =>
         assertResult(2)(batch.numCols)
+        assertResult(!coalesceIter.hasNext)(GpuColumnVector.isTaggedAsFinalBatch(batch))
         val Array(longCol, decCol) = GpuColumnVector.extractBases(batch)
         withResource(longCol.copyToHost) { longHcv =>
           withResource(decCol.copyToHost) { decHcv =>
@@ -541,6 +573,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     while (coalesceIter.hasNext) {
       withResource(coalesceIter.next()) { batch =>
         assertResult(2)(batch.numCols)
+        assertResult(!coalesceIter.hasNext)(GpuColumnVector.isTaggedAsFinalBatch(batch))
         val Array(longCol, decCol) = GpuColumnVector.extractBases(batch)
         withResource(longCol.copyToHost) { longHcv =>
           withResource(decCol.copyToHost) { decHcv =>

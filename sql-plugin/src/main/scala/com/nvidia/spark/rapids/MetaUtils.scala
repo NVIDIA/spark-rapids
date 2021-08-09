@@ -43,15 +43,22 @@ object MetaUtils extends Arm {
    * @param ct the contiguous table whose metadata will be encoded in the message
    * @return heap-based flatbuffer message
    */
-  def buildTableMeta(tableId: Int, ct: ContiguousTable): TableMeta = {
+  def buildTableMeta(tableId: Int, ct: ContiguousTable): TableMeta =
+    buildTableMeta(
+      tableId,
+      ct.getBuffer.getLength,
+      ct.getMetadataDirectBuffer,
+      ct.getRowCount)
+
+  def buildTableMeta(tableId: Int, bufferSize: Long,
+                     packedMeta: ByteBuffer, rowCount: Long): TableMeta = {
     val fbb = new FlatBufferBuilder(1024)
-    val bufferSize = ct.getBuffer.getLength
     BufferMeta.startBufferMeta(fbb)
     BufferMeta.addId(fbb, tableId)
     BufferMeta.addSize(fbb, bufferSize)
     BufferMeta.addUncompressedSize(fbb, bufferSize)
     val bufferMetaOffset = Some(BufferMeta.endBufferMeta(fbb))
-    buildTableMeta(fbb, bufferMetaOffset, ct.getMetadataDirectBuffer, ct.getRowCount)
+    buildTableMeta(fbb, bufferMetaOffset, packedMeta, rowCount)
   }
 
   /**
@@ -305,8 +312,8 @@ object ShuffleMetadata extends Logging{
     TransferRequest.getRootAsTransferRequest(transferRequest)
   }
 
-  def buildBufferTransferRequest(fbb: FlatBufferBuilder, bufferId: Int, tag: Long): Int = {
-    BufferTransferRequest.createBufferTransferRequest(fbb, bufferId, tag)
+  def buildBufferTransferRequest(fbb: FlatBufferBuilder, bufferId: Int): Int = {
+    BufferTransferRequest.createBufferTransferRequest(fbb, bufferId)
   }
 
   def buildBufferTransferResponse(bufferMetas: Seq[BufferMeta]): ByteBuffer = {
@@ -322,18 +329,17 @@ object ShuffleMetadata extends Logging{
     fbb.dataBuffer()
   }
 
-  def buildTransferRequest(toIssue: Seq[(TableMeta, Long)]): ByteBuffer = {
+  def buildTransferRequest(id: Long, toIssue: Seq[Int]): ByteBuffer = {
     val fbb = ShuffleMetadata.getBuilder
     val requestIds = new ArrayBuffer[Int](toIssue.size)
-    toIssue.foreach { case (tableMeta, tag) =>
+    toIssue.foreach { case bufferId =>
       requestIds.append(
         ShuffleMetadata.buildBufferTransferRequest(
           fbb,
-          tableMeta.bufferMeta().id(),
-          tag))
+          bufferId))
     }
     val requestVec = TransferRequest.createRequestsVector(fbb, requestIds.toArray)
-    val transferRequestOffset = TransferRequest.createTransferRequest(fbb, requestVec)
+    val transferRequestOffset = TransferRequest.createTransferRequest(fbb, id, requestVec)
     fbb.finish(transferRequestOffset)
     fbb.dataBuffer()
   }

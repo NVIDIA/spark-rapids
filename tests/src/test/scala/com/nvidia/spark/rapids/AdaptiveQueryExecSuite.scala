@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
-import org.apache.spark.sql.types.{ArrayType, DecimalType, IntegerType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
 object AdaptiveQueryExecSuite {
   val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
@@ -493,6 +493,35 @@ class AdaptiveQueryExecSuite
       }
       // Verify local readers length
       assert(localReaders2.length == 2)
+    }, conf)
+  }
+
+  test("Avoid splitting CustomShuffleReader and ShuffleQueryStageExec pairs") {
+    logError("Avoid splitting CustomShuffleReader and ShuffleQueryStageExec pairs")
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "1")
+        .set(RapidsConf.ENABLE_REPLACE_SORTMERGEJOIN.key, "false")
+        .set("spark.rapids.sql.exec.SortExec", "false")
+        .set("spark.rapids.sql.exec.SortMergeJoinExec", "false")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning,SortExec,SortMergeJoinExec")
+
+    withGpuSparkSession(spark => {
+      val data = Seq(
+        Row("Adam",Map("hair"->"black","eye"->"black"), Row("address" , Map("state"->"CA"))),
+        Row("Bob",Map("hair"->"red","eye"->"red"),Row("address", Map("state"->"GA"))),
+        Row("Cathy",Map("hair"->"blue","eye"->"blue"),Row("address",Map("state"->"NC")))
+      )
+      val mapType  = DataTypes.createMapType(StringType,StringType)
+      val schema = new StructType().add("name",StringType).add("properties", mapType)
+      val df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+      df.createOrReplaceTempView("df1")
+      df.createOrReplaceTempView("df2")
+
+      val (plan, adaptivePlan) = runAdaptiveAndVerifyResult(spark,
+        "SELECT df1.properties from df1, df2 where df1.name=df2.name")
     }, conf)
   }
 

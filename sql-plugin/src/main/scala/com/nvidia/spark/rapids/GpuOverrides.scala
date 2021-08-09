@@ -433,9 +433,8 @@ object GpuOverrides {
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
   val CASE_MODIFICATION_INCOMPAT =
-    "in some cases unicode characters change byte width when changing the case. The GPU string " +
-    "conversion does not support these characters. For a full list of unsupported characters " +
-    "see https://github.com/rapidsai/cudf/issues/3132"
+    "the Unicode version used by cuDF and the JVM may differ, resulting in some " +
+    "corner-case characters not changing case correctly."
   val UTC_TIMEZONE_ID = ZoneId.of("UTC").normalized()
   // Based on https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
   private[this] lazy val regexList: Seq[String] = Seq("\\", "\u0000", "\\x", "\t", "\n", "\r",
@@ -444,6 +443,9 @@ object GpuOverrides {
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
 
   private[this] val _commonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+
+  private[this] val _notNullCudfTypes = (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+    TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
   val pluginSupportedOrderableSig: TypeSig = _commonTypes + TypeSig.STRUCT.nested(_commonTypes)
 
@@ -761,11 +763,13 @@ object GpuOverrides {
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT + TypeSig.ARRAY +
           TypeSig.MAP).nested(),
-      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
+          TypeSig.ARRAY).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
-      cudfReadWrite = TypeSig.commonCudfTypes,
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(),
+      cudfWrite = TypeSig.commonCudfTypes,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
@@ -840,14 +844,12 @@ object GpuOverrides {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
-            TypeSig.ARRAY),
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT ).nested(),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT +
-              TypeSig.ARRAY),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
           ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL,
@@ -896,31 +898,68 @@ object GpuOverrides {
       "Window function that returns the index for the row within the aggregation window",
       ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT),
       (rowNumber, conf, p, r) => new ExprMeta[RowNumber](rowNumber, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuRowNumber()
+        override def convertToGpu(): GpuExpression = GpuRowNumber
+      }),
+    expr[Rank](
+      "Window function that returns the rank value within the aggregation window",
+      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("ordering",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL,
+            TypeSig.all))),
+      (rank, conf, p, r) => new ExprMeta[Rank](rank, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuRank(childExprs.map(_.convertToGpu()))
+      }),
+    expr[DenseRank](
+      "Window function that returns the dense rank value within the aggregation window",
+      ExprChecks.windowOnly(TypeSig.INT, TypeSig.INT,
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("ordering",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL,
+            TypeSig.all))),
+      (denseRank, conf, p, r) => new ExprMeta[DenseRank](denseRank, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuDenseRank(childExprs.map(_.convertToGpu()))
       }),
     expr[Lead](
       "Window function that returns N entries ahead of this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN +
-              TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(),
-            TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }),
     expr[Lag](
       "Window function that returns N entries behind this one",
-      ExprChecks.windowOnly((TypeSig.numeric + TypeSig.BOOLEAN +
-          TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all,
-        Seq(ParamCheck("input", (TypeSig.numeric + TypeSig.BOOLEAN +
-            TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY).nested(), TypeSig.all),
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
-          ParamCheck("default", (TypeSig.numeric + TypeSig.BOOLEAN + TypeSig.DATE +
-            TypeSig.TIMESTAMP + TypeSig.NULL + TypeSig.ARRAY).nested(), TypeSig.all))),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
       (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
         override def convertToGpu(): GpuExpression =
           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
@@ -1183,9 +1222,10 @@ object GpuOverrides {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1246,10 +1286,7 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
-      }).incompat(CASE_MODIFICATION_INCOMPAT + " Spark also only sees the space character as " +
-      "a word deliminator, but this will capitalize any character after a non-alphabetic " + 
-      "character.  The behavior will be aligned to match Spark in the future per " +
-      "https://github.com/NVIDIA/spark-rapids/issues/2786."),
+      }).incompat(CASE_MODIFICATION_INCOMPAT),
     expr[Log](
       "Natural log",
       ExprChecks.mathUnary,
@@ -1340,6 +1377,14 @@ object GpuOverrides {
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
+      }),
+    expr[KnownNotNull](
+      "Tag an expression as known to not be null",
+      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+        _notNullCudfTypes, TypeSig.all),
+      (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuKnownNotNull(child)
       }),
     expr[DateDiff](
       "Returns the number of days from startDate to endDate",
@@ -1568,7 +1613,7 @@ object GpuOverrides {
           // types were and cannot recover it. As such for now we are going to do what Spark does,
           // but we have to recompute/recheck the temporary precision to be sure it will fit
           // on the GPU.
-          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
@@ -1604,9 +1649,9 @@ object GpuOverrides {
     expr[EqualNullSafe](
       "Check if the values are equal including nulls <=>",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
+        TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.comparable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.comparable)),
       (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualNullSafe(lhs, rhs)
@@ -1614,9 +1659,9 @@ object GpuOverrides {
     expr[EqualTo](
       "Check if the values are equal",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
+        TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.comparable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.comparable)),
       (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
@@ -1624,9 +1669,9 @@ object GpuOverrides {
     expr[GreaterThan](
       "> operator",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
+        TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable)),
       (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
@@ -1634,9 +1679,9 @@ object GpuOverrides {
     expr[GreaterThanOrEqual](
       ">= operator",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
+        TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable)),
       (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
@@ -1645,9 +1690,9 @@ object GpuOverrides {
       "IN operator",
       ExprChecks.projectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         Seq(ParamCheck("value", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
-          TypeSig.all)),
+          TypeSig.comparable)),
         Some(RepeatingParamCheck("list", (TypeSig.commonCudfTypes + TypeSig.DECIMAL).withAllLit(),
-          TypeSig.all))),
+          TypeSig.comparable))),
       (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val unaliased = in.list.map(extractLit)
@@ -1665,7 +1710,7 @@ object GpuOverrides {
     expr[InSet](
       "INSET operator",
       ExprChecks.unaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.comparable),
       (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (in.hset.contains(null)) {
@@ -1678,9 +1723,9 @@ object GpuOverrides {
     expr[LessThan](
       "< operator",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
+        TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable)),
       (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
@@ -1688,9 +1733,9 @@ object GpuOverrides {
     expr[LessThanOrEqual](
       "<= operator",
       ExprChecks.binaryProjectNotLambda(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all)),
+        TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable)),
       (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
@@ -1699,19 +1744,6 @@ object GpuOverrides {
       "CASE WHEN expression",
       CaseWhenCheck,
       (a, conf, p, r) => new ExprMeta[CaseWhen](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (dataType.isInstanceOf[ArrayType]) {
-            // We don't support literal arrays yet
-            if (a.elseValue.map(isLit).getOrElse(false)) {
-              willNotWorkOnGpu("literal arrays are not currently supported")
-            } else {
-              val anyLit = a.branches.exists { case (_, value) => isLit(value) }
-              if (anyLit) {
-                willNotWorkOnGpu("literal arrays are not currently supported")
-              }
-            }
-          }
-        }
         override def convertToGpu(): GpuExpression = {
           val branches = childExprs.grouped(2).flatMap {
             case Seq(cond, value) => Some((cond.convertToGpu(), value.convertToGpu()))
@@ -1727,13 +1759,15 @@ object GpuOverrides {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectNotLambda(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+      ExprChecks.projectNotLambda(
+        (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
-        Seq(ParamCheck("predicate", TypeSig.psNote(TypeEnum.BOOLEAN,
-          "literal values are not supported"), TypeSig.BOOLEAN),
-          ParamCheck("trueValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+        Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+          ParamCheck("trueValue",
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
-          ParamCheck("falseValue", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL,
+          ParamCheck("falseValue",
+            (_commonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
@@ -1779,7 +1813,7 @@ object GpuOverrides {
           // effectively calculating an extra digit of precision. Because cudf does not support this
           // right now we actually increase the scale (and corresponding precision) to get an extra
           // decimal place so we can round it in GpuCheckOverflow
-          val Seq(leftDataType, rightDataType) = childExprs.map(_.dataType)
+          val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val outputType = GpuDivideUtil.decimalDataType(l, r)
@@ -2364,6 +2398,20 @@ object GpuOverrides {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuArrayContains(lhs, rhs)
       }),
+    expr[SortArray](
+      "Returns a sorted array with the input array and the ascending / descending order",
+      ExprChecks.binaryProjectNotLambda(
+        TypeSig.ARRAY.nested(_commonTypes),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array", TypeSig.ARRAY.nested(_commonTypes),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("ascendingOrder", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.lit(TypeEnum.BOOLEAN))),
+      (sortExpression, conf, p, r) => new BinaryExprMeta[SortArray](sortExpression, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuSortArray(lhs, rhs)
+        }
+      }
+    ),
     expr[CreateArray](
       " Returns an array with the given elements",
       ExprChecks.projectNotLambda(
@@ -2611,16 +2659,14 @@ object GpuOverrides {
         TypeSig.ARRAY.nested(TypeSig.all),
         TypeSig.ARRAY.nested(
           TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY),
-        TypeSig.ARRAY.nested(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL + TypeSig.ARRAY)),
+        TypeSig.ARRAY.nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
         override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
-      "Collect a list of elements, now only supported by windowing.",
-      // It should be 'fullAgg' eventually but now only support windowing,
-      // so 'aggNotGroupByOrReduction'
+      "Collect a list of non-unique elements, only supported in rolling window in current.",
+      // GpuCollectList is not yet supported under GroupBy and Reduction context.
       ExprChecks.aggNotGroupByOrReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
@@ -2630,6 +2676,20 @@ object GpuOverrides {
           TypeSig.all))),
       (c, conf, p, r) => new ExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCollectList(
+          childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
+      }),
+    expr[CollectSet](
+      "Collect a set of unique elements, only supported in rolling window in current.",
+      // GpuCollectSet is not yet supported under GroupBy and Reduction context.
+      // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
+      // method drop_list_duplicates doesn't support nested types.
+      ExprChecks.aggNotGroupByOrReduction(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL,
+          TypeSig.all))),
+      (c, conf, p, r) => new ExprMeta[CollectSet](c, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCollectSet(
           childExprs.head.convertToGpu(), c.mutableAggBufferOffset, c.inputAggBufferOffset)
       }),
     expr[GetJsonObject](
@@ -2830,7 +2890,8 @@ object GpuOverrides {
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes +
         TypeSig.DECIMAL.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
-        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet")).nested(),
+        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
+        TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -2918,7 +2979,8 @@ object GpuOverrides {
     exec[UnionExec](
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
-        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL)
+        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL
+            + TypeSig.STRUCT)
         .withPsNote(TypeEnum.STRUCT,
           "unionByName will not optionally impute nulls for missing struct fields  " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
@@ -2934,11 +2996,15 @@ object GpuOverrides {
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        TypeSig.all),
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.all),
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL),
+        TypeSig.all),
       (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
         val condition: Option[BaseExprMeta[_]] =
           join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
@@ -2986,10 +3052,10 @@ object GpuOverrides {
     exec[WindowExec](
       "Window-operator backend",
       ExecChecks(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL +
-          TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL) +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT
-            + TypeSig.ARRAY),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL +
+            TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+            TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
+            TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
         TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
@@ -2997,7 +3063,7 @@ object GpuOverrides {
     exec[CustomShuffleReaderExec](
       "A wrapper of shuffle query stage",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
-        TypeSig.STRUCT).nested(), TypeSig.all),
+        TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (exec, conf, p, r) =>
       new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
         override def tagPlanForGpu(): Unit = {

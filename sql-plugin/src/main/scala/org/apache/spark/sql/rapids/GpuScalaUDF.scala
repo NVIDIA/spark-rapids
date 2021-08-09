@@ -72,7 +72,7 @@ object GpuScalaUDF {
    * if it does. The lambda wrapper that Spark applies to Java UDFs will be inspected if necessary
    * to locate the user's UDF instance.
    */
-  private def getRapidsUDFInstance(function: AnyRef): Option[RapidsUDF] = {
+  def getRapidsUDFInstance(function: AnyRef): Option[RapidsUDF] = {
     function match {
       case f: RapidsUDF => Some(f)
       case f =>
