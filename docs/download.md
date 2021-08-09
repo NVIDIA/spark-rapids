@@ -18,6 +18,61 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
+## Release v21.08.0
+Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+
+Software Requirements:
+
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
+
+	CUDA & Nvidia Drivers*: 11.0-11.4 & v450.80.02+
+
+	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
+
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+
+	Python 3.6+, Scala 2.12, Java 8
+
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+### Download v21.08.0
+* Download the [RAPIDS
+  Accelerator for Apache Spark 21.08.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.08.0/rapids-4-spark_2.12-21.08.0.jar)
+* Download the [RAPIDS cuDF 21.08.2 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.08.2/cudf-21.08.2-cuda11.jar)
+
+This package is built against CUDA 11.2 and has [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+on V100, T4, A30 and A100 GPUs with CUDA 11.0-11.4.  For those using other types of GPUs which
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
+need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
+
+### Release Notes
+New functionality and performance improvements for this release include:
+* Handling data sets that spill out of GPU memory for group by and windowing operations
+* Running window rank and dense rank operations on the GPU
+* Support for the `LEGACY` timestamp
+* Unioning of nested structs
+* Adoption of UCX 1.11 for improved error handling for RAPIDS Spark Accelerated Shuffle
+* Ability to read cached data from the GPU on the supported Databricks runtimes
+* Enabling Parquet writing of array data types from the GPU
+* Optimized reads for small files for ORC
+* Spark Qualification and Profiling Tools
+  * Additional filtering capabilities
+  * Reporting on data types
+  * Reporting on read data formats
+  * Ability to run the qualification tool on Spark 2.x logs
+  * Ability to run the tool on Apache Spark 3.x, AWS EMR 6.3.0, Dataproc 2.0, Microsoft Azure, and
+    Databricks 7.3 and 8.2 logs
+  * Improved qualification tool performance
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
 ## Release v21.06.1
 This is a patch release to address an issue with the plugin in the Databricks 7.3 ML LTS runtime.
 
@@ -99,7 +154,7 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 
 ### Release Notes
 New functionality for this release includes:
-* Support for running on Cloudera CDP 7.1.7 and Databricks 8.2 ML 
+* Support for running on Cloudera CDP 7.1.6, CDP 7.1.7 and Databricks 8.2 ML
 * New functionality related to arrays: 
   * Concatenation of array columns 
   * Casting arrays of floats to arrays of doubles

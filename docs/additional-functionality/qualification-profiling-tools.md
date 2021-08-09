@@ -55,7 +55,7 @@ Optional:
 You do not need to compile the jar yourself because you can download it from the Maven repository directly.
 
 Here are 2 options:
-1. Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.06.0/)
+1. Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.0/)
 
 2. Compile the jar from github repo
 ```bash

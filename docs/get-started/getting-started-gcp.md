@@ -131,8 +131,7 @@ submitted as a Dataproc job.  The mortgage examples we use above are also availa
 application](https://github.com/NVIDIA/spark-xgboost-examples/tree/spark-3/examples/apps/scala).
 After [building the jar
 files](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-3/getting-started-guides/building-sample-apps/scala.md)
-they are available through maven `mvn package -Dcuda.classifier=cuda11-0`. In the 21.06 release, 
-CUDA 11.0/11.2 will be supported. 
+they are available through maven `mvn package -Dcuda.classifier=cuda11-0`. 
 
 Place the jar file `sample_xgboost_apps-0.2.2.jar` under the `gs://$GCS_BUCKET/scala/` folder by
 running `gsutil cp target/sample_xgboost_apps-0.2.2.jar gs://$GCS_BUCKET/scala/`.  To do this you
