@@ -633,10 +633,10 @@ class GpuHashAggregateIterator(
     // - Final or PartialMerge-only mode: we pick the columns in the order as handed to us.
     // - Partial or Complete mode: we use the inputProjections
     val boundInputReferences =
-    if (modeInfo.hasPartialMergeMode && modeInfo.hasPartialMode) {
-      // The 3rd stage of AggWithOneDistinct, which combines (partial) reduce-side
-      // nonDistinctAggExpressions and map-side distinctAggExpressions. For this stage, we need to
-      // switch the position of distinctAttributes and nonDistinctAttributes.
+    if (modeInfo.uniqueModes.length > 1 && aggregateExpressions.exists(_.isDistinct)) {
+      // The 3rd stage of AggWithOneDistinct, which consists of nonDistinctAggExpressions for merge
+      // and distinctAggExpressions for update. For this stage, we need to switch the position of
+      // distinctAttributes and nonDistinctAttributes.
       //
       // The schema of the 2nd stage's outputs:
       // groupingAttributes ++ distinctAttributes ++ nonDistinctAggBufferAttributes
@@ -667,7 +667,8 @@ class GpuHashAggregateIterator(
       val inputAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
       GpuBindReferences.bindGpuReferences(inputProjections, inputAttributes)
     } else if (modeInfo.hasFinalMode ||
-        (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1)) {
+      (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1) ||
+      modeInfo.uniqueModes.isEmpty) {
       // two possible conditions:
       // 1. The Final stage, including the 2nd stage of NoDistinctAgg and 4th stage of
       // AggWithOneDistinct, which needs no input projections. Because the child outputs are
@@ -676,8 +677,7 @@ class GpuHashAggregateIterator(
       // 2. The 2nd stage (PartialMerge) of AggWithOneDistinct, which works like the final stage
       // taking the child outputs as inputs without any projections.
       GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
-    } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode ||
-        modeInfo.uniqueModes.isEmpty) {
+    } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode) {
       // The first aggregation stage (including Partial or Complete or no aggExpression),
       // whose child node is not an AggregateExec. Therefore, input projections are essential.
       val inputProjections: Seq[Expression] = groupingExpressions ++ aggregateExpressions
