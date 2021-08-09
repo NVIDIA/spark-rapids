@@ -690,28 +690,27 @@ class GpuHashAggregateIterator(
       val inputAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
       GpuBindReferences.bindGpuReferences(inputProjections, inputAttributes)
     } else if (modeInfo.hasFinalMode ||
-      (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1) ||
-      modeInfo.uniqueModes.isEmpty) {
-      // This block takes care of three possible conditions:
+      (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1)) {
+      // This block takes care of two possible conditions:
       // 1. The Final stage, including the 2nd stage of NoDistinctAgg and 4th stage of
       // AggWithOneDistinct, which needs no input projections. Because the child outputs are
       // internal aggregation buffers, which are aligned for the final stage.
-      //
       // 2. The 2nd stage (PartialMerge) of AggWithOneDistinct, which works like the final stage
       // taking the child outputs as inputs without any projections.
-      //
-      // 3. Stages without any AggExpressions (only contain groupingExpressions)
       GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
-    } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode) {
+    } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode ||
+      modeInfo.uniqueModes.isEmpty) {
       // The first aggregation stage which contains AggExpressions (in either Partial or Complete
       // mode). In this case, the input projections are essential.
-      // To be specific, there are three conditions matching this case:
+      // To be specific, there are four conditions matching this case:
       // 1. The Partial (1st) stage of NoDistinctAgg
       // 2. The Partial (1st) stage of AggWithOneDistinct
       // 3. In Databricks runtime, the "Final" (2nd) stage of AggWithOneDistinct which only contains
       // DistinctAggExpressions (without any nonDistinctAggExpressions)
+      //
+      // In addition, this block also fits for aggregation stages without any AggExpressions.
       val inputProjections: Seq[Expression] = groupingExpressions ++ aggregateExpressions
-          .flatMap(_.aggregateFunction.inputProjection)
+        .flatMap(_.aggregateFunction.inputProjection)
       GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
     } else {
       // This branch should NOT be reached.
