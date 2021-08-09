@@ -130,7 +130,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(cuDFJar.size == 1, "CUDF jar check")
 
     val collect = new CollectInformation(apps, None, 1000)
-    val rapidsJarResults = collect.printRapidsJAR()
+    val rapidsJarResults = collect.getRapidsJARInfo()
     assert(rapidsJarResults.size === 2)
     assert(rapidsJarResults.filter(_.jar.contains("rapids-4-spark_2.12-0.5.0.jar")).size === 1)
     assert(rapidsJarResults.filter(_.jar.contains("cudf-0.19.2-cuda11.jar")).size === 1)
@@ -187,7 +187,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
 
     val collect = new CollectInformation(apps, None, 1000)
-    val sqlMetrics = collect.printSQLPlanMetrics()
+    val sqlMetrics = collect.getSQLPlanMetrics
     val resultExpectation =
       new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
     assert(sqlMetrics.size == 83)
@@ -232,7 +232,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       }
       assert(apps.size == 1)
       val collect = new CollectInformation(apps, None, 1000)
-      val dsRes = collect.printDataSourceInfo()
+      val dsRes = collect.getDataSourceInfo
       assert(dsRes.size == 7)
       val allFormats = dsRes.map { r =>
         r.format
@@ -268,7 +268,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
 
       assert(apps.size == 1)
       val collect = new CollectInformation(apps, None, 1000)
-      val dsRes = collect.printDataSourceInfo()
+      val dsRes = collect.getDataSourceInfo
       assert(dsRes.size == 9)
       val allFormats = dsRes.map { r =>
         r.format
@@ -305,7 +305,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
     val collect = new CollectInformation(apps, None, 1000)
-    val jobInfo = collect.printJobInfo()
+    val jobInfo = collect.getJobInfo
 
     assert(jobInfo.size == 2)
     val firstRow = jobInfo.head
@@ -362,7 +362,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 2)
     val collect = new CollectInformation(apps, None, 1000)
-    val execInfos = collect.printExecutorInfo()
+    val execInfos = collect.getExecutorInfo
     // just the fact it worked makes sure we can run with both files
     // since we give them indexes above they should be in the right order
     // and spark2 event info should be second
@@ -489,7 +489,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
     val collect = new CollectInformation(apps, None, 1000)
     for (app <- apps) {
-      val props = collect.printRapidsProperties()
+      val props = collect.getRapidsProperties
       val rows = props.map(_.head)
       assert(rows.length == 5) // 5 properties captured.
       // verify  ucx parameters are captured.
@@ -514,7 +514,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
 
     val collect = new CollectInformation(apps, None, 1000)
-    val execInfo = collect.printExecutorInfo()
+    val execInfo = collect.getExecutorInfo
     assert(execInfo.size == 1)
     assert(execInfo.head.numExecutors === 1)
     assert(execInfo.head.maxMem === 16991335219L)
@@ -534,7 +534,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(apps.size == 1)
 
     val collect = new CollectInformation(apps, None, 1000)
-    val execInfo = collect.printExecutorInfo()
+    val execInfo = collect.getExecutorInfo
     assert(execInfo.size == 1)
     assert(execInfo.head.numExecutors === 8)
     assert(execInfo.head.maxMem === 5538054144L)

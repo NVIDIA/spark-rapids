@@ -577,3 +577,10 @@ case class ShuffleSkewInfo(appIndex: Int, stageId: Long, stageAttemptId: Long, t
       ProfileUtils.truncateFailureStr(reason))
   }
 }
+
+case class RapidsPropertyProfileResult(key: String, outputHeadersIn: Seq[String],
+    rows: Seq[String]) extends ProfileResult {
+
+  override val outputHeaders: Seq[String] = outputHeadersIn
+  override def convertToSeq: Seq[String] = rows
+}

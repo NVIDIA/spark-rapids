@@ -194,12 +194,30 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val appInfo = collect.getAppInfo
     profileOutputWriter.write("Application Information", appInfo,
       "No Application Information Found!")
-    collect.printDataSourceInfo()
-    collect.printExecutorInfo()
-    collect.printJobInfo()
-    collect.printRapidsProperties()
-    collect.printRapidsJAR()
-    collect.printSQLPlanMetrics()
+
+    val dsInfo = collect.getDataSourceInfo
+    profileOutputWriter.write("Data Source Information", dsInfo,
+      "No Data Source Information Found!")
+
+    val execInfo = collect.getExecutorInfo
+    profileOutputWriter.write("Executor Information", execInfo,
+      "No Executor Information Found!")
+
+    val jobInfo = collect.getJobInfo
+    profileOutputWriter.write("Job Information", jobInfo,
+      "No Job Information Found!")
+
+    val rapidsProps = collect.getRapidsProperties
+    profileOutputWriter.write("Spark Rapids parameters set explicitly", rapidsProps,
+      "No Job Information Found!")
+
+    val rapidsJar = collect.getRapidsJARInfo
+    profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", rapidsJar,
+      "No Spark Rapids parameters Found!")
+
+    val sqlMetrics = collect.getSQLPlanMetrics
+    profileOutputWriter.write("SQL Plan Metrics for Application", rapidsJar,
+      "No SQL Plan Metrics Found!")
 
     if (printPlans) {
       collect.printSQLPlans(outputDir)
