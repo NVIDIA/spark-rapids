@@ -130,7 +130,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(cuDFJar.size == 1, "CUDF jar check")
 
     val collect = new CollectInformation(apps, None, 1000)
-    val rapidsJarResults = collect.getRapidsJARInfo()
+    val rapidsJarResults = collect.getRapidsJARInfo
     assert(rapidsJarResults.size === 2)
     assert(rapidsJarResults.filter(_.jar.contains("rapids-4-spark_2.12-0.5.0.jar")).size === 1)
     assert(rapidsJarResults.filter(_.jar.contains("cudf-0.19.2-cuda11.jar")).size === 1)
@@ -490,7 +490,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     val collect = new CollectInformation(apps, None, 1000)
     for (app <- apps) {
       val props = collect.getRapidsProperties
-      val rows = props.map(_.head)
+      val rows = props.map(_.rows.head)
       assert(rows.length == 5) // 5 properties captured.
       // verify  ucx parameters are captured.
       assert(rows.contains("spark.executorEnv.UCX_RNDV_SCHEME"))
