@@ -619,6 +619,9 @@ object TypeSig {
   val unionOfPandasUdfOut: TypeSig =
     (commonCudfTypes + BINARY + DECIMAL_64 + NULL + ARRAY + MAP).nested() + STRUCT
 
+  /** All types that can appear in AST expressions */
+  val astTypes = BOOLEAN + integral + fp + TIMESTAMP
+
   def getDataType(expr: Expression): Option[DataType] = {
     try {
       Some(expr.dataType)
