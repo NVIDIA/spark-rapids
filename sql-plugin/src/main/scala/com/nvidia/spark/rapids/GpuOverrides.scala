@@ -2119,10 +2119,13 @@ object GpuOverrides {
     expr[First](
       "first aggregate operator",
       ExprChecks.aggNotWindow(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+        (TypeSig.psNote(TypeEnum.STRUCT, "only supports in GroupBy aggregation") +
+          TypeSig.psNote(TypeEnum.ARRAY, "only supports in GroupBy aggregation") +
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
         TypeSig.all,
         Seq(ParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.commonCudfTypes + TypeSig.NULL +
+            TypeSig.DECIMAL_64).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
         override def convertToGpu(): GpuExpression =
@@ -2131,10 +2134,13 @@ object GpuOverrides {
     expr[Last](
       "last aggregate operator",
       ExprChecks.aggNotWindow(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+        (TypeSig.psNote(TypeEnum.STRUCT, "only supports in GroupBy aggregation") +
+          TypeSig.psNote(TypeEnum.ARRAY, "only supports in GroupBy aggregation") +
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
         TypeSig.all,
         Seq(ParamCheck("input",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.commonCudfTypes + TypeSig.NULL +
+            TypeSig.DECIMAL_64).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
         override def convertToGpu(): GpuExpression =
