@@ -296,8 +296,6 @@ case class TaskCase(
     output_bytesWritten: Long,
     output_recordsWritten: Long)
 
-case class DatasetSQLCase(sqlID: Long)
-
 case class UnsupportedSQLPlan(sqlID: Long, nodeID: Long, nodeName: String,
     nodeDesc: String, reason: String)
 

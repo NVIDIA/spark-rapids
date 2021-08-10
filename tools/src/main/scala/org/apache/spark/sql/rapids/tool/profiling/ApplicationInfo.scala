@@ -233,7 +233,6 @@ class ApplicationInfo(
   val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
-  var datasetSQL: ArrayBuffer[DatasetSQLCase] = ArrayBuffer[DatasetSQLCase]()
 
   private lazy val eventProcessor =  new EventsProcessor()
 
@@ -273,7 +272,9 @@ class ApplicationInfo(
       for (node <- allnodes) {
         checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetPlan(node.desc)) {
-          datasetSQL += DatasetSQLCase(sqlID)
+          sqlIdToInfo.get(sqlID).foreach { sql =>
+            sql.hasDataset = true
+          }
           if (gpuMode) {
             val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc,
               "Contains Dataset")

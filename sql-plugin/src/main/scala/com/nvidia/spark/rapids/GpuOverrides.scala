@@ -796,7 +796,7 @@ object GpuOverrides {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
             + TypeSig.DECIMAL_64).nested(),
         TypeSig.all),
-      (a, conf, p, r) => new UnaryExprMeta[Alias](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
@@ -815,6 +815,8 @@ object GpuOverrides {
             super.print(append, depth, all)
           }
         }
+
+        override def tagSelfForAst(): Unit = {}
       }),
     expr[PromotePrecision](
       "PromotePrecision before arithmetic operations between DecimalType data",
@@ -984,7 +986,7 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
         TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryExprMeta[UnaryMinus](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryMinus(child)
       }),
     expr[UnaryPositive](
@@ -992,7 +994,7 @@ object GpuOverrides {
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
         TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryExprMeta[UnaryPositive](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
       }),
     expr[Year](
@@ -1029,19 +1031,19 @@ object GpuOverrides {
       "Absolute value",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
         TypeSig.gpuNumeric, TypeSig.numeric),
-      (a, conf, p, r) => new UnaryExprMeta[Abs](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child)
       }),
     expr[Acos](
       "Inverse cosine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Acos](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Acos](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAcos(child)
       }),
     expr[Acosh](
       "Inverse hyperbolic cosine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Acosh](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Acosh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           if (conf.includeImprovedFloat) {
             GpuAcoshImproved(child)
@@ -1052,30 +1054,39 @@ object GpuOverrides {
     expr[Asin](
       "Inverse sine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Asin](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Asin](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAsin(child)
       }),
     expr[Asinh](
       "Inverse hyperbolic sine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Asinh](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Asinh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           if (conf.includeImprovedFloat) {
             GpuAsinhImproved(child)
           } else {
             GpuAsinhCompat(child)
           }
+
+        override def tagSelfForAst(): Unit = {
+          if (!conf.includeImprovedFloat) {
+            // AST is not expressive enough yet to implement the conditional expression needed
+            // to emulate Spark's behavior
+            willNotWorkInAst("asinh is not AST compatible unless " +
+                s"${RapidsConf.IMPROVED_FLOAT_OPS.key} is enabled")
+          }
+        }
       }),
     expr[Sqrt](
       "Square root",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Sqrt](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Sqrt](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuSqrt(child)
       }),
     expr[Cbrt](
       "Cube root",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Cbrt](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Cbrt](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCbrt(child)
       }),
     expr[Floor](
@@ -1097,7 +1108,7 @@ object GpuOverrides {
     expr[Not](
       "Boolean not operator",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.BOOLEAN, TypeSig.BOOLEAN),
-      (a, conf, p, r) => new UnaryExprMeta[Not](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Not](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuNot(child)
       }),
     expr[IsNull](
@@ -1128,14 +1139,14 @@ object GpuOverrides {
     expr[Rint](
       "Rounds up a double value to the nearest double equal to an integer",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Rint](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Rint](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRint(child)
       }),
     expr[BitwiseNot](
       "Returns the bitwise NOT of the operands",
       ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
         TypeSig.integral, TypeSig.integral),
-      (a, conf, p, r) => new UnaryExprMeta[BitwiseNot](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[BitwiseNot](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
       }),
     expr[AtLeastNNonNulls](
@@ -1212,7 +1223,7 @@ object GpuOverrides {
       ExprChecks.binaryProjectNotLambda(TypeSig.integral, TypeSig.integral,
         ("lhs", TypeSig.integral, TypeSig.integral),
         ("rhs", TypeSig.integral, TypeSig.integral)),
-      (a, conf, p, r) => new BinaryExprMeta[BitwiseAnd](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseAnd](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseAnd(lhs, rhs)
       }),
@@ -1221,7 +1232,7 @@ object GpuOverrides {
       ExprChecks.binaryProjectNotLambda(TypeSig.integral, TypeSig.integral,
         ("lhs", TypeSig.integral, TypeSig.integral),
         ("rhs", TypeSig.integral, TypeSig.integral)),
-      (a, conf, p, r) => new BinaryExprMeta[BitwiseOr](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseOr](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseOr(lhs, rhs)
       }),
@@ -1230,7 +1241,7 @@ object GpuOverrides {
       ExprChecks.binaryProjectNotLambda(TypeSig.integral, TypeSig.integral,
         ("lhs", TypeSig.integral, TypeSig.integral),
         ("rhs", TypeSig.integral, TypeSig.integral)),
-      (a, conf, p, r) => new BinaryExprMeta[BitwiseXor](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseXor](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseXor(lhs, rhs)
       }),
@@ -1268,31 +1279,31 @@ object GpuOverrides {
     expr[Atan](
       "Inverse tangent",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Atan](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Atan](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAtan(child)
       }),
     expr[Atanh](
       "Inverse hyperbolic tangent",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Atanh](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Atanh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAtanh(child)
       }),
     expr[Cos](
       "Cosine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Cos](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Cos](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCos(child)
       }),
     expr[Exp](
       "Euler's number e raised to a power",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Exp](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Exp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuExp(child)
       }),
     expr[Expm1](
       "Euler's number e raised to a power minus 1",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Expm1](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Expm1](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuExpm1(child)
       }),
     expr[InitCap](
@@ -1342,37 +1353,37 @@ object GpuOverrides {
     expr[Sin](
       "Sine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Sin](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Sin](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuSin(child)
       }),
     expr[Sinh](
       "Hyperbolic sine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Sinh](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Sinh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuSinh(child)
       }),
     expr[Cosh](
       "Hyperbolic cosine",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Cosh](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Cosh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCosh(child)
       }),
     expr[Cot](
       "Cotangent",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Cot](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Cot](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCot(child)
       }),
     expr[Tanh](
       "Hyperbolic tangent",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Tanh](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Tanh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuTanh(child)
       }),
     expr[Tan](
       "Tangent",
       ExprChecks.mathUnary,
-      (a, conf, p, r) => new UnaryExprMeta[Tan](a, conf, p, r) {
+      (a, conf, p, r) => new UnaryAstExprMeta[Tan](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuTan(child)
       }),
     expr[NormalizeNaNAndZero](
@@ -1589,7 +1600,7 @@ object GpuOverrides {
         TypeSig.gpuNumeric, TypeSig.numericAndInterval,
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
-      (a, conf, p, r) => new BinaryExprMeta[Add](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuAdd(lhs, rhs)
       }),
@@ -1599,7 +1610,7 @@ object GpuOverrides {
         TypeSig.gpuNumeric, TypeSig.numericAndInterval,
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
-      (a, conf, p, r) => new BinaryExprMeta[Subtract](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs)
       }),
@@ -1612,7 +1623,7 @@ object GpuOverrides {
         TypeSig.numeric,
         ("lhs", TypeSig.gpuNumeric, TypeSig.numeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numeric)),
-      (a, conf, p, r) => new BinaryExprMeta[Multiply](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) with AstImplicitCasts {
         override def tagExprForGpu(): Unit = {
           // Multiplication of Decimal types is a little odd. Spark will cast the inputs
           // to a common wider value where scale is max of the two input scales, and precision is
@@ -1678,7 +1689,7 @@ object GpuOverrides {
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable)),
-      (a, conf, p, r) => new BinaryExprMeta[EqualTo](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstCompareExprMeta[EqualTo](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
@@ -1688,7 +1699,7 @@ object GpuOverrides {
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryExprMeta[GreaterThan](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstCompareExprMeta[GreaterThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
       }),
@@ -1698,7 +1709,7 @@ object GpuOverrides {
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryExprMeta[GreaterThanOrEqual](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstCompareExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
@@ -1743,7 +1754,7 @@ object GpuOverrides {
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryExprMeta[LessThan](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstCompareExprMeta[LessThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
       }),
@@ -1753,7 +1764,7 @@ object GpuOverrides {
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryExprMeta[LessThanOrEqual](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstCompareExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),
@@ -1798,7 +1809,7 @@ object GpuOverrides {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE),
         ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE)),
-      (a, conf, p, r) => new BinaryExprMeta[Pow](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) with AstImplicitCasts {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPow(lhs, rhs)
       }),
@@ -2894,15 +2905,7 @@ object GpuOverrides {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(),
         TypeSig.all),
-      (proj, conf, p, r) => {
-        new SparkPlanMeta[ProjectExec](proj, conf, p, r) {
-          override def convertToGpu(): GpuExec = GpuProjectExec(
-            // Force list to avoid recursive Java serialization of lazy list Seq implementation
-            childExprs.map(_.convertToGpu()).toList,
-            childPlans.head.convertIfNeeded()
-          )
-        }
-      }),
+      (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
     exec[RangeExec](
       "The backend for range operator",
       ExecChecks(TypeSig.LONG, TypeSig.LONG),
