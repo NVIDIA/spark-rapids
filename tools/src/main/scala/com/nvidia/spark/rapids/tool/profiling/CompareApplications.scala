@@ -32,7 +32,7 @@ class CompareApplications(apps: Seq[ApplicationInfo],
 
   require(apps.size > 1)
 
-  def findMatchingStages(): (Seq[Seq[String]], Seq[Seq[String]]) = {
+  def findMatchingStages(): (Seq[CompareProfileResults], Seq[CompareProfileResults]) = {
     val normalizedByAppId = apps.map { app =>
       val normalized = app.sqlPlan.mapValues { plan =>
         SparkPlanInfoWithStage(plan, app.accumIdToStageId).normalizeForStageComparison
@@ -121,15 +121,9 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       }
     }
 
-    fileWriter.foreach(_.write("\nMatching SQL IDs Across Applications:\n"))
     val matchingSqlIdsRet = if (matchingSqlData.size > 0) {
-      val sortedRows = matchingSqlData
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        outputAppIds, sortedRows)
-      fileWriter.foreach(_.write(outStr + "\n"))
-      sortedRows
+      matchingSqlData.map(CompareProfileResults(outputAppIds, _))
     } else {
-      fileWriter.foreach(_.write("Not able to find Matching SQL IDs Across Applications!\n"))
       Seq.empty
     }
 
@@ -139,15 +133,9 @@ class CompareApplications(apps: Seq[ApplicationInfo],
       }
     }
 
-    fileWriter.foreach(_.write("\nMatching Stage IDs Across Applications:\n"))
     val matchingStageIdsRet = if (matchingStageData.size > 0) {
-      val sortedRows = matchingStageData
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        outputAppIds, sortedRows)
-      fileWriter.foreach(_.write(outStr + "\n"))
-      sortedRows
+      matchingStageData.map(CompareProfileResults(outputAppIds, _))
     } else {
-      fileWriter.foreach(_.write("Not able to find Matching Stage IDs Across Applications!\n"))
       Seq.empty
     }
     (matchingSqlIdsRet, matchingStageIdsRet)

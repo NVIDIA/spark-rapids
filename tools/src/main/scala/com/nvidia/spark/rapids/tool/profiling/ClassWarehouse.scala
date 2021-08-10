@@ -584,3 +584,10 @@ case class RapidsPropertyProfileResult(key: String, outputHeadersIn: Seq[String]
   override val outputHeaders: Seq[String] = outputHeadersIn
   override def convertToSeq: Seq[String] = rows
 }
+
+case class CompareProfileResults(outputHeadersIn: Seq[String],
+    rows: Seq[String]) extends ProfileResult {
+
+  override val outputHeaders: Seq[String] = outputHeadersIn
+  override def convertToSeq: Seq[String] = rows
+}

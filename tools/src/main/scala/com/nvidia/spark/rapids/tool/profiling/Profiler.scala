@@ -227,7 +227,11 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     // the rest of the tables simply list all applications specified
     if (appArgs.compare()) {
       val compare = new CompareApplications(apps, Some(textFileWriter), numOutputRows)
-      compare.findMatchingStages()
+      val (matchingSqlIds, matchingStageIds) = compare.findMatchingStages()
+      profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds,
+        "Not able to find Matching SQL IDs Across Applications!")
+      profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds,
+        "Not able to find Matching Stage IDs Across Applications!")
     }
 
     textFileWriter.write("\n### B. Analysis ###\n")
