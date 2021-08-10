@@ -308,7 +308,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     // SOME INPUT COLUMNS  | POS COLUMN? | STRUCT(KEY, VALUE) | MORE INPUT COLUMNS
     // scalastyle:on line.size.limit
     val structPos = genOffset + numPos
-    withResource (ArrayBuffer.empty[ColumnVector] ) { newColumns =>
+    withResource(ArrayBuffer.empty[ColumnVector]) { newColumns =>
       (0 until exploded.getNumberOfColumns).foreach { index =>
         if (index == structPos) {
           val kvStructCol = exploded.getColumn(index)
