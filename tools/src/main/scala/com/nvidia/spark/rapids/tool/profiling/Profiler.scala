@@ -51,12 +51,11 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     if (appArgs.compare()) {
       val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.COMPARE_LOG_FILE_NAME,
         "Profile summary")
+      val profileOutputWriter = new ProfileOutputWriter(outputDir,
+        "testcompare", numOutputRows, outputCSV = outputCSV)
       try {
         // create all the apps in parallel since we need the info for all of them to compare
         val apps = createApps(eventLogInfos)
-        val profileOutputWriter = new ProfileOutputWriter(outputDir,
-          Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows,
-          outputCSV = outputCSV)
         if (apps.size < 2) {
           logInfo("At least 2 applications are required for comparison mode. Exiting!")
         } else {
@@ -64,6 +63,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         }
       } finally {
         textFileWriter.close()
+        profileOutputWriter.close()
       }
     } else {
       // Read each application and process it separately to save memory.
