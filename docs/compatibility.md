@@ -414,7 +414,7 @@ guaranteed to produce the same results as the CPU:
 LEGACY timeParserPolicy support has the following limitations when running on the GPU:
 
 - Only 4 digit years are supported
-- The proleptic Gregorian calendar is used instead of the hybrid JulianGregorian calender
+- The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calendar
   that Spark uses in legacy mode
 
 ## Formatting dates and timestamps as strings
@@ -541,7 +541,12 @@ Casting from string to timestamp currently has the following limitations.
 
 - <a name="Footnote1"></a>[1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
  milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
- Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values. 
+ Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
+
+Spark is very lenient when casting from string to timestamp because all date and time components
+are optional, meaning that input values such as `T`, `T2`, `:`, `::`, `1:`, `:1`, and `::1`
+are considered valid timestamps. The GPU will treat these values as invalid and cast them to null
+values.
 
 ### Constant Folding
 

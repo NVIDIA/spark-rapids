@@ -55,8 +55,8 @@ CUDA and will not run on other versions. The jars use a maven classifier to keep
 - CUDA 11.0/11.1/11.2 => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
-- cudf-21.08.0-SNAPSHOT-cuda11.jar
-- rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar
+- cudf-21.08.2-cuda11.jar
+- rapids-4-spark_2.12-21.08.0.jar
 jar that your version of the accelerator depends on.
 
 
@@ -64,8 +64,8 @@ For simplicity export the location to these jars. This example assumes the sampl
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-21.08.0-SNAPSHOT-cuda11.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-21.08.0-SNAPSHOT.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-21.08.2-cuda11.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-21.08.0.jar
 ```
 
 ## Install the GPU Discovery Script
@@ -312,6 +312,11 @@ and application.
 1. Configure the amount of executor memory like you would for a normal Spark application.  If most
    of the job will run on the GPU then often you can run with less executor heap memory than would
    be needed for the corresponding Spark job on the CPU.
+
+In case of a "com.esotericsoftware.kryo.KryoException: Buffer overflow" error it is advisable to
+increase the
+[`spark.kryoserializer.buffer.max`](https://spark.apache.org/docs/latest/configuration.html#compression-and-serialization)
+setting to a value higher than the default.
 
 ### Example Command Running on YARN
 ```shell 

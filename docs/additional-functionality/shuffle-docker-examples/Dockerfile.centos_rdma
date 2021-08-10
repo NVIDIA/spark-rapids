@@ -19,8 +19,8 @@
 # The parameters are: 
 #   - RDMA_CORE_VERSION: Set to 32.1 to match the rdma-core line in the latest 
 #                        released MLNX_OFED 5.x driver
-#   - CUDA_VER: 11.0.3 to pick up the latest 11.x CUDA base layer
-#   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matchin a specific UCX version and 
+#   - CUDA_VER: 11.2.2 to pick up the latest 11.2 CUDA base layer
+#   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matching a specific UCX version and
 #                               CUDA runtime from the UCX github repo.
 #                               See: https://github.com/openucx/ucx/releases/
 #
@@ -28,9 +28,9 @@
 # the ucx-ib and ucx-rdma RPMs.
 
 ARG RDMA_CORE_VERSION=32.1
-ARG CUDA_VER=11.0.3
-ARG UCX_VER=v1.10.1
-ARG UCX_CUDA_VER=11.0
+ARG CUDA_VER=11.2.2
+ARG UCX_VER=v1.11.0
+ARG UCX_CUDA_VER=11.2
 
 # Throw away image to build rdma_core
 FROM centos:7 as rdma_core
@@ -63,8 +63,8 @@ RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/$UCX_VER/uc
 RUN cd /tmp && \
   yum install -y *.rpm && \
   tar -xvf *.bz2 && \
-  yum install -y ucx-1.10.1-1.el7.x86_64.rpm && \
-  yum install -y ucx-cuda-1.10.1-1.el7.x86_64.rpm && \
-  yum install -y ucx-ib-1.10.1-1.el7.x86_64.rpm && \
-  yum install -y ucx-rdmacm-1.10.1-1.el7.x86_64.rpm
+  yum install -y ucx-1.11.0-1.el7.x86_64.rpm && \
+  yum install -y ucx-cuda-1.11.0-1.el7.x86_64.rpm && \
+  yum install -y ucx-ib-1.11.0-1.el7.x86_64.rpm && \
+  yum install -y ucx-rdmacm-1.11.0-1.el7.x86_64.rpm
 RUN rm -rf /tmp/*.rpm && rm /tmp/*.bz2
