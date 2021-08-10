@@ -684,8 +684,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td></td>
-<td></td>
 <td>leftKeys</td>
 <td>None</td>
 <td>S</td>
@@ -708,8 +706,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td></td>
-<td></td>
 <td>rightKeys</td>
 <td>None</td>
 <td>S</td>
@@ -804,8 +800,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td></td>
-<td></td>
 <td>leftKeys</td>
 <td>None</td>
 <td>S</td>
@@ -828,8 +822,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td></td>
-<td></td>
 <td>rightKeys</td>
 <td>None</td>
 <td>S</td>
@@ -876,8 +868,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td></td>
-<td></td>
 <td>leftKeys</td>
 <td>None</td>
 <td>S</td>
@@ -900,8 +890,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td></td>
-<td></td>
 <td>rightKeys</td>
 <td>None</td>
 <td>S</td>
