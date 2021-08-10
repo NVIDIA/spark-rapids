@@ -60,6 +60,16 @@ def test_explode_array_data(spark_tmp_path, data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+def test_explode_map_data(spark_tmp_path, map_gen):
+    data_gen = [int_gen, map_gen]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'explode(b)'),
+        conf=conf_to_enforce_split_input)
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_explode_nested_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
@@ -74,6 +84,16 @@ def test_explode_nested_array_data(spark_tmp_path, data_gen):
 @pytest.mark.parametrize('data_gen', all_gen + struct_gens_sample + array_gens_sample + map_gens_sample, ids=idfn)
 def test_explode_outer_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'explode_outer(b)'),
+        conf=conf_to_enforce_split_input)
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+def test_explode_outer_map_data(spark_tmp_path, map_gen):
+    data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'explode_outer(b)'),
         conf=conf_to_enforce_split_input)
@@ -120,6 +140,16 @@ def test_posexplode_array_data(spark_tmp_path, data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+def test_posexplode_map_data(spark_tmp_path, map_gen):
+    data_gen = [int_gen, map_gen]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'posexplode(b)'),
+        conf=conf_to_enforce_split_input)
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 def test_posexplode_nested_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(ArrayGen(data_gen))]
@@ -134,6 +164,16 @@ def test_posexplode_nested_array_data(spark_tmp_path, data_gen):
 @pytest.mark.parametrize('data_gen', all_gen + struct_gens_sample + array_gens_sample + map_gens_sample, ids=idfn)
 def test_posexplode_outer_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'posexplode_outer(b)'),
+        conf=conf_to_enforce_split_input)
+
+#sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
+# After 3.1.0 is the min spark version we can drop this
+@ignore_order(local=True)
+@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+def test_posexplode_outer_map_data(spark_tmp_path, map_gen):
+    data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, *data_gen).selectExpr('a', 'posexplode_outer(b)'),
         conf=conf_to_enforce_split_input)
