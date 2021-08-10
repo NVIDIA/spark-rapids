@@ -132,9 +132,9 @@ Accelerator supports are described below.
 <th>UDT</th>
 </tr>
 <tr>
-<td>CoalesceExec</td>
+<td rowspan="1">CoalesceExec</td>
+<td rowspan="1">The backend for the dataframe coalesce method</td>
 <td>Input</td>
-<td>The backend for the dataframe coalesce method</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -156,9 +156,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>CollectLimitExec</td>
+<td rowspan="1">CollectLimitExec</td>
+<td rowspan="1">Reduce to single partition and apply limit</td>
 <td>Input</td>
-<td>Reduce to single partition and apply limit</td>
 <td>This is disabled by default because Collect Limit replacement can be slower on the GPU, if huge number of rows in a batch it could help by limiting the number of rows transferred from GPU to CPU</td>
 <td>S</td>
 <td>S</td>
@@ -180,9 +180,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>ExpandExec</td>
+<td rowspan="1">ExpandExec</td>
+<td rowspan="1">The backend for the expand operator</td>
 <td>Input</td>
-<td>The backend for the expand operator</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -204,9 +204,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>FileSourceScanExec</td>
+<td rowspan="1">FileSourceScanExec</td>
+<td rowspan="1">Reading data from files, often from Hive tables</td>
 <td>Input</td>
-<td>Reading data from files, often from Hive tables</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -228,9 +228,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>FilterExec</td>
+<td rowspan="1">FilterExec</td>
+<td rowspan="1">The backend for most filter statements</td>
 <td>Input</td>
-<td>The backend for most filter statements</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -252,9 +252,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>GenerateExec</td>
+<td rowspan="1">GenerateExec</td>
+<td rowspan="1">The backend for operations that generate more output rows than input rows like explode</td>
 <td>Input</td>
-<td>The backend for operations that generate more output rows than input rows like explode</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -276,9 +276,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>GlobalLimitExec</td>
+<td rowspan="1">GlobalLimitExec</td>
+<td rowspan="1">Limiting of results across partitions</td>
 <td>Input</td>
-<td>Limiting of results across partitions</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -300,9 +300,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>LocalLimitExec</td>
+<td rowspan="1">LocalLimitExec</td>
+<td rowspan="1">Per-partition limiting of results</td>
 <td>Input</td>
-<td>Per-partition limiting of results</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -324,9 +324,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>ProjectExec</td>
+<td rowspan="1">ProjectExec</td>
+<td rowspan="1">The backend for most select, withColumn and dropColumn statements</td>
 <td>Input</td>
-<td>The backend for most select, withColumn and dropColumn statements</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -348,9 +348,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>RangeExec</td>
+<td rowspan="1">RangeExec</td>
+<td rowspan="1">The backend for range operator</td>
 <td>Input</td>
-<td>The backend for range operator</td>
 <td>None</td>
 <td> </td>
 <td> </td>
@@ -372,33 +372,9 @@ Accelerator supports are described below.
 <td> </td>
 </tr>
 <tr>
-<td>SortExec</td>
+<td rowspan="1">SortExec</td>
+<td rowspan="1">The backend for the sort operator</td>
 <td>Input</td>
-<td>The backend for the sort operator</td>
-<td>None</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
-<td>S</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>TakeOrderedAndProjectExec</td>
-<td>Input</td>
-<td>Take the first limit elements as defined by the sortOrder, and do projection if needed.</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -420,9 +396,33 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>UnionExec</td>
+<td rowspan="1">TakeOrderedAndProjectExec</td>
+<td rowspan="1">Take the first limit elements as defined by the sortOrder, and do projection if needed.</td>
 <td>Input</td>
-<td>The backend for the union operator</td>
+<td>None</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<td rowspan="1">UnionExec</td>
+<td rowspan="1">The backend for the union operator</td>
+<td>Input</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -444,9 +444,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>CustomShuffleReaderExec</td>
+<td rowspan="1">CustomShuffleReaderExec</td>
+<td rowspan="1">A wrapper of shuffle query stage</td>
 <td>Input</td>
-<td>A wrapper of shuffle query stage</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -468,9 +468,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>HashAggregateExec</td>
+<td rowspan="1">HashAggregateExec</td>
+<td rowspan="1">The backend for hash based aggregations</td>
 <td>Input</td>
-<td>The backend for hash based aggregations</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -516,9 +516,9 @@ Accelerator supports are described below.
 <th>UDT</th>
 </tr>
 <tr>
-<td>ObjectHashAggregateExec</td>
+<td rowspan="1">ObjectHashAggregateExec</td>
+<td rowspan="1">The backend for hash based aggregations supporting TypedImperativeAggregate functions</td>
 <td>Input</td>
-<td>The backend for hash based aggregations supporting TypedImperativeAggregate functions</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -540,9 +540,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>SortAggregateExec</td>
+<td rowspan="1">SortAggregateExec</td>
+<td rowspan="1">The backend for sort based aggregations</td>
 <td>Input</td>
-<td>The backend for sort based aggregations</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -564,9 +564,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>DataWritingCommandExec</td>
+<td rowspan="1">DataWritingCommandExec</td>
+<td rowspan="1">Writing data</td>
 <td>Input</td>
-<td>Writing data</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -588,9 +588,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>BatchScanExec</td>
+<td rowspan="1">BatchScanExec</td>
+<td rowspan="1">The backend for most file input</td>
 <td>Input</td>
-<td>The backend for most file input</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -612,9 +612,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>BroadcastExchangeExec</td>
+<td rowspan="1">BroadcastExchangeExec</td>
+<td rowspan="1">The backend for broadcast exchange of data</td>
 <td>Input</td>
-<td>The backend for broadcast exchange of data</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -636,9 +636,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>ShuffleExchangeExec</td>
+<td rowspan="1">ShuffleExchangeExec</td>
+<td rowspan="1">The backend for most data being exchanged between processes</td>
 <td>Input</td>
-<td>The backend for most data being exchanged between processes</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -660,9 +660,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>BroadcastHashJoinExec</td>
+<td rowspan="3">BroadcastHashJoinExec</td>
+<td rowspan="3">Implementation of join using broadcast data</td>
 <td>Input</td>
-<td>Implementation of join using broadcast data</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -684,8 +684,8 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>BroadcastHashJoinExec</td>
-<td>Implementation of join using broadcast data</td>
+<td></td>
+<td></td>
 <td>leftKeys</td>
 <td>None</td>
 <td>S</td>
@@ -708,8 +708,8 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>BroadcastHashJoinExec</td>
-<td>Implementation of join using broadcast data</td>
+<td></td>
+<td></td>
 <td>rightKeys</td>
 <td>None</td>
 <td>S</td>
@@ -732,9 +732,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>BroadcastNestedLoopJoinExec</td>
+<td rowspan="1">BroadcastNestedLoopJoinExec</td>
+<td rowspan="1">Implementation of join using brute force</td>
 <td>Input</td>
-<td>Implementation of join using brute force</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -756,9 +756,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>CartesianProductExec</td>
+<td rowspan="1">CartesianProductExec</td>
+<td rowspan="1">Implementation of join using brute force</td>
 <td>Input</td>
-<td>Implementation of join using brute force</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -780,9 +780,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>ShuffledHashJoinExec</td>
+<td rowspan="3">ShuffledHashJoinExec</td>
+<td rowspan="3">Implementation of join using hashed shuffled data</td>
 <td>Input</td>
-<td>Implementation of join using hashed shuffled data</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -804,8 +804,8 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>ShuffledHashJoinExec</td>
-<td>Implementation of join using hashed shuffled data</td>
+<td></td>
+<td></td>
 <td>leftKeys</td>
 <td>None</td>
 <td>S</td>
@@ -828,8 +828,8 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>ShuffledHashJoinExec</td>
-<td>Implementation of join using hashed shuffled data</td>
+<td></td>
+<td></td>
 <td>rightKeys</td>
 <td>None</td>
 <td>S</td>
@@ -852,9 +852,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>SortMergeJoinExec</td>
+<td rowspan="3">SortMergeJoinExec</td>
+<td rowspan="3">Sort merge join, replacing with shuffled hash join</td>
 <td>Input</td>
-<td>Sort merge join, replacing with shuffled hash join</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -876,8 +876,8 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>SortMergeJoinExec</td>
-<td>Sort merge join, replacing with shuffled hash join</td>
+<td></td>
+<td></td>
 <td>leftKeys</td>
 <td>None</td>
 <td>S</td>
@@ -900,8 +900,8 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>SortMergeJoinExec</td>
-<td>Sort merge join, replacing with shuffled hash join</td>
+<td></td>
+<td></td>
 <td>rightKeys</td>
 <td>None</td>
 <td>S</td>
@@ -948,9 +948,9 @@ Accelerator supports are described below.
 <th>UDT</th>
 </tr>
 <tr>
-<td>AggregateInPandasExec</td>
+<td rowspan="1">AggregateInPandasExec</td>
+<td rowspan="1">The backend for an Aggregation Pandas UDF, this accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
 <td>Input</td>
-<td>The backend for an Aggregation Pandas UDF, this accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -972,9 +972,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>ArrowEvalPythonExec</td>
+<td rowspan="1">ArrowEvalPythonExec</td>
+<td rowspan="1">The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled</td>
 <td>Input</td>
-<td>The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -996,9 +996,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>FlatMapGroupsInPandasExec</td>
+<td rowspan="1">FlatMapGroupsInPandasExec</td>
+<td rowspan="1">The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
 <td>Input</td>
-<td>The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -1020,9 +1020,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>MapInPandasExec</td>
+<td rowspan="1">MapInPandasExec</td>
+<td rowspan="1">The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
 <td>Input</td>
-<td>The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled.</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
@@ -1044,9 +1044,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>WindowInPandasExec</td>
+<td rowspan="1">WindowInPandasExec</td>
+<td rowspan="1">The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled. For now it only supports row based window frame.</td>
 <td>Input</td>
-<td>The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between the Java process and the Python process. It also supports scheduling GPU resources for the Python process when enabled. For now it only supports row based window frame.</td>
 <td>This is disabled by default because it only supports row based frame for now</td>
 <td>S</td>
 <td>S</td>
@@ -1068,9 +1068,9 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td>WindowExec</td>
+<td rowspan="1">WindowExec</td>
+<td rowspan="1">Window-operator backend</td>
 <td>Input</td>
-<td>Window-operator backend</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>

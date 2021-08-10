@@ -1559,9 +1559,15 @@ object SupportedOpsDocs {
           nextOutputAt = totalCount + headerEveryNLines
         }
         println("<tr>")
-        println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
+        val count = if (checks.isDefined) {
+          val exprChecks = checks.get.asInstanceOf[ExecChecks]
+          1 + exprChecks.extendedChecks.size
+        } else {
+          1
+        }
+        println(s"""<td rowspan="$count">${rule.tag.runtimeClass.getSimpleName}</td>""")
+        println(s"""<td rowspan="$count">${rule.description}</td>""")
         println(s"<td>Input</td>")
-        println(s"<td>${rule.description}</td>")
         println(s"<td>${rule.notes().getOrElse("None")}</td>")
         if (checks.isDefined) {
           val exprChecks = checks.get.asInstanceOf[ExecChecks]
@@ -1581,8 +1587,8 @@ object SupportedOpsDocs {
           val exprChecks = checks.get.asInstanceOf[ExecChecks]
           exprChecks.extendedChecks.keys.toSeq.sorted.foreach { ctx =>
             println("<tr>")
-            println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
-            println(s"<td>${rule.description}</td>")
+            println(s"<td></td>")
+            println(s"<td></td>")
             println(s"<td>$ctx</td>")
             println(s"<td>${rule.notes().getOrElse("None")}</td>")
             TypeEnum.values.foreach { t =>
