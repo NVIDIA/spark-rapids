@@ -787,9 +787,13 @@ object FileFormatChecks {
 /**
  * Checks the input and output types supported by a SparkPlan node. We don't currently separate
  * input checks from output checks.  We can add this in if something needs it.
+ *
+ * The extendedChecks map can be used to provide checks for specific fields within the meta class
+ * so that we can have specific checks for things like join keys.
  */
 class ExecChecks private(
     check: TypeSig,
+    val extendedChecks: Map[String, TypeSig],
     sparkSig: TypeSig,
     override val shown: Boolean = true)
     extends TypeChecks[SupportLevel] {
@@ -807,19 +811,41 @@ class ExecChecks private(
     tagUnsupportedTypes(meta, check, allowDecimal,
       meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
       "unsupported data types in input: %s")
+
+    extendedChecks.foreach {
+      case (fieldName, typeSig) =>
+        val field = meta.getClass.getMethod(fieldName)
+        val fieldMeta = field.invoke(meta).asInstanceOf[Seq[BaseExprMeta[_]]]
+          .map(_.typeMeta)
+          .filter(_.dataType.isDefined)
+          .zipWithIndex
+          .map(t => StructField(s"c${t._2}", t._1.dataType.get))
+        tagUnsupportedTypes(meta, typeSig, allowDecimal, fieldMeta,
+          s"unsupported data types in '$fieldName': %s")
+    }
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
     check.getSupportLevel(dataType, sparkSig)
+
+  def supportExtended(fieldName: String, dataType: TypeEnum.Value): SupportLevel =
+    extendedChecks(fieldName).getSupportLevel(dataType, sparkSig)
 }
 
 /**
  * gives users an API to create ExecChecks.
  */
 object ExecChecks {
-  def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = new ExecChecks(check, sparkSig)
-
-  def hiddenHack() = new ExecChecks(TypeSig.all, TypeSig.all, shown = false)
+  def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = {
+    new ExecChecks(check, Map.empty, sparkSig)
+  }
+  def apply(check: TypeSig, extendedChecks: Map[String, TypeSig],
+      sparkSig: TypeSig) : ExecChecks = {
+    new ExecChecks(check, extendedChecks, sparkSig)
+  }
+  def hiddenHack() = {
+    new ExecChecks(TypeSig.all, Map.empty, TypeSig.all, shown = false)
+  }
 }
 
 /**
@@ -1368,6 +1394,7 @@ object SupportedOpsDocs {
     println("<tr>")
     println("<th>Executor</th>")
     println("<th>Description</th>")
+    println("<th>Context</th>")
     println("<th>Notes</th>")
     TypeEnum.values.foreach { t =>
       println(s"<th>$t</th>")
@@ -1535,6 +1562,7 @@ object SupportedOpsDocs {
         }
         println("<tr>")
         println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
+        println(s"<td>Input</td>")
         println(s"<td>${rule.description}</td>")
         println(s"<td>${rule.notes().getOrElse("None")}</td>")
         if (checks.isDefined) {
@@ -1549,6 +1577,23 @@ object SupportedOpsDocs {
         }
         println("</tr>")
         totalCount += 1
+
+        // context-specific checks
+        if (checks.isDefined) {
+          val exprChecks = checks.get.asInstanceOf[ExecChecks]
+          exprChecks.extendedChecks.keys.toSeq.sorted.foreach { ctx =>
+            println("<tr>")
+            println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
+            println(s"<td>${rule.description}</td>")
+            println(s"<td>$ctx</td>")
+            println(s"<td>${rule.notes().getOrElse("None")}</td>")
+            TypeEnum.values.foreach { t =>
+              println(exprChecks.supportExtended(ctx, t).htmlTag)
+            }
+            println("</tr>")
+            totalCount += 1
+          }
+        }
       }
     }
     println("</table>")

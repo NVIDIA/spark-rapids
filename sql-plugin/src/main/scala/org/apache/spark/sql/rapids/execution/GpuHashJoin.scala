@@ -68,10 +68,6 @@ object GpuHashJoin extends Arm {
       rightKeys: Seq[Expression],
       condition: Option[Expression]): Unit = {
     val keyDataTypes = (leftKeys ++ rightKeys).map(_.dataType)
-    if (keyDataTypes.exists(dType =>
-      dType.isInstanceOf[ArrayType] || dType.isInstanceOf[MapType])) {
-      meta.willNotWorkOnGpu("ArrayType or MapType in join keys are not supported")
-    }
 
     def unSupportNonEqualCondition(): Unit = if (condition.isDefined) {
       meta.willNotWorkOnGpu(s"$joinType joins currently do not support conditions")
