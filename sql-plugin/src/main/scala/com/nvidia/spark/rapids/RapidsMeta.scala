@@ -562,6 +562,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   override val childParts: Seq[PartMeta[_]] = Seq.empty
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
+  def namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] = Map.empty
+
   var cpuCost: Double = 0
   var gpuCost: Double = 0
   var estimatedOutputRows: Option[BigInt] = None

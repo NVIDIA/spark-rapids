@@ -814,12 +814,10 @@ class ExecChecks private(
 
     extendedChecks.foreach {
       case (fieldName, typeSig) =>
-        val field = meta.getClass.getMethod(fieldName)
-        val fieldMeta = field.invoke(meta).asInstanceOf[Seq[BaseExprMeta[_]]]
-          .map(_.typeMeta)
-          .filter(_.dataType.isDefined)
+        val fieldMeta = meta.namedChildExprs(fieldName)
+          .flatMap(_.typeMeta.dataType)
           .zipWithIndex
-          .map(t => StructField(s"c${t._2}", t._1.dataType.get))
+          .map(t => StructField(s"c${t._2}", t._1))
         tagUnsupportedTypes(meta, typeSig, allowDecimal, fieldMeta,
           s"unsupported data types in '$fieldName': %s")
     }
