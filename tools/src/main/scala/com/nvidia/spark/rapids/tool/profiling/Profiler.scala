@@ -247,16 +247,16 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     profileOutputWriter.writeText("\n### C. Health Check###\n")
     val healthCheck = new HealthCheck(apps)
     val failedTasks = healthCheck.getFailedTasks
-    profileOutputWriter.write("Failed tasks", failedTasks,
-      "Failed tasks")
+    profileOutputWriter.write("Failed Tasks", failedTasks,
+      "Failed Tasks")
 
     val failedStages = healthCheck.getFailedStages
-    profileOutputWriter.write("Failed stages", failedStages,
-      "Failed stages")
+    profileOutputWriter.write("Failed Stages", failedStages,
+      "Failed Stages")
 
     val failedJobs = healthCheck.getFailedJobs
-    profileOutputWriter.write("Failed jobs", failedJobs,
-      "Failed jobs")
+    profileOutputWriter.write("Failed Jobs", failedJobs,
+      "Failed Jobs")
 
     val removedBMs = healthCheck.getRemovedBlockManager
     profileOutputWriter.write("Removed BlockManagers", removedBMs,
