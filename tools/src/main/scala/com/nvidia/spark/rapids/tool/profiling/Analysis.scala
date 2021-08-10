@@ -27,8 +27,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
-class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter],
-    numOutputRows: Int) {
+class Analysis(apps: Seq[ApplicationInfo]) {
 
   def getDurations(tcs: ArrayBuffer[TaskCase]): (Long, Long, Long, Double) = {
     val durations = tcs.map(_.duration)
@@ -42,8 +41,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
 
   // Job + Stage Level TaskMetrics Aggregation
   def jobAndStageMetricsAggregation(): Seq[JobStageAggTaskMetricsProfileResult] = {
-    val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
-    fileWriter.foreach(_.write(messageHeader))
     val allJobRows = apps.flatMap { app =>
       app.jobIdToInfo.map { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
@@ -221,22 +218,14 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.id)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No Job/Stage Metrics Found!\n"))
       Seq.empty
     }
-
   }
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
   def sqlMetricsAggregation(): Seq[SQLTaskAggMetrics] = {
-    val messageHeader = "\nSQL level aggregated task metrics:\n"
-    fileWriter.foreach(_.write(messageHeader))
-
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         val jcs = app.jobIdToInfo.filter { case (_, jc) =>
@@ -314,20 +303,13 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.sqlId, cols.executorCpuTime)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No SQL Metrics Found!\n"))
       Seq.empty
     }
   }
 
   def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTime] = {
-    val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
-    fileWriter.foreach(_.write(messageHeader))
-
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         // Potential problems not properly track, add it later
@@ -342,12 +324,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, cols.sqlID, sortDur)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
       Seq.empty
     }
   }
@@ -355,10 +333,6 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
   private case class AverageStageInfo(avgDuration: Double, avgShuffleReadBytes: Double)
 
   def shuffleSkewCheck(): Seq[ShuffleSkewInfo] = {
-    val messageHeader = s"\nShuffle Skew Check:" +
-      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
-    fileWriter.foreach(_.write(messageHeader))
-
     val allRows = apps.flatMap { app =>
       val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
         (tc.stageId, tc.stageAttemptId)
@@ -403,12 +377,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       val sortedRows = allNonEmptyRows.sortBy { cols =>
         (cols.appIndex, cols.stageId, cols.stageAttemptId, cols.taskId, cols.taskAttemptId)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
       Seq.empty
     }
   }

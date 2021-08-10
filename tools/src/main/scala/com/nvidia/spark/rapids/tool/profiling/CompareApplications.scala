@@ -27,8 +27,7 @@ import org.apache.spark.sql.rapids.tool.profiling.{ApplicationInfo, SparkPlanInf
 /**
  * CompareApplications compares multiple ApplicationInfo objects
  */
-class CompareApplications(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
+class CompareApplications(apps: Seq[ApplicationInfo]) extends Logging {
 
   require(apps.size > 1)
 

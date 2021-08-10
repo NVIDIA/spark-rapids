@@ -129,7 +129,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(rapidsJar.size == 1, "Rapids jar check")
     assert(cuDFJar.size == 1, "CUDF jar check")
 
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     val rapidsJarResults = collect.getRapidsJARInfo
     assert(rapidsJarResults.size === 2)
     assert(rapidsJarResults.filter(_.jar.contains("rapids-4-spark_2.12-0.5.0.jar")).size === 1)
@@ -186,7 +186,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
 
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     val sqlMetrics = collect.getSQLPlanMetrics
     val resultExpectation =
       new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
@@ -210,7 +210,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         index += 1
       }
       assert(apps.size == 1)
-      val collect = new CollectInformation(apps, None, 1000)
+      val collect = new CollectInformation(apps)
       collect.printSQLPlans(tempOutputDir.getAbsolutePath)
       val dotDirs = ToolTestUtils.listFilesMatching(tempOutputDir,
         _.endsWith("planDescriptions.log"))
@@ -231,7 +231,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         index += 1
       }
       assert(apps.size == 1)
-      val collect = new CollectInformation(apps, None, 1000)
+      val collect = new CollectInformation(apps)
       val dsRes = collect.getDataSourceInfo
       assert(dsRes.size == 7)
       val allFormats = dsRes.map { r =>
@@ -267,7 +267,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       }
 
       assert(apps.size == 1)
-      val collect = new CollectInformation(apps, None, 1000)
+      val collect = new CollectInformation(apps)
       val dsRes = collect.getDataSourceInfo
       assert(dsRes.size == 9)
       val allFormats = dsRes.map { r =>
@@ -304,7 +304,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 1)
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     val jobInfo = collect.getJobInfo
 
     assert(jobInfo.size == 2)
@@ -361,7 +361,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 2)
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     val execInfos = collect.getExecutorInfo
     // just the fact it worked makes sure we can run with both files
     // since we give them indexes above they should be in the right order
@@ -487,7 +487,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 1)
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     for (app <- apps) {
       val props = collect.getRapidsProperties
       val rows = props.map(_.rows.head)
@@ -513,7 +513,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
 
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     val execInfo = collect.getExecutorInfo
     assert(execInfo.size == 1)
     assert(execInfo.head.numExecutors === 1)
@@ -533,7 +533,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
 
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     val execInfo = collect.getExecutorInfo
     assert(execInfo.size == 1)
     assert(execInfo.head.numExecutors === 8)

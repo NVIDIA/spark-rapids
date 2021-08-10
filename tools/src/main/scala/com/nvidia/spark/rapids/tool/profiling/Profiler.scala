@@ -130,7 +130,6 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
               val profileOutputWriter = new ProfileOutputWriter(outputDir,
                 s"${app.appId}-${Profiler.PROFILE_LOG_NAME}", numOutputRows,
                 outputCSV = outputCSV)
-
               try {
                 processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter,
                   profileOutputWriter)
@@ -190,7 +189,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       textFileWriter: ToolTextFileWriter, profileOutputWriter: ProfileOutputWriter): Unit = {
 
     textFileWriter.write("### A. Information Collected ###")
-    val collect = new CollectInformation(apps, Some(textFileWriter), numOutputRows)
+    val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
     profileOutputWriter.write("Application Information", appInfo,
       "No Application Information Found!")
@@ -226,7 +225,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     // for compare mode we just add in extra tables for matching across applications
     // the rest of the tables simply list all applications specified
     if (appArgs.compare()) {
-      val compare = new CompareApplications(apps, Some(textFileWriter), numOutputRows)
+      val compare = new CompareApplications(apps)
       val (matchingSqlIds, matchingStageIds) = compare.findMatchingStages()
       profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds,
         "Not able to find Matching SQL IDs Across Applications!")
@@ -235,11 +234,23 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
 
     textFileWriter.write("\n### B. Analysis ###\n")
-    val analysis = new Analysis(apps, Some(textFileWriter), numOutputRows)
-    analysis.jobAndStageMetricsAggregation()
-    analysis.sqlMetricsAggregation()
-    analysis.sqlMetricsAggregationDurationAndCpuTime()
-    analysis.shuffleSkewCheck()
+    val analysis = new Analysis(apps)
+    val jsMetAgg = analysis.jobAndStageMetricsAggregation()
+    profileOutputWriter.write("Job + Stage level aggregated task metrics", jsMetAgg,
+      "No Job/Stage Metrics Found")
+
+    val sqlTaskAggMetrics = analysis.sqlMetricsAggregation()
+    profileOutputWriter.write("SQL level aggregated task metrics", sqlTaskAggMetrics,
+      "No SQL Metrics Found")
+    val durAndCpuMet = analysis.sqlMetricsAggregationDurationAndCpuTime()
+    profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", durAndCpuMet,
+      "No SQL Duration and Executor CPU Time Percent Found")
+    val skewInfo = analysis.shuffleSkewCheck()
+    // TODO - to long for file name
+    val skewHeader = "Shuffle Skew Check" // +
+    // " (When task's Shuffle Read Size > 3 * Avg Stage-level size)"
+    profileOutputWriter.write(skewHeader, skewInfo,
+      "No SQL Duration and Executor CPU Time Percent Found")
 
     textFileWriter.write("\n### C. Health Check###\n")
     val healthCheck = new HealthCheck(apps, Some(textFileWriter), numOutputRows)

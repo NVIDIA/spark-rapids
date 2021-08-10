@@ -42,7 +42,7 @@ class CompareSuite extends FunSuite {
       index += 1
     }
     assert(apps.size == 2)
-    val compare = new CompareApplications(apps, None, 1000)
+    val compare = new CompareApplications(apps)
     val (matchingSqlIdsRet, matchingStageIdsRet) = compare.findMatchingStages()
     // none match
     assert(matchingSqlIdsRet.size === 29)
@@ -65,7 +65,7 @@ class CompareSuite extends FunSuite {
       index += 1
     }
     assert(apps.size == 2)
-    val compare = new CompareApplications(apps, None, 1000)
+    val compare = new CompareApplications(apps)
     val (matchingSqlIdsRet, matchingStageIdsRet) = compare.findMatchingStages()
     // all match
     assert(matchingSqlIdsRet.size === 1)

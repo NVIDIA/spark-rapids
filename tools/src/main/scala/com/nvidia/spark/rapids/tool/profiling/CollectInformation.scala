@@ -30,8 +30,7 @@ case class StageMetrics(numTasks: Int, duration: String)
  * CollectInformation mainly gets information based on this event log:
  * Such as executors, parameters, etc.
  */
-class CollectInformation(apps: Seq[ApplicationInfo],
-    fileWriter: Option[ToolTextFileWriter], numOutputRows: Int) extends Logging {
+class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
 
   def getAppInfo: Seq[AppInfoProfileResults] = {
     val allRows = apps.map { app =>
@@ -200,8 +199,6 @@ class CollectInformation(apps: Seq[ApplicationInfo],
 
   // Print SQL Plan Metrics
   def getSQLPlanMetrics: Seq[SQLAccumProfileResults] = {
-    val messageHeader = "\nSQL Plan Metrics for Application:\n"
-    fileWriter.foreach(_.write(messageHeader))
     val sqlAccums = CollectInformation.generateSQLAccums(apps)
     if (sqlAccums.size > 0) {
       sqlAccums.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID,
