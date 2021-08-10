@@ -220,6 +220,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
     } else {
       Seq.empty
     }
+
   }
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)

@@ -313,6 +313,11 @@ and application.
    of the job will run on the GPU then often you can run with less executor heap memory than would
    be needed for the corresponding Spark job on the CPU.
 
+In case of a "com.esotericsoftware.kryo.KryoException: Buffer overflow" error it is advisable to
+increase the
+[`spark.kryoserializer.buffer.max`](https://spark.apache.org/docs/latest/configuration.html#compression-and-serialization)
+setting to a value higher than the default.
+
 ### Example Command Running on YARN
 ```shell 
 $SPARK_HOME/bin/spark-shell --master yarn \

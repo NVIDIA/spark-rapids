@@ -652,6 +652,11 @@ def _mark_as_lit(data, data_type):
         # Sadly you cannot create a literal from just a dict/tuple in pyspark
         children = zip(data, data_type.fields)
         return f.struct([_mark_as_lit(x, fd.dataType).alias(fd.name) for x, fd in children])
+    elif isinstance(data_type, DateType) and data is not None:
+        # Due to https://bugs.python.org/issue13305 we need to zero pad for years prior to 1000,
+        # but this works for all of them
+        dateString = data.strftime("%Y-%m-%d").zfill(10)
+        return f.lit(dateString).cast(data_type)
     else:
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)

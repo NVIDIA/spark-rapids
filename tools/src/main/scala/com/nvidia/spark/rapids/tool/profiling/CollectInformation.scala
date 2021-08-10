@@ -110,6 +110,9 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
           exec.totalCores, exec.maxMemory, exec.totalOnHeap,
           exec.totalOffHeap, execMem, execGpus, execOffHeap, taskCpus, taskGpus)
       }
+    } else {
+      fileWriter.foreach(_.write("No Executor Information Found!\n"))
+      Seq.empty
     }
 
     if (allRows.size > 0) {
@@ -170,6 +173,9 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
 
         props.put(k, appVals)
       }
+    } else {
+      fileWriter.foreach(_.write("No Spark Rapids parameters Found!\n"))
+      Seq.empty
     }
     val allRows = props.map { case (k, v) => Seq(k) ++ v }.toSeq
     if (allRows.size > 0) {

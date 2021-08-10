@@ -128,10 +128,10 @@ class Spark311Shims extends Spark301Shims {
         override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
         override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val integralChecks: TypeSig = numeric + BOOLEAN + STRING
+        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val fpChecks: TypeSig = numeric + BOOLEAN + STRING
+        override val fpChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
@@ -142,18 +142,27 @@ class Spark311Shims extends Spark301Shims {
 
         // stringChecks are the same
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = DECIMAL + STRING
+        override val decimalChecks: TypeSig = DECIMAL_64 + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same
 
-        override val arrayChecks: TypeSig = none
+        override val arrayChecks: TypeSig =
+          ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+              psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
+                  "the desired child type")
         override val sparkArraySig: TypeSig = ARRAY.nested(all)
 
-        override val mapChecks: TypeSig = none
+        override val mapChecks: TypeSig =
+          MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT + MAP) +
+              psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
+                  "desired child types")
         override val sparkMapSig: TypeSig = MAP.nested(all)
 
-        override val structChecks: TypeSig = none
+        override val structChecks: TypeSig =
+          STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+            psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
+                "desired child type(s)")
         override val sparkStructSig: TypeSig = STRUCT.nested(all)
 
         override val udtChecks: TypeSig = none
@@ -205,17 +214,17 @@ class Spark311Shims extends Spark301Shims {
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
           TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Seq(
           ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
               TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
           ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all)
         )
@@ -228,17 +237,17 @@ class Spark311Shims extends Spark301Shims {
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
           TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Seq(
           ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
               TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
           ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all)
         )
@@ -252,10 +261,10 @@ class Spark311Shims extends Spark301Shims {
     "Gets the field at `ordinal` in the Array",
     ExprChecks.binaryProjectNotLambda(
       (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-        TypeSig.DECIMAL + TypeSig.MAP).nested(),
+        TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
       TypeSig.all,
       ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
+        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all)),
       ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
     (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
@@ -276,9 +285,9 @@ class Spark311Shims extends Spark301Shims {
         "Returns value for the given key in value if column is map.",
       ExprChecks.binaryProjectNotLambda(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-          TypeSig.DECIMAL + TypeSig.MAP).nested(), TypeSig.all,
+          TypeSig.DECIMAL_64 + TypeSig.MAP).nested(), TypeSig.all,
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP) +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP) +
           TypeSig.MAP.nested(TypeSig.STRING)
             .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
@@ -301,10 +310,10 @@ class Spark311Shims extends Spark301Shims {
               // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProjectNotLambda(
                 (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                  TypeSig.DECIMAL + TypeSig.MAP).nested(),
+                  TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
                 TypeSig.all,
                 ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.MAP),
+                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP),
                   TypeSig.ARRAY.nested(TypeSig.all)),
                 ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
@@ -326,7 +335,7 @@ class Spark311Shims extends Spark301Shims {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL).nested(), TypeSig.all),
+            TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
@@ -364,7 +373,7 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested(),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
           TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
@@ -382,34 +391,34 @@ class Spark311Shims extends Spark301Shims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP)
           .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
           .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
           .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL), TypeSig.all),
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
+          TypeSig.DECIMAL_64), TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP)
           .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
           .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
           .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL)
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
+          TypeSig.DECIMAL_64)
           , TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL + TypeSig.ARRAY +
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP)
           .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
           .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
           .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL), TypeSig.all),
+          TypeSig.DECIMAL_64), TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
   }

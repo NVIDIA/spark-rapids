@@ -674,7 +674,9 @@ _gen_data_for_collect_list = [
         ['child_int', IntegerGen()],
         ['child_time', DateGen()],
         ['child_string', StringGen()],
-        ['child_decimal', DecimalGen(precision=8, scale=3)]]))]
+        ['child_decimal', DecimalGen(precision=8, scale=3)]])),
+    ('c_array', ArrayGen(int_gen)),
+    ('c_map', simple_string_to_string_map_gen)]
 
 
 # SortExec does not support array type, so sort the result locally.
@@ -708,7 +710,11 @@ def test_window_aggs_for_rows_collect_list():
           collect_list(c_decimal) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal,
           collect_list(c_struct) over
-            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct,
+          collect_list(c_array) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_array,
+          collect_list(c_map) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_map
         from window_collect_table
         ''')
 

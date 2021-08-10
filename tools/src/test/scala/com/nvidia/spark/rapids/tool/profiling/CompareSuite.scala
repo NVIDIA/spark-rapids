@@ -75,6 +75,5 @@ class CompareSuite extends FunSuite {
     assert(matchingStageIdsRet.head.outputHeaders.size == 2)
     val firstRow = matchingStageIdsRet(3)
     assert(firstRow.rows(0) == firstRow.rows(1))
-
   }
 }
