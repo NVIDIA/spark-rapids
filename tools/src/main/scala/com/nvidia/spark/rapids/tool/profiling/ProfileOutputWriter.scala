@@ -39,7 +39,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   }
 
   private def stringIfempty(str: String): String = {
-    if (str.isEmpty) "\"\"" else str
+    if (str == null || str.isEmpty) "\"\"" else str
   }
 
   // need to have separate CSV file per table
