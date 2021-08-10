@@ -380,6 +380,28 @@ def test_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type, batc
     conf.update(allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        # This test is impacted by https://github.com/NVIDIA/spark-rapids/issues/294
+        # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
+        # but these take a long time to verify so we run with smaller numbers by default
+        # that do not expose the error
+        return left.join(broadcast(right), how=join_type)
+    conf = allow_negative_scale_of_decimal_conf
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', ['Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+def test_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
+    def do_join(spark):
+        left, right = create_df(spark, data_gen, 50, 25)
+        return left.join(broadcast(right), how=join_type).selectExpr('COUNT(*)')
+    conf = allow_negative_scale_of_decimal_conf
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
 @allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'GreaterThanOrEqual')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
