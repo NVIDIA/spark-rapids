@@ -50,7 +50,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
 
     if (outRows.nonEmpty) {
       if (outputCSV) {
-        val suffix = header.replace(" ", "_")
+        val suffix = header.replace(" ", "_").toLowerCase
         val csvWriter = new ToolTextFileWriter(outputDir,
           s"${filePrefix}_${suffix}.csv", s"$header CSV:")
         try {
