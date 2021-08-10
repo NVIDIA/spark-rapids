@@ -49,20 +49,17 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
   def profile(eventLogInfos: Seq[EventLogInfo]): Unit = {
     if (appArgs.compare()) {
-      val textFileWriter = new ToolTextFileWriter(outputDir, Profiler.COMPARE_LOG_FILE_NAME,
-        "Profile summary")
       val profileOutputWriter = new ProfileOutputWriter(outputDir,
-        "testcompare", numOutputRows, outputCSV = outputCSV)
+        Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
       try {
         // create all the apps in parallel since we need the info for all of them to compare
         val apps = createApps(eventLogInfos)
         if (apps.size < 2) {
           logInfo("At least 2 applications are required for comparison mode. Exiting!")
         } else {
-          processApps(apps, printPlans = false, textFileWriter, profileOutputWriter)
+          processApps(apps, printPlans = false, profileOutputWriter)
         }
       } finally {
-        textFileWriter.close()
         profileOutputWriter.close()
       }
     } else {
@@ -121,18 +118,13 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         try {
           // we just skip apps that don't process cleanly
           val appOpt = createApp(path, numOutputRows, index, hadoopConf)
-
           appOpt match {
             case Some(app) =>
-              val textFileWriter = new ToolTextFileWriter(outputDir,
-                s"${app.appId}-${Profiler.PROFILE_LOG_NAME}.log",
-                "Profile summary")
               val profileOutputWriter = new ProfileOutputWriter(outputDir,
                 s"${app.appId}-${Profiler.PROFILE_LOG_NAME}", numOutputRows,
                 outputCSV = outputCSV)
               try {
-                processApps(Seq(appOpt.get), appArgs.printPlans(), textFileWriter,
-                  profileOutputWriter)
+                processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
               } finally {
                 profileOutputWriter.close()
               }
@@ -186,9 +178,9 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
    * at a time.
    */
   private def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
-      textFileWriter: ToolTextFileWriter, profileOutputWriter: ProfileOutputWriter): Unit = {
+      profileOutputWriter: ProfileOutputWriter): Unit = {
 
-    textFileWriter.write("### A. Information Collected ###")
+    profileOutputWriter.writeText("### A. Information Collected ###")
     val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
     profileOutputWriter.write("Application Information", appInfo,
@@ -233,7 +225,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         "Not able to find Matching Stage IDs Across Applications!")
     }
 
-    textFileWriter.write("\n### B. Analysis ###\n")
+    profileOutputWriter.writeText("\n### B. Analysis ###\n")
     val analysis = new Analysis(apps)
     val jsMetAgg = analysis.jobAndStageMetricsAggregation()
     profileOutputWriter.write("Job + Stage level aggregated task metrics", jsMetAgg,
@@ -252,14 +244,30 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     profileOutputWriter.write(skewHeader, skewInfo,
       "No SQL Duration and Executor CPU Time Percent Found")
 
-    textFileWriter.write("\n### C. Health Check###\n")
-    val healthCheck = new HealthCheck(apps, Some(textFileWriter), numOutputRows)
-    healthCheck.listFailedTasks()
-    healthCheck.listFailedStages()
-    healthCheck.listFailedJobs()
-    healthCheck.listRemovedBlockManager()
-    healthCheck.listRemovedExecutors()
-    healthCheck.listPossibleUnsupportedSQLPlan()
+    profileOutputWriter.writeText("\n### C. Health Check###\n")
+    val healthCheck = new HealthCheck(apps)
+    val failedTasks = healthCheck.getFailedTasks
+    profileOutputWriter.write("Failed tasks", failedTasks,
+      "No Failed tasks Found")
+
+    val failedStages = healthCheck.getFailedStages
+    profileOutputWriter.write("Failed stages", failedStages,
+      "No Failed stages Found")
+
+    val failedJobs = healthCheck.getFailedJobs
+    profileOutputWriter.write("Failed jobs", failedJobs,
+      "No Failed jobs Found")
+
+    val removedBMs = healthCheck.getRemovedBlockManager
+    profileOutputWriter.write("Removed BlockManagers", removedBMs,
+      "No Removed BlockManagers Found")
+    val removedExecutors = healthCheck.getRemovedExecutors
+    profileOutputWriter.write("Removed Executors", removedExecutors,
+      "No Removed Executors Found")
+
+    val unsupportedOps = healthCheck.getPossibleUnsupportedSQLPlan
+    profileOutputWriter.write("Unsupported SQL Plan", unsupportedOps,
+      "No Unsupported SQL Ops Found")
 
     if (appArgs.generateDot()) {
       if (appArgs.compare()) {
@@ -269,7 +277,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         val start = System.nanoTime()
         GenerateDot(app, outputDir)
         val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-        textFileWriter.write(s"Generated DOT graphs for app ${app.appId} " +
+        profileOutputWriter.writeText(s"Generated DOT graphs for app ${app.appId} " +
           s"to $outputDir in $duration second(s)\n")
       }
     }
@@ -282,7 +290,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         val start = System.nanoTime()
         GenerateTimeline.generateFor(app, outputDir)
         val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-        textFileWriter.write(s"Generated timeline graphs for app ${app.appId} " +
+        profileOutputWriter.writeText(s"Generated timeline graphs for app ${app.appId} " +
           s"to $outputDir in $duration second(s)\n")
       }
     }
@@ -293,6 +301,5 @@ object Profiler {
   // This tool's output log file name
   val PROFILE_LOG_NAME = "profile"
   val COMPARE_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_compare"
-  val COMPARE_LOG_FILE_NAME = "rapids_4_spark_tools_compare.log"
   val SUBDIR = "rapids_4_spark_profile"
 }

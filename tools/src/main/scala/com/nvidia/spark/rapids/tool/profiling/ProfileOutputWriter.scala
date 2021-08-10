@@ -24,8 +24,11 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   private val textFileWriter = new ToolTextFileWriter(outputDir,
     s"$filePrefix.log", "Profile summary")
 
+  def writeText(strToWrite: String): Unit = {
+    textFileWriter.write(strToWrite)
+  }
 
-  private def writeText(messageHeader: String, outRows: Seq[ProfileResult],
+  private def writeTextTable(messageHeader: String, outRows: Seq[ProfileResult],
       emptyText: String): Unit = {
     textFileWriter.write(s"\n$messageHeader:\n")
 
@@ -43,7 +46,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   }
 
   // need to have separate CSV file per table
-  private def writeCSV(header: String, outRows: Seq[ProfileResult]): Unit = {
+  private def writeCSVTable(header: String, outRows: Seq[ProfileResult]): Unit = {
 
     if (outRows.nonEmpty) {
       if (outputCSV) {
@@ -67,8 +70,8 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   }
 
   def write(headerText: String, outRows: Seq[ProfileResult], emptyText: String): Unit = {
-    writeText(headerText, outRows, emptyText)
-    writeCSV(headerText, outRows)
+    writeTextTable(headerText, outRows, emptyText)
+    writeCSVTable(headerText, outRows)
   }
 
 

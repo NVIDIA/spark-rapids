@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling._
 
