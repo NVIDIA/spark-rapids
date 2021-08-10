@@ -661,7 +661,7 @@ Accelerator supports are described below.
 </tr>
 <tr>
 <td>BroadcastNestedLoopJoinExec</td>
-<td>Implementation of join using brute force</td>
+<td>Implementation of join using brute force. Full outer joins and joins where the broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not supported. A non-inner join only is supported if the join condition expression can be converted to a GPU AST expression</td>
 <td>None</td>
 <td>S</td>
 <td>S</td>
