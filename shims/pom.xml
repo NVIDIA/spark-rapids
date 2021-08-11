@@ -53,7 +53,7 @@
         <profile>
             <id>snapshot-shims</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
+                <activeByDefault>false</activeByDefault>
             </activation>
             <modules>
                 <module>spark304</module>
