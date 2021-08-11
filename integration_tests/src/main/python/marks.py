@@ -24,3 +24,4 @@ limit = pytest.mark.limit
 qarun = pytest.mark.qarun
 cudf_udf = pytest.mark.cudf_udf
 rapids_udf_example_native = pytest.mark.rapids_udf_example_native
+shuffle_test = pytest.mark.shuffle_test

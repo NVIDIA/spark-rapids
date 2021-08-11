@@ -63,8 +63,40 @@ mvn_verify() {
     jar xf $FILE
     rm -rf com/nvidia/shaded/ org/openucx/
     popd
+
+    # Triggering here until we change the jenkins file
+    rapids_shuffle_smoke_test
 }
 
+rapids_shuffle_smoke_test() {
+    echo "Run rapids_shuffle_smoke_test..."
+
+    # basic ucx check
+    ucx_info -d
+
+    # should be a no-op since mvn verify ran earlier for SPARK_VER
+    mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean package -DskipTests 
+
+    # run in standalone mode
+    export SPARK_MASTER_HOST=localhost
+    export SPARK_MASTER=spark://$SPARK_MASTER_HOST:7077
+    $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
+    $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
+
+    PYSP_TEST_spark_master=$SPARK_MASTER \
+      TEST_PARALLEL=0 \
+      PYSP_TEST_spark_cores_max=2 \
+      PYSP_TEST_spark_executor_cores=1 \
+      SPARK_SUBMIT_FLAGS="--conf spark.executorEnv.UCX_ERROR_SIGNALS=" \
+      PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+      PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+      PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
+      PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+      ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
+
+    $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
+    $SPARK_HOME/sbin/stop-master.sh
+}
 
 unit_test() {
     echo "Run unit testings..."
