@@ -19,7 +19,7 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import org.apache.commons.lang3.StringUtils
 
 class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: Int,
-    outputText: Boolean = true, outputCSV: Boolean = false) {
+    outputCSV: Boolean = false) {
 
   private val textFileWriter = new ToolTextFileWriter(outputDir,
     s"$filePrefix.log", "Profile summary")
@@ -45,11 +45,10 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
     if (str == null || str.isEmpty) "\"\"" else str
   }
 
-  // need to have separate CSV file per table
   private def writeCSVTable(header: String, outRows: Seq[ProfileResult]): Unit = {
-
     if (outRows.nonEmpty) {
       if (outputCSV) {
+        // need to have separate CSV file per table
         val suffix = header.replace(" ", "_").toLowerCase
         val csvWriter = new ToolTextFileWriter(outputDir,
           s"${filePrefix}_${suffix}.csv", s"$header CSV:")
@@ -74,11 +73,9 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
     writeCSVTable(headerText, outRows)
   }
 
-
   def close(): Unit = {
     textFileWriter.close()
   }
-
 }
 
 object ProfileOutputWriter {
