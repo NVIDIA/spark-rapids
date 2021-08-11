@@ -463,17 +463,8 @@ def test_hash_groupby_single_distinct_collect(data_gen):
         df_fun=lambda spark: gen_df(spark, data_gen, length=100),
         table_name="tbl", sql=sql)
 
-# Queries with multiple distinct aggregations will fallback to CPU if they also contain
-# collect aggregations. Because Spark optimizer will insert expressions like `If` and `First`
-# when rewriting distinct aggregates, while `GpuFirst` doesn't support the datatype of collect
-# aggregations (ArrayType).
-# TODO: support GPUFirst on ArrayType https://github.com/NVIDIA/spark-rapids/issues/3097
 @approximate_float
 @ignore_order(local=True)
-@allow_non_gpu('SortAggregateExec',
-               'SortArray', 'Alias', 'Literal', 'First', 'If', 'EqualTo', 'Count',
-               'CollectList', 'CollectSet', 'AggregateExpression')
-@incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
     def spark_fn(spark_session):
@@ -482,7 +473,7 @@ def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
             f.sort_array(f.collect_set('b')),
             f.countDistinct('b'),
             f.countDistinct('c'))
-    assert_gpu_fallback_collect(func=spark_fn, cpu_fallback_class_name='SortAggregateExec')
+    assert_gpu_and_cpu_are_equal_collect(spark_fn)
 
 @approximate_float
 @ignore_order(local=True)
@@ -775,13 +766,16 @@ def test_arithmetic_reductions(data_gen):
             conf = _no_nans_float_conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen',
-                         all_gen + [ArrayGen(g) for g in all_gen] + struct_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + array_gens_sample + struct_gens_sample, ids=idfn)
 def test_groupby_first_last(data_gen):
     gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
     agg_fn = lambda df: df.groupBy('a').agg(
-            f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
-    assert_gpu_and_cpu_are_equal_collect(lambda spark : agg_fn(gen_df(spark, gen_fn)))
+        f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
+    assert_gpu_and_cpu_are_equal_collect(
+        # First and last are not deterministic when they are run in a real distributed setup.
+        # We set parallelism 1 to prevent nondeterministic results because of distributed setup.
+        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'True'})
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
