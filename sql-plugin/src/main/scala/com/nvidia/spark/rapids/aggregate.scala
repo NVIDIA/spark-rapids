@@ -690,7 +690,7 @@ class GpuHashAggregateIterator(
       val inputAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
       GpuBindReferences.bindGpuReferences(inputProjections, inputAttributes)
     } else if (modeInfo.hasFinalMode ||
-      (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1)) {
+        (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1)) {
       // This block takes care of two possible conditions:
       // 1. The Final stage, including the 2nd stage of NoDistinctAgg and 4th stage of
       // AggWithOneDistinct, which needs no input projections. Because the child outputs are
@@ -699,7 +699,7 @@ class GpuHashAggregateIterator(
       // taking the child outputs as inputs without any projections.
       GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
     } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode ||
-      modeInfo.uniqueModes.isEmpty) {
+        modeInfo.uniqueModes.isEmpty) {
       // The first aggregation stage which contains AggExpressions (in either Partial or Complete
       // mode). In this case, the input projections are essential.
       // To be specific, there are four conditions matching this case:
@@ -710,7 +710,7 @@ class GpuHashAggregateIterator(
       //
       // In addition, this block also fits for aggregation stages without any AggExpressions.
       val inputProjections: Seq[Expression] = groupingExpressions ++ aggregateExpressions
-        .flatMap(_.aggregateFunction.inputProjection)
+          .flatMap(_.aggregateFunction.inputProjection)
       GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
     } else {
       // This branch should NOT be reached.
@@ -1238,7 +1238,7 @@ case class GpuHashAggregateExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_TASKS_FALL_BACKED -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_FALL_BACKED),
     AGG_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_AGG_TIME),
-    CONCAT_TIME-> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
+    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
   ) ++ spillMetrics
 
@@ -1327,8 +1327,8 @@ case class GpuHashAggregateExec(
   // Used in de-duping and optimizer rules
   override def producedAttributes: AttributeSet =
     AttributeSet(aggregateAttributes) ++
-      AttributeSet(resultExpressions.diff(groupingExpressions).map(_.toAttribute)) ++
-      AttributeSet(aggregateBufferAttributes)
+        AttributeSet(resultExpressions.diff(groupingExpressions).map(_.toAttribute)) ++
+        AttributeSet(aggregateBufferAttributes)
 
   // AllTuples = distribution with a single partition and all tuples of the dataset are co-located.
   // Clustered = dataset with tuples co-located in the same partition if they share a specific value
@@ -1369,7 +1369,7 @@ case class GpuHashAggregateExec(
       s"GpuHashAggregate(keys=$keyString, functions=$functionString, output=$outputString)"
     } else {
       s"GpuHashAggregate(keys=$keyString, functions=$functionString)," +
-        s" filters=${aggregateExpressions.map(_.filter)})"
+          s" filters=${aggregateExpressions.map(_.filter)})"
     }
   }
   //
