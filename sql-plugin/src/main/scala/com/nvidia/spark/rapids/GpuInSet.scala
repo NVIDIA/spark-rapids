@@ -49,11 +49,22 @@ case class GpuInSet(
   private def buildNeedles: ColumnVector =
     GpuScalar.columnVectorFromLiterals(list, child.dataType)
 
-  override def toString: String = s"$child INSET ${list.mkString("(", ",", ")")}"
+  override def toString: String = {
+    val listString = list
+        .map(elem => Literal(elem, child.dataType).toString)
+        // Sort elements for deterministic behaviours
+        .sorted
+        .mkString(", ")
+    s"$child INSET $listString"
+  }
 
   override def sql: String = {
     val valueSQL = child.sql
-    val listSQL = list.map(Literal(_).sql).mkString(", ")
+    val listSQL = list
+        .map(elem => Literal(elem, child.dataType).sql)
+        // Sort elements for deterministic behaviours
+        .sorted
+        .mkString(", ")
     s"($valueSQL IN ($listSQL))"
   }
 }
