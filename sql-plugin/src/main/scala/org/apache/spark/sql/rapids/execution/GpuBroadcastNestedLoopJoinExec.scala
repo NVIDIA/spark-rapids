@@ -321,7 +321,9 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       joinTime: GpuMetric,
       totalTime: GpuMetric): Iterator[ColumnarBatch] = {
     val joinIterator = if (boundCondition.isEmpty) {
-      // A nested loop join with no condition directly in the join is treated like a cross join.
+      // Semi and anti nested loop joins without a condition are degenerate joins and should have
+      // been handled at a higher level rather than calling this method.
+      assert(joinType.isInstanceOf[InnerLike], s"Unexpected unconditional join type: $joinType")
       new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, joinTime, totalTime)
     } else {
       val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns) match {
