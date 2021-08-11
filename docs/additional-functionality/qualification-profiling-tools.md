@@ -376,6 +376,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   -c, --compare                   Compare Applications (Note this may require
                                   more memory if comparing a large number of
                                   applications). Default is false.
+      --csv                       Output each table to a CSV file as well
+                                  creating the summary text file.
   -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
                                   processing.eg: 100-newest-filesystem (for
                                   processing newest 100 event logs). eg:
@@ -415,14 +417,16 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
 ### Profiling tool output
-By default this outputs a log file under sub-directory `./rapids_4_spark_profile`.
-If running in normal collect mode, it outputs a file named `{APPLICATION_ID}-profile.log`
+By default this outputs a text summary file under sub-directory `./rapids_4_spark_profile` that contains
+all the information. If running in normal collect mode, it outputs a file named `{APPLICATION_ID}-profile.log`
 for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_compare.log`
 will be output. The output will go into your default filesystem, it supports local filesystem or HDFS.
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
 so if you want to point to the local filesystem be sure to include `file:` in the path
 There are separate files that are generated under the same sub-directory when using the options to generate query
 visualizations or printing the SQL plans.
+Optionally if the `--csv` option is specified then it creates a csv file for each table for each application in the
+sub-directory.
 
 The output location can be changed using the `--output-directory` option. Default is current directory.
 

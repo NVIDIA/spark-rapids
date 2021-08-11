@@ -262,14 +262,18 @@ object GenerateTimeline {
         (execHost, calcLayoutSlotsNeeded(taskList))
     }.toMap
 
-    val jobInfo = app.jobIdToInfo.map { case (_, jc) =>
-      val jobId = jc.jobID
-      val startTime = jc.startTime
-      val endTime = jc.endTime.get
-      val duration = jc.duration.get
-      minStartTime = Math.min(minStartTime, startTime)
-      maxEndTime = Math.max(maxEndTime, endTime)
-      new TimelineJobInfo(jobId, startTime, endTime, duration)
+    val jobInfo = app.jobIdToInfo.flatMap { case (_, jc) =>
+      if (jc.endTime.isDefined && jc.duration.isDefined) {
+        val jobId = jc.jobID
+        val startTime = jc.startTime
+        val endTime = jc.endTime.get
+        val duration = jc.duration.get
+        minStartTime = Math.min(minStartTime, startTime)
+        maxEndTime = Math.max(maxEndTime, endTime)
+        Some( new TimelineJobInfo(jobId, startTime, endTime, duration))
+      } else {
+        None
+      }
     }
 
     val sqlInfo = app.sqlIdToInfo.flatMap { case (_, sc) =>

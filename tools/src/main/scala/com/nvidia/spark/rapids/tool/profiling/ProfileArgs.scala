@@ -69,7 +69,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         "number of cores on host divided by 4.")
   val csv: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Output in CSV format as well as text.")
+      descr = "Output each table to a CSV file as well creating the summary text file.")
   val timeout: ScallopOption[Long] =
     opt[Long](required = false,
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +
