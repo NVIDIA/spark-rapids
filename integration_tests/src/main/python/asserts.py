@@ -40,6 +40,10 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         for index in range(len(cpu)):
             _assert_equal(cpu[index], gpu[index], float_check, path + [index])
+    elif (t is tuple):
+        assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
+        for index in range(len(cpu)):
+            _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is pytypes.GeneratorType):
         index = 0
         # generator has no zip :( so we have to do this the hard way
@@ -64,9 +68,11 @@ def _assert_equal(cpu, gpu, float_check, path):
 
             index = index + 1
     elif (t is dict):
-        # TODO eventually we need to split this up so we can do the right thing for float/double
-        # values stored under the map some where, especially for NaNs
-        assert cpu == gpu, "GPU and CPU map values are different at {}".format(path)
+        # The order of key/values is not guaranteed in python dicts, nor are they guaranteed by Spark
+        # so sort the items to do our best with ignoring the order of dicts
+        cpu_items = list(cpu.items()).sort(key=_RowCmp)
+        gpu_items = list(gpu.items()).sort(key=_RowCmp)
+        _assert_equal(cpu_items, gpu_items, float_check, path + ["map"])
     elif (t is int):
         assert cpu == gpu, "GPU and CPU int values are different at {}".format(path)
     elif (t is float):
