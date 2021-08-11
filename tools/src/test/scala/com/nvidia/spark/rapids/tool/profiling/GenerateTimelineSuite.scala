@@ -59,7 +59,7 @@ class GenerateTimelineSuite extends FunSuite with BeforeAndAfterAll with Logging
 
         // assert that a file was generated
         val outputDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f => 
-          (f.startsWith("local") && f.endsWith("timeline.svg"))
+          f.endsWith("timeline.svg")
         })
         assert(outputDirs.length === 1)
 
