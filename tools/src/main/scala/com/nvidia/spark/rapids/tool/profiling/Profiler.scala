@@ -120,8 +120,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           val appOpt = createApp(path, numOutputRows, index, hadoopConf)
           appOpt match {
             case Some(app) =>
-              val profileOutputWriter = new ProfileOutputWriter(outputDir,
-                s"${app.appId}-${Profiler.PROFILE_LOG_NAME}", numOutputRows,
+              val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/${app.appId}",
+                Profiler.PROFILE_LOG_NAME, numOutputRows,
                 outputCSV = outputCSV)
               try {
                 processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
