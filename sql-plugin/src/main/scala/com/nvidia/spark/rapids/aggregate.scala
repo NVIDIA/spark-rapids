@@ -79,10 +79,9 @@ object AggregateUtils {
   /**
    * Computes a target input batch size based on the assumption that computation can consume up to
    * 4X the configured batch size.
-   *
-   * @param confTargetSize  user-configured maximum desired batch size
-   * @param inputTypes      input batch schema
-   * @param outputTypes     output batch schema
+   * @param confTargetSize user-configured maximum desired batch size
+   * @param inputTypes input batch schema
+   * @param outputTypes output batch schema
    * @param isReductionOnly true if this is a reduction-only aggregation without grouping
    * @return maximum target batch size to keep computation under the 4X configured batch limit
    */
@@ -93,7 +92,6 @@ object AggregateUtils {
       isReductionOnly: Boolean): Long = {
     def typesToSize(types: Seq[DataType]): Long =
       types.map(GpuBatchUtils.estimateGpuMemory(_, nullable = false, rowCount = 1)).sum
-
     val inputRowSize = typesToSize(inputTypes)
     val outputRowSize = typesToSize(outputTypes)
     // The cudf hash table implementation allocates four 32-bit integers per input row.
@@ -122,8 +120,7 @@ object AggregateUtils {
 
   /**
    * Compute the aggregation modes and aggregate expressions for all aggregation expressions
-   *
-   * @param aggExpressions      the aggregate expressions
+   * @param aggExpressions the aggregate expressions
    * @param aggBufferAttributes attributes to be bound to the aggregate expressions
    */
   def computeAggModeCudfAggregates(
@@ -199,14 +196,14 @@ object AggregateModeInfo {
  * `buildSortFallbackIterator` is used to sort the aggregated batches by the grouping keys and
  * performs a final merge aggregation pass on the sorted batches.
  *
- * @param cbIter                    iterator providing the nput columnar batches
- * @param groupingExpressions       expressions used for producing the grouping keys
- * @param aggregateExpressions      GPU aggregate expressions used to produce the aggregations
- * @param aggregateAttributes       attribute references to each aggregate expression
- * @param resultExpressions         output expression for the aggregation
- * @param childOutput               input attributes to identify the input columns from the input batches
- * @param modeInfo                  identifies which aggregation modes are being used
- * @param metrics                   metrics that will be updated during aggregation
+ * @param cbIter iterator providing the nput columnar batches
+ * @param groupingExpressions expressions used for producing the grouping keys
+ * @param aggregateExpressions GPU aggregate expressions used to produce the aggregations
+ * @param aggregateAttributes attribute references to each aggregate expression
+ * @param resultExpressions output expression for the aggregation
+ * @param childOutput input attributes to identify the input columns from the input batches
+ * @param modeInfo identifies which aggregation modes are being used
+ * @param metrics metrics that will be updated during aggregation
  * @param configuredTargetBatchSize user-specified value for the targeted input batch size
  */
 class GpuHashAggregateIterator(
@@ -308,7 +305,7 @@ class GpuHashAggregateIterator(
   private def computeTargetMergeBatchSize(confTargetSize: Long): Long = {
     val aggregates = boundExpressions.aggModeCudfAggregates.flatMap(_._2)
     val mergedTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
-    AggregateUtils.computeTargetBatchSize(confTargetSize, mergedTypes, mergedTypes, isReductionOnly)
+    AggregateUtils.computeTargetBatchSize(confTargetSize, mergedTypes, mergedTypes,isReductionOnly)
   }
 
   /** Aggregate all input batches and place the results in the aggregatedBatches queue. */
@@ -368,7 +365,6 @@ class GpuHashAggregateIterator(
 
   /**
    * Perform a single pass over the aggregated batches attempting to merge adjacent batches.
-   *
    * @return true if at least one merge operation occurred
    */
   private def mergePass(): Boolean = {
@@ -422,7 +418,6 @@ class GpuHashAggregateIterator(
   /**
    * Concatenate batches together and perform a merge aggregation on the result. The input batches
    * will be closed as part of this operation.
-   *
    * @param batches batches to concatenate and merge aggregate
    * @return lazy spillable batch which has NOT been marked spillable
    */
@@ -531,8 +526,8 @@ class GpuHashAggregateIterator(
   /**
    * Project a merged aggregated batch result to the layout that Spark expects
    * i.e.: select avg(foo) from bar group by baz will produce:
-   * Partial mode: 3 columns => [bar, sum(foo) as sum_foo, count(foo) as count_foo]
-   * Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
+   *  Partial mode: 3 columns => [bar, sum(foo) as sum_foo, count(foo) as count_foo]
+   *  Final mode:   2 columns => [bar, sum(sum_foo) / sum(count_foo)]
    */
   private def finalProjectBatch(batch: ColumnarBatch): ColumnarBatch = {
     val aggTime = metrics.computeAggTime
@@ -589,7 +584,6 @@ class GpuHashAggregateIterator(
 
   /**
    * Concatenates batches by concatenating the corresponding column vectors within the batches.
-   *
    * @note the input batches are not closed as part of this operation
    * @param batchesToConcat batches to concatenate
    * @return concatenated vectors that together represent the concatenated batch result
@@ -696,7 +690,7 @@ class GpuHashAggregateIterator(
       val inputAttributes = groupingAttributes ++ distinctAttributes ++ nonDistinctAttributes
       GpuBindReferences.bindGpuReferences(inputProjections, inputAttributes)
     } else if (modeInfo.hasFinalMode ||
-        (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1)) {
+      (modeInfo.hasPartialMergeMode && modeInfo.uniqueModes.length == 1)) {
       // This block takes care of two possible conditions:
       // 1. The Final stage, including the 2nd stage of NoDistinctAgg and 4th stage of
       // AggWithOneDistinct, which needs no input projections. Because the child outputs are
@@ -705,7 +699,7 @@ class GpuHashAggregateIterator(
       // taking the child outputs as inputs without any projections.
       GpuBindReferences.bindGpuReferences(childAttr.attrs.asInstanceOf[Seq[Expression]], childAttr)
     } else if (modeInfo.hasPartialMode || modeInfo.hasCompleteMode ||
-        modeInfo.uniqueModes.isEmpty) {
+      modeInfo.uniqueModes.isEmpty) {
       // The first aggregation stage which contains AggExpressions (in either Partial or Complete
       // mode). In this case, the input projections are essential.
       // To be specific, there are four conditions matching this case:
@@ -716,7 +710,7 @@ class GpuHashAggregateIterator(
       //
       // In addition, this block also fits for aggregation stages without any AggExpressions.
       val inputProjections: Seq[Expression] = groupingExpressions ++ aggregateExpressions
-          .flatMap(_.aggregateFunction.inputProjection)
+        .flatMap(_.aggregateFunction.inputProjection)
       GpuBindReferences.bindGpuReferences(inputProjections, childAttr)
     } else {
       // This branch should NOT be reached.
@@ -761,16 +755,15 @@ class GpuHashAggregateIterator(
 
   /**
    * Compute the aggregations on the projected input columns.
-   *
    * @param toAggregateCvs column vectors representing the input batch to aggregate
-   * @param merge          true indicates a merge aggregation should be performed
-   * @param isSorted       true indicates the data is already sorted by the grouping keys
+   * @param merge true indicates a merge aggregation should be performed
+   * @param isSorted true indicates the data is already sorted by the grouping keys
    * @return aggregated batch
    */
   private def computeAggregate(
       toAggregateCvs: Seq[GpuColumnVector],
       merge: Boolean,
-      isSorted: Boolean = false): ColumnarBatch = {
+      isSorted: Boolean = false): ColumnarBatch  = {
     val aggModeCudfAggregates = boundExpressions.aggModeCudfAggregates
     val computeAggTime = metrics.computeAggTime
     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
@@ -900,12 +893,12 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 
   override def tagPlanForGpu(): Unit = {
     agg.groupingExpressions
-        .find(_.dataType match {
-          case _@(ArrayType(_, _) | MapType(_, _, _)) | _@StructType(_) => true
-          case _ => false
-        })
-        .foreach(_ =>
-          willNotWorkOnGpu("Nested types in grouping expressions are not supported"))
+      .find(_.dataType match {
+        case _@(ArrayType(_, _) | MapType(_, _, _)) | _@StructType(_) => true
+        case _ => false
+      })
+      .foreach(_ =>
+        willNotWorkOnGpu("Nested types in grouping expressions are not supported"))
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
     }
@@ -1221,14 +1214,14 @@ class GpuObjectHashAggregateExecMeta(
  *
  * @param requiredChildDistributionExpressions this is unchanged by the GPU. It is used in
  *                                             EnsureRequirements to be able to add shuffle nodes
- * @param groupingExpressions                  The expressions that, when applied to the input batch, return the
- *                                             grouping key
- * @param aggregateExpressions                 The GpuAggregateExpression instances for this node
- * @param aggregateAttributes                  References to each GpuAggregateExpression (attribute references)
- * @param resultExpressions                    the expected output expression of this hash aggregate (which this
- *                                             node should project)
- * @param child                                incoming plan (where we get input columns from)
- * @param configuredTargetBatchSize            user-configured maximum device memory size of a batch
+ * @param groupingExpressions The expressions that, when applied to the input batch, return the
+ *                            grouping key
+ * @param aggregateExpressions The GpuAggregateExpression instances for this node
+ * @param aggregateAttributes References to each GpuAggregateExpression (attribute references)
+ * @param resultExpressions the expected output expression of this hash aggregate (which this
+ *                          node should project)
+ * @param child incoming plan (where we get input columns from)
+ * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -1245,7 +1238,7 @@ case class GpuHashAggregateExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_TASKS_FALL_BACKED -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_FALL_BACKED),
     AGG_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_AGG_TIME),
-    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
+    CONCAT_TIME-> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
   ) ++ spillMetrics
 
@@ -1326,7 +1319,7 @@ case class GpuHashAggregateExec(
 
   protected def replaceAlias(attr: AttributeReference): Option[Attribute] = {
     outputExpressions.collectFirst {
-      case a@Alias(child: AttributeReference, _) if child.semanticEquals(attr) =>
+      case a @ Alias(child: AttributeReference, _) if child.semanticEquals(attr) =>
         a.toAttribute
     }
   }
@@ -1334,8 +1327,8 @@ case class GpuHashAggregateExec(
   // Used in de-duping and optimizer rules
   override def producedAttributes: AttributeSet =
     AttributeSet(aggregateAttributes) ++
-        AttributeSet(resultExpressions.diff(groupingExpressions).map(_.toAttribute)) ++
-        AttributeSet(aggregateBufferAttributes)
+      AttributeSet(resultExpressions.diff(groupingExpressions).map(_.toAttribute)) ++
+      AttributeSet(aggregateBufferAttributes)
 
   // AllTuples = distribution with a single partition and all tuples of the dataset are co-located.
   // Clustered = dataset with tuples co-located in the same partition if they share a specific value
@@ -1358,7 +1351,7 @@ case class GpuHashAggregateExec(
    */
   override lazy val allAttributes: AttributeSeq =
     child.output ++ aggregateBufferAttributes ++ aggregateAttributes ++
-        aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes)
+      aggregateExpressions.flatMap(_.aggregateFunction.inputAggBufferAttributes)
 
   override def verboseString(maxFields: Int): String = toString(verbose = true, maxFields)
 
@@ -1376,7 +1369,7 @@ case class GpuHashAggregateExec(
       s"GpuHashAggregate(keys=$keyString, functions=$functionString, output=$outputString)"
     } else {
       s"GpuHashAggregate(keys=$keyString, functions=$functionString)," +
-          s" filters=${aggregateExpressions.map(_.filter)})"
+        s" filters=${aggregateExpressions.map(_.filter)})"
     }
   }
   //
