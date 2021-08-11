@@ -51,7 +51,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
         // need to have separate CSV file per table
         val suffix = header.replace(" ", "_").toLowerCase
         val csvWriter = new ToolTextFileWriter(outputDir,
-          s"${filePrefix}_${suffix}.csv", s"$header CSV:")
+          s"${suffix}.csv", s"$header CSV:")
         try {
           val headerString = outRows.head.outputHeaders.mkString(",")
           csvWriter.write(headerString + "\n")

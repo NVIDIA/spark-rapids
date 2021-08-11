@@ -180,10 +180,10 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
     }
   }
 
-  def printSQLPlans(outputDirectory: String): Unit = {
+  def printSQLPlans(outputDir: String): Unit = {
     for (app <- apps) {
-      val planFileWriter = new ToolTextFileWriter(outputDirectory,
-        s"${app.appId}-planDescriptions.log", "SQL Plan")
+      val planFileWriter = new ToolTextFileWriter(s"$outputDir/${app.appId}",
+        "planDescriptions.log", "SQL Plan")
       try {
         for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
           planFileWriter.write("\n=============================\n")
