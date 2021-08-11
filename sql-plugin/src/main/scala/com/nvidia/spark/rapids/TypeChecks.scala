@@ -812,9 +812,17 @@ class ExecChecks private(
       meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
       "unsupported data types in input: %s")
 
+    val namedChildExprs = meta.namedChildExprs
+
+    val missing = namedChildExprs.keys.filterNot(extendedChecks.contains)
+    if (missing.nonEmpty) {
+      throw new IllegalStateException(s"${meta.getClass.getSimpleName} " +
+        s"is missing ExecChecks for ${missing.mkString(",")}")
+    }
+
     extendedChecks.foreach {
       case (fieldName, typeSig) =>
-        val fieldMeta = meta.namedChildExprs(fieldName)
+        val fieldMeta = namedChildExprs(fieldName)
           .flatMap(_.typeMeta.dataType)
           .zipWithIndex
           .map(t => StructField(s"c${t._2}", t._1))
