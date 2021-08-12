@@ -99,6 +99,8 @@ Generated on 2021-08-12
 ### PRs
 |||
 |:---|:---|
+|[#3214](https://github.com/NVIDIA/spark-rapids/pull/3214)|Update download and databricks doc for 21.06.2 [skip ci]|
+|[#3210](https://github.com/NVIDIA/spark-rapids/pull/3210)|Update 21.08.0 changelog to latest [skip ci]|
 |[#3197](https://github.com/NVIDIA/spark-rapids/pull/3197)|Databricks parquetFilters api change in db 8.2 runtime|
 |[#3168](https://github.com/NVIDIA/spark-rapids/pull/3168)|Update 21.08 changelog to latest [skip ci]|
 |[#3146](https://github.com/NVIDIA/spark-rapids/pull/3146)|update cudf Java binding version to 21.08.2|
