@@ -40,6 +40,14 @@ mvn verify
 
 After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
 
+### Building Shims for Spark Snapshot Versions
+
+By default the build will only include shims for released versions of Spark. To include shims
+for snapshot versions of Spark still under development, use the `snapshot-shims` Maven profile
+(e.g.: add `-Psnapshot-shims` to the Maven command-line). Note that when a snapshot Spark version
+later becomes an official release, the snapshot shim for that version may no longer build due to
+missing snapshot artifacts for that Spark version.
+
 ### Building against different CUDA Toolkit versions
 
 You can build against different versions of the CUDA Toolkit by using one of the following profiles:

@@ -658,7 +658,7 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
 
 _gen_data_for_collect_list = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
-    ('b', IntegerGen()),
+    ('b', LongRangeGen()),
     ('c_bool', BooleanGen()),
     ('c_short', ShortGen()),
     ('c_int', IntegerGen()),

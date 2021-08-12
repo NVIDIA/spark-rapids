@@ -452,7 +452,16 @@ def test_hash_groupby_collect_with_single_distinct(data_gen):
 @incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_single_distinct_collect(data_gen):
-    # test distinct collect with other aggregations
+    # test distinct collect
+    sql = """select a,
+                    sort_array(collect_list(distinct b)),
+                    sort_array(collect_set(distinct b))
+            from tbl group by a"""
+    assert_gpu_and_cpu_are_equal_sql(
+        df_fun=lambda spark: gen_df(spark, data_gen, length=100),
+        table_name="tbl", sql=sql)
+
+    # test distinct collect with nonDistinct aggregations
     sql = """select a,
                     sort_array(collect_list(distinct b)),
                     sort_array(collect_set(b)),

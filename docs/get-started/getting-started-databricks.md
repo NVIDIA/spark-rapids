@@ -54,7 +54,7 @@ CUDA 11.0 toolkit on the cluster.  This can be done with the [generate-init-scri
 Spark plugin and the CUDA 11 toolkit. 
     - [Databricks 8.2
     ML](https://docs.databricks.com/release-notes/runtime/8.2ml.html#system-environment) has CUDA 11
-    installed.  In this case use
+    installed.  Users will need to use 21.06.2 or later on Databricks 8.2 ML. In this case use
     [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) which will install
     the RAPIDS Spark plugin.
 2. Once you are in the notebook, click the “Run All” button.
