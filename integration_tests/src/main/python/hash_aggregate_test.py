@@ -719,6 +719,7 @@ def test_first_last_reductions_extra_types(data_gen):
                 'last(a)'),
             conf = allow_negative_scale_of_decimal_conf)
 
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/3221
 @allow_non_gpu('HashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning',
                'AggregateExpression', 'Alias', 'First', 'Last')
