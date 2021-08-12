@@ -74,9 +74,6 @@ rapids_shuffle_smoke_test() {
     # basic ucx check
     ucx_info -d
 
-    # should be a no-op since mvn verify ran earlier for SPARK_VER
-    mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' package -DskipTests 
-
     # run in standalone mode
     export SPARK_MASTER_HOST=localhost
     export SPARK_MASTER=spark://$SPARK_MASTER_HOST:7077
