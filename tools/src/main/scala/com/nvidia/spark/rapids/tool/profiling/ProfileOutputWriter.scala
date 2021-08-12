@@ -32,9 +32,9 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
       emptyText: Option[String], tableDesc: Option[String]): Unit = {
     val headerText = tableDesc match {
       case Some(desc) => s"$messageHeader: $desc"
-      case None => messageHeader
+      case None => s"$messageHeader:"
     }
-    textFileWriter.write(s"\n$headerText:\n")
+    textFileWriter.write(s"\n$headerText\n")
 
     if (outRows.nonEmpty) {
       val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
