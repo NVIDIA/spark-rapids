@@ -134,7 +134,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell 
-spark-shell --jars rapids-4-spark-tests_2.12-21.08.0-tests.jar,rapids-4-spark-udf-examples_2.12-21.08.0,rapids-4-spark-integration-tests_2.12-21.08.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-21.08.0-tests.jar,rapids-4-spark-udf-examples_2.12-21.08.0.jar,rapids-4-spark-integration-tests_2.12-21.08.0-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
