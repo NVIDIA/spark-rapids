@@ -52,7 +52,7 @@ mvn_verify() {
         rm -f $SPARK_HOME.tgz
 
     mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TEST_TAGS='' \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=3 -Dcuda.version=$CUDA_CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
