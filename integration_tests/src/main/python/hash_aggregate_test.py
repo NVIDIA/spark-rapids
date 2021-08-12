@@ -466,7 +466,7 @@ def test_hash_groupby_single_distinct_collect(data_gen):
 @approximate_float
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
+def test_hash_groupby_collect_with_multi_distinct(data_gen):
     def spark_fn(spark_session):
         return gen_df(spark_session, data_gen, length=100).groupby('a').agg(
             f.sort_array(f.collect_list('b')),
@@ -688,7 +688,6 @@ def test_count_distinct_with_nan_floats(data_gen):
         _no_nans_float_conf)
 
 # TODO: Literal tests
-# TODO: First and Last tests
 
 # REDUCTIONS
 
@@ -698,6 +697,7 @@ non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_first_last_reductions_extra_types(data_gen):
@@ -709,6 +709,18 @@ def test_first_last_reductions_extra_types(data_gen):
                 'first(a)',
                 'last(a)'),
             conf = allow_negative_scale_of_decimal_conf)
+
+@allow_non_gpu('HashAggregateExec', 'SortAggregateExec',
+               'ShuffleExchangeExec', 'HashPartitioning',
+               'AggregateExpression', 'Alias', 'First', 'Last')
+@pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
+def test_first_last_reductions_nested_types_fallback(data_gen):
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: unary_op_df(spark, data_gen, num_slices=1)\
+                    .selectExpr('first(a)', 'last(a)', 'first(a, True)', 'last(a, True)'),
+            exist_classes='First,Last',
+            non_exist_classes='GpuFirst,GpuLast',
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
@@ -766,7 +778,7 @@ def test_arithmetic_reductions(data_gen):
             conf = _no_nans_float_conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + array_gens_sample + struct_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
 def test_groupby_first_last(data_gen):
     gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
     agg_fn = lambda df: df.groupBy('a').agg(
@@ -775,7 +787,7 @@ def test_groupby_first_last(data_gen):
         # First and last are not deterministic when they are run in a real distributed setup.
         # We set parallelism 1 to prevent nondeterministic results because of distributed setup.
         lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
-        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'True'})
+        conf=allow_negative_scale_of_decimal_conf)
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)

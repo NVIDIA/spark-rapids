@@ -784,6 +784,8 @@ class GpuHashAggregateIterator(
                   GpuColumnVector.getNonNestedRapidsType(dataTypes(i))
                 case dt: ArrayType if GpuColumnVector.typeConversionAllowed(column, dt) =>
                   DType.LIST
+                case dt: MapType if GpuColumnVector.typeConversionAllowed(column, dt) =>
+                  DType.LIST
                 case dt: StructType if GpuColumnVector.typeConversionAllowed(column, dt) =>
                   DType.STRUCT
                 case dt =>
