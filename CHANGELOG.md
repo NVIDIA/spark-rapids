@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-08-09
+Generated on 2021-08-12
 
 ## Release 21.08
 
@@ -99,6 +99,8 @@ Generated on 2021-08-09
 ### PRs
 |||
 |:---|:---|
+|[#3197](https://github.com/NVIDIA/spark-rapids/pull/3197)|Databricks parquetFilters api change in db 8.2 runtime|
+|[#3168](https://github.com/NVIDIA/spark-rapids/pull/3168)|Update 21.08 changelog to latest [skip ci]|
 |[#3146](https://github.com/NVIDIA/spark-rapids/pull/3146)|update cudf Java binding version to 21.08.2|
 |[#3080](https://github.com/NVIDIA/spark-rapids/pull/3080)|Update docs for 21.08 release|
 |[#3136](https://github.com/NVIDIA/spark-rapids/pull/3136)|Update tool docs to explain default filesystem [skip ci]|
@@ -268,6 +270,22 @@ Generated on 2021-08-09
 |[#2561](https://github.com/NVIDIA/spark-rapids/pull/2561)|Fixing the merge of 21.06 to 21.08 for comment changes in Profiling tool|
 |[#2558](https://github.com/NVIDIA/spark-rapids/pull/2558)|Fix cdh shim version in 21.08 [skip ci]|
 |[#2543](https://github.com/NVIDIA/spark-rapids/pull/2543)|Init branch-21.08|
+
+## Release 21.06.2
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3191](https://github.com/NVIDIA/spark-rapids/issues/3191)|[BUG] Databricks parquetFilters build failure in db 8.2 runtime|
+
+### PRs
+|||
+|:---|:---|
+|[#3209](https://github.com/NVIDIA/spark-rapids/pull/3209)|Update 21.06.2 changelog [skip ci]|
+|[#3208](https://github.com/NVIDIA/spark-rapids/pull/3208)|Update rapids plugin version to 21.06.2 [skip ci]|
+|[#3207](https://github.com/NVIDIA/spark-rapids/pull/3207)|Disable auto-merge from 21.06 to 21.08 [skip ci]|
+|[#3205](https://github.com/NVIDIA/spark-rapids/pull/3205)|Branch 21.06 databricks update [skip ci]|
+|[#3198](https://github.com/NVIDIA/spark-rapids/pull/3198)|Databricks parquetFilters api change in db 8.2 runtime|
 
 ## Release 21.06.1
 
