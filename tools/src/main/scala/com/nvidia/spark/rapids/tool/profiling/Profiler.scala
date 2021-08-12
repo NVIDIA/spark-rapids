@@ -183,32 +183,28 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     profileOutputWriter.writeText("### A. Information Collected ###")
     val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
-    profileOutputWriter.write("Application Information", appInfo,
-      "Application Information")
+    profileOutputWriter.write("Application Information", appInfo)
 
     val dsInfo = collect.getDataSourceInfo
-    profileOutputWriter.write("Data Source Information", dsInfo,
-      "Data Source Information")
+    profileOutputWriter.write("Data Source Information", dsInfo)
 
     val execInfo = collect.getExecutorInfo
-    profileOutputWriter.write("Executor Information", execInfo,
-      "Executor Information")
+    profileOutputWriter.write("Executor Information", execInfo)
 
     val jobInfo = collect.getJobInfo
-    profileOutputWriter.write("Job Information", jobInfo,
-      "Job Information")
+    profileOutputWriter.write("Job Information", jobInfo)
 
     val rapidsProps = collect.getRapidsProperties
     profileOutputWriter.write("Spark Rapids parameters set explicitly", rapidsProps,
-      "Spark Rapids parameters")
+      Some("Spark Rapids parameters"))
 
     val rapidsJar = collect.getRapidsJARInfo
     profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", rapidsJar,
-      "Rapids 4 Spark Jars")
+      Some("Rapids 4 Spark Jars"))
 
     val sqlMetrics = collect.getSQLPlanMetrics
     profileOutputWriter.write("SQL Plan Metrics for Application", sqlMetrics,
-      "SQL Plan Metrics")
+      Some("SQL Plan Metrics"))
 
     if (printPlans) {
       collect.printSQLPlans(outputDir)
@@ -219,55 +215,46 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     if (appArgs.compare()) {
       val compare = new CompareApplications(apps)
       val (matchingSqlIds, matchingStageIds) = compare.findMatchingStages()
-      profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds,
-        "Matching SQL IDs Across Applications")
-      profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds,
-        "Matching Stage IDs Across Applications")
+      profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds)
+      profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds)
     }
 
     profileOutputWriter.writeText("\n### B. Analysis ###\n")
     val analysis = new Analysis(apps)
     val jsMetAgg = analysis.jobAndStageMetricsAggregation()
     profileOutputWriter.write("Job + Stage level aggregated task metrics", jsMetAgg,
-      "Job/Stage Metrics")
+      Some("Job/Stage Metrics"))
 
     val sqlTaskAggMetrics = analysis.sqlMetricsAggregation()
     profileOutputWriter.write("SQL level aggregated task metrics", sqlTaskAggMetrics,
-      "SQL Metrics")
+      Some("SQL Metrics"))
     val durAndCpuMet = analysis.sqlMetricsAggregationDurationAndCpuTime()
-    profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", durAndCpuMet,
-      "SQL Duration and Executor CPU Time Percent")
+    profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", durAndCpuMet)
     val skewInfo = analysis.shuffleSkewCheck()
     // TODO - to long for file name
     val skewHeader = "Shuffle Skew Check" // +
     val skewTableDesc = "(When task's Shuffle Read Size > 3 * Avg Stage-level size)"
-    profileOutputWriter.write(skewHeader, skewInfo,
-      "SQL Duration and Executor CPU Time Percent", Some(skewTableDesc))
+    profileOutputWriter.write(skewHeader, skewInfo, tableDesc = Some(skewTableDesc))
 
     profileOutputWriter.writeText("\n### C. Health Check###\n")
     val healthCheck = new HealthCheck(apps)
     val failedTasks = healthCheck.getFailedTasks
-    profileOutputWriter.write("Failed Tasks", failedTasks,
-      "Failed Tasks")
+    profileOutputWriter.write("Failed Tasks", failedTasks)
 
     val failedStages = healthCheck.getFailedStages
-    profileOutputWriter.write("Failed Stages", failedStages,
-      "Failed Stages")
+    profileOutputWriter.write("Failed Stages", failedStages)
 
     val failedJobs = healthCheck.getFailedJobs
-    profileOutputWriter.write("Failed Jobs", failedJobs,
-      "Failed Jobs")
+    profileOutputWriter.write("Failed Jobs", failedJobs)
 
     val removedBMs = healthCheck.getRemovedBlockManager
-    profileOutputWriter.write("Removed BlockManagers", removedBMs,
-      "Removed BlockManagers")
+    profileOutputWriter.write("Removed BlockManagers", removedBMs)
     val removedExecutors = healthCheck.getRemovedExecutors
-    profileOutputWriter.write("Removed Executors", removedExecutors,
-      "Removed Executors")
+    profileOutputWriter.write("Removed Executors", removedExecutors)
 
     val unsupportedOps = healthCheck.getPossibleUnsupportedSQLPlan
     profileOutputWriter.write("Unsupported SQL Plan", unsupportedOps,
-      "Unsupported SQL Ops")
+      Some("Unsupported SQL Ops"))
 
     if (appArgs.generateDot()) {
       if (appArgs.compare()) {

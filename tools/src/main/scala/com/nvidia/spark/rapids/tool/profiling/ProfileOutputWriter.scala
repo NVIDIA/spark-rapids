@@ -29,7 +29,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   }
 
   private def writeTextTable(messageHeader: String, outRows: Seq[ProfileResult],
-      emptyText: String, tableDesc: Option[String]): Unit = {
+      emptyText: Option[String], tableDesc: Option[String]): Unit = {
     val headerText = tableDesc match {
       case Some(desc) => s"$messageHeader: $desc"
       case None => messageHeader
@@ -41,7 +41,11 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
         outRows.head.outputHeaders, outRows.map(_.convertToSeq))
       textFileWriter.write(outStr)
     } else {
-      textFileWriter.write(s"No $emptyText Found!\n")
+      val finalEmptyText = emptyText match {
+        case Some(text) => text
+        case None => messageHeader
+      }
+      textFileWriter.write(s"No $finalEmptyText Found!\n")
     }
   }
 
@@ -73,8 +77,8 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
     }
   }
 
-  def write(headerText: String, outRows: Seq[ProfileResult], emptyTableText: String,
-      tableDesc: Option[String] = None): Unit = {
+  def write(headerText: String, outRows: Seq[ProfileResult],
+      emptyTableText: Option[String] = None, tableDesc: Option[String] = None): Unit = {
     writeTextTable(headerText, outRows, emptyTableText, tableDesc)
     writeCSVTable(headerText, outRows)
   }

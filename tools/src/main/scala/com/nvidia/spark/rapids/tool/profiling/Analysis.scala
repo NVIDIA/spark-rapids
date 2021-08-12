@@ -177,8 +177,6 @@ class Analysis(apps: Seq[ApplicationInfo]) {
               // count duplicate task attempts
               val numAttempts = tasksInStage.size
               val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
-              val foo = tasksInStage.map(_.sw_writeTime)
-
               Some(JobStageAggTaskMetricsProfileResult(app.index,
                 s"stage_$id",
                 numAttempts,
