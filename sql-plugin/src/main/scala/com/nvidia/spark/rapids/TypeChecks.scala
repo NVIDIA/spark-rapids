@@ -229,7 +229,7 @@ final class TypeSig private(
         meta.willNotWorkOnGpu(s"$name only supports $dt if it is a literal value")
       }
       if (typeMeta.typeConverted) {
-        meta.addConvertedDataType(expr.getClass.getSimpleName, typeMeta)
+        meta.addConvertedDataType(expr, typeMeta)
       }
     }
   }
@@ -619,6 +619,9 @@ object TypeSig {
   val unionOfPandasUdfOut: TypeSig =
     (commonCudfTypes + BINARY + DECIMAL_64 + NULL + ARRAY + MAP).nested() + STRUCT
 
+  /** All types that can appear in AST expressions */
+  val astTypes = BOOLEAN + integral + fp + TIMESTAMP
+
   def getDataType(expr: Expression): Option[DataType] = {
     try {
       Some(expr.dataType)
@@ -692,7 +695,7 @@ case class ContextChecks(
               s"produces an unsupported type $dt")
         }
         if (meta.typeMeta.typeConverted) {
-          meta.addConvertedDataType(expr.prettyName, meta.typeMeta)
+          meta.addConvertedDataType(expr, meta.typeMeta)
         }
       case None =>
         if (!meta.ignoreUnsetDataTypes) {

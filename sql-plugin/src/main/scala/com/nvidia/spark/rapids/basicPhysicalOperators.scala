@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
+import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -27,11 +28,30 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+class GpuProjectExecMeta(
+    proj: ProjectExec,
+    conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r) {
+  override def convertToGpu(): GpuExec = {
+    // Force list to avoid recursive Java serialization of lazy list Seq implementation
+    val gpuExprs = childExprs.map(_.convertToGpu()).toList
+    val gpuChild = childPlans.head.convertIfNeeded()
+    if (conf.isProjectAstEnabled) {
+      childExprs.foreach(_.tagForAst())
+      if (childExprs.forall(_.canThisBeAst)) {
+        return GpuProjectAstExec(gpuExprs, gpuChild)
+      }
+    }
+    GpuProjectExec(gpuExprs, gpuChild)
+  }
+}
 
 object GpuProjectExec extends Arm {
   def projectAndClose[A <: Expression](cb: ColumnarBatch, boundExprs: Seq[A],
@@ -117,6 +137,95 @@ case class GpuProjectExec(
       numOutputBatches += 1
       numOutputRows += cb.numRows()
       GpuProjectExec.projectAndClose(cb, boundProjectList, opTime)
+    }
+  }
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
+}
+
+/** Use cudf AST expressions to project columnar batches */
+case class GpuProjectAstExec(
+    // NOTE for Scala 2.12.x and below we enforce usage of (eager) List to prevent running
+    // into a deep recursion during serde of lazy lists. See
+    // https://github.com/NVIDIA/spark-rapids/issues/2036
+    //
+    // Whereas a similar issue https://issues.apache.org/jira/browse/SPARK-27100 is resolved
+    // using an Array, we opt in for List because it implements Seq while having non-recursive
+    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
+    //   immutable/List.scala#L516
+    projectList: List[Expression],
+    child: SparkPlan
+) extends UnaryExecNode with GpuExec {
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+
+  override def output: Seq[Attribute] = {
+    projectList.collect { case ne: NamedExpression => ne.toAttribute }
+  }
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override def doExecuteColumnar() : RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val opTime = gpuLongMetric(OP_TIME)
+    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
+    val outputTypes = output.map(_.dataType).toArray
+    val rdd = child.executeColumnar()
+    rdd.mapPartitions { cbIter =>
+      new Iterator[ColumnarBatch] with AutoCloseable {
+        private[this] var compiledAstExprs =
+          withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
+            boundProjectList.safeMap { expr =>
+              // Use intmax for the left table column count since there's only one input table here.
+              val astExpr = expr.convertToAst(Int.MaxValue) match {
+                case e: ast.Expression => e
+                case e => new ast.UnaryExpression(ast.UnaryOperator.IDENTITY, e)
+              }
+              astExpr.compile()
+            }
+          }
+
+        Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => close()))
+
+        override def hasNext: Boolean = {
+          if (cbIter.hasNext) {
+            true
+          } else {
+            close()
+            false
+          }
+        }
+
+        override def next(): ColumnarBatch = {
+          withResource(cbIter.next()) { cb =>
+            withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
+              numOutputBatches += 1
+              numOutputRows += cb.numRows()
+              val projectedTable = withResource(GpuColumnVector.from(cb)) { table =>
+                withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
+                  new Table(projectedColumns:_*)
+                }
+              }
+              withResource(projectedTable) { _ =>
+                GpuColumnVector.from(projectedTable, outputTypes)
+              }
+            }
+          }
+        }
+
+        override def close(): Unit = {
+          compiledAstExprs.safeClose()
+          compiledAstExprs = Nil
+        }
+      }
     }
   }
 

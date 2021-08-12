@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ByteType, DataType, DoubleType, FloatType, ShortType}
 
 trait DataFromReplacementRule {
   val operationName: String
@@ -189,10 +189,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   /**
    * Call this method to record information about type conversions via DataTypeMeta.
    */
-  final def addConvertedDataType(name: String, typeMeta: DataTypeMeta): Unit = {
-    val reason = s"Converted DataType of $name from ${typeMeta.wrapped.get} to " +
-        s"${typeMeta.dataType.get}, because ${typeMeta.reasonForConversion}"
-    typeConversionReasons.get.add(reason)
+  final def addConvertedDataType(expression: Expression, typeMeta: DataTypeMeta): Unit = {
+    typeConversionReasons.get.add(
+      s"$expression: ${typeMeta.reasonForConversion}")
   }
 
   /**
@@ -298,7 +297,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   def tagSelfForGpu(): Unit
 
-  private def indent(append: StringBuilder, depth: Int): Unit =
+  protected def indent(append: StringBuilder, depth: Int): Unit =
     append.append("  " * depth)
 
   def replaceMessage: String = "run on GPU"
@@ -311,14 +310,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
         (cannotRunOnGpuBecauseOfSparkPlan || shouldThisBeRemoved) => "could " + replaceMessage
     case Some(v) if v.isEmpty => "will " + replaceMessage
     case Some(v) =>
-      noReplacementPossibleMessage(v mkString "; ")
+      noReplacementPossibleMessage(v.mkString("; "))
   }
 
   private def willBeRemovedInfo: String = shouldBeRemovedReasons match {
     case None => ""
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
-      val reasons = v mkString "; "
+      val reasons = v.mkString("; ")
       s" but is going to be removed because $reasons"
   }
 
@@ -326,8 +325,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     case None => ""
     case Some(v) if v.isEmpty => ""
     case Some(v) =>
-      " The data type of following expressions will be converted in GPU runtime:\n" +
-          v mkString "; "
+      "The data type of following expressions will be converted in GPU runtime: " +
+          v.mkString("; ")
   }
 
   /**
@@ -385,13 +384,14 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
       }
 
       strBuilder.append(willWorkOnGpuInfo).
-        append(willBeRemovedInfo).
-        append("\n")
+        append(willBeRemovedInfo)
 
       typeConversionInfo match {
         case info if info.isEmpty =>
-        case info => strBuilder.append(info).append("\n")
+        case info => strBuilder.append(". ").append(info)
       }
+
+      strBuilder.append("\n")
     }
     printChildren(strBuilder, depth, all)
   }
@@ -685,7 +685,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
         "The length of outputTypeMetas doesn't match to the length of plan's output")
       wrapped.output.zip(typeMetas).map {
         case (ar, meta) if meta.typeConverted =>
-          addConvertedDataType(ar.name, meta)
+          addConvertedDataType(ar, meta)
           AttributeReference(ar.name, meta.dataType.get, ar.nullable, ar.metadata)(
             ar.exprId, ar.qualifier)
         case (ar, _) =>
@@ -828,8 +828,10 @@ class DataTypeMeta(
    * Returns the reason for conversion if exists
    */
   def reasonForConversion: String = {
-    val reasonMsg = (if (typeConverted) reason else None).getOrElse("")
-    s"Converted ${wrapped.get} to ${dataType.get}, because $reasonMsg"
+    val reasonMsg = (if (typeConverted) reason else None)
+        .map(r => s", because $r").getOrElse("")
+    s"Converted ${wrapped.getOrElse("N/A")} to " +
+      s"${dataType.getOrElse("N/A")}" + reasonMsg
   }
 }
 
@@ -847,6 +849,9 @@ object DataTypeMeta {
   }
 }
 
+/** Trait to mark metadata for expressions that have AST implicit casting issues */
+trait AstImplicitCasts
+
 /**
  * Base class for metadata around `Expression`.
  */
@@ -856,6 +861,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
+
+  private val cannotBeAstReasons: mutable.Set[String] = mutable.Set.empty
 
   override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
   override val childExprs: Seq[BaseExprMeta[_]] =
@@ -914,6 +921,75 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * extra checks all of the checks should have already been done.
    */
   def tagExprForGpu(): Unit = {}
+
+  final def willNotWorkInAst(because: String): Unit = cannotBeAstReasons.add(because)
+
+  final def canThisBeAst: Boolean = childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
+
+  final def tagForAst(): Unit = {
+    if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
+      willNotWorkInAst(s"Cannot convert to AST. Is ConstantFolding excluded? Expression " +
+          s"$wrapped is foldable and operates on non literals")
+    }
+
+    if (!TypeSig.astTypes.isSupportedByPlugin(wrapped.dataType, conf.decimalTypeEnabled)) {
+      willNotWorkInAst(s"${expr.dataType} not supported by AST expressions")
+    }
+
+    if (isInstanceOf[AstImplicitCasts]) {
+      wrapped.dataType match {
+        case ByteType | ShortType =>
+          willNotWorkInAst("AST implicitly upcasts byte or short inputs")
+        case _ =>
+      }
+    }
+
+    childExprs.foreach(_.tagForAst())
+    tagSelfForAst()
+  }
+
+  /** Called to verify that this expression will work as a GPU AST expression. */
+  protected def tagSelfForAst(): Unit = {
+    willNotWorkInAst(s"${wrapped.getClass.getSimpleName} has no AST mapping")
+  }
+
+  protected def willWorkInAstInfo: String = {
+    if (cannotBeAstReasons.isEmpty) {
+      "will run in AST"
+    } else {
+      s"cannot be converted to GPU AST because ${cannotBeAstReasons.mkString(";")}"
+    }
+  }
+
+  /**
+   * Create a string explanation for whether this expression tree can be converted to an AST
+   * @param strBuilder where to place the string representation.
+   * @param depth how far down the tree this is.
+   * @param all should all the data be printed or just what does not work in the AST?
+   */
+  protected def printAst(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
+    if (all || !canThisBeAst) {
+      indent(strBuilder, depth)
+      strBuilder.append(operationName)
+          .append(" <")
+          .append(wrapped.getClass.getSimpleName)
+          .append("> ")
+
+      if (printWrapped) {
+        strBuilder.append(wrapped)
+            .append(" ")
+      }
+
+      strBuilder.append(willWorkInAstInfo).append("\n")
+    }
+    childExprs.foreach(_.printAst(strBuilder, depth + 1, all))
+  }
+
+  def explainAst(all: Boolean): String = {
+    val appender = new StringBuilder()
+    printAst(appender, 0, all)
+    appender.toString()
+  }
 }
 
 abstract class ExprMeta[INPUT <: Expression](
@@ -940,6 +1016,17 @@ abstract class UnaryExprMeta[INPUT <: UnaryExpression](
     convertToGpu(childExprs.head.convertToGpu())
 
   def convertToGpu(child: Expression): GpuExpression
+}
+
+/** Base metadata class for unary expressions that support conversion to AST as well */
+abstract class UnaryAstExprMeta[INPUT <: UnaryExpression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends UnaryExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override def tagSelfForAst(): Unit = {}
 }
 
 /**
@@ -1008,6 +1095,40 @@ abstract class BinaryExprMeta[INPUT <: BinaryExpression](
   }
 
   def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression
+}
+
+/** Base metadata class for binary expressions that support conversion to AST */
+abstract class BinaryAstExprMeta[INPUT <: BinaryExpression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends BinaryExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override def tagSelfForAst(): Unit = {
+    if (wrapped.left.dataType != wrapped.right.dataType) {
+      willNotWorkInAst("AST binary expression operand types must match, found " +
+          s"${wrapped.left.dataType},${wrapped.right.dataType}")
+    }
+  }
+}
+
+/** Base metadata class for comparison expressions that support conversion to AST */
+abstract class BinaryAstCompareExprMeta[INPUT <: BinaryExpression](
+    expr: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends BinaryAstExprMeta[INPUT](expr, conf, parent, rule) {
+
+  override def tagSelfForAst(): Unit = {
+    super.tagSelfForAst()
+    wrapped.left.dataType match {
+      case FloatType | DoubleType =>
+        willNotWorkInAst("AST comparison does not support floating point")
+      case _ =>
+    }
+  }
 }
 
 /**
