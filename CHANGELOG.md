@@ -11,6 +11,8 @@ Generated on 2021-08-12
 ### PRs
 |||
 |:---|:---|
+|[#3208](https://github.com/NVIDIA/spark-rapids/pull/3208)|Update rapids plugin version to 21.06.2 [skip ci]|
+|[#3207](https://github.com/NVIDIA/spark-rapids/pull/3207)|Disable auto-merge from 21.06 to 21.08 [skip ci]|
 |[#3205](https://github.com/NVIDIA/spark-rapids/pull/3205)|Branch 21.06 databricks update [skip ci]|
 |[#3198](https://github.com/NVIDIA/spark-rapids/pull/3198)|Databricks parquetFilters api change in db 8.2 runtime|
 
