@@ -1,5 +1,18 @@
 # Change log
-Generated on 2021-08-04
+Generated on 2021-08-12
+
+## Release 21.06.2
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3191](https://github.com/NVIDIA/spark-rapids/issues/3191)|[BUG] Databricks parquetFilters build failure in db 8.2 runtime|
+
+### PRs
+|||
+|:---|:---|
+|[#3205](https://github.com/NVIDIA/spark-rapids/pull/3205)|Branch 21.06 databricks update [skip ci]|
+|[#3198](https://github.com/NVIDIA/spark-rapids/pull/3198)|Databricks parquetFilters api change in db 8.2 runtime|
 
 ## Release 21.06.1
 
@@ -11,6 +24,7 @@ Generated on 2021-08-04
 ### PRs
 |||
 |:---|:---|
+|[#3127](https://github.com/NVIDIA/spark-rapids/pull/3127)|Update CHANGELOG for the release v21.06.1 [skip ci]|
 |[#3123](https://github.com/NVIDIA/spark-rapids/pull/3123)|Update rapids plugin version to 21.06.1 [skip ci]|
 |[#3118](https://github.com/NVIDIA/spark-rapids/pull/3118)|Fix databricks 3.0.1 for ParquetFilters api change|
 |[#3119](https://github.com/NVIDIA/spark-rapids/pull/3119)|Branch 21.06 databricks update [skip ci]|
