@@ -569,7 +569,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
   }
 
   test("test csv file output gpu") {
-    val eventLog = s"$logDir/tasks_executors_fail_compressed_eventlog.zstd"
+    val eventLog = s"$qualLogDir/udf_dataset_eventlog"
     TrampolineUtil.withTempDir { tempDir =>
       val appArgs = new ProfileArgs(Array(
         "--csv",
@@ -578,13 +578,13 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         eventLog))
       val exit = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
-      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/application_1603128018386_7846")
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/local-1621966649543")
 
       // assert that a file was generated
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 12)
+      assert(dotDirs.length === 10)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
