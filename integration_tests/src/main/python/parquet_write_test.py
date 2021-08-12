@@ -34,20 +34,21 @@ parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_
 writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
               'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
 
-
 parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                     string_gen, boolean_gen, date_gen,
                     # we are limiting TimestampGen to avoid overflowing the INT96 value
                     # see https://github.com/rapidsai/cudf/issues/8070
                     TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc))]
 parquet_struct_gen = [StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
-                      StructGen([['child0', StructGen([[ 'child1', byte_gen]])]])]
+                      StructGen([['child0', StructGen([[ 'child1', byte_gen]])]]),
+                      StructGen([['child0', MapGen(StringGen(nullable=False), StringGen())], ['child1', IntegerGen()]])]
 parquet_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen] + \
                     [ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen]
-parquet_write_gens_list = [parquet_basic_gen + parquet_struct_gen + parquet_array_gen +
-                           [decimal_gen_default,
-                           decimal_gen_scale_precision, decimal_gen_same_scale_precision, decimal_gen_64bit]]
 
+parquet_write_gens_list0 = parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens
+parquet_map_gens = map_gens_sample + [MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen())]
+# splitting it in two lists as the data is too big for a single parquet file in our unit tests
+parquet_write_gens_list = [parquet_write_gens_list0, parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
