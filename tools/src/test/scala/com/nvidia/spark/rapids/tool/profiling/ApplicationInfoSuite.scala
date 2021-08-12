@@ -539,4 +539,60 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(execInfo.head.numExecutors === 8)
     assert(execInfo.head.maxMem === 5538054144L)
   }
+
+
+  test("test csv file output with failures") {
+    val eventLog = s"$logDir/tasks_executors_fail_compressed_eventlog.zstd"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--csv",
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog))
+      val exit = ProfileMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/application_1603128018386_7846")
+
+      // assert that a file was generated
+      val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+        f.endsWith(".csv")
+      })
+      assert(dotDirs.length === 12)
+      for (file <- dotDirs) {
+        assert(file.getAbsolutePath.endsWith(".csv"))
+        // just load each one to make sure formatted properly
+        val df = sparkSession.read.option("header", "true").csv(file.getAbsolutePath)
+        val res = df.collect()
+        assert(res.nonEmpty)
+      }
+    }
+  }
+
+  test("test csv file output gpu") {
+    val eventLog = s"$logDir/tasks_executors_fail_compressed_eventlog.zstd"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--csv",
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog))
+      val exit = ProfileMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/application_1603128018386_7846")
+
+      // assert that a file was generated
+      val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+        f.endsWith(".csv")
+      })
+      assert(dotDirs.length === 12)
+      for (file <- dotDirs) {
+        assert(file.getAbsolutePath.endsWith(".csv"))
+        // just load each one to make sure formatted properly
+        val df = sparkSession.read.option("header", "true").csv(file.getAbsolutePath)
+        val res = df.collect()
+        assert(res.nonEmpty)
+      }
+    }
+  }
+
 }
