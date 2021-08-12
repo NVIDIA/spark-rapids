@@ -29,8 +29,12 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   }
 
   private def writeTextTable(messageHeader: String, outRows: Seq[ProfileResult],
-      emptyText: String): Unit = {
-    textFileWriter.write(s"\n$messageHeader:\n")
+      emptyText: String, tableDesc: Option[String]): Unit = {
+    val headerText = tableDesc match {
+      case Some(desc) => s"$messageHeader: $tableDesc"
+      case None => messageHeader
+    }
+    textFileWriter.write(s"\n$headerText:\n")
 
     if (outRows.nonEmpty) {
       val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
@@ -48,7 +52,8 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   private def writeCSVTable(header: String, outRows: Seq[ProfileResult]): Unit = {
     if (outRows.nonEmpty) {
       if (outputCSV) {
-        // need to have separate CSV file per table
+        // need to have separate CSV file per table, use header text
+        // with spaces as _ and lowercase as filename
         val suffix = header.replace(" ", "_").toLowerCase
         val csvWriter = new ToolTextFileWriter(outputDir,
           s"${suffix}.csv", s"$header CSV:")
@@ -68,8 +73,9 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
     }
   }
 
-  def write(headerText: String, outRows: Seq[ProfileResult], emptyText: String): Unit = {
-    writeTextTable(headerText, outRows, emptyText)
+  def write(headerText: String, outRows: Seq[ProfileResult], emptyTableText: String,
+      tableDesc: Option[String] = None): Unit = {
+    writeTextTable(headerText, outRows, emptyTableText, tableDesc)
     writeCSVTable(headerText, outRows)
   }
 

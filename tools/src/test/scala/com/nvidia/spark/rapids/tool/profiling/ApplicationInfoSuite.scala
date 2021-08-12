@@ -540,7 +540,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(execInfo.head.maxMem === 5538054144L)
   }
 
-
   test("test csv file output with failures") {
     val eventLog = s"$logDir/tasks_executors_fail_compressed_eventlog.zstd"
     TrampolineUtil.withTempDir { tempDir =>

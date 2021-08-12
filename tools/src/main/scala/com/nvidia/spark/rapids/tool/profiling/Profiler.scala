@@ -240,9 +240,9 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val skewInfo = analysis.shuffleSkewCheck()
     // TODO - to long for file name
     val skewHeader = "Shuffle Skew Check" // +
-    // " (When task's Shuffle Read Size > 3 * Avg Stage-level size)"
+    val skewTableDesc = "(When task's Shuffle Read Size > 3 * Avg Stage-level size)"
     profileOutputWriter.write(skewHeader, skewInfo,
-      "SQL Duration and Executor CPU Time Percent")
+      "SQL Duration and Executor CPU Time Percent", Some(skewTableDesc))
 
     profileOutputWriter.writeText("\n### C. Health Check###\n")
     val healthCheck = new HealthCheck(apps)
