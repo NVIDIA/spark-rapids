@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
+import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -148,6 +149,18 @@ trait GpuExpression extends Expression with Arm {
     val canonicalizedChildren = children.map(_.canonicalized)
     GpuCanonicalize.execute(withNewChildren(canonicalizedChildren))
   }
+
+  /**
+   * Build an equivalent representation of this expression in a cudf AST.
+   * @param numFirstTableColumns number of columns in the leftmost input table. Spark places the
+   *                             columns of all inputs in a single sequence, while cudf AST uses an
+   *                             explicit table reference to make column indices unique. This
+   *                             parameter helps translate input column references from Spark's
+   *                             single sequence into cudf's separate sequences.
+   * @return top node of the equivalent AST
+   */
+  def convertToAst(numFirstTableColumns: Int): ast.AstNode =
+    throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
 }
 
 abstract class GpuLeafExpression extends GpuExpression {
@@ -186,10 +199,40 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   }
 }
 
+object CudfUnaryExpression {
+  lazy val opToAstMap: Map[UnaryOp, ast.UnaryOperator] = Map(
+    UnaryOp.ABS -> ast.UnaryOperator.ABS,
+    UnaryOp.ARCSIN -> ast.UnaryOperator.ARCSIN,
+    UnaryOp.ARCSINH -> ast.UnaryOperator.ARCSINH,
+    UnaryOp.ARCCOS -> ast.UnaryOperator.ARCCOS,
+    UnaryOp.ARCCOSH -> ast.UnaryOperator.ARCCOSH,
+    UnaryOp.ARCTAN -> ast.UnaryOperator.ARCTAN,
+    UnaryOp.ARCTANH -> ast.UnaryOperator.ARCTANH,
+    UnaryOp.BIT_INVERT -> ast.UnaryOperator.BIT_INVERT,
+    UnaryOp.CBRT -> ast.UnaryOperator.CBRT,
+    UnaryOp.COS -> ast.UnaryOperator.COS,
+    UnaryOp.COSH -> ast.UnaryOperator.COSH,
+    UnaryOp.EXP -> ast.UnaryOperator.EXP,
+    UnaryOp.NOT -> ast.UnaryOperator.NOT,
+    UnaryOp.RINT -> ast.UnaryOperator.RINT,
+    UnaryOp.SIN -> ast.UnaryOperator.SIN,
+    UnaryOp.SINH -> ast.UnaryOperator.SINH,
+    UnaryOp.SQRT -> ast.UnaryOperator.SQRT,
+    UnaryOp.TAN -> ast.UnaryOperator.TAN,
+    UnaryOp.TANH -> ast.UnaryOperator.TANH)
+}
+
 trait CudfUnaryExpression extends GpuUnaryExpression {
   def unaryOp: UnaryOp
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.unaryOp(unaryOp)
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+    val astOp = CudfUnaryExpression.opToAstMap.getOrElse(unaryOp,
+      throw new IllegalStateException(s"${this.getClass.getSimpleName} is not supported by AST"))
+    new ast.UnaryExpression(astOp,
+      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+  }
 }
 
 trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
@@ -221,6 +264,21 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
 }
 
 trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
+
+object CudfBinaryExpression {
+  lazy val opToAstMap: Map[BinaryOp, ast.BinaryOperator] = Map(
+    BinaryOp.ADD -> ast.BinaryOperator.ADD,
+    BinaryOp.BITWISE_AND -> ast.BinaryOperator.BITWISE_AND,
+    BinaryOp.BITWISE_OR -> ast.BinaryOperator.BITWISE_OR,
+    BinaryOp.BITWISE_XOR -> ast.BinaryOperator.BITWISE_XOR,
+    BinaryOp.GREATER -> ast.BinaryOperator.GREATER,
+    BinaryOp.GREATER_EQUAL -> ast.BinaryOperator.GREATER_EQUAL,
+    BinaryOp.LESS -> ast.BinaryOperator.LESS,
+    BinaryOp.LESS_EQUAL -> ast.BinaryOperator.LESS_EQUAL,
+    BinaryOp.MUL -> ast.BinaryOperator.MUL,
+    BinaryOp.POW -> ast.BinaryOperator.POW,
+    BinaryOp.SUB -> ast.BinaryOperator.SUB)
+}
 
 trait CudfBinaryExpression extends GpuBinaryExpression {
   def binaryOp: BinaryOp
@@ -270,6 +328,15 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
+  }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+    val astOp = CudfBinaryExpression.opToAstMap.getOrElse(binaryOp,
+      throw new IllegalStateException(s"$this is not supported by AST"))
+    assert(left.dataType == right.dataType)
+    new ast.BinaryExpression(astOp,
+      left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+      right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
   }
 }
 

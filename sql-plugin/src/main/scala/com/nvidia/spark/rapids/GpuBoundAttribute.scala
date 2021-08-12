@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf.ast
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, SortOrder}
 import org.apache.spark.sql.types.DataType
@@ -104,6 +106,20 @@ case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean
         // the type here.
         new GpuColumnVector(fb.dataType(), fb.getBase.incRefCount())
       case cv: GpuColumnVector => cv.incRefCount()
+    }
+  }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+    // Spark treats all inputs as a single sequence of columns. For example, a join will put all
+    // the columns of the left table followed by all the columns of the right table. cudf AST
+    // instead uses explicit table references to distinguish which table is being indexed by a
+    // column index. To translate from Spark to AST, we check the Spark column index against the
+    // number of columns the leftmost input table to know which table is being referenced and
+    // adjust the column index accordingly.
+    if (ordinal >= numFirstTableColumns) {
+      new ast.ColumnReference(ordinal - numFirstTableColumns, ast.TableReference.RIGHT)
+    } else {
+      new ast.ColumnReference(ordinal, ast.TableReference.LEFT)
     }
   }
 }

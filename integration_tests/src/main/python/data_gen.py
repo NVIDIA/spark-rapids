@@ -901,11 +901,11 @@ struct_gens_sample = nonempty_struct_gens_sample + [StructGen([])]
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
         StringGen(), max_length=10)
 
+all_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen]] + [simple_string_to_string_map_gen]
+
 # Some map gens, but not all because of nesting
-map_gens_sample = [simple_string_to_string_map_gen,
-        MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
-        MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
         MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
 allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
