@@ -49,18 +49,19 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
   def profile(eventLogInfos: Seq[EventLogInfo]): Unit = {
     if (appArgs.compare()) {
-      val profileOutputWriter = new ProfileOutputWriter(outputDir,
-        Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
-      try {
-        // create all the apps in parallel since we need the info for all of them to compare
-        val apps = createApps(eventLogInfos)
-        if (apps.size < 2) {
-          logInfo("At least 2 applications are required for comparison mode. Exiting!")
-        } else {
+      val apps = createApps(eventLogInfos)
+      if (apps.size < 2) {
+        logError("At least 2 applications are required for comparison mode. Exiting!")
+      } else {
+        val profileOutputWriter = new ProfileOutputWriter(outputDir,
+          Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
+        try {
+          // create all the apps in parallel since we need the info for all of them to compare
           processApps(apps, printPlans = false, profileOutputWriter)
         }
-      } finally {
-        profileOutputWriter.close()
+        finally {
+          profileOutputWriter.close()
+        }
       }
     } else {
       // Read each application and process it separately to save memory.
