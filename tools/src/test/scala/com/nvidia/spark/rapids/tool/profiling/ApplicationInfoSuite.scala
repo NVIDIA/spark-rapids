@@ -594,4 +594,34 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test csv file output compare mode") {
+    val eventLog1 = s"$logDir/rapids_join_eventlog.zstd"
+    val eventLog2 = s"$logDir/rapids_join_eventlog2.zstd"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--csv",
+        "-c",
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog1,
+        eventLog2))
+      val exit = ProfileMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/")
+
+      // assert that a file was generated
+      val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+        f.endsWith(".csv")
+      })
+      assert(dotDirs.length === 11)
+      for (file <- dotDirs) {
+        assert(file.getAbsolutePath.endsWith(".csv"))
+        // just load each one to make sure formatted properly
+        val df = sparkSession.read.option("header", "true").csv(file.getAbsolutePath)
+        val res = df.collect()
+        assert(res.nonEmpty)
+      }
+    }
+  }
+
 }
