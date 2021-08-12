@@ -48,7 +48,7 @@ Usage:
     scripts/generate-changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> --releases=0.1,0.2,0.3,0.4,0.4.1,0.5,21.06,21.06.1,21.06.2
 
     # generate changelog for release 0.1,0.2,0.3,0.4,0.4.1,0.5,21.06,21.06.1,21.06.2 to /tmp/CHANGELOG.md
-    GITHUB_TOKEN=<GITHUB_PERSONAL_ACCESS_TOKEN> scripts/generate-changelog --releases=0.1,0.2,0.3,0.4,0.4.1,0.5,21.06,21.06.2 --path=/tmp/CHANGELOG.md
+    GITHUB_TOKEN=<GITHUB_PERSONAL_ACCESS_TOKEN> scripts/generate-changelog --releases=0.1,0.2,0.3,0.4,0.4.1,0.5,21.06,21.06.1,21.06.2 --path=/tmp/CHANGELOG.md
 """
 import os
 import sys
