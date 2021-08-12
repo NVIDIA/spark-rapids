@@ -53,7 +53,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       if (apps.size < 2) {
         logError("At least 2 applications are required for comparison mode. Exiting!")
       } else {
-        val profileOutputWriter = new ProfileOutputWriter(outputDir,
+        val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/compare",
           Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
         try {
           // create all the apps in parallel since we need the info for all of them to compare

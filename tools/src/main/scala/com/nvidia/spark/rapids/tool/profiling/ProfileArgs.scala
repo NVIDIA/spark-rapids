@@ -42,23 +42,23 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[String](required = false,
       descr = "Filter newest or oldest N eventlogs for processing." +
           "eg: 100-newest-filesystem (for processing newest 100 event logs). " +
-          "eg: 100-oldest-filesystem (for processing oldest 100 event logs)")
+          "eg: 100-oldest-filesystem (for processing oldest 100 event logs).")
   val matchEventLogs: ScallopOption[String] =
     opt[String](required = false,
-      descr = "Filter event logs whose filenames contain the input string")
+      descr = "Filter event logs whose filenames contain the input string.")
   val compare: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Compare Applications (Note this may require more memory if comparing " +
-          "a large number of applications. Default is false")
+          "a large number of applications. Default is false.")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
-      descr = "Number of output rows for each Application. Default is 1000")
+      descr = "Number of output rows for each Application. Default is 1000.")
   val generateDot: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Generate query visualizations in DOT format. Default is false")
+      descr = "Generate query visualizations in DOT format. Default is false.")
   val printPlans: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Print the SQL plans to a file named '{APPLICATION_ID}-planDescriptions.log'." +
+      descr = "Print the SQL plans to a file named 'planDescriptions.log'." +
         " Default is false.")
   val generateTimeline: ScallopOption[Boolean] =
     opt[Boolean](required = false,

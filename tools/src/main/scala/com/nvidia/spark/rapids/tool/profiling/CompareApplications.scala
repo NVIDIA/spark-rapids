@@ -49,7 +49,12 @@ class CompareApplications(apps: Seq[ApplicationInfo]) extends Logging {
     while (appIdToSortedSqlIds.nonEmpty) {
       val appIds = appIdToSortedSqlIds.keys.toSeq.sorted
       val sourceAppId = appIds.head
-      val sourceSqlId = appIdToSortedSqlIds(sourceAppId).head
+      val sourceSqlIdArr = appIdToSortedSqlIds(sourceAppId).head
+      if (sourceSqlIdArr.isEmpty) {
+        logWarning("empty sql id arr" )
+      } else {
+       val sourceSqlId = sourceSqlIdArr.head
+      }
       val sourcePlan = normalizedByAppId(sourceAppId)(sourceSqlId)
 
       val sqlMatches = mutable.HashMap[String, Long]()

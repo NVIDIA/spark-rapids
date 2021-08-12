@@ -607,7 +607,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         eventLog2))
       val exit = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
-      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/")
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/compare")
 
       // assert that a file was generated
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
@@ -623,5 +623,4 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       }
     }
   }
-
 }
