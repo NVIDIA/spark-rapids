@@ -31,7 +31,7 @@ class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: 
   private def writeTextTable(messageHeader: String, outRows: Seq[ProfileResult],
       emptyText: String, tableDesc: Option[String]): Unit = {
     val headerText = tableDesc match {
-      case Some(desc) => s"$messageHeader: $tableDesc"
+      case Some(desc) => s"$messageHeader: $desc"
       case None => messageHeader
     }
     textFileWriter.write(s"\n$headerText:\n")
