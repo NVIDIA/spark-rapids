@@ -25,7 +25,7 @@ if(DEFINED GPU_ARCHS)
   endif()
 endif()
 
-project(UDFEXAMPLESJNI VERSION 21.06.1 LANGUAGES C CXX CUDA)
+project(UDFEXAMPLESJNI VERSION 21.06.2 LANGUAGES C CXX CUDA)
 
 option(PER_THREAD_DEFAULT_STREAM "Build with per-thread default stream" OFF)
 option(BUILD_UDF_BENCHMARKS "Build the benchmarks" OFF)
