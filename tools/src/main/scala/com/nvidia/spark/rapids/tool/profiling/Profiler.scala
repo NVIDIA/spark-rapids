@@ -368,7 +368,28 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val sums = if (outputCombined) {
 
       val sorted = appsSum.sortBy(_.appInfo.head.appIndex)
-      Seq(sorted.reduceLeft(combinedAppSums))
+      val reduced = new ApplicationSummaryInfo(
+        appsSum.flatMap(_.appInfo),
+        appsSum.flatMap(_.dsInfo),
+        appsSum.flatMap(_.execInfo),
+        appsSum.flatMap(_.jobInfo),
+        appsSum.flatMap(_.rapidsProps),
+        appsSum.flatMap(_.rapidsJar),
+        appsSum.flatMap(_.sqlMetrics),
+        appsSum.flatMap(_.jsMetAgg),
+        appsSum.flatMap(_.sqlTaskAggMetrics),
+        appsSum.flatMap(_.durAndCpuMet),
+        appsSum.flatMap(_.skewInfo),
+        appsSum.flatMap(_.failedTasks),
+        appsSum.flatMap(_.failedStages),
+        appsSum.flatMap(_.failedJobs),
+        appsSum.flatMap(_.removedBMs),
+        appsSum.flatMap(_.removedExecutors),
+        appsSum.flatMap(_.unsupportedOps)
+      )
+
+      // Seq(sorted.reduceLeft(combinedAppSums))
+      Seq(reduced)
     } else {
       appsSum
     }
