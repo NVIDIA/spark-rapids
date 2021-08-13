@@ -360,7 +360,6 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
             }.toMap
 
             outputHeaders += app.rapidsProps.head.outputHeaders(1)
-            logWarning("outputheaders are: " + outputHeaders.mkString(","))
             val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
             val existDiff = props.keys.toSeq.diff(inter)
             val newDiff = rapidsRelated.keys.toSeq.diff(inter)
