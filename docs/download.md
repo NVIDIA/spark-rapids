@@ -37,6 +37,7 @@ Software Requirements:
 	
 	Python 3.6+, Scala 2.12, Java 8 
 
+
 *Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
 for your hardware's minimum driver version.
 
@@ -48,6 +49,7 @@ for your hardware's minimum driver version.
 This package is built against CUDA 11.2 and has [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
 on V100, T4, A30 and A100 GPUs with CUDA 11.0-11.4.  For those using other types of GPUs which
+
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
@@ -69,6 +71,7 @@ New functionality and performance improvements for this release include:
   * Ability to run the tool on Apache Spark 3.x, AWS EMR 6.3.0, Dataproc 2.0, Microsoft Azure, and
     Databricks 7.3 and 8.2 logs
   * Improved qualification tool performance
+
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
@@ -132,7 +135,7 @@ Software Requirements:
 	
 	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
 	
-	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
+	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, and GCP Dataproc 2.0
 	
 	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 	
