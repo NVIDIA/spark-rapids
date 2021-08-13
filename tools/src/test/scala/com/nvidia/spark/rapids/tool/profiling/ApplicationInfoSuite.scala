@@ -210,8 +210,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         index += 1
       }
       assert(apps.size == 1)
-      val collect = new CollectInformation(apps)
-      collect.printSQLPlans(tempOutputDir.getAbsolutePath)
+      CollectInformation.printSQLPlans(apps, tempOutputDir.getAbsolutePath)
       val outputDir = new File(tempOutputDir, apps.head.appId)
       val dotDirs = ToolTestUtils.listFilesMatching(outputDir, _.endsWith("planDescriptions.log"))
       assert(dotDirs.length === 1)
