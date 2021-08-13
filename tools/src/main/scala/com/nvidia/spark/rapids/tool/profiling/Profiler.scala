@@ -410,25 +410,25 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         resRows.sortBy(cols => cols.key)
       }
 
-      val sorted = appsSum.sortBy(_.appInfo.head.appIndex)
+      val sorted = appsSum.sortBy( x => -(x.appInfo.head.appIndex))
       val reduced = new ApplicationSummaryInfo(
-        appsSum.flatMap(_.appInfo),
-        appsSum.flatMap(_.dsInfo),
-        appsSum.flatMap(_.execInfo),
-        appsSum.flatMap(_.jobInfo),
-        combineProps(appsSum),
-        appsSum.flatMap(_.rapidsJar),
-        appsSum.flatMap(_.sqlMetrics),
-        appsSum.flatMap(_.jsMetAgg),
-        appsSum.flatMap(_.sqlTaskAggMetrics),
-        appsSum.flatMap(_.durAndCpuMet),
-        appsSum.flatMap(_.skewInfo),
-        appsSum.flatMap(_.failedTasks),
-        appsSum.flatMap(_.failedStages),
-        appsSum.flatMap(_.failedJobs),
-        appsSum.flatMap(_.removedBMs),
-        appsSum.flatMap(_.removedExecutors),
-        appsSum.flatMap(_.unsupportedOps)
+        appsSum.flatMap(_.appInfo).sortBy(-_.appIndex),
+        appsSum.flatMap(_.dsInfo).sortBy(-_.appIndex),
+        appsSum.flatMap(_.execInfo).sortBy(-_.appIndex),
+        appsSum.flatMap(_.jobInfo).sortBy(-_.appIndex),
+        combineProps(appsSum).sortBy(_.key),
+        appsSum.flatMap(_.rapidsJar).sortBy(-_.appIndex),
+        appsSum.flatMap(_.sqlMetrics).sortBy(-_.appIndex),
+        appsSum.flatMap(_.jsMetAgg).sortBy(-_.appIndex),
+        appsSum.flatMap(_.sqlTaskAggMetrics).sortBy(-_.appIndex),
+        appsSum.flatMap(_.durAndCpuMet).sortBy(-_.appIndex),
+        appsSum.flatMap(_.skewInfo).sortBy(-_.appIndex),
+        appsSum.flatMap(_.failedTasks).sortBy(-_.appIndex),
+        appsSum.flatMap(_.failedStages).sortBy(-_.appIndex),
+        appsSum.flatMap(_.failedJobs).sortBy(-_.appIndex),
+        appsSum.flatMap(_.removedBMs).sortBy(-_.appIndex),
+        appsSum.flatMap(_.removedExecutors).sortBy(-_.appIndex),
+        appsSum.flatMap(_.unsupportedOps).sortBy(-_.appIndex)
       )
 
       // Seq(sorted.reduceLeft(combinedAppSums))
