@@ -2760,6 +2760,13 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
       }
     ),
+    expr[CreateMap](
+      desc = "Create a map",
+      CreateMapCheck,
+      (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCreateMap(a.children)
+      }
+    ),
     GpuScalaUDF.exprMeta
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
