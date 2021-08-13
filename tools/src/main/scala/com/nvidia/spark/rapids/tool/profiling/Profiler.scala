@@ -403,6 +403,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
               props.put(k, appVals)
             }
+          } else {
+            logWarning(" skipping appindex: " + app.appInfo.head.appIndex)
           }
         }
         val allRows = props.map { case (k, v) => Seq(k) ++ v }.toSeq
