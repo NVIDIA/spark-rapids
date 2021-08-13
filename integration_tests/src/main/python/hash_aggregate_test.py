@@ -208,6 +208,7 @@ _grpkey_small_decimals = [
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
+@shuffle_test
 @approximate_float
 @ignore_order
 @incompat
