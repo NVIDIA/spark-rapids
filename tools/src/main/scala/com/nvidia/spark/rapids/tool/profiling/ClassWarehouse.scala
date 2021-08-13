@@ -423,7 +423,7 @@ case class JobStageAggTaskMetricsProfileResult(
   }
 }
 
-case class SQLTaskAggMetrics(
+case class SQLTaskAggMetricsProfileResult(
     appIndex: Int,
     appId: String,
     sqlId: Long,
@@ -522,7 +522,7 @@ case class SQLTaskAggMetrics(
   }
 }
 
-case class SQLDurationExecutorTime(appIndex: Int, appId: String, sqlID: Long,
+case class SQLDurationExecutorTimeProfileResult(appIndex: Int, appId: String, sqlID: Long,
     duration: Option[Long], containsDataset: Boolean, appDuration: Option[Long],
     potentialProbs: String, executorCpuRatio: Double) extends ProfileResult {
   override val outputHeaders = Seq("appIndex", "App ID", "sqlID", "SQL Duration",
@@ -552,9 +552,9 @@ case class SQLDurationExecutorTime(appIndex: Int, appId: String, sqlID: Long,
   }
 }
 
-case class ShuffleSkewInfo(appIndex: Int, stageId: Long, stageAttemptId: Long, taskId: Long,
-    taskAttemptId: Long, taskDuration: Long, avgDuration: Double, taskShuffleReadMB: Long,
-    avgShuffleReadMB: Double, taskPeakMemoryMB: Long,
+case class ShuffleSkewProfileResult(appIndex: Int, stageId: Long, stageAttemptId: Long,
+    taskId: Long, taskAttemptId: Long, taskDuration: Long, avgDuration: Double,
+    taskShuffleReadMB: Long, avgShuffleReadMB: Double, taskPeakMemoryMB: Long,
     successful: Boolean, reason: String) extends ProfileResult {
   override val outputHeaders = Seq("appIndex", "stageId", "stageAttemptId", "taskId", "attempt",
     "taskDurationSec", "avgDurationSec", "taskShuffleReadMB", "avgShuffleReadMB",

@@ -231,7 +231,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
   }
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
-  def sqlMetricsAggregation(): Seq[SQLTaskAggMetrics] = {
+  def sqlMetricsAggregation(): Seq[SQLTaskAggMetricsProfileResult] = {
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         val jcs = app.jobIdToInfo.filter { case (_, jc) =>
@@ -260,7 +260,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
             sqlCase.sqlCpuTimePercent = execCPURatio
            
             val (durSum, durMax, durMin, durAvg) = getDurations(tasksInSQL)
-            Some(SQLTaskAggMetrics(app.index,
+            Some(SQLTaskAggMetricsProfileResult(app.index,
               app.appId,
               sqlId,
               sqlCase.description,
@@ -315,11 +315,11 @@ class Analysis(apps: Seq[ApplicationInfo]) {
     }
   }
 
-  def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTime] = {
+  def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTimeProfileResult] = {
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         // Potential problems not properly track, add it later
-        SQLDurationExecutorTime(app.index, app.appId, sqlId, sqlCase.duration,
+        SQLDurationExecutorTimeProfileResult(app.index, app.appId, sqlId, sqlCase.duration,
           sqlCase.hasDataset, app.appInfo.duration, sqlCase.problematic,
           sqlCase.sqlCpuTimePercent)
       }
@@ -338,7 +338,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
 
   private case class AverageStageInfo(avgDuration: Double, avgShuffleReadBytes: Double)
 
-  def shuffleSkewCheck(): Seq[ShuffleSkewInfo] = {
+  def shuffleSkewCheck(): Seq[ShuffleSkewProfileResult] = {
     val allRows = apps.flatMap { app =>
       val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
         (tc.stageId, tc.stageAttemptId)
@@ -369,7 +369,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
         val avgShuffleDur = avgsStageInfos.get((tc.stageId, tc.stageAttemptId))
         avgShuffleDur match {
           case Some(avg) =>
-            Some(ShuffleSkewInfo(app.index, tc.stageId, tc.stageAttemptId,
+            Some(ShuffleSkewProfileResult(app.index, tc.stageId, tc.stageAttemptId,
               tc.taskId, tc.attempt, tc.duration, avg.avgDuration, tc.sr_totalBytesRead,
               avg.avgShuffleReadBytes, tc.peakExecutionMemory, tc.successful, tc.endReason))
           case None =>

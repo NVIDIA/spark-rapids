@@ -44,30 +44,47 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
   private val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
 
   private val outputCSV: Boolean = appArgs.csv()
+  private val outputCombined: Boolean = appArgs.combined()
 
   logInfo(s"Threadpool size is $nThreads")
 
   def profile(eventLogInfos: Seq[EventLogInfo]): Unit = {
     if (appArgs.compare()) {
-      val apps = createApps(eventLogInfos)
-      if (apps.size < 2) {
-        logError("At least 2 applications are required for comparison mode. Exiting!")
+      if (outputCombined) {
+        logError("Output combined option not valid with compare mode!")
       } else {
-        val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/compare",
-          Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
-        try {
-          // create all the apps in parallel since we need the info for all of them to compare
-          processApps(apps, printPlans = false, profileOutputWriter)
-        }
-        finally {
-          profileOutputWriter.close()
+        val apps = createApps(eventLogInfos)
+
+        if (apps.size < 2) {
+          logError("At least 2 applications are required for comparison mode. Exiting!")
+        } else {
+          val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/compare",
+            Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
+          try {
+            // create all the apps in parallel since we need the info for all of them to compare
+            processApps(apps, printPlans = false, profileOutputWriter)
+          }
+          finally {
+            profileOutputWriter.close()
+          }
         }
       }
     } else {
+
+      val sums = createAppsAndSummarize(eventLogInfos, 1)
+      val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/compare",
+        Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
+      try {
+        writeOutput(profileOutputWriter, sums, outputCombined)
+      } finally {
+        profileOutputWriter.close()
+      }
+
       // Read each application and process it separately to save memory.
       // Memory usage will be controlled by number of threads running.
       // use appIndex as 1 for all since we output separate file for each now
-      eventLogInfos.foreach { log =>
+
+     /*eventLogInfos.foreach { log =>
         createAppAndProcess(Seq(log), 1)
       }
       // wait for the threads to finish processing the files
@@ -77,6 +94,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           " stopping processing any more event logs")
         threadPool.shutdownNow()
       }
+      */
     }
   }
 
@@ -88,6 +106,41 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       def run: Unit = {
         val appOpt = createApp(path, numOutputRows, index, hadoopConf)
         appOpt.foreach(app => allApps.add(app))
+      }
+    }
+
+    var appIndex = 1
+    allPaths.foreach { path =>
+      try {
+        threadPool.submit(new ProfileThread(path, appIndex))
+        appIndex += 1
+      } catch {
+        case e: Exception =>
+          logError(s"Unexpected exception submitting log ${path.eventLog.toString}, skipping!", e)
+      }
+    }
+    // wait for the threads to finish processing the files
+    threadPool.shutdown()
+    if (!threadPool.awaitTermination(waitTimeInSec, TimeUnit.SECONDS)) {
+      logError(s"Processing log files took longer then $waitTimeInSec seconds," +
+        " stopping processing any more event logs")
+      threadPool.shutdownNow()
+    }
+    allApps.asScala.toSeq
+  }
+
+  private def createAppsAndSummarize(allPaths: Seq[EventLogInfo],
+      printPlans: Boolean): Seq[ApplicationSummaryInfo] = {
+    var errorCodes = ArrayBuffer[Int]()
+    val allApps = new ConcurrentLinkedQueue[ApplicationSummaryInfo]()
+
+    class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
+      def run: Unit = {
+        val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+        appOpt.foreach { app =>
+          val sum = processApps(Seq(app), false, null)
+          allApps.add(sum)
+        }
       }
     }
 
@@ -179,33 +232,33 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
    * at a time.
    */
   private def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
-      profileOutputWriter: ProfileOutputWriter): Unit = {
+      profileOutputWriter: ProfileOutputWriter): ApplicationSummaryInfo = {
 
-    profileOutputWriter.writeText("### A. Information Collected ###")
+    // profileOutputWriter.writeText("### A. Information Collected ###")
     val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
-    profileOutputWriter.write("Application Information", appInfo)
+    // profileOutputWriter.write("Application Information", appInfo)
 
     val dsInfo = collect.getDataSourceInfo
-    profileOutputWriter.write("Data Source Information", dsInfo)
+    // profileOutputWriter.write("Data Source Information", dsInfo)
 
     val execInfo = collect.getExecutorInfo
-    profileOutputWriter.write("Executor Information", execInfo)
+    // profileOutputWriter.write("Executor Information", execInfo)
 
     val jobInfo = collect.getJobInfo
-    profileOutputWriter.write("Job Information", jobInfo)
+    // profileOutputWriter.write("Job Information", jobInfo)
 
     val rapidsProps = collect.getRapidsProperties
-    profileOutputWriter.write("Spark Rapids parameters set explicitly", rapidsProps,
-      Some("Spark Rapids parameters"))
+    // profileOutputWriter.write("Spark Rapids parameters set explicitly", rapidsProps,
+    //   Some("Spark Rapids parameters"))
 
     val rapidsJar = collect.getRapidsJARInfo
-    profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", rapidsJar,
-      Some("Rapids 4 Spark Jars"))
+    // profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", rapidsJar,
+    //   Some("Rapids 4 Spark Jars"))
 
     val sqlMetrics = collect.getSQLPlanMetrics
-    profileOutputWriter.write("SQL Plan Metrics for Application", sqlMetrics,
-      Some("SQL Plan Metrics"))
+    // profileOutputWriter.write("SQL Plan Metrics for Application", sqlMetrics,
+    //   Some("SQL Plan Metrics"))
 
     if (printPlans) {
       collect.printSQLPlans(outputDir)
@@ -220,42 +273,41 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds)
     }
 
-    profileOutputWriter.writeText("\n### B. Analysis ###\n")
+    // profileOutputWriter.writeText("\n### B. Analysis ###\n")
     val analysis = new Analysis(apps)
     val jsMetAgg = analysis.jobAndStageMetricsAggregation()
-    profileOutputWriter.write("Job + Stage level aggregated task metrics", jsMetAgg,
-      Some("Job/Stage Metrics"))
+    // profileOutputWriter.write("Job + Stage level aggregated task metrics", jsMetAgg,
+    //   Some("Job/Stage Metrics"))
 
     val sqlTaskAggMetrics = analysis.sqlMetricsAggregation()
-    profileOutputWriter.write("SQL level aggregated task metrics", sqlTaskAggMetrics,
-      Some("SQL Metrics"))
+    // profileOutputWriter.write("SQL level aggregated task metrics", sqlTaskAggMetrics,
+    //   Some("SQL Metrics"))
     val durAndCpuMet = analysis.sqlMetricsAggregationDurationAndCpuTime()
-    profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", durAndCpuMet)
+    // profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", durAndCpuMet)
     val skewInfo = analysis.shuffleSkewCheck()
-    // TODO - to long for file name
     val skewHeader = "Shuffle Skew Check" // +
     val skewTableDesc = "(When task's Shuffle Read Size > 3 * Avg Stage-level size)"
-    profileOutputWriter.write(skewHeader, skewInfo, tableDesc = Some(skewTableDesc))
+    // profileOutputWriter.write(skewHeader, skewInfo, tableDesc = Some(skewTableDesc))
 
-    profileOutputWriter.writeText("\n### C. Health Check###\n")
+    // profileOutputWriter.writeText("\n### C. Health Check###\n")
     val healthCheck = new HealthCheck(apps)
     val failedTasks = healthCheck.getFailedTasks
-    profileOutputWriter.write("Failed Tasks", failedTasks)
+    // profileOutputWriter.write("Failed Tasks", failedTasks)
 
     val failedStages = healthCheck.getFailedStages
-    profileOutputWriter.write("Failed Stages", failedStages)
+    // profileOutputWriter.write("Failed Stages", failedStages)
 
     val failedJobs = healthCheck.getFailedJobs
-    profileOutputWriter.write("Failed Jobs", failedJobs)
+    // profileOutputWriter.write("Failed Jobs", failedJobs)
 
     val removedBMs = healthCheck.getRemovedBlockManager
-    profileOutputWriter.write("Removed BlockManagers", removedBMs)
+    // profileOutputWriter.write("Removed BlockManagers", removedBMs)
     val removedExecutors = healthCheck.getRemovedExecutors
-    profileOutputWriter.write("Removed Executors", removedExecutors)
+    // profileOutputWriter.write("Removed Executors", removedExecutors)
 
     val unsupportedOps = healthCheck.getPossibleUnsupportedSQLPlan
-    profileOutputWriter.write("Unsupported SQL Plan", unsupportedOps,
-      Some("Unsupported SQL Ops"))
+    // profileOutputWriter.write("Unsupported SQL Plan", unsupportedOps,
+    //   Some("Unsupported SQL Ops"))
 
     if (appArgs.generateDot()) {
       if (appArgs.compare()) {
@@ -282,6 +334,77 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           s"to $outputDir in $duration second(s)\n")
       }
     }
+    new ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
+      sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
+      failedJobs, removedBMs, removedExecutors, unsupportedOps)
+  }
+
+  def writeOutput(profileOutputWriter: ProfileOutputWriter,
+      appsSum: Seq[ApplicationSummaryInfo], outputCombined: Boolean): Unit = {
+
+    val combinedAppSums = (x: ApplicationSummaryInfo, y: ApplicationSummaryInfo) => {
+      new ApplicationSummaryInfo(
+        x.appInfo ++ y.appInfo,
+        x.dsInfo ++ y.dsInfo,
+        x.execInfo ++ y.execInfo,
+        x.jobInfo ++ y.jobInfo,
+        x.rapidsProps ++ y.rapidsProps,
+        x.rapidsJar ++ y.rapidsJar,
+        x.sqlMetrics ++ y.sqlMetrics,
+        x.jsMetAgg ++ y.jsMetAgg,
+        x.sqlTaskAggMetrics ++ y.sqlTaskAggMetrics,
+        x.durAndCpuMet ++ y.durAndCpuMet,
+        x.skewInfo ++ y.skewInfo,
+        x.failedTasks ++ y.failedTasks,
+        x.failedStages ++ y.failedStages,
+        x.failedJobs ++ y.failedJobs,
+        x.removedBMs ++ y.removedBMs,
+        x.removedExecutors ++ y.removedExecutors,
+        x.unsupportedOps ++ y.unsupportedOps
+      )
+    }
+    val sums = if (outputCombined) {
+      Seq(appsSum.reduceLeft(combinedAppSums))
+    } else {
+      appsSum
+    }
+    sums.foreach { app =>
+      profileOutputWriter.writeText("### A. Information Collected ###")
+      profileOutputWriter.write("Application Information", app.appInfo)
+      profileOutputWriter.write("Data Source Information", app.dsInfo)
+      profileOutputWriter.write("Executor Information", app.execInfo)
+      profileOutputWriter.write("Job Information", app.jobInfo)
+      profileOutputWriter.write("Spark Rapids parameters set explicitly", app.rapidsProps,
+        Some("Spark Rapids parameters"))
+      profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", app.rapidsJar,
+        Some("Rapids 4 Spark Jars"))
+      profileOutputWriter.write("SQL Plan Metrics for Application", app.sqlMetrics,
+        Some("SQL Plan Metrics"))
+
+      profileOutputWriter.writeText("\n### B. Analysis ###\n")
+      profileOutputWriter.write("Job + Stage level aggregated task metrics", app.jsMetAgg,
+        Some("Job/Stage Metrics"))
+
+      profileOutputWriter.write("SQL level aggregated task metrics", app.sqlTaskAggMetrics,
+        Some("SQL Metrics"))
+      profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", app.durAndCpuMet)
+      val skewHeader = "Shuffle Skew Check" // +
+    val skewTableDesc = "(When task's Shuffle Read Size > 3 * Avg Stage-level size)"
+      profileOutputWriter.write(skewHeader, app.skewInfo, tableDesc = Some(skewTableDesc))
+
+      profileOutputWriter.writeText("\n### C. Health Check###\n")
+      profileOutputWriter.write("Failed Tasks", app.failedTasks)
+      profileOutputWriter.write("Failed Stages", app.failedStages)
+
+      profileOutputWriter.write("Failed Jobs", app.failedJobs)
+
+      profileOutputWriter.write("Removed BlockManagers", app.removedBMs)
+      profileOutputWriter.write("Removed Executors", app.removedExecutors)
+
+      profileOutputWriter.write("Unsupported SQL Plan", app.unsupportedOps,
+        Some("Unsupported SQL Ops"))
+    }
+
   }
 }
 

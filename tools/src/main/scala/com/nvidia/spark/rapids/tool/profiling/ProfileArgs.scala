@@ -70,6 +70,9 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   val csv: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Output each table to a CSV file as well creating the summary text file.")
+  val combined: ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Collect mode but combine all applications into the same tables.")
   val timeout: ScallopOption[Long] =
     opt[Long](required = false,
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +
