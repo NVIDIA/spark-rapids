@@ -46,14 +46,23 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
             read_func(std_input_path + '/' + name),
             conf=all_confs)
 
+# ORC does not support negative scale for decimal. So here is "decimal_gens_no_neg".
+# Otherwsie it will get the below exception.
+# ...
+#E                   Caused by: java.lang.IllegalArgumentException: Missing integer at
+#   'struct<`_c0`:decimal(7,^-3),`_c1`:decimal(7,3),`_c2`:decimal(7,7),`_c3`:decimal(12,2)>'
+#E                   	at org.apache.orc.TypeDescription.parseInt(TypeDescription.java:244)
+#E                   	at org.apache.orc.TypeDescription.parseType(TypeDescription.java:362)
+# ...
 orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))] + decimal_gens_no_neg
 
 # Some array gens, but not all because of nesting
 orc_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens] + [
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
-    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)]
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(decimal_gen_default, max_length=10), max_length=10)]
 
 orc_gens_list = [orc_basic_gens,
     orc_array_gens_sample,
