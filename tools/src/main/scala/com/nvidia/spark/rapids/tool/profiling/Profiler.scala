@@ -63,7 +63,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           try {
             // create all the apps in parallel since we need the info for all of them to compare
             val (sums, comparedRes) = processApps(apps, printPlans = false, profileOutputWriter)
-            writeOutput(profileOutputWriter, Seq(sums), false)
+            writeOutput(profileOutputWriter, Seq(sums), false, comparedRes)
           }
           finally {
             profileOutputWriter.close()
@@ -176,8 +176,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
                 Profiler.PROFILE_LOG_NAME, numOutputRows,
                 outputCSV = outputCSV)
               try {
-                val (sum, _) =
-                  processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
+                val (sum, _) = processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
                 writeOutput(profileOutputWriter, Seq(sum), false)
               } finally {
                 profileOutputWriter.close()
