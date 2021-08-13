@@ -478,19 +478,6 @@ object GpuCast extends Arm {
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
 
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castIntegralsToDecimal(inputVector, dt, ansiMode)
-        }
-
-      case (FloatType | DoubleType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castFloatsToDecimal(inputVector, dt, ansiMode)
-        }
-
-      case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.copyToColumnVector(), from, to, ansiMode)
-
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
 
