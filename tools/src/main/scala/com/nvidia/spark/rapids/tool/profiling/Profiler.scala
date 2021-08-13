@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.tool.profiling
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecutor, TimeUnit}
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
@@ -364,8 +364,49 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       )
     }
 
-
     val sums = if (outputCombined) {
+      def combineProps(sums: Seq[ApplicationSummaryInfo]): Seq[RapidsPropertyProfileResult] = {
+        var numApps = 0
+        val props = HashMap[String, ArrayBuffer[String]]()
+        val outputHeaders = ArrayBuffer("propertyName")
+        sums.foreach { app =>
+          numApps += 1
+          val rapidsRelated = app.rapidsProps.map { rp =>
+            rp.rows(0) -> rp.rows(1)
+          }.toMap
+
+          outputHeaders += app.rapidsProps.head.outputHeaders(1)
+          logWarning("outputheaders are: " + outputHeaders.mkString(","))
+          val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
+          val existDiff = props.keys.toSeq.diff(inter)
+          val newDiff = rapidsRelated.keys.toSeq.diff(inter)
+
+          // first update intersecting
+          inter.foreach { k =>
+            val appVals = props.getOrElse(k, ArrayBuffer[String]())
+            appVals += rapidsRelated.getOrElse(k, "null")
+          }
+
+          // this app doesn't contain a key that was in another app
+          existDiff.foreach { k =>
+            val appVals = props.getOrElse(k, ArrayBuffer[String]())
+            appVals += "null"
+          }
+
+          // this app contains a key not in other apps
+          newDiff.foreach { k =>
+            // we need to fill if some apps didn't have it
+            val appVals = ArrayBuffer[String]()
+            appVals ++= Seq.fill(numApps - 1)("null")
+            appVals += rapidsRelated.getOrElse(k, "null")
+
+            props.put(k, appVals)
+          }
+        }
+        val allRows = props.map { case (k, v) => Seq(k) ++ v }.toSeq
+        val resRows = allRows.map(r => RapidsPropertyProfileResult(r(0), outputHeaders, r))
+        resRows.sortBy(cols => cols.key)
+      }
 
       val sorted = appsSum.sortBy(_.appInfo.head.appIndex)
       val reduced = new ApplicationSummaryInfo(
@@ -373,7 +414,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         appsSum.flatMap(_.dsInfo),
         appsSum.flatMap(_.execInfo),
         appsSum.flatMap(_.jobInfo),
-        appsSum.flatMap(_.rapidsProps),
+        combineProps(appsSum),
         appsSum.flatMap(_.rapidsJar),
         appsSum.flatMap(_.sqlMetrics),
         appsSum.flatMap(_.jsMetAgg),
