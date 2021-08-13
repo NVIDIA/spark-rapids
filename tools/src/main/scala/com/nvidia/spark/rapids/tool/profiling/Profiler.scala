@@ -71,7 +71,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       }
     } else {
 
-      val sums = createAppsAndSummarize(eventLogInfos, 1)
+      val sums = createAppsAndSummarize(eventLogInfos, false)
       val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/compare",
         Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
       try {
@@ -363,8 +363,12 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         x.unsupportedOps ++ y.unsupportedOps
       )
     }
+
+
     val sums = if (outputCombined) {
-      Seq(appsSum.reduceLeft(combinedAppSums))
+
+      val sorted = appsSum.sortBy(_.appInfo.head.appIndex)
+      Seq(sorted.reduceLeft(combinedAppSums))
     } else {
       appsSum
     }
