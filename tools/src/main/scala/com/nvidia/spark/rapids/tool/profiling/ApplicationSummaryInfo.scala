@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-class ApplicationSummaryInfo(
+case class ApplicationSummaryInfo(
     val appInfo: Seq[AppInfoProfileResults],
     val dsInfo: Seq[DataSourceProfileResult],
     val execInfo: Seq[ExecutorInfoProfileResult],
@@ -33,6 +33,4 @@ class ApplicationSummaryInfo(
     val failedJobs: Seq[FailedJobsProfileResults],
     val removedBMs: Seq[BlockManagerRemovedProfileResult],
     val removedExecutors: Seq[ExecutorsRemovedProfileResult],
-    val unsupportedOps: Seq[UnsupportedOpsProfileResult]) {
-
-}
+    val unsupportedOps: Seq[UnsupportedOpsProfileResult])
