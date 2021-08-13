@@ -62,7 +62,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
             Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
           try {
             // create all the apps in parallel since we need the info for all of them to compare
-            processApps(apps, printPlans = false, profileOutputWriter)
+            val (sums, comparedRes) = processApps(apps, printPlans = false, profileOutputWriter)
+            writeOutput(profileOutputWriter, Seq(sums), false)
           }
           finally {
             profileOutputWriter.close()
@@ -136,7 +137,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       def run: Unit = {
         val appOpt = createApp(path, numOutputRows, index, hadoopConf)
         appOpt.foreach { app =>
-          val sum = processApps(Seq(app), false, null)
+          val (sum, _) = processApps(Seq(app), false, null)
           allApps.add(sum)
         }
       }
@@ -175,7 +176,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
                 Profiler.PROFILE_LOG_NAME, numOutputRows,
                 outputCSV = outputCSV)
               try {
-                val sum = processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
+                val (sum, _) =
+                  processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
                 writeOutput(profileOutputWriter, Seq(sum), false)
               } finally {
                 profileOutputWriter.close()
@@ -230,7 +232,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
    * at a time.
    */
   private def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
-      profileOutputWriter: ProfileOutputWriter): ApplicationSummaryInfo = {
+      profileOutputWriter: ProfileOutputWriter): (ApplicationSummaryInfo,
+    Option[CompareSummaryInfo]) = {
 
     // profileOutputWriter.writeText("### A. Information Collected ###")
     val collect = new CollectInformation(apps)
@@ -258,17 +261,16 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     // profileOutputWriter.write("SQL Plan Metrics for Application", sqlMetrics,
     //   Some("SQL Plan Metrics"))
 
-    if (printPlans) {
-      collect.printSQLPlans(outputDir)
-    }
-
     // for compare mode we just add in extra tables for matching across applications
     // the rest of the tables simply list all applications specified
-    if (appArgs.compare()) {
+    val compareRes = if (appArgs.compare()) {
       val compare = new CompareApplications(apps)
       val (matchingSqlIds, matchingStageIds) = compare.findMatchingStages()
-      profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds)
-      profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds)
+      // profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds)
+      // profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds)
+      Some(CompareSummaryInfo(matchingSqlIds, matchingStageIds))
+    } else {
+      None
     }
 
     // profileOutputWriter.writeText("\n### B. Analysis ###\n")
@@ -307,6 +309,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     // profileOutputWriter.write("Unsupported SQL Plan", unsupportedOps,
     //   Some("Unsupported SQL Ops"))
 
+    if (printPlans) {
+      CollectInformation.printSQLPlans(apps, outputDir)
+    }
+
     if (appArgs.generateDot()) {
       if (appArgs.compare()) {
         logWarning("Dot graph does not compare apps")
@@ -332,13 +338,14 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           s"to $outputDir in $duration second(s)\n")
       }
     }
-    ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
+    (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
       sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
-      failedJobs, removedBMs, removedExecutors, unsupportedOps)
+      failedJobs, removedBMs, removedExecutors, unsupportedOps), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
-      appsSum: Seq[ApplicationSummaryInfo], outputCombined: Boolean): Unit = {
+      appsSum: Seq[ApplicationSummaryInfo], outputCombined: Boolean,
+      comparedRes: Option[CompareSummaryInfo] = None): Unit = {
 
     val sums = if (outputCombined) {
       def combineProps(sums: Seq[ApplicationSummaryInfo]): Seq[RapidsPropertyProfileResult] = {
@@ -422,6 +429,12 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         Some("Rapids 4 Spark Jars"))
       profileOutputWriter.write("SQL Plan Metrics for Application", app.sqlMetrics,
         Some("SQL Plan Metrics"))
+      comparedRes.foreach { compareSum =>
+        val matchingSqlIds = compareSum.matchingSqlIds
+        val matchingStageIds = compareSum.matchingStageIds
+        profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds)
+        profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds)
+      }
 
       profileOutputWriter.writeText("\n### B. Analysis ###\n")
       profileOutputWriter.write("Job + Stage level aggregated task metrics", app.jsMetAgg,

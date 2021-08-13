@@ -34,3 +34,6 @@ case class ApplicationSummaryInfo(
     val removedBMs: Seq[BlockManagerRemovedProfileResult],
     val removedExecutors: Seq[ExecutorsRemovedProfileResult],
     val unsupportedOps: Seq[UnsupportedOpsProfileResult])
+
+case class CompareSummaryInfo(val matchingSqlIds: Seq[CompareProfileResults],
+    val matchingStageIds: Seq[CompareProfileResults])

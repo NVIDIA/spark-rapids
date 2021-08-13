@@ -180,23 +180,6 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
     }
   }
 
-  def printSQLPlans(outputDir: String): Unit = {
-    for (app <- apps) {
-      val planFileWriter = new ToolTextFileWriter(s"$outputDir/${app.appId}",
-        "planDescriptions.log", "SQL Plan")
-      try {
-        for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
-          planFileWriter.write("\n=============================\n")
-          planFileWriter.write(s"Plan for SQL ID : $sqlID")
-          planFileWriter.write("\n=============================\n")
-          planFileWriter.write(planDesc)
-        }
-      } finally {
-        planFileWriter.close()
-      }
-    }
-  }
-
   // Print SQL Plan Metrics
   def getSQLPlanMetrics: Seq[SQLAccumProfileResults] = {
     val sqlAccums = CollectInformation.generateSQLAccums(apps)
@@ -263,5 +246,22 @@ object CollectInformation extends Logging {
       }
     }
     allRows.filter(_.isDefined).map(_.get)
+  }
+
+  def printSQLPlans(apps: Seq[ApplicationInfo], outputDir: String): Unit = {
+    for (app <- apps) {
+      val planFileWriter = new ToolTextFileWriter(s"$outputDir/${app.appId}",
+        "planDescriptions.log", "SQL Plan")
+      try {
+        for ((sqlID, planDesc) <- app.physicalPlanDescription.toSeq.sortBy(_._1)) {
+          planFileWriter.write("\n=============================\n")
+          planFileWriter.write(s"Plan for SQL ID : $sqlID")
+          planFileWriter.write("\n=============================\n")
+          planFileWriter.write(planDesc)
+        }
+      } finally {
+        planFileWriter.close()
+      }
+    }
   }
 }
