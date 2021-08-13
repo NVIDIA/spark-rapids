@@ -74,7 +74,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       // same as collection but combine the output so all apps are in single tables
       val sums = createAppsAndSummarize(eventLogInfos, false)
       val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/combined",
-        Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
+        Profiler.COMBINED_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
       try {
         writeOutput(profileOutputWriter, sums, outputCombined)
       } finally {
@@ -176,7 +176,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
                 Profiler.PROFILE_LOG_NAME, numOutputRows,
                 outputCSV = outputCSV)
               try {
-                val (sum, _) = processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
+                val (sum, _) =
+                  processApps(Seq(appOpt.get), appArgs.printPlans(), profileOutputWriter)
                 writeOutput(profileOutputWriter, Seq(sum), false)
               } finally {
                 profileOutputWriter.close()
@@ -466,5 +467,6 @@ object Profiler {
   // This tool's output log file name
   val PROFILE_LOG_NAME = "profile"
   val COMPARE_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_compare"
+  val COMBINED_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_combined"
   val SUBDIR = "rapids_4_spark_profile"
 }
