@@ -35,7 +35,7 @@ SPARK_VER=${SPARK_VER:-"3.0.1"}
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
 # cloudera, and others) may not be a simple as just the version number, so
 # this variable should be set accordingly.
-SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${SPARK_VER//./}}
+SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${SPARK_VER//?(.|\-SNAPSHOT)/}}
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
 SERVER_ID=${SERVER_ID:-"snapshots"}
 
