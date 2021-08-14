@@ -284,6 +284,7 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
     | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
     | 3.0.3      | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
+    | 3.0.4      | com.nvidia.spark.rapids.spark304.RapidsShuffleManager    |
     | 3.1.1      | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
     | 3.1.1 CDH  | com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager |
     | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |

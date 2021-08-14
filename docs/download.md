@@ -160,11 +160,11 @@ For a detailed list of changes, please refer to the
 ## Release v21.06.0
 Starting with release 21.06.0, the project is moving to calendar versioning, with the first two
 digits representing the year, the second two digits representing the month, and the last digit
-representing the patch version of the release.
+representing the patch version of the release. 
 
-Hardware Requirements:
+Hardware Requirements: 
 
-The plugin is tested on the following architectures:
+The plugin is tested on the following architectures: 
 
 	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
 
@@ -180,7 +180,7 @@ Software Requirements:
 	
 	Python 3.6+, Scala 2.12, Java 8 
 
-*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet 
 for your hardware's minimum driver version.
 
 ### Download v21.06.0
@@ -197,18 +197,18 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 ### Release Notes
 New functionality for this release includes:
 * Support for running on Cloudera CDP 7.1.6, CDP 7.1.7 and Databricks 8.2 ML
-* New functionality related to arrays:
-  * Concatenation of array columns
+* New functionality related to arrays: 
+  * Concatenation of array columns 
   * Casting arrays of floats to arrays of doubles
   * Creation of 2D array types
   * Hash partitioning with arrays
   * Explode takes expressions that generate arrays
-* New functionality for struct types:
+* New functionality for struct types: 
   * Sorting on struct keys
   * Structs with map values
   * Caching of structs
-* New windowing functionality:
-  * Window lead / lag for arrays
+* New windowing functionality: 
+  * Window lead / lag for arrays 
   * Range windows supporting non-timestamp order by expressions
 * Enabling large joins that can spill out of memory
 * Support for the `concat_ws` operator
@@ -217,7 +217,7 @@ New functionality for this release includes:
     Apache Spark is a good fit
   * A profiling tool to generate information used for debugging and profiling applications
 
-Performance improvements for this release include:
+Performance improvements for this release include: 
 * Moving RAPIDS Shuffle out of beta
 * Updates to UCX error handling
 * GPUDirect Storage for spilling
@@ -230,10 +230,10 @@ For a detailed list of changes, please refer to the
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 
-Hardware Requirements:
+Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
-
+	
 Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS8
@@ -260,7 +260,7 @@ New functionality for this release includes:
 * Support for `get_json_object`, `pivot`, `explode` operators
 * Casting string to decimal and decimal to string
 
-Performance improvements for this release include:
+Performance improvements for this release include: 
 * Optimizing unnecessary columnar->row->columnar transitions with AQE
 * Supporting out of core sorts
 * Initial support for cost based optimization
@@ -278,10 +278,10 @@ Performance improvements for this release include:
   * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
 
 ### Requirements
-Hardware Requirements:
+Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
-
+	
 Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
@@ -304,7 +304,7 @@ Google Cloud Platform Dataproc 2.0.
 The list of all supported operations is provided [here](supported_ops.md).
 
 For a detailed list of changes, please refer to the
-[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
 **_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
@@ -320,10 +320,10 @@ driver.  This issue is resolved in the 0.5.0 and higher releases.
   * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.18.1/cudf-0.18.1-cuda10-1.jar)
 
 ### Requirements
-Hardware Requirements:
+Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
-
+	
 Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
@@ -344,7 +344,7 @@ New functionality for the release includes
 * Shuffle and sort support for `struct` data types
 * `array_contains` for list operations
 * `collect_list` and `average` for windowing operations
-* Murmur3 `hash` operation
+* Murmur3 `hash` operation 
 * Improved performance when reading from DataSource v2 when the source produces data in the Arrow format
 
 This release includes additional performance improvements, including
@@ -358,7 +358,7 @@ Google Cloud Platform Dataproc 2.0.
 The list of all supported operations is provided [here](supported_ops.md).
 
 For a detailed list of changes, please refer to the
-[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
 **_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
@@ -374,10 +374,10 @@ driver.  This issue is resolved in the 0.5.0 and higher releases.
   * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.17/cudf-0.17-cuda10-1.jar)
 
 ### Requirements
-Hardware Requirements:
+Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
-
+	
 Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
@@ -394,14 +394,14 @@ Software Requirements:
 This release includes additional performance improvements, including
 * Use of per thread default stream to make more efficient use of the GPU
 * Further supporting Spark's adaptive query execution, with more rewritten query plans now able to
-  run on the GPU
+run on the GPU 
 * Performance improvements for reading small Parquet files
 * RAPIDS Shuffle with UCX updated to UCX 1.9.0
 
 New functionality for the release includes
-* Parquet reading for lists and structs,
+* Parquet reading for lists and structs, 
 * Lead/lag for windows, and
-* Greatest/least operators
+* Greatest/least operators 
 
 The release is supported on Apache Spark 3.0.0, 3.0.1, Databricks 7.3 ML LTS and Google Cloud
 Platform Dataproc 2.0.
@@ -409,7 +409,7 @@ Platform Dataproc 2.0.
 The list of all supported operations is provided [here](supported_ops.md).
 
 For a detailed list of changes, please refer to the
-[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
 **_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
@@ -425,10 +425,10 @@ driver.  This issue is resolved in the 0.5.0 and higher releases.
   * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.15/cudf-0.15-cuda10-1.jar)
 
 ### Requirements
-Hardware Requirements:
+Hardware Requirements: 
 
 	GPU Architecture: NVIDIA Pascal™ or better (Tested on V100, T4 and A100 GPU)
-
+	
 Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
@@ -440,7 +440,7 @@ Software Requirements:
 	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
 	
 	Python 3.x, Scala 2.12, Java 8 
-
+	
 ### Release Notes
 This is the second release of the RAPIDS Accelerator for Apache Spark.  Adaptive Query Execution
 [SPARK-31412](https://issues.apache.org/jira/browse/SPARK-31412) is a new enhancement that was
@@ -457,13 +457,13 @@ Parquet file reads.
 The RAPIDS Accelerator introduces a beta feature that accelerates [Spark shuffle for
 GPUs](get-started/getting-started-on-prem.md#enabling-rapidsshufflemanager).  Accelerated
 shuffle makes use of high bandwidth transfers between GPUs (NVLink or p2p over PCIe) and leverages
-RDMA (RoCE or Infiniband) for remote transfers.
+RDMA (RoCE or Infiniband) for remote transfers. 
 
 The list of all supported operations is provided
 [here](configs.md#supported-gpu-operators-and-fine-tuning).
 
 For a detailed list of changes, please refer to the
-[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
 **_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
@@ -478,11 +478,11 @@ driver.  This issue is resolved in the 0.5.0 and higher releases.
   * [For CUDA 10.1 & NVIDIA driver 418.87+](https://repo1.maven.org/maven2/ai/rapids/cudf/0.14/cudf-0.14-cuda10-1.jar)
 
 ### Requirements
-Hardware Requirements:
-
+Hardware Requirements: 
+   
     GPU Architecture: NVIDIA Pascal™ or better (Tested on V100 and T4 GPU)
 
-Software Requirements:
+Software Requirements: 
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
     (RHEL 7 support is provided through CentOS 7 builds/installs)

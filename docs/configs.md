@@ -21,8 +21,8 @@ At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
 scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
 ```
 
-All configs can be set on startup, but some configs, especially for shuffle, will not
-work if they are set at runtime.
+ All configs can be set on startup, but some configs, especially for shuffle, will not
+ work if they are set at runtime.
 
 
 ## General Configuration
@@ -365,15 +365,15 @@ Name | Description | Default Value | Notes
 
 ### JIT Kernel Cache Path
 
-CUDF can compile GPU kernels at runtime using a just-in-time (JIT) compiler. The
-resulting kernels are cached on the filesystem. The default location for this cache is
-under the `.cudf` directory in the user's home directory. When running in an environment
-where the user's home directory cannot be written, such as running in a container
-environment on a cluster, the JIT cache path will need to be specified explicitly with
-the `LIBCUDF_KERNEL_CACHE_PATH` environment variable.
-The specified kernel cache path should be specific to the user to avoid conflicts with
-others running on the same host. For example, the following would specify the path to a
-user-specific location under `/tmp`:
+  CUDF can compile GPU kernels at runtime using a just-in-time (JIT) compiler. The
+  resulting kernels are cached on the filesystem. The default location for this cache is
+  under the `.cudf` directory in the user's home directory. When running in an environment
+  where the user's home directory cannot be written, such as running in a container
+  environment on a cluster, the JIT cache path will need to be specified explicitly with
+  the `LIBCUDF_KERNEL_CACHE_PATH` environment variable.
+  The specified kernel cache path should be specific to the user to avoid conflicts with
+  others running on the same host. For example, the following would specify the path to a
+  user-specific location under `/tmp`:
 
   ```
   --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH="/tmp/cudf-$USER"
