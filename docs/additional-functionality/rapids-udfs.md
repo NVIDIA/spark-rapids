@@ -139,38 +139,38 @@ in the [udf-examples](../../udf-examples) project.
 
 ### Spark Scala UDF Examples
 
-- [URLDecode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLDecode.scala)
-decodes URL-encoded strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-- [URLEncode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
-URL-encodes strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+- [URLDecode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLDecode.scala)
+  decodes URL-encoded strings using the
+  [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+- [URLEncode](../../udf-examples/src/main/scala/com/nvidia/spark/rapids/udf/scala/URLEncode.scala)
+  URL-encodes strings using the
+  [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
 
 ### Spark Java UDF Examples
 
-- [URLDecode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLDecode.java)
-decodes URL-encoded strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-- [URLEncode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLEncode.java)
-URL-encodes strings using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-- [CosineSimilarity](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/CosineSimilarity.java)
-computes the [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity)
-between two float vectors using [native code](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/cpp/src)
+- [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLDecode.java)
+  decodes URL-encoded strings using the
+  [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+- [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/URLEncode.java)
+  URL-encodes strings using the
+  [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+- [CosineSimilarity](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/java/CosineSimilarity.java)
+  computes the [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity)
+  between two float vectors using [native code](../../udf-examples/src/main/cpp/src)
 
 ### Hive UDF Examples
 
-- [URLDecode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLDecode.java)
-implements a Hive simple UDF using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-to decode URL-encoded strings
-- [URLEncode](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLEncode.java)
-implements a Hive generic UDF using the
-[Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
-to URL-encode strings
-- [StringWordCount](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
-implements a Hive simple UDF using
-[native code](https://github.com/NVIDIA/spark-rapids/tree/main/udf-examples/src/main/cpp/src) to count words in strings
+- [URLDecode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLDecode.java)
+  implements a Hive simple UDF using the
+  [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+  to decode URL-encoded strings
+- [URLEncode](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/URLEncode.java)
+  implements a Hive generic UDF using the
+  [Java APIs of RAPIDS cudf](https://docs.rapids.ai/api/cudf-java/stable)
+  to URL-encode strings
+- [StringWordCount](../../udf-examples/src/main/java/com/nvidia/spark/rapids/udf/hive/StringWordCount.java)
+  implements a Hive simple UDF using
+  [native code](../../udf-examples/src/main/cpp/src) to count words in strings
 
 
 ## GPU Support for Pandas UDF
@@ -187,11 +187,11 @@ function)](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pand
 and has two features:
 
 - **GPU Assignment(Scheduling) in Python Process**: Let the Python process share the same GPU with
-Spark executor JVM. Without this feature, in a non-isolated environment, some use cases with
-Pandas UDF (an `independent` Python daemon process) can try to use GPUs other than the one we want it to
-run on. For example, the user could launch a TensorFlow session inside Pandas UDF and the machine
-contains 8 GPUs. Without this GPU sharing feature, TensorFlow will automatically use all 8 GPUs
-which will conflict with existing Spark executor JVM processes.
+  Spark executor JVM. Without this feature, in a non-isolated environment, some use cases with
+  Pandas UDF (an `independent` Python daemon process) can try to use GPUs other than the one we want it to
+  run on. For example, the user could launch a TensorFlow session inside Pandas UDF and the machine
+  contains 8 GPUs. Without this GPU sharing feature, TensorFlow will automatically use all 8 GPUs
+  which will conflict with existing Spark executor JVM processes.
 
 - **Increase Speed**: Speeds up data transfer between JVM process and Python process.
 
@@ -200,14 +200,14 @@ which will conflict with existing Spark executor JVM processes.
 To enable GPU support for Pandas UDF, you need to configure your Spark job with extra settings.
 
 1. Make sure GPU `exclusive` mode is _disabled_. Note that this will not work if you are using
-exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
+   exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
     ```
     nvidia-smi -i 0 -c Default # Set GPU 0 to default mode, run as root.
     ```
 
 2. Currently the Python files are packed into the RAPIDS Accelerator jar.
 
-    On Yarn, you need to add
+   On Yarn, you need to add
     ```shell
     ...
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
@@ -232,14 +232,14 @@ Please note: every type of Pandas UDF on Spark is run by a specific Spark execut
 Accelerator has a 1-1 mapping support for each of them. Not all Pandas UDF types are data-transfer
 accelerated at present:
 
-  | Spark Execution Plan|Data Transfer Accelerated|Use Case|
+| Spark Execution Plan|Data Transfer Accelerated|Use Case|
   |----------------------|----------|--------|
-  |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-series-to-iterator-of-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)|
-  |MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#map)|
-  | WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)|
-  | FlatMapGroupsInPandasExec|no|[Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#grouped-map)|
-  | AggregateInPandasExec|no|[Aggregate](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)|
-  |FlatMapCoGroupsInPandasExec|no|[Co-grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#co-grouped-map)|
+|ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-series-to-iterator-of-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)|
+|MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#map)|
+| WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)|
+| FlatMapGroupsInPandasExec|no|[Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#grouped-map)|
+| AggregateInPandasExec|no|[Aggregate](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#series-to-scalar)|
+|FlatMapCoGroupsInPandasExec|no|[Co-grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/arrow_pandas.html#co-grouped-map)|
 
 
 ### Other Configuration
@@ -253,10 +253,10 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.maxAllocFraction= 0.2 \
     ```
-    Similar to the [RMM pooling for JVM](../tuning-guide.md#pooled-memory) settings like
-    `spark.rapids.memory.gpu.allocFraction` and `spark.rapids.memory.gpu.maxAllocFraction` except
-    these specify the GPU pool size for the _Python processes_. Half of the GPU _available_ memory
-    will be used by default if it is not specified.
+   Similar to the [RMM pooling for JVM](../tuning-guide.md#pooled-memory) settings like
+   `spark.rapids.memory.gpu.allocFraction` and `spark.rapids.memory.gpu.maxAllocFraction` except
+   these specify the GPU pool size for the _Python processes_. Half of the GPU _available_ memory
+   will be used by default if it is not specified.
 
 
 2. Limit of concurrent Python processes
@@ -264,16 +264,16 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     ```shell
     --conf spark.rapids.python.concurrentPythonWorkers=2 \
     ```
-    This parameter limits the total concurrent running _Python processes_ for a Spark executor.
-    It defaults to 0 which means no limit. Note that for certain cases, setting
-    this value too small _may result in  a hang for your Spark job_ because a task may contain
-    multiple Pandas UDF(`MapInPandas`) instances which result in multiple Python processes.
-    Each process will try to acquire the Python GPU process semaphore. This may result in a
-    deadlock situation because a Spark job will not proceed until all its tasks are finished.
+   This parameter limits the total concurrent running _Python processes_ for a Spark executor.
+   It defaults to 0 which means no limit. Note that for certain cases, setting
+   this value too small _may result in  a hang for your Spark job_ because a task may contain
+   multiple Pandas UDF(`MapInPandas`) instances which result in multiple Python processes.
+   Each process will try to acquire the Python GPU process semaphore. This may result in a
+   deadlock situation because a Spark job will not proceed until all its tasks are finished.
 
-    For example, in a specific Spark Stage that contains 3 Pandas UDFs, 2 Spark tasks are running
-    and each task launches 3 Python processes while we set this
-    `spark.rapids.python.concurrentPythonWorkers` to 4.
+   For example, in a specific Spark Stage that contains 3 Pandas UDFs, 2 Spark tasks are running
+   and each task launches 3 Python processes while we set this
+   `spark.rapids.python.concurrentPythonWorkers` to 4.
 
     ```python
     df_1 = df_0.mapInPandas(udf_1, schema_1)
@@ -281,7 +281,7 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     df_3 = df_2.mapInPandas(udf_3, schema_3)
     df_3.explain(True)
     ```
-    The RAPIDS Accelerator query explain:
+   The RAPIDS Accelerator query explain:
     ```
     ...
       *Exec <MapInPandasExec> could partially run on GPU
@@ -290,13 +290,13 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     ...
     ```
 
-    ![Python concurrent worker](../img/concurrentPythonWorker.PNG)
+   ![Python concurrent worker](../img/concurrentPythonWorker.PNG)
 
-    In this case, each Pandas UDF will launch a Python process. At this moment two Python processes
-    in each task(in light green) acquired their semaphore but neither of them are able to proceed
-    because both of them are waiting for their third semaphore to start the task.
+   In this case, each Pandas UDF will launch a Python process. At this moment two Python processes
+   in each task(in light green) acquired their semaphore but neither of them are able to proceed
+   because both of them are waiting for their third semaphore to start the task.
 
-    Another example is to use `ArrowEvalPythonExec`, with the following code:
+   Another example is to use `ArrowEvalPythonExec`, with the following code:
 
     ```python
     import pyspark.sql.functions as F
@@ -306,18 +306,18 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     df = df.withColumn("c_3",udf_2(F.col("c_2")))
     ...
     ```
-    The physical plan:
+   The physical plan:
     ```
         +- GpuArrowEvalPython
           +- ...
             +- ...
               +- GpuArrowEvalPython
     ```
-    This means each Spark task will trigger 2 Python processes. In this case, if we set
-    `spark.rapids.python.concurrentPythonWorkers=2`, it will also probably result in a hang as we
-    allow 2 tasks running and each of them spawns 2 Python processes. Let's say Task_1_Process_1 and
-    Task_2_Process_1 acquired the semaphore, but neither of them are going to proceed becasue both
-    of them are waiting for their second semaphore.
+   This means each Spark task will trigger 2 Python processes. In this case, if we set
+   `spark.rapids.python.concurrentPythonWorkers=2`, it will also probably result in a hang as we
+   allow 2 tasks running and each of them spawns 2 Python processes. Let's say Task_1_Process_1 and
+   Task_2_Process_1 acquired the semaphore, but neither of them are going to proceed becasue both
+   of them are waiting for their second semaphore.
 
 To find details on the above Python configuration settings, please see the [RAPIDS Accelerator for
 Apache Spark Configuration Guide](../configs.md). Search 'pandas' for a quick navigation jump.
