@@ -135,10 +135,10 @@
                 <spark.version>${spark302.version}</spark.version>
             </properties>
             <modules>
-                <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>udf-compiler</module>
                 <module>udf-examples</module>
+                <module>shuffle-plugin</module>
             </modules>
         </profile>
         <profile>
@@ -148,11 +148,12 @@
             </properties>
             <modules>
                 <module>sql-plugin</module>
-                <module>udf-compiler</module>
+                <!-- <module>udf-compiler</module>
                 <module>udf-examples</module>
                 <module>shims</module>
                 <module>shuffle-plugin</module>
                 <module>tests</module>
+                <module>dist</module> -->
             </modules>
         </profile>
         <profile>
@@ -486,25 +487,32 @@
                     <version>${scala.plugin.version}</version>
                     <executions>
                         <execution>
-                            <id>eclipse-add-source</id>
+                            <id>scala-compile-311</id>
+                            <phase>process-resources</phase>
                             <goals>
                                 <goal>add-source</goal>
+                                <goal>compile</goal>
+                                <goal>testCompile</goal>
                             </goals>
+                            <configuration>
+                              <spark.version>3.1.1</spark.version>
+                              <outputDir>${project.build.directory}/spark311</outputDir>
+                           </configuration>
                         </execution>
+                        <!--
                         <execution>
-                            <id>scala-compile-first</id>
+                            <id>scala-compile-302</id>
                             <phase>process-resources</phase>
                             <goals>
                                 <goal>compile</goal>
-                            </goals>
-                        </execution>
-                        <execution>
-                            <id>scala-test-compile-first</id>
-                            <phase>process-test-resources</phase>
-                            <goals>
                                 <goal>testCompile</goal>
                             </goals>
+                            <configuration>
+                              <spark.version>3.0.2</spark.version>
+                              <outputDir>${project.build.outputDirectory}/spark302</outputDir>
+                           </configuration>
                         </execution>
+-->
                         <execution>
                             <id>attach-scaladocs</id>
                             <phase>verify</phase>
@@ -531,6 +539,10 @@
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
                         <javacArgs>
+                            <javacArg>-cp</javacArg>
+                            <javacArg>${project.build.directory}/spark311</javacArg>
+                            <javacArg>-d</javacArg>
+                            <javacArg>${project.build.directory}/spark311</javacArg>
                             <javacArg>-source</javacArg>
                             <javacArg>${maven.compiler.source}</javacArg>
                             <javacArg>-target</javacArg>
@@ -657,6 +669,7 @@
                         <exclude>**/.*/**</exclude>
                         <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>src/main/resources/supportedDataSource.csv</exclude>
+                        <exclude>tools/src/main/resources/supportedDataSource.csv</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>

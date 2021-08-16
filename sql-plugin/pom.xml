@@ -90,9 +90,74 @@
         </dependency>
     </dependencies>
 
+<profiles>
+  <profile>
+    <id>release311</id>
+     <build>
+      <plugins>
+        <plugin>
+            <groupId>net.alchim31.maven</groupId>
+            <artifactId>scala-maven-plugin</artifactId>
+        </plugin>
+        <plugin>
+          <artifactId>maven-jar-plugin</artifactId>
+          <executions>
+          <execution>
+            <id>3.1.1.</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+            <configuration>
+              <classifier>${spark.version}</classifier>
+              <includes>
+                <include>**/*</include>
+              </includes>
+            </configuration>
+          </execution>
+          </executions>
+        </plugin>
+<!--
+          <execution>
+            <id>3.0.2</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+            <configuration>
+              <classifier>3.0.2</classifier>
+              <includes>
+                <include>**/*</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
+        </plugin>
+-->
+      </plugins>
+    </build>
+  </profile>
+  <profile>
+    <id>release302</id>
+     <build>
+      <plugins>
+        <plugin>
+          <artifactId>maven-jar-plugin</artifactId>
+          <configuration>
+            <classifier>${spark.version}</classifier>
+            <includes>
+              <include>**/*</include>
+            </includes>
+          </configuration>
+        </plugin>
+      </plugins>
+    </build>
+  </profile>
+</profiles>
+
     <build>
-        <outputDirectory>${project.build.directory}/classes-${spark.version}</outputDirectory>
-        <finalName>rapids-4-spark-sql_${scala.binary.version}-${version}-${spark.version}</finalName>
+        <!-- <outputDirectory>${project.build.directory}/classes-${spark.version}</outputDirectory> -->
+        <!-- <finalName>rapids-4-spark-sql_${scala.binary.version}-${version}-${spark.version}</finalName> -->
         <resources>
           <resource>
             <!-- Include the properties file to provide the build information. -->
@@ -138,10 +203,7 @@
                 </execution>
               </executions>
             </plugin>
-            <plugin>
-                <groupId>net.alchim31.maven</groupId>
-                <artifactId>scala-maven-plugin</artifactId>
-            </plugin>
+            <!--
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
@@ -150,6 +212,7 @@
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
             </plugin>
+-->
         </plugins>
     </build>
 </project>
