@@ -95,45 +95,116 @@
     <id>release311</id>
      <build>
       <plugins>
-        <plugin>
-            <groupId>net.alchim31.maven</groupId>
-            <artifactId>scala-maven-plugin</artifactId>
-        </plugin>
+          <plugin>
+                    <groupId>net.alchim31.maven</groupId>
+                    <artifactId>scala-maven-plugin</artifactId>
+                    <version>${scala.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>scala-compile-first</id>
+                            <goals>
+                              <goal>compile</goal>
+                            </goals>
+                    <configuration>
+                        <spark.version>3.1.1</spark.version>
+                        <outputDir>${project.build.outputDirectory}/spark311</outputDir>
+                        <classifier>spark311</classifier>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                        <recompileMode>fixed</recompileMode>
+                        <args>
+                            <arg>-unchecked</arg>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                            <arg>-explaintypes</arg>
+                            <arg>-Yno-adapted-args</arg>
+                        </args>
+                       <jvmArgs>
+                            <jvmArg>-Xms1024m</jvmArg>
+                            <jvmArg>-Xmx1024m</jvmArg>
+                        </jvmArgs>
+                        <javacArgs>
+                            <javacArg>-source</javacArg>
+                            <javacArg>${maven.compiler.source}</javacArg>
+                            <javacArg>-target</javacArg>
+                            <javacArg>${maven.compiler.target}</javacArg>
+                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+                        </javacArgs>
+                    </configuration>
+                        </execution>
+                        <execution>
+                            <id>scala-compile-second</id>
+                            <goals>
+                              <goal>compile</goal>
+                            </goals>
+                    <configuration>
+                        <spark.version>3.0.2</spark.version>
+                        <outputDir>${project.build.outputDirectory}/spark302</outputDir>
+                        <classifier>spark302</classifier>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                        <recompileMode>fixed</recompileMode>
+                        <args>
+                            <arg>-unchecked</arg>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                            <arg>-explaintypes</arg>
+                            <arg>-Yno-adapted-args</arg>
+                        </args>
+                       <jvmArgs>
+                            <jvmArg>-Xms1024m</jvmArg>
+                            <jvmArg>-Xmx1024m</jvmArg>
+                        </jvmArgs>
+                        <javacArgs>
+                            <javacArg>-source</javacArg>
+                            <javacArg>${maven.compiler.source}</javacArg>
+                            <javacArg>-target</javacArg>
+                            <javacArg>${maven.compiler.target}</javacArg>
+                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+                        </javacArgs>
+                    </configuration>
+                        </execution>
+                        <execution>
+                            <id>scala-test-compile-first</id>
+                            <goals>
+                              <goal>testCompile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>attach-scaladocs</id>
+                            <goals>
+                              <goal>doc-jar</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
         <plugin>
           <artifactId>maven-jar-plugin</artifactId>
           <executions>
           <execution>
-            <id>3.1.1.</id>
+            <id>default-jar</id>
             <phase>package</phase>
             <goals>
               <goal>jar</goal>
             </goals>
             <configuration>
-              <classifier>${spark.version}</classifier>
-              <includes>
-                <include>**/*</include>
-              </includes>
+              <classifier>spark311</classifier>
+            </configuration>
+          </execution>
+          <execution>
+            <id>302</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+            <configuration>
+              <classifier>spark302</classifier>
             </configuration>
           </execution>
           </executions>
         </plugin>
-<!--
-          <execution>
-            <id>3.0.2</id>
-            <phase>package</phase>
-            <goals>
-              <goal>jar</goal>
-            </goals>
-            <configuration>
-              <classifier>3.0.2</classifier>
-              <includes>
-                <include>**/*</include>
-              </includes>
-            </configuration>
-          </execution>
-        </executions>
-        </plugin>
--->
       </plugins>
     </build>
   </profile>
@@ -141,14 +212,76 @@
     <id>release302</id>
      <build>
       <plugins>
+          <plugin>
+                    <groupId>net.alchim31.maven</groupId>
+                    <artifactId>scala-maven-plugin</artifactId>
+                    <version>${scala.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>scala-compile-first</id>
+                            <goals>
+                              <goal>compile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>scala-test-compile-first</id>
+                            <goals>
+                              <goal>testCompile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>attach-scaladocs</id>
+                            <goals>
+                              <goal>doc-jar</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <spark.version>3.0.2</spark.version>
+                        <outputDir>${project.build.outputDirectory}/spark302</outputDir>
+                        <classifier>spark302</classifier>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                        <recompileMode>fixed</recompileMode>
+                        <useZincServer>true</useZincServer>
+                        <args>
+                            <arg>-unchecked</arg>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                            <arg>-explaintypes</arg>
+                            <arg>-Yno-adapted-args</arg>
+                        </args>
+                       <jvmArgs>
+                            <jvmArg>-Xms1024m</jvmArg>
+                            <jvmArg>-Xmx1024m</jvmArg>
+                        </jvmArgs>
+                        <javacArgs>
+                            <javacArg>-source</javacArg>
+                            <javacArg>${maven.compiler.source}</javacArg>
+                            <javacArg>-target</javacArg>
+                            <javacArg>${maven.compiler.target}</javacArg>
+                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+                        </javacArgs>
+                    </configuration>
+                </plugin>
         <plugin>
           <artifactId>maven-jar-plugin</artifactId>
-          <configuration>
-            <classifier>${spark.version}</classifier>
-            <includes>
-              <include>**/*</include>
-            </includes>
-          </configuration>
+          <executions>
+          <execution>
+            <id>default-jar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+            <configuration>
+              <classifier>spark302</classifier>
+              <includes>
+                <include>**/*</include>
+              </includes>
+            </configuration>
+          </execution>
+          </executions>
         </plugin>
       </plugins>
     </build>

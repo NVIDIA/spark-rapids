@@ -34,14 +34,15 @@
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
-       <classifier>3.1.1</classifier>
+       <classifier>spark3.1.1</classifier>
     </dependency>
     <dependency>
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
-       <classifier>3.0.1</classifier>
+       <classifier>spark3.0.2</classifier>
     </dependency>
+    <!--
     <dependency>
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
@@ -57,6 +58,7 @@
        <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
     </dependency>
+-->
     <dependency>
        <!-- required for conf generation script -->
        <groupId>org.apache.spark</groupId>
