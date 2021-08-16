@@ -51,7 +51,6 @@
         <profile>
             <id>release311</id>
             <modules>
-                <module>spark301</module>
                 <module>spark311</module>
                 <module>aggregator</module>
             </modules>
