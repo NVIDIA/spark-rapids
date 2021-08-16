@@ -539,7 +539,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
   /** Special-case handling of an unconditional join that just needs to output a row count. */
   private def doUnconditionalJoinRowCount(
-      broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch],
+      broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch]
   ): RDD[ColumnarBatch] = {
     if (joinType == LeftAnti) {
       // degenerate case, no rows are returned.
