@@ -70,20 +70,23 @@
         </developer>
     </developers>
 
-    <modules>
-        <module>api_validation</module>
-        <module>dist</module>
-        <module>integration_tests</module>
-        <module>shims</module>
-        <module>shuffle-plugin</module>
-        <module>sql-plugin</module>
-        <module>tests</module>
-        <module>tools</module>
-        <module>udf-compiler</module>
-        <module>udf-examples</module>
-    </modules>
 
     <profiles>
+        <profile>
+            <id>default</id>
+            <modules>
+            <module>api_validation</module>
+            <module>dist</module>
+            <module>integration_tests</module>
+            <module>shuffle-plugin</module>
+            <module>sql-plugin</module>
+            <module>shims</module>
+            <module>tests</module>
+            <module>tools</module>
+            <module>udf-compiler</module>
+            <module>udf-examples</module>
+            </modules>
+        </profile>
         <profile>
             <id>udf-compiler</id>
             <modules>
@@ -125,6 +128,32 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+        <profile>
+            <id>release302</id>
+            <properties>
+                <spark.version>${spark302.version}</spark.version>
+            </properties>
+            <modules>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <properties>
+                <spark.version>${spark311.version}</spark.version>
+            </properties>
+            <modules>
+                <module>sql-plugin</module>
+                <module>udf-compiler</module>
+                <module>udf-examples</module>
+                <module>shims</module>
+                <module>shuffle-plugin</module>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>databricks301</id>

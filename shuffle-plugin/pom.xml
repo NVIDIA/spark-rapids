@@ -66,6 +66,8 @@
     </dependencies>
 
     <build>
+        <outputDirectory>${project.build.directory}/classes-${spark.version}</outputDirectory>
+        <finalName>rapids-4-spark-shuffle_${scala.binary.version}-${version}-${spark.version}</finalName>
         <resources>
           <resource>
             <!-- Include the properties file to provide the build information. -->

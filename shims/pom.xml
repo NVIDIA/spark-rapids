@@ -33,6 +33,30 @@
 
     <profiles>
         <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <modules>
+                <module>spark301emr</module>
+                <module>spark301</module>
+                <module>spark302</module>
+                <module>spark303</module>
+                <module>spark311</module>
+                <module>spark312</module>
+                <module>aggregator</module>
+                <module>spark311cdh</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <modules>
+                <module>spark301</module>
+                <module>spark311</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>databricks301</id>
             <modules>
                 <module>spark301db</module>
@@ -62,16 +86,6 @@
         </profile>
     </profiles>
 
-    <modules>
-        <module>spark301emr</module>
-        <module>spark301</module>
-        <module>spark302</module>
-        <module>spark303</module>
-        <module>spark311</module>
-        <module>spark312</module>
-        <module>aggregator</module>
-        <module>spark311cdh</module>
-    </modules>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
