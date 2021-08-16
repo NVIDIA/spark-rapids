@@ -235,80 +235,38 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter: ProfileOutputWriter): (ApplicationSummaryInfo,
     Option[CompareSummaryInfo]) = {
 
-    // profileOutputWriter.writeText("### A. Information Collected ###")
     val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
-    // profileOutputWriter.write("Application Information", appInfo)
-
     val dsInfo = collect.getDataSourceInfo
-    // profileOutputWriter.write("Data Source Information", dsInfo)
-
     val execInfo = collect.getExecutorInfo
-    // profileOutputWriter.write("Executor Information", execInfo)
-
     val jobInfo = collect.getJobInfo
-    // profileOutputWriter.write("Job Information", jobInfo)
-
     val rapidsProps = collect.getRapidsProperties
-    // profileOutputWriter.write("Spark Rapids parameters set explicitly", rapidsProps,
-    //   Some("Spark Rapids parameters"))
-
     val rapidsJar = collect.getRapidsJARInfo
-    // profileOutputWriter.write("Rapids Accelerator Jar and cuDF Jar", rapidsJar,
-    //   Some("Rapids 4 Spark Jars"))
-
     val sqlMetrics = collect.getSQLPlanMetrics
-    // profileOutputWriter.write("SQL Plan Metrics for Application", sqlMetrics,
-    //   Some("SQL Plan Metrics"))
-
     // for compare mode we just add in extra tables for matching across applications
     // the rest of the tables simply list all applications specified
     val compareRes = if (appArgs.compare()) {
       val compare = new CompareApplications(apps)
       val (matchingSqlIds, matchingStageIds) = compare.findMatchingStages()
-      // profileOutputWriter.write("Matching SQL IDs Across Applications", matchingSqlIds)
-      // profileOutputWriter.write("Matching Stage IDs Across Applications", matchingStageIds)
       Some(CompareSummaryInfo(matchingSqlIds, matchingStageIds))
     } else {
       None
     }
 
-    // profileOutputWriter.writeText("\n### B. Analysis ###\n")
     val analysis = new Analysis(apps)
     val jsMetAgg = analysis.jobAndStageMetricsAggregation()
-    // profileOutputWriter.write("Job + Stage level aggregated task metrics", jsMetAgg,
-    //   Some("Job/Stage Metrics"))
-
     val sqlTaskAggMetrics = analysis.sqlMetricsAggregation()
-    // profileOutputWriter.write("SQL level aggregated task metrics", sqlTaskAggMetrics,
-    //   Some("SQL Metrics"))
     val durAndCpuMet = analysis.sqlMetricsAggregationDurationAndCpuTime()
-    // profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", durAndCpuMet)
     val skewInfo = analysis.shuffleSkewCheck()
-    val skewHeader = "Shuffle Skew Check" // +
-    val skewTableDesc = "(When task's Shuffle Read Size > 3 * Avg Stage-level size)"
-    // profileOutputWriter.write(skewHeader, skewInfo, tableDesc = Some(skewTableDesc))
 
-    // profileOutputWriter.writeText("\n### C. Health Check###\n")
     val healthCheck = new HealthCheck(apps)
     val failedTasks = healthCheck.getFailedTasks
-    // profileOutputWriter.write("Failed Tasks", failedTasks)
-
     val failedStages = healthCheck.getFailedStages
-    // profileOutputWriter.write("Failed Stages", failedStages)
-
     val failedJobs = healthCheck.getFailedJobs
-    // profileOutputWriter.write("Failed Jobs", failedJobs)
-
     val removedBMs = healthCheck.getRemovedBlockManager
-    // profileOutputWriter.write("Removed BlockManagers", removedBMs)
     val removedExecutors = healthCheck.getRemovedExecutors
-    // profileOutputWriter.write("Removed Executors", removedExecutors)
-
     val unsupportedOps = healthCheck.getPossibleUnsupportedSQLPlan
-    // profileOutputWriter.write("Unsupported SQL Plan", unsupportedOps,
-    //   Some("Unsupported SQL Ops"))
-
+   
     if (printPlans) {
       CollectInformation.printSQLPlans(apps, outputDir)
     }
@@ -352,6 +310,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         var numApps = 0
         val props = HashMap[String, ArrayBuffer[String]]()
         val outputHeaders = ArrayBuffer("propertyName")
+        // TODO - commonize this code.
         sums.foreach { app =>
           if (app.rapidsProps.nonEmpty) {
             numApps += 1
