@@ -20,6 +20,10 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, with_spark_session
 
+
+# Mark all tests in current file as slow test since it would require ~30mins in total
+pytestmark = pytest.mark.slow_test
+
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
