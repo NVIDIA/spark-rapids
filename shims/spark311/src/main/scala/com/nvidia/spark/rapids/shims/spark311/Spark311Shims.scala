@@ -408,7 +408,7 @@ class Spark311Shims extends SparkShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = exprs311
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    super.getExecs ++ Seq(
+    Seq(
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -561,7 +561,7 @@ class Spark311Shims extends SparkShims {
           " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
         (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
