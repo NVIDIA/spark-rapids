@@ -45,17 +45,15 @@ parquet_struct_gen = [StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in
 parquet_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen] + \
                     [ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen]
 
-parquet_write_gens_list0 = parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens
-parquet_map_gens = map_gens_sample + [MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen())]
-# splitting it in two lists as the data is too big for a single parquet file in our unit tests
-parquet_write_gens_list = [parquet_write_gens_list0, parquet_map_gens]
+parquet_map_gens = map_gens_sample + [MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()), MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
+parquet_write_gens_list = [parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
+def test_write_round_trip1(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
                                   reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
