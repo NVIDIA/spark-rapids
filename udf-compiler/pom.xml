@@ -114,10 +114,16 @@
                     </configuration>
                         </execution>
                         <execution>
-                            <id>scala-test-compile-first</id>
+                            <id>default-testCompile</id>
                             <goals>
                               <goal>testCompile</goal>
                             </goals>
+                            <configuration>
+                                <spark.version>3.1.1</spark.version>
+                                <testOutputDir>${project.build.outputDirectory}/test-classes/spark311</testOutputDir>
+                                <classifier>spark311</classifier>
+                                <scalaVersion>${scala.version}</scalaVersion>
+                            </configuration>
                         </execution>
                         <execution>
                             <id>scala-compile-second</id>
@@ -151,6 +157,18 @@
                             <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
                         </javacArgs>
                     </configuration>
+                        </execution>
+                        <execution>
+                            <id>scala-test-compile-second</id>
+                            <goals>
+                              <goal>testCompile</goal>
+                            </goals>
+                            <configuration>
+                                <spark.version>3.0.2</spark.version>
+                                <testOutputDir>${project.build.outputDirectory}/test-classes/spark302</testOutputDir>
+                                <classifier>spark302</classifier>
+                                <scalaVersion>${scala.version}</scalaVersion>
+                            </configuration>
                         </execution>
                         <execution>
                             <id>attach-scaladocs</id>
@@ -250,6 +268,9 @@
             <plugin>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
+                <configuration>
+                    <runpath>${project.build.outputDirectory}/${spark.version.classifier}</runpath>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.scalastyle</groupId>
