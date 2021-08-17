@@ -38,35 +38,13 @@ def test_simple_get_map_value(data_gen):
                 'a["NOT_FOUND"]',
                 'a["key_5"]'))
 
-def test_map_expr_project_string_to_string():
-    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+@pytest.mark.parametrize('key_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
+@pytest.mark.parametrize('value_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
+def test_single_entry_map(key_gen, value_gen):
+    data_gen = [('a', key_gen), ('b', value_gen)]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
-                "map(a, b) as m1"))
-
-def test_map_expr_project_int_to_int():
-    data_gen = [('a', IntegerGen(nullable=False)), ('b', IntegerGen(nullable=False))]
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
-                "map(a, b) as m2"))
-
-def test_map_expr_project_string_to_int():
-    data_gen = [('a', StringGen(nullable=False)), ('b', IntegerGen(nullable=False))]
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
-                "map(a, b) as m1"))
-
-def test_map_expr_project_int_to_string():
-    data_gen = [('a', IntegerGen(nullable=False)), ('b', StringGen(nullable=False))]
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
-                "map(a, b) as m1"))
-
-def test_map_expr_project_struct_to_struct():
-    data_gen = [('a', basic_struct_gen), ('b', basic_struct_gen)]
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
-                "map(a, b) as m1"))
+                "map(a, b) as my_map"))
 
 @allow_non_gpu('ProjectExec,Alias,CreateMap')
 # until https://github.com/NVIDIA/spark-rapids/issues/3229 is implemented
