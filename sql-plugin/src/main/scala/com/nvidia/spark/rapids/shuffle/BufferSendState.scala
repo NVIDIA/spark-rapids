@@ -155,7 +155,8 @@ class BufferSendState(
    * Prepares and returns a `MemoryBuffer` that can be used in a send.
    * @return - a memory buffer slice backed by either a host or device bounce buffer, depending on
    *         the tier location for buffers we are sending.
-   * @throws `RapidsShuffleSendPrepareException` when copies to the bounce buffer fail.
+   * @throws org.apache.spark.shuffle.RapidsShuffleSendPrepareException when copies to the
+   *                                                                    bounce buffer fail.
    */
   def getBufferToSend(): MemoryBuffer = synchronized {
     require(acquiredBuffs.isEmpty,
