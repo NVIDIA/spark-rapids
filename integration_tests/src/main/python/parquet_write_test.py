@@ -53,7 +53,7 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_write_round_trip1(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
+def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type,
                                   reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
