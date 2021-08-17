@@ -630,7 +630,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
     // We should honor the actual decimal type used for the cudf column first, then the precision.
-    // Instead of always inferring a deciaml type from the precision of Spark. Because both
+    // Instead of always inferring a decimal type from the precision of Spark. Because both
     // DECIMAL32 and DECIMAL64 can support precisions <= MAX_INT_DIGITS. Cudf may use either one
     // for this case. e.g. ORC reader will always read decimal as DECIMAL64, even the precision
     // is suitable for DECIMAL32.
