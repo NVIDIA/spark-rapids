@@ -132,7 +132,7 @@
         <profile>
             <id>release302</id>
             <properties>
-                <spark.version.classifier>spark${spark302.version}</spark.version.classifier>
+                <spark.version.classifier>spark302</spark.version.classifier>
                 <spark.version>${spark302.version}</spark.version>
             </properties>
             <modules>
@@ -147,14 +147,14 @@
             <id>release311</id>
             <properties>
                 <spark.version>${spark311.version}</spark.version>
-                <spark.version.classifier>spark${spark311.version}</spark.version.classifier>
+                <spark.version.classifier>spark311</spark.version.classifier>
             </properties>
             <modules>
                 <module>sql-plugin</module>
+                <module>shuffle-plugin</module>
                 <!-- <module>udf-compiler</module>
                 <module>udf-examples</module>
                 <module>shims</module>
-                <module>shuffle-plugin</module>
                 <module>tests</module> -->
                 <module>dist</module>
             </modules>

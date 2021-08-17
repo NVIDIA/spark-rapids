@@ -140,10 +140,37 @@
                             </goals>
                         </execution>
                         <execution>
-                            <id>attach-scaladocs</id>
+                            <id>scala-compile-second</id>
                             <goals>
-                              <goal>doc-jar</goal>
+                              <goal>compile</goal>
                             </goals>
+                    <configuration>
+                        <spark.version>3.0.2</spark.version>
+                        <outputDir>${project.build.outputDirectory}/spark302</outputDir>
+                        <classifier>spark302</classifier>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                        <recompileMode>fixed</recompileMode>
+                        <args>
+                            <arg>-unchecked</arg>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                            <arg>-explaintypes</arg>
+                            <arg>-Yno-adapted-args</arg>
+                        </args>
+                       <jvmArgs>
+                            <jvmArg>-Xms1024m</jvmArg>
+                            <jvmArg>-Xmx1024m</jvmArg>
+                        </jvmArgs>
+                        <javacArgs>
+                            <javacArg>-source</javacArg>
+                            <javacArg>${maven.compiler.source}</javacArg>
+                            <javacArg>-target</javacArg>
+                            <javacArg>${maven.compiler.target}</javacArg>
+                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+                        </javacArgs>
+                    </configuration>
                         </execution>
                     </executions>
                 </plugin>
@@ -157,7 +184,29 @@
               <goal>jar</goal>
             </goals>
             <configuration>
+              <classesDirectory>${project.build.outputDirectory}/spark311</classesDirectory>
               <classifier>spark311</classifier>
+<!--
+              <includes>
+                <include>spark311/**</include>
+              </includes>
+-->
+            </configuration>
+          </execution>
+          <execution>
+            <id>302</id>
+            <phase>package</phase>
+            <goals>
+              <goal>jar</goal>
+            </goals>
+            <configuration>
+              <classesDirectory>${project.build.outputDirectory}/spark302</classesDirectory>
+              <classifier>spark302</classifier>
+<!--
+              <includes>
+                <include>spark302/**</include>
+              </includes>
+-->
             </configuration>
           </execution>
           </executions>
@@ -184,12 +233,6 @@
                             <id>scala-test-compile-first</id>
                             <goals>
                               <goal>testCompile</goal>
-                            </goals>
-                        </execution>
-                        <execution>
-                            <id>attach-scaladocs</id>
-                            <goals>
-                              <goal>doc-jar</goal>
                             </goals>
                         </execution>
                     </executions>
