@@ -166,6 +166,7 @@
               <goal>jar</goal>
             </goals>
             <configuration>
+              <classesDirectory>${project.build.outputDirectory}/spark311</classesDirectory>
               <classifier>spark311</classifier>
             </configuration>
           </execution>
@@ -176,6 +177,7 @@
               <goal>jar</goal>
             </goals>
             <configuration>
+              <classesDirectory>${project.build.outputDirectory}/spark302</classesDirectory>
               <classifier>spark302</classifier>
             </configuration>
           </execution>

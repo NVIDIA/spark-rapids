@@ -152,11 +152,11 @@
             <modules>
                 <module>sql-plugin</module>
                 <module>shuffle-plugin</module>
-                <!-- <module>udf-compiler</module>
+                <module>udf-compiler</module>
                 <module>udf-examples</module>
                 <module>shims</module>
-                <module>tests</module> -->
-                <module>dist</module>
+                <module>tests</module>
+                <!-- <module>dist</module> -->
             </modules>
         </profile>
         <profile>

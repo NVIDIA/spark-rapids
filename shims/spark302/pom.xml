@@ -34,6 +34,89 @@
     <!-- Create a separate file 'SPARK_VER.properties' in the jar to save cudf & spark version info -->
     <build>
         <plugins>
+         <plugin>
+                    <groupId>net.alchim31.maven</groupId>
+                    <artifactId>scala-maven-plugin</artifactId>
+                    <version>${scala.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>scala-compile-first</id>
+                            <goals>
+                              <goal>compile</goal>
+                            </goals>
+                    <configuration>
+                        <spark.version>3.1.1</spark.version>
+                        <outputDir>${project.build.outputDirectory}/spark311</outputDir>
+                        <classifier>spark311</classifier>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                        <recompileMode>fixed</recompileMode>
+                        <args>
+                            <arg>-unchecked</arg>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                            <arg>-explaintypes</arg>
+                            <arg>-Yno-adapted-args</arg>
+                        </args>
+                       <jvmArgs>
+                            <jvmArg>-Xms1024m</jvmArg>
+                            <jvmArg>-Xmx1024m</jvmArg>
+                        </jvmArgs>
+                        <javacArgs>
+                            <javacArg>-source</javacArg>
+                            <javacArg>${maven.compiler.source}</javacArg>
+                            <javacArg>-target</javacArg>
+                            <javacArg>${maven.compiler.target}</javacArg>
+                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+                        </javacArgs>
+                    </configuration>
+                        </execution>
+                        <execution>
+                            <id>scala-test-compile-first</id>
+                            <goals>
+                              <goal>testCompile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>scala-compile-second</id>
+                            <goals>
+                              <goal>compile</goal>
+                            </goals>
+                    <configuration>
+                      <spark.version>3.0.2</spark.version>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                        <recompileMode>fixed</recompileMode>
+                        <args>
+                            <arg>-unchecked</arg>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                            <arg>-explaintypes</arg>
+                            <arg>-Yno-adapted-args</arg>
+                        </args>
+                       <jvmArgs>
+                            <jvmArg>-Xms1024m</jvmArg>
+                            <jvmArg>-Xmx1024m</jvmArg>
+                        </jvmArgs>
+                        <javacArgs>
+                            <javacArg>-source</javacArg>
+                            <javacArg>${maven.compiler.source}</javacArg>
+                            <javacArg>-target</javacArg>
+                            <javacArg>${maven.compiler.target}</javacArg>
+                            <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+                        </javacArgs>
+                    </configuration>
+                        </execution>
+                        <execution>
+                            <id>attach-scaladocs</id>
+                            <goals>
+                              <goal>doc-jar</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
             <plugin>
                 <artifactId>maven-antrun-plugin</artifactId>
                 <executions>
@@ -75,11 +158,6 @@
     </build>
 
     <dependencies>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-spark301_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>

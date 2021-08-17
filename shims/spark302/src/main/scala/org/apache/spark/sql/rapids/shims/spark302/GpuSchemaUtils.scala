@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,18 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.spark302
+package org.apache.spark.sql.rapids.shims.spark302
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark302.RapidsShuffleInternalManager
+import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.SchemaUtils
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends RapidsShuffleInternalManager(conf, isDriver) {
+object GpuSchemaUtils {
+
+  def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    SchemaUtils.checkColumnNameDuplication(schema.map(_.name), colType, resolver)
+  }
 }

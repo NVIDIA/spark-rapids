@@ -51,6 +51,7 @@
         <profile>
             <id>release311</id>
             <modules>
+                <module>spark302</module>
                 <module>spark311</module>
                 <module>aggregator</module>
             </modules>
@@ -90,6 +91,7 @@
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
             <scope>provided</scope>
         </dependency>
         <dependency>

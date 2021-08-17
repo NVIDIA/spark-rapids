@@ -42,12 +42,19 @@
        <version>${project.version}</version>
        <classifier>spark302</classifier>
     </dependency>
-    <!--
     <dependency>
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
+       <classifier>spark311</classifier>
     </dependency>
+    <dependency>
+       <groupId>com.nvidia</groupId>
+       <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+       <version>${project.version}</version>
+       <classifier>spark302</classifier>
+    </dependency>
+    <!--
     <dependency>
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
