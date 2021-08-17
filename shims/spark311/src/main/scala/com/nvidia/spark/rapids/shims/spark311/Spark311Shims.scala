@@ -395,8 +395,8 @@ class Spark311Shims extends Spark301Shims {
             TypeSig.STRUCT + TypeSig.MAP)
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
           TypeSig.DECIMAL_64),
-          Map("leftKeys" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
-            "rightKeys" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)),
+          Map("leftKeys" -> TypeSig.joinKeyTypes,
+            "rightKeys" -> TypeSig.joinKeyTypes),
           TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
@@ -405,8 +405,8 @@ class Spark311Shims extends Spark301Shims {
             TypeSig.STRUCT + TypeSig.MAP)
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
           TypeSig.DECIMAL_64),
-          Map("leftKeys" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
-            "rightKeys" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)),
+          Map("leftKeys" -> TypeSig.joinKeyTypes,
+            "rightKeys" -> TypeSig.joinKeyTypes),
           TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
@@ -415,8 +415,8 @@ class Spark311Shims extends Spark301Shims {
             TypeSig.STRUCT + TypeSig.MAP)
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
           TypeSig.DECIMAL_64),
-          Map("leftKeys" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
-            "rightKeys" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)),
+          Map("leftKeys" -> TypeSig.joinKeyTypes,
+            "rightKeys" -> TypeSig.joinKeyTypes),
           TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))

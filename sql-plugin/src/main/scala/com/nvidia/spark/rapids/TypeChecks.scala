@@ -546,6 +546,11 @@ object TypeSig {
       TIMESTAMP + STRING
 
   /**
+   * A signature for types that are generally supported for join keys.
+   */
+  val joinKeyTypes: TypeSig = (commonCudfTypes + NULL + DECIMAL_64 + STRUCT).nested()
+
+  /**
    * All floating point types
    */
   val fp: TypeSig = FLOAT + DOUBLE
