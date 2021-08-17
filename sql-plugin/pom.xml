@@ -106,13 +106,14 @@
                               <goal>compile</goal>
                             </goals>
                     <configuration>
+                        <sourceDirectory>src/main/scala</sourceDirectory>
                         <spark.version>3.1.1</spark.version>
                         <outputDir>${project.build.outputDirectory}/spark311</outputDir>
                         <classifier>spark311</classifier>
                         <scalaVersion>${scala.version}</scalaVersion>
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                        <recompileMode>fixed</recompileMode>
+                        <recompileMode>all</recompileMode>
                         <args>
                             <arg>-unchecked</arg>
                             <arg>-deprecation</arg>
@@ -145,13 +146,14 @@
                               <goal>compile</goal>
                             </goals>
                     <configuration>
+                        <sourceDirectory>src/main/scala</sourceDirectory>
                         <spark.version>3.0.2</spark.version>
                         <outputDir>${project.build.outputDirectory}/spark302</outputDir>
                         <classifier>spark302</classifier>
                         <scalaVersion>${scala.version}</scalaVersion>
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                        <recompileMode>fixed</recompileMode>
+                        <recompileMode>all</recompileMode>
                         <args>
                             <arg>-unchecked</arg>
                             <arg>-deprecation</arg>
@@ -174,6 +176,24 @@
                         </execution>
                     </executions>
                 </plugin>
+          <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.8.1</version>
+          <configuration>
+            <source>${maven.compiler.source}</source>
+            <target>${maven.compiler.target}</target>
+            <sourceDirectory>src/main/java</sourceDirectory>
+          </configuration>
+            <executions>
+                <execution>
+                    <phase>compile</phase>
+                    <goals>
+                        <goal>compile</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
         <plugin>
           <artifactId>maven-jar-plugin</artifactId>
           <executions>
@@ -219,20 +239,54 @@
      <build>
       <plugins>
           <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.8.1</version>
+          <configuration>
+            <source>${maven.compiler.source}</source>
+            <target>${maven.compiler.target}</target>
+            <sourceDirectory>src/main/java</sourceDirectory>
+            <outputDirectory>${project.build.outputDirectory}/spark302</outputDirectory>
+          </configuration>
+            <executions>
+                <execution>
+                    <phase>compile</phase>
+                    <goals>
+                        <goal>compile</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
+          <plugin>
                     <groupId>net.alchim31.maven</groupId>
                     <artifactId>scala-maven-plugin</artifactId>
                     <version>${scala.plugin.version}</version>
                     <executions>
+                      <execution>
+                            <id>eclipse-add-source</id>
+                            <goals>
+                                <goal>add-source</goal>
+                            </goals>
+                        </execution>
                         <execution>
                             <id>scala-compile-first</id>
+                            <phase>process-resources</phase>
                             <goals>
-                              <goal>compile</goal>
+                                <goal>compile</goal>
                             </goals>
                         </execution>
                         <execution>
                             <id>scala-test-compile-first</id>
+                            <phase>process-test-resources</phase>
                             <goals>
-                              <goal>testCompile</goal>
+                                <goal>testCompile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>attach-scaladocs</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>doc-jar</goal>
                             </goals>
                         </execution>
                     </executions>
@@ -243,8 +297,12 @@
                         <scalaVersion>${scala.version}</scalaVersion>
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                        <recompileMode>fixed</recompileMode>
-                        <useZincServer>true</useZincServer>
+                        <recompileMode>all</recompileMode>
+                        <excludes>
+                        <exclude>*.java</exclude>
+                        <exclude>src/main/java</exclude>
+                        <exclude>src/main/java/**</exclude>
+                        </excludes>
                         <args>
                             <arg>-unchecked</arg>
                             <arg>-deprecation</arg>
