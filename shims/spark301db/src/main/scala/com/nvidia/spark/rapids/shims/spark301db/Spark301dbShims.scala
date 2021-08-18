@@ -183,32 +183,31 @@ class Spark301dbShims extends Spark301Shims {
         "Sort merge join, replacing with shuffled hash join",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP)
-          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
-          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
-          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
-          TypeSig.DECIMAL_64), TypeSig.all),
+          TypeSig.DECIMAL_64),
+          Map("leftKeys" -> TypeSig.joinKeyTypes,
+            "rightKeys" -> TypeSig.joinKeyTypes),
+          TypeSig.all),
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP)
-          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
-          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
-          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
-          TypeSig.DECIMAL_64)
-          , TypeSig.all),
+          TypeSig.DECIMAL_64),
+          Map("leftKeys" -> TypeSig.joinKeyTypes,
+            "rightKeys" -> TypeSig.joinKeyTypes),
+          TypeSig.all),
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP)
-          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
-          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
-          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL_64), TypeSig.all),
+          TypeSig.DECIMAL_64),
+          Map("leftKeys" -> TypeSig.joinKeyTypes,
+            "rightKeys" -> TypeSig.joinKeyTypes),
+          TypeSig.all),
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
