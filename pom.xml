@@ -607,7 +607,7 @@
                                 <goal>test-jar</goal>
                             </goals>
                             <configuration>
-                                <classifier>tests</classifier>
+                                <classifier>${spark.version.classifier}-tests</classifier>
                             </configuration>
                         </execution>
                     </executions>
