@@ -20,6 +20,9 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, with_spark_session
 
+# Mark all tests in current file as slow test since it would require ~30mins in total
+pytestmark = pytest.mark.slow_test
+
 all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter']
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
@@ -438,6 +441,8 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
+@pytest.mark.xfail(condition=is_databricks_runtime(),
+                   reason='https://github.com/NVIDIA/spark-rapids/issues/3244')
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):

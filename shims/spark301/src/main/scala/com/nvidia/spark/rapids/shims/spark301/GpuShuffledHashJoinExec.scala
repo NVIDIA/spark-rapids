@@ -52,6 +52,9 @@ class GpuShuffledHashJoinMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
+  override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
+    Map("leftKeys" -> leftKeys, "rightKeys" -> rightKeys)
+
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)
   }
