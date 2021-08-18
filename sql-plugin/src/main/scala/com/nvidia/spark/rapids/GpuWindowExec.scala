@@ -86,6 +86,11 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
   lazy val inputFields: Seq[BaseExprMeta[Attribute]] =
     windowExec.children.head.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+
+  override def namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] = Map(
+    "partitionSpec" -> partitionSpec
+  )
+
   override def tagPlanForGpu(): Unit = {
     // Implementation depends on receiving a `NamedExpression` wrapped WindowExpression.
     windowExpressions.map(meta => meta.wrapped)
@@ -93,16 +98,6 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         .foreach(_ => willNotWorkOnGpu("Unexpected query plan with Windowing functions; " +
             "cannot convert for GPU execution. " +
             "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
-    val unsupportedKeys = partitionSpec.map(_.wrapped.dataType).exists {
-      case _: StructType => true
-      case _: ArrayType => true
-      case _: MapType => true
-      case _ => false
-    }
-
-    if (unsupportedKeys) {
-      willNotWorkOnGpu(s"nested partition by keys are not supported")
-    }
   }
 
   override def convertToGpu(): GpuExec = {

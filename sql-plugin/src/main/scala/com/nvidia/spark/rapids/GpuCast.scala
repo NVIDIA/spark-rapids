@@ -243,21 +243,21 @@ object GpuCast extends Arm {
       }
     }
 
-    if (ansiEnabled) {
-      // ansi mode only supports simple integers, so no exponents or decimal places
-      val regex = "^[+\\-]?[0-9]+$"
-      withResource(sanitized.matchesRe(regex)) { isInt =>
-        withResource(isInt.all()) { allInts =>
-          // Check that all non-null values are valid integers.
-          if (allInts.isValid && !allInts.getBoolean) {
-            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+    withResource(sanitized) { _ =>
+      if (ansiEnabled) {
+        // ansi mode only supports simple integers, so no exponents or decimal places
+        val regex = "^[+\\-]?[0-9]+$"
+        withResource(sanitized.matchesRe(regex)) { isInt =>
+          withResource(isInt.all()) { allInts =>
+            // Check that all non-null values are valid integers.
+            if (allInts.isValid && !allInts.getBoolean) {
+              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
           }
+          sanitized.incRefCount()
         }
-        sanitized
-      }
-    } else {
-      // truncate strings that represent decimals, so that we just look at the string before the dot
-      withResource(sanitized) { _ =>
+      } else {
+        // truncate strings that represent decimals to just look at the string before the dot
         withResource(Scalar.fromString(".")) { dot =>
           withResource(sanitized.stringContains(dot)) { hasDot =>
             // only do the decimal sanitization if any strings do contain dot
@@ -477,19 +477,6 @@ object GpuCast extends Arm {
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
-
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castIntegralsToDecimal(inputVector, dt, ansiMode)
-        }
-
-      case (FloatType | DoubleType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castFloatsToDecimal(inputVector, dt, ansiMode)
-        }
-
-      case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.copyToColumnVector(), from, to, ansiMode)
 
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
