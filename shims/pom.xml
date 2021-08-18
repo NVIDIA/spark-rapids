@@ -73,22 +73,6 @@
             </dependencies>
         </profile>
         <profile>
-            <id>release311</id>
-            <modules>
-                <module>spark311</module>
-                <module>aggregator</module>
-            </modules>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>databricks301</id>
             <modules>
                 <module>spark301db</module>
