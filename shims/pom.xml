@@ -44,8 +44,8 @@
                 <module>spark303</module>
                 <module>spark311</module>
                 <module>spark312</module>
-                <module>aggregator</module>
                 <module>spark311cdh</module>
+                <module>aggregator</module>
             </modules>
             <dependencies>
                 <dependency>
@@ -92,6 +92,7 @@
             <id>databricks301</id>
             <modules>
                 <module>spark301db</module>
+                <module>aggregator</module>
             </modules>
             <dependencies>
                 <dependency>
@@ -106,6 +107,7 @@
             <id>databricks311</id>
             <modules>
                 <module>spark311db</module>
+                <module>aggregator</module>
             </modules>
             <dependencies>
                 <dependency>
@@ -120,6 +122,7 @@
             <id>spark320</id>
             <modules>
                 <module>spark320</module>
+                <module>aggregator</module>
             </modules>
             <dependencies>
                 <dependency>
@@ -136,8 +139,16 @@
                 <activeByDefault>false</activeByDefault>
             </activation>
             <modules>
+                <module>spark301emr</module>
+                <module>spark301</module>
+                <module>spark302</module>
+                <module>spark303</module>
+                <module>spark311</module>
+                <module>spark312</module>
+                <module>spark311cdh</module>
                 <module>spark304</module>
                 <module>spark313</module>
+                <module>aggregator</module>
             </modules>
             <dependencies>
                 <dependency>
