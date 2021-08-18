@@ -46,7 +46,6 @@
        <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
-       <classifier>${spark.version.classifier}</classifier>
     </dependency>
     <dependency>
        <groupId>com.nvidia</groupId>
@@ -69,7 +68,7 @@
   </dependencies>
 
   <build>
-    <plugins>
+     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>

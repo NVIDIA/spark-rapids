@@ -72,9 +72,7 @@
 
     <modules>
         <module>api_validation</module>
-        <!--
         <module>dist</module>
--->
         <module>integration_tests</module>
         <module>shims</module>
         <module>shuffle-plugin</module>
@@ -605,14 +603,15 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>${maven.jar.plugin.version}</version>
-                    <configuration>
-                        <classifier>${spark.version.classifier}</classifier>
-                    </configuration>
                     <executions>
                         <execution>
+                            <id>default-test-jar</id>
                             <goals>
                                 <goal>test-jar</goal>
                             </goals>
+                            <configuration>
+                                <classifier>tests</classifier>
+                            </configuration>
                         </execution>
                     </executions>
                 </plugin>
