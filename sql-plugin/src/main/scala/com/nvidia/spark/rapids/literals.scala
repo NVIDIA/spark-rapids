@@ -635,7 +635,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
     GpuScalar(value, dataType)
   }
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
     dataType match {
       case BooleanType => ast.Literal.ofBoolean(value.asInstanceOf[java.lang.Boolean])
       case ByteType => ast.Literal.ofByte(value.asInstanceOf[java.lang.Byte])
