@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, QuaternaryExpression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.types.{ByteType, DataType, DoubleType, FloatType, ShortType}
 
 trait DataFromReplacementRule {
   val operationName: String
@@ -1149,26 +1149,7 @@ abstract class TernaryExprMeta[INPUT <: TernaryExpression](
   }
 
   def convertToGpu(val0: Expression, val1: Expression,
-      val2: Expression): GpuExpression
-}
-
-/**
- * Base class for metadata around `QuatenaryExpression`.
- */
-abstract class QuaternaryExprMeta[INPUT <: QuaternaryExpression](
-    expr: INPUT,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends ExprMeta[INPUT](expr, conf, parent, rule) {
-
-  override final def convertToGpu(): GpuExpression = {
-    val Seq(child0, child1, child2, child3) = childExprs.map(_.convertToGpu())
-    convertToGpu(child0, child1, child2, child3)
-  }
-
-  def convertToGpu(val0: Expression, val1: Expression,
-      val2: Expression, val3: Expression): GpuExpression
+                   val2: Expression): GpuExpression
 }
 
 abstract class String2TrimExpressionMeta[INPUT <: String2TrimExpression](
