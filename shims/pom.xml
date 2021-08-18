@@ -49,9 +49,15 @@
             </modules>
         </profile>
         <profile>
-            <id>release311</id>
+            <id>release302</id>
             <modules>
                 <module>spark302</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <modules>
                 <module>spark311</module>
                 <module>aggregator</module>
             </modules>
