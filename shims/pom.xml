@@ -75,7 +75,12 @@
         <profile>
             <id>databricks301</id>
             <modules>
+                <module>spark301</module>
                 <module>spark301db</module>
+                <module>spark302</module>
+                <module>spark303</module>
+                <module>spark311</module>
+                <module>spark312</module>
                 <module>aggregator</module>
             </modules>
             <dependencies>
@@ -91,6 +96,11 @@
             <id>databricks311</id>
             <modules>
                 <module>spark311db</module>
+                <module>spark301</module>
+                <module>spark302</module>
+                <module>spark303</module>
+                <module>spark311</module>
+                <module>spark312</module>
                 <module>aggregator</module>
             </modules>
             <dependencies>
@@ -106,6 +116,11 @@
             <id>spark320</id>
             <modules>
                 <module>spark320</module>
+                <module>spark301</module>
+                <module>spark302</module>
+                <module>spark303</module>
+                <module>spark311</module>
+                <module>spark312</module>
                 <module>aggregator</module>
             </modules>
             <dependencies>
