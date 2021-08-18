@@ -49,6 +49,88 @@
     </dependency>
   </dependencies>
 
+  <profiles>
+    <profile>
+        <id>default</id>
+        <activation>
+            <activeByDefault>true</activeByDefault>
+        </activation>
+        <dependencies>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </profile>
+    <profile>
+        <id>release302</id>
+        <dependencies>
+            <dependency>
+               <groupId>com.google.guava</groupId>
+               <artifactId>guava</artifactId>
+               <version>14.0.1</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+               <classifier>${spark.version.classifier}</classifier>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+               <classifier>${spark.version.classifier}</classifier>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+               <classifier>${spark.version.classifier}</classifier>
+            </dependency>
+        </dependencies>
+    </profile>
+    <profile>
+      <id>pre-merge</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>if_modified_files</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>bash</executable>
+                  <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn verify:\n$MODIFIED"; exit 1;}'</commandlineArgs>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+      </activation>
+    </profile>
+  </profiles>
+
+
   <build>
     <plugins>
       <plugin>
@@ -190,81 +272,5 @@
       </plugin>
     </plugins>
   </build>
-
-  <profiles>
-    <profile>
-        <id>default</id>
-        <activation>
-            <activeByDefault>true</activeByDefault>
-        </activation>
-        <dependencies>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-        </dependencies>
-    </profile>
-    <profile>
-        <id>release302</id>
-        <dependencies>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-               <classifier>${spark.version.classifier}</classifier>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-               <classifier>${spark.version.classifier}</classifier>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-               <classifier>${spark.version.classifier}</classifier>
-            </dependency>
-        </dependencies>
-    </profile>
-    <profile>
-      <id>pre-merge</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.codehaus.mojo</groupId>
-            <artifactId>exec-maven-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>if_modified_files</id>
-                <phase>verify</phase>
-                <goals>
-                  <goal>exec</goal>
-                </goals>
-                <configuration>
-                  <executable>bash</executable>
-                  <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn verify:\n$MODIFIED"; exit 1;}'</commandlineArgs>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
-    </profile>
-  </profiles>
 
 </project>
