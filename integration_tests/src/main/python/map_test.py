@@ -44,7 +44,8 @@ def test_single_entry_map(key_gen, value_gen):
     data_gen = [('a', key_gen), ('b', value_gen)]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
-                "map(a, b) as my_map"))
+                'map("literal_key", b) as map1',
+                'map(a, b) as map2'))
 
 @allow_non_gpu('ProjectExec,Alias,CreateMap')
 # until https://github.com/NVIDIA/spark-rapids/issues/3229 is implemented

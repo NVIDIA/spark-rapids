@@ -2764,7 +2764,7 @@ object GpuOverrides {
       desc = "Create a map",
       CreateMapCheck,
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = GpuCreateMap(a.children)
+        override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
       }
     ),
     GpuScalaUDF.exprMeta
