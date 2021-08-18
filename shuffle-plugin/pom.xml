@@ -66,6 +66,23 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+       <profile>
+            <id>release302</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <configuration>
+                            <classifier>${spark.version.classifier}</classifier>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
     <build>
         <resources>
           <resource>
@@ -83,13 +100,6 @@
           </resource>
         </resources>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <classifier>${spark.version.classifier}</classifier>
-                </configuration>
-            </plugin>
             <plugin>
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>

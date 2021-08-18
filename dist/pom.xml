@@ -213,7 +213,7 @@
                <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
                <version>${project.version}</version>
             </dependency>
-        <dependencies>
+        </dependencies>
     </profile>
     <profile>
         <id>release302</id>
@@ -236,7 +236,7 @@
                <version>${project.version}</version>
                <classifier>${spark.version.classifier}</classifier>
             </dependency>
-        <dependencies>
+        </dependencies>
     </profile>
     <profile>
       <id>pre-merge</id>
