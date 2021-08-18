@@ -182,8 +182,7 @@ abstract class SplittableJoinIterator(
         }
       } else {
         val batch = withResource(stream.next()) { lazyBatch =>
-          // TODO: Worth having a releaseBatch method for LazySpillableBatch?
-          GpuColumnVector.incRefCounts(lazyBatch.getBatch)
+          lazyBatch.releaseBatch()
         }
         streamTime += (System.nanoTime() - startNanoTime)
         batch

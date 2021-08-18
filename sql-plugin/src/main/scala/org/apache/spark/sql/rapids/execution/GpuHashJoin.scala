@@ -208,6 +208,7 @@ class HashJoinIterator(
 
   override def computeNumJoinRows(cb: ColumnarBatch): Long = {
     // TODO: Replace this estimate with exact join row counts using the corresponding cudf APIs
+    //       being added in https://github.com/rapidsai/cudf/issues/9053.
     joinType match {
       case _: InnerLike | LeftOuter | RightOuter =>
         Math.ceil(cb.numRows() * streamMagnificationFactor).toLong
