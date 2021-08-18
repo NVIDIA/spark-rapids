@@ -1031,9 +1031,10 @@ object CreateMapCheck extends ExprChecks {
     TypeSig.ARRAY + TypeSig.STRUCT).nested()
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-    if (meta.childExprs.length != 2) {
-      // See https://github.com/NVIDIA/spark-rapids/issues/3229
-      meta.willNotWorkOnGpu("CreateMap only supports two expressions on GPU")
+    if (meta.childExprs.length > 2 && !meta.conf.isCreateMapEnabled) {
+      meta.willNotWorkOnGpu("CreateMap with more than one key-value pair is not supported on " +
+        "the GPU by default because handling of duplicate keys is not compatible with Spark. " +
+        s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
     }
   }
 

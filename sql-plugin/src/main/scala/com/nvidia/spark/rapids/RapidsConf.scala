@@ -637,6 +637,14 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
+    .doc("When set to true, support the CreateMap expression on the GPU with multiple " +
+      "key-value pairs. The GPU version does not detect duplicate keys or make any guarantees " +
+      "about which key wins if there are duplicates. CreateMap is always supported on the GPU" +
+      "when there is a single key-value pair.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
       .booleanConf
@@ -1538,6 +1546,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
+
+  lazy val isCreateMapEnabled: Boolean = get(ENABLE_CREATE_MAP)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
