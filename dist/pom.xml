@@ -32,26 +32,8 @@
   <dependencies>
     <dependency>
        <groupId>com.nvidia</groupId>
-       <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-       <version>${project.version}</version>
-       <classifier>${spark.version.classifier}</classifier>
-    </dependency>
-    <dependency>
-       <groupId>com.nvidia</groupId>
-       <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-       <version>${project.version}</version>
-       <classifier>${spark.version.classifier}</classifier>
-    </dependency>
-    <dependency>
-       <groupId>com.nvidia</groupId>
        <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
        <version>${project.version}</version>
-    </dependency>
-    <dependency>
-       <groupId>com.nvidia</groupId>
-       <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
-       <version>${project.version}</version>
-       <classifier>${spark.version.classifier}</classifier>
     </dependency>
     <dependency>
        <!-- required for conf generation script -->
@@ -210,6 +192,52 @@
   </build>
 
   <profiles>
+    <profile>
+        <id>default</id>
+        <activation>
+            <activeByDefault>true</activeByDefault>
+        </activation>
+        <dependencies>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+        <dependencies>
+    </profile>
+    <profile>
+        <id>release302</id>
+        <dependencies>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+               <classifier>${spark.version.classifier}</classifier>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+               <classifier>${spark.version.classifier}</classifier>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+               <classifier>${spark.version.classifier}</classifier>
+            </dependency>
+        <dependencies>
+    </profile>
     <profile>
       <id>pre-merge</id>
       <build>

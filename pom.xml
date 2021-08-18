@@ -240,7 +240,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark301.version}</spark.version>
-        <spark.version.classifier>spark301</spark.version.classifier>
+        <spark.version.classifier></spark.version.classifier>
         <spark.test.version>${spark301.version}</spark.test.version>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>21.10.0-SNAPSHOT</cudf.version>
@@ -494,7 +494,6 @@
                         </execution>
                     </executions>
                     <configuration>
-                        <classifier>${spark.version.classifier}</classifier>
                         <scalaVersion>${scala.version}</scalaVersion>
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
@@ -607,7 +606,7 @@
                                 <goal>test-jar</goal>
                             </goals>
                             <configuration>
-                                <classifier>${spark.version.classifier}-tests</classifier>
+                                <classifier>${spark.version.classifier}tests</classifier>
                             </configuration>
                         </execution>
                     </executions>

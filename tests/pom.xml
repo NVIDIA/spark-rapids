@@ -45,13 +45,8 @@
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-core_${scala.binary.version}</artifactId>
-            <version>3.0.2</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <version>3.0.2</version>
+            <version>${spark.test.version}</version>
         </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>
@@ -66,16 +61,8 @@
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+            <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
-            <classifier>${spark.version.classifier}</classifier>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <classifier>${spark.version.classifier}</classifier>
             <scope>test</scope>
         </dependency>
         <dependency>
