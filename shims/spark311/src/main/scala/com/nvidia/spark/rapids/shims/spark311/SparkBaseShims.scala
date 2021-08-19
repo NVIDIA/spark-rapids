@@ -152,7 +152,7 @@ abstract class SparkBaseShims extends SparkShims {
   override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
     sqlConf.maxMetadataStringLength
 
-  def exprs311: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
@@ -374,8 +374,6 @@ abstract class SparkBaseShims extends SparkShims {
         }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = exprs311
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(

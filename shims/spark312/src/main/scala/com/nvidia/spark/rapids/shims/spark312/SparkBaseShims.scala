@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark311
+package com.nvidia.spark.rapids.shims.spark312
 
 import java.net.URI
 import java.nio.ByteBuffer
@@ -55,7 +55,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.spark311._
+import org.apache.spark.sql.rapids.shims.spark312._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -152,7 +152,7 @@ abstract class SparkBaseShims extends SparkShims {
   override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
     sqlConf.maxMetadataStringLength
 
-  def exprs311: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
@@ -374,8 +374,6 @@ abstract class SparkBaseShims extends SparkShims {
         }
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = exprs311
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
@@ -662,7 +660,7 @@ abstract class SparkBaseShims extends SparkShims {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {
-      org.apache.spark.sql.rapids.shims.spark311.GpuColumnarToRowTransitionExec(plan)
+      org.apache.spark.sql.rapids.shims.spark312.GpuColumnarToRowTransitionExec(plan)
     } else {
       GpuColumnarToRowExec(plan)
     }
