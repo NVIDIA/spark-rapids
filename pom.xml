@@ -92,11 +92,19 @@
                 <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
         </profile>
-       <profile>
+        <profile>
             <id>release302</id>
             <properties>
                 <spark.version.classifier>spark302</spark.version.classifier>
                 <spark.version>${spark302.version}</spark.version>
+                <spark.test.version>${spark302.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>release303</id>
+            <properties>
+                <spark.version.classifier>spark303</spark.version.classifier>
+                <spark.version>${spark303.version}</spark.version>
                 <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
         </profile>

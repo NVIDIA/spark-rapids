@@ -63,6 +63,13 @@
             </modules>
         </profile>
         <profile>
+            <id>release303</id>
+            <modules>
+                <module>spark303</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>with-classifier</id>
             <dependencies>
                 <dependency>

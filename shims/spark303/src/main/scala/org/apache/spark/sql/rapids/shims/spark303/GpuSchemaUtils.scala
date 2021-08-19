@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark303
+package org.apache.spark.sql.rapids.shims.spark303
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark303.RapidsShuffleManager
+import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.SchemaUtils
 
-class Spark303Shims extends SparkBaseShims {
+object GpuSchemaUtils {
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
+  def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    SchemaUtils.checkColumnNameDuplication(schema.map(_.name), colType, resolver)
   }
 }
