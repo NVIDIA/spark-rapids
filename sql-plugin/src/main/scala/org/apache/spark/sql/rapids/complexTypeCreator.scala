@@ -105,17 +105,10 @@ case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boole
       children.indices.foreach { index =>
         columns(index) = GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
       }
-
-      if (children.length == 2) {
-        withResource(ColumnVector.makeStruct(columns: _*)) { struct =>
-          GpuColumnVector.from(ColumnVector.makeList(numRows, DType.STRUCT, struct), dataType)
-        }
-      } else {
-        val structs = Range(0, columns.length, 2)
-          .safeMap(i => ColumnVector.makeStruct(columns(i), columns(i + 1)))
-        withResource(structs) { _ =>
-          GpuColumnVector.from(ColumnVector.makeList(numRows, DType.STRUCT, structs: _*), dataType)
-        }
+      val structs = Range(0, columns.length, 2)
+        .safeMap(i => ColumnVector.makeStruct(columns(i), columns(i + 1)))
+      withResource(structs) { _ =>
+        GpuColumnVector.from(ColumnVector.makeList(numRows, DType.STRUCT, structs: _*), dataType)
       }
     }
   }
