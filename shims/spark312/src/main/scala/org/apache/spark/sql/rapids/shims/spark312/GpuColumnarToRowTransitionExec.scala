@@ -14,18 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark312
+package org.apache.spark.sql.rapids.shims.spark312
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark312.RapidsShuffleManager
+import com.nvidia.spark.rapids.GpuColumnarToRowExecParent
 
-class Spark312Shims extends SparkBaseShims {
+import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
-
-  override def hasCastFloatTimestampUpcast: Boolean = true
-}
+case class GpuColumnarToRowTransitionExec(child: SparkPlan,
+   override val exportColumnarRdd: Boolean = false)
+   extends GpuColumnarToRowExecParent(child, exportColumnarRdd) with ColumnarToRowTransition

@@ -14,18 +14,12 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark312
+package org.apache.spark.sql.rapids.shims.spark312
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark312.RapidsShuffleManager
+import org.apache.spark.util.HadoopFSUtils
 
-class Spark312Shims extends SparkBaseShims {
+object HadoopFSUtilsShim {
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+  def shouldIgnorePath(path: String) = HadoopFSUtils.shouldFilterOutPathName(path)
 
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
-
-  override def hasCastFloatTimestampUpcast: Boolean = true
 }

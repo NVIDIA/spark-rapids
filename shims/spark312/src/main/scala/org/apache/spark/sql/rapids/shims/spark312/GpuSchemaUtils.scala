@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark312
+package org.apache.spark.sql.rapids.shims.spark312
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark312.RapidsShuffleManager
+import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.SchemaUtils
 
-class Spark312Shims extends SparkBaseShims {
+object GpuSchemaUtils {
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
+  def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    SchemaUtils.checkSchemaColumnNameDuplication(schema, colType, resolver)
   }
-
-  override def hasCastFloatTimestampUpcast: Boolean = true
 }
