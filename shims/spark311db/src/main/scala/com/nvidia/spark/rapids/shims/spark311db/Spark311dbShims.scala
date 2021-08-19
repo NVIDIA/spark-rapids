@@ -185,7 +185,7 @@ class Spark311dbShims extends Spark311Shims {
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.STRUCT + TypeSig.MAP)
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
             TypeSig.DECIMAL_64),
         Map("leftKeys" -> TypeSig.joinKeyTypes,
