@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark312
+package com.nvidia.spark.rapids.shims.spark311cdh
 
 import com.nvidia.spark.rapids._
 

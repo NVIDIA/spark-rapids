@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims.spark312
+package com.nvidia.spark.rapids.shims.spark311cdh
 
 import java.util.UUID
 

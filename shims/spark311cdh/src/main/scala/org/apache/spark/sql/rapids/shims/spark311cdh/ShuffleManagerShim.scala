@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.sql.rapids.shims.spark312
+package org.apache.spark.sql.rapids.shims.spark311cdh
 
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}

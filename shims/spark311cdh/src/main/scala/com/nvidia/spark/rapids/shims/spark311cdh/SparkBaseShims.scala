@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark312
+package com.nvidia.spark.rapids.shims.spark311cdh
 
 import java.net.URI
 import java.nio.ByteBuffer
@@ -55,7 +55,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.spark312._
+import org.apache.spark.sql.rapids.shims.spark311cdh._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -660,7 +660,7 @@ abstract class SparkBaseShims extends SparkShims {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {
-      org.apache.spark.sql.rapids.shims.spark312.GpuColumnarToRowTransitionExec(plan)
+      org.apache.spark.sql.rapids.shims.spark311cdh.GpuColumnarToRowTransitionExec(plan)
     } else {
       GpuColumnarToRowExec(plan)
     }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark312
+package org.apache.spark.sql.rapids.shims.spark311cdh
 
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent
 
