@@ -18,12 +18,13 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
+
 import ai.rapids.cudf.DType
+import scala.collection.mutable
+
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal, UnaryExpression, WindowSpecDefinition}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
-import scala.collection.mutable
 
 /**
  * The level of support that the plugin has for a given type.  Used for documentation generation.
@@ -1039,7 +1040,6 @@ object CreateMapCheck extends ExprChecks {
     if (meta.childExprs.length > 2) {
       // check for duplicate keys if the keys are literal values
       val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
-        s"${keyExprs.map(_.wrapped.getClass.getSimpleName).mkString(",")}")
       if (keyExprs.forall(_.wrapped.isInstanceOf[Literal])) {
         val keys = keyExprs.map(_.wrapped.asInstanceOf[Literal].value)
         val uniqueKeys = new mutable.HashSet[Any]()
