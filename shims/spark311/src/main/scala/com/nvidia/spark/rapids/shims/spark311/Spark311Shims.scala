@@ -92,7 +92,6 @@ class Spark311Shims extends SparkShims {
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
 
-
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getScalaUDFAsExpression(
@@ -133,7 +132,6 @@ class Spark311Shims extends SparkShims {
       child: SparkPlan): GpuBroadcastExchangeExecBase = {
     GpuBroadcastExchangeExec(mode, child)
   }
-
 
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
