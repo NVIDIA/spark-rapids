@@ -91,6 +91,13 @@
             </modules>
         </profile>
         <profile>
+            <id>release313</id>
+            <modules>
+                <module>spark313</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>with-classifier</id>
             <dependencies>
                 <dependency>
