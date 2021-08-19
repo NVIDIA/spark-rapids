@@ -18,11 +18,12 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
-
 import ai.rapids.cudf.DType
-
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
+
+import scala.collection.mutable
 
 /**
  * The level of support that the plugin has for a given type.  Used for documentation generation.
@@ -1025,26 +1026,43 @@ object WindowSpecCheck extends ExprChecks {
 
 object CreateMapCheck extends ExprChecks {
 
-  // Spark supports all types except for Map for key and value (Map is not supported
+  // Spark supports all types except for Map for key (Map is not supported
   // even in nested types)
-  val keyValueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
     TypeSig.ARRAY + TypeSig.STRUCT).nested()
 
+  private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+    TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-    if (meta.childExprs.length > 2 && !meta.conf.isCreateMapEnabled) {
-      meta.willNotWorkOnGpu("CreateMap with more than one key-value pair is not supported on " +
-        "the GPU by default because handling of duplicate keys is not compatible with Spark. " +
-        s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
+    // if there are more than two key-value pairs then there is the possibility of duplicate keys
+    if (meta.childExprs.length > 2) {
+      // check for duplicate keys if the keys are literal values
+      val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
+        s"${keyExprs.map(_.wrapped.getClass.getSimpleName).mkString(",")}")
+      if (keyExprs.forall(_.wrapped.isInstanceOf[Literal])) {
+        val keys = keyExprs.map(_.wrapped.asInstanceOf[Literal].value)
+        val uniqueKeys = new mutable.HashSet[Any]()
+        for (key <- keys) {
+          if (!uniqueKeys.add(key)) {
+            meta.willNotWorkOnGpu("CreateMap with duplicate literal keys is not supported")
+          }
+        }
+      } else if (!meta.conf.isCreateMapEnabled) {
+        meta.willNotWorkOnGpu("CreateMap is not enabled by default when there are " +
+          "multiple key-value pairs and where the keys are not literal values because handling " +
+          "of duplicate keys is not compatible with Spark. " +
+          s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
+      }
     }
   }
 
   override def support(
       dataType: TypeEnum.Value): Map[ExpressionContext, Map[String, SupportLevel]] = {
-    val support = keyValueSig.getSupportLevel(dataType, keyValueSig)
     Map((ProjectExprContext,
       Map(
-        ("key", support),
-        ("value", support))))
+        ("key", keySig.getSupportLevel(dataType, keySig)),
+        ("value", valueSig.getSupportLevel(dataType, valueSig)))))
   }
 }
 
