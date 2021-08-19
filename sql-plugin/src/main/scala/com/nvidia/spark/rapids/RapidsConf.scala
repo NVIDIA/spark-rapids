@@ -640,7 +640,7 @@ object RapidsConf {
   val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
     .doc("When set to true, support the CreateMap expression on the GPU with multiple " +
       "key-value pairs. The GPU version does not detect duplicate keys or make any guarantees " +
-      "about which key wins if there are duplicates. CreateMap is always supported on the GPU" +
+      "about which key wins if there are duplicates. CreateMap is always supported on the GPU " +
       "when there is a single key-value pair.")
     .booleanConf
     .createWithDefault(false)
