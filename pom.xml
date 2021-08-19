@@ -141,6 +141,14 @@
             </properties>
         </profile>
         <profile>
+            <id>release311cdh</id>
+            <properties>
+                <spark.version.classifier>spark311cdh</spark.version.classifier>
+                <spark.version>${spark311cdh.version}</spark.version>
+                <spark.test.version>${spark311cdh.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
             <id>udf-compiler</id>
             <modules>
                 <module>udf-compiler</module>
