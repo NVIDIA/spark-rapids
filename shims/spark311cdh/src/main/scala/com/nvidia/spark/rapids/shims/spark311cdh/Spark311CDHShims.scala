@@ -29,7 +29,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.shims.spark311._
 import org.apache.spark.sql.sources.BaseRelation
 
-class Spark311CDHShims extends Spark311Shims {
+class Spark311CDHShims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
