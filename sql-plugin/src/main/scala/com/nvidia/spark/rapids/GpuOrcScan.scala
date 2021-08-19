@@ -58,7 +58,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{DecimalType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -381,6 +381,31 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     rawOut.write(postScriptLength.toInt)
   }
 
+  /**
+   * Cast cols with precision that can be stored in an int to DECIMAL32, to save space.
+   * @param table the input table, will be closed after returning.
+   * @param schema the schema of the table
+   * @return a new table with cast columns
+   */
+  protected def typeCastForDecimalIfNeededAndClose(table: Table, schema: StructType): Table = {
+    assert(table.getNumberOfColumns == schema.length)
+    withResource(table) { t =>
+      withResource(new Array[ColumnVector](t.getNumberOfColumns)) { newCols =>
+        (0 until t.getNumberOfColumns).foreach { id =>
+          val readField = schema(id)
+          val origCol = t.getColumn(id)
+          val newCol = ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol,
+            readField.dataType,
+            (dt, cv) => cv.getType.isDecimalType &&
+              !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
+            (dt, cv) =>
+              cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType])))
+          newCols(id) = newCol
+        }
+        new Table(newCols: _*)
+      }
+    }
+  }
 }
 
 /**
@@ -630,7 +655,7 @@ class GpuOrcPartitionReader(
               s"but read $numColumns from $partFile")
         }
         metrics(NUM_OUTPUT_BATCHES) += 1
-        Some(table)
+        Some(typeCastForDecimalIfNeededAndClose(table, readDataSchema))
       }
     } finally {
       if (dataBuffer != null) {
@@ -1398,7 +1423,7 @@ class MultiFileCloudOrcPartitionReader(
       }
 
       metrics(NUM_OUTPUT_BATCHES) += 1
-      Some(table)
+      Some(typeCastForDecimalIfNeededAndClose(table, readDataSchema))
     }
 
     withResource(table) { _ =>
@@ -1777,7 +1802,7 @@ class MultiFileOrcPartitionReader(
     }
 
     metrics(NUM_OUTPUT_BATCHES) += 1
-    table
+    typeCastForDecimalIfNeededAndClose(table, readDataSchema)
   }
 
   /**

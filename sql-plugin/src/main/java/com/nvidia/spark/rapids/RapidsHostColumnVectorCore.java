@@ -162,19 +162,14 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
     assert precision <= DType.DECIMAL64_MAX_PRECISION : "Assert " + precision + " <= DECIMAL64_MAX_PRECISION(" + DType.DECIMAL64_MAX_PRECISION + ")";
     assert scale == -cudfCv.getType().getScale() :
         "Assert fetch decimal with its original scale " + scale + " expected " + (-cudfCv.getType().getScale());
-    // The actual decimal type used for cudf column should be honored first. Because both
-    // DECIMAL32 and DECIMAL64 can support precisions <= MAX_INT_DIGITS. Cudf may use either one
-    // for this case. e.g. ORC reader will always read decimal as DECIMAL64, even the precision
-    // is suitable for DECIMAL32.
-    if (cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL32) {
-      assert precision <= Decimal.MAX_INT_DIGITS() : "Precision is too large for Decimal32";
+    if (precision <= Decimal.MAX_INT_DIGITS()) {
+      assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL32 : "type should be DECIMAL32";
       return Decimal.createUnsafe(cudfCv.getInt(rowId), precision, scale);
-    } else if (cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL64) {
-      assert precision <= Decimal.MAX_LONG_DIGITS() : "Precision is too large for Decimal64";
-      return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
     } else {
-      throw new RuntimeException("Unsupported decimal type: " + cudfCv.getType().getTypeId());
+      assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL64 : "type should be DECIMAL64";
+      return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
     }
+
   }
 
   @Override
