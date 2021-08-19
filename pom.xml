@@ -125,6 +125,14 @@
             </properties>
         </profile>
         <profile>
+            <id>release312</id>
+            <properties>
+                <spark.version.classifier>spark312</spark.version.classifier>
+                <spark.version>${spark312.version}</spark.version>
+                <spark.test.version>${spark312.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
             <id>udf-compiler</id>
             <modules>
                 <module>udf-compiler</module>

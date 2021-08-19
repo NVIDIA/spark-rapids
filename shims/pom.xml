@@ -84,6 +84,13 @@
             </modules>
         </profile>
         <profile>
+            <id>release312</id>
+            <modules>
+                <module>spark312</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>with-classifier</id>
             <dependencies>
                 <dependency>
