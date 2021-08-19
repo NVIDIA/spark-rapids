@@ -374,34 +374,6 @@ class Spark311Shims extends SparkShims {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
-      }),
-    GpuOverrides.expr[Cast](
-      "Convert a column of one type of data into another type",
-      new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-        .ansiEnabled, conf, p, r)),
-    GpuOverrides.expr[AnsiCast](
-      "Convert a column of one type of data into another type",
-      new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
-    GpuOverrides.expr[RegExpReplace](
-      "RegExpReplace support for string literal input patterns",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
-        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
-            .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
-          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new QuaternaryExprMeta[RegExpReplace](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
-            willNotWorkOnGpu(
-              "Only non-null, non-empty String literals that are not regex patterns " +
-                "are supported by RegExpReplace on the GPU")
-          }
-        }
-        // TODO - need to use fourth pos argument
-        override def convertToGpu(lhs: Expression, regexp: Expression,
-            rep: Expression, pos: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
