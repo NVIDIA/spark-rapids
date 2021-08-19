@@ -185,11 +185,7 @@ case class GpuProjectAstExec(
           withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
             boundProjectList.safeMap { expr =>
               // Use intmax for the left table column count since there's only one input table here.
-              val astExpr = expr.convertToAst(Int.MaxValue) match {
-                case e: ast.Expression => e
-                case e => new ast.UnaryExpression(ast.UnaryOperator.IDENTITY, e)
-              }
-              astExpr.compile()
+              expr.convertToAst(Int.MaxValue).compile()
             }
           }
 
