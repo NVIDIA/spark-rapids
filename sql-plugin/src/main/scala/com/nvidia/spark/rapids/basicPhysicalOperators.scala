@@ -19,11 +19,11 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
-import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
@@ -38,15 +38,24 @@ class GpuProjectExecMeta(
     proj: ProjectExec,
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
-    r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r) {
+    r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
+    with Logging {
   override def convertToGpu(): GpuExec = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     val gpuExprs = childExprs.map(_.convertToGpu()).toList
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
-      childExprs.foreach(_.tagForAst())
       if (childExprs.forall(_.canThisBeAst)) {
         return GpuProjectAstExec(gpuExprs, gpuChild)
+      }
+      // explain AST because this is optional and it is sometimes hard to debug
+      val exp = conf.explain
+      if (!exp.equalsIgnoreCase("NONE")) {
+        val explain = childExprs.map(_.explainAst(exp.equalsIgnoreCase("ALL")))
+            .filter(_.nonEmpty)
+        if (explain.nonEmpty) {
+          logWarning(s"AST PROJECT\n$explain")
+        }
       }
     }
     GpuProjectExec(gpuExprs, gpuChild)

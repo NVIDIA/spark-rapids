@@ -57,6 +57,44 @@ object JoinTypeChecks {
       case _ => // not disabled
     }
   }
+
+  val LEFT_KEYS = "leftKeys"
+  val RIGHT_KEYS = "rightKeys"
+  val CONDITION = "condition"
+
+  private[this] val cudfSupportedKeyTypes =
+    (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested()
+  private[this] val sparkSupportedJoinKeyTypes = TypeSig.all - TypeSig.MAP.nested()
+
+  private[this] val joinRideAlongTypes =
+    (cudfSupportedKeyTypes + TypeSig.ARRAY + TypeSig.MAP).nested()
+
+  val equiJoinExecChecks: ExecChecks = ExecChecks(
+    joinRideAlongTypes,
+    TypeSig.all,
+    Map(
+      LEFT_KEYS -> InputCheck(cudfSupportedKeyTypes, sparkSupportedJoinKeyTypes),
+      RIGHT_KEYS -> InputCheck(cudfSupportedKeyTypes, sparkSupportedJoinKeyTypes),
+      CONDITION -> InputCheck(TypeSig.BOOLEAN, TypeSig.BOOLEAN)))
+
+  def equiJoinMeta(leftKeys: Seq[BaseExprMeta[_]],
+      rightKeys: Seq[BaseExprMeta[_]],
+      condition: Option[BaseExprMeta[_]]): Map[String, Seq[BaseExprMeta[_]]] = {
+    Map(
+      LEFT_KEYS -> leftKeys,
+      RIGHT_KEYS -> rightKeys,
+      CONDITION -> condition.toSeq)
+  }
+
+  val nonEquiJoinChecks: ExecChecks = ExecChecks(
+    joinRideAlongTypes,
+    TypeSig.all,
+    Map(CONDITION -> InputCheck(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      notes = List("A non-inner join only is supported if the condition expression can be " +
+          "converted to a GPU AST expression"))))
+
+  def nonEquiJoinMeta(condition: Option[BaseExprMeta[_]]): Map[String, Seq[BaseExprMeta[_]]] =
+    Map(CONDITION -> condition.toSeq)
 }
 
 object GpuHashJoin extends Arm {
