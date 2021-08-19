@@ -33,6 +33,17 @@
 
    <profiles>
         <profile>
+            <id>release301</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-spark301_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>release302</id>
             <dependencies>
                 <dependency>

@@ -92,7 +92,7 @@
 
     <profiles>
        <profile>
-            <id>release302</id>
+            <id>with-classifier</id>
             <build>
                 <plugins>
                     <plugin>

@@ -102,7 +102,7 @@
         </dependencies>
     </profile>
    <profile>
-        <id>release302</id>
+        <id>with-classifier</id>
         <dependencies>
             <dependency>
                 <groupId>com.nvidia</groupId>

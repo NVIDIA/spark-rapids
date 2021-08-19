@@ -29,7 +29,6 @@
   <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
   <version>21.10.0-SNAPSHOT</version>
 
-
   <profiles>
     <profile>
         <id>default</id>
@@ -72,7 +71,7 @@
         </dependencies>
     </profile>
     <profile>
-        <id>release302</id>
+        <id>with-classifier</id>
         <dependencies>
             <dependency>
                <groupId>com.nvidia</groupId>
