@@ -87,17 +87,17 @@ case class GpuAcoshCompat(child: Expression) extends GpuUnaryMathExpression("ACO
     }
   }
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
     // Typically we would just use UnaryOp.ARCCOSH, but there are corner cases where cudf
     // produces a better result (it does not overflow) than spark does, but our goal is
     // to match Spark's
     // StrictMath.log(x + math.sqrt(x * x - 1.0))
     val x = child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)
-    new ast.UnaryExpression(ast.UnaryOperator.LOG,
-      new ast.BinaryExpression(ast.BinaryOperator.ADD, x,
-        new ast.UnaryExpression(ast.UnaryOperator.SQRT,
-          new ast.BinaryExpression(ast.BinaryOperator.SUB,
-            new ast.BinaryExpression(ast.BinaryOperator.MUL, x, x), ast.Literal.ofDouble(1)))))
+    new ast.UnaryOperation(ast.UnaryOperator.LOG,
+      new ast.BinaryOperation(ast.BinaryOperator.ADD, x,
+        new ast.UnaryOperation(ast.UnaryOperator.SQRT,
+          new ast.BinaryOperation(ast.BinaryOperator.SUB,
+            new ast.BinaryOperation(ast.BinaryOperator.MUL, x, x), ast.Literal.ofDouble(1)))))
   }
 }
 
@@ -211,8 +211,8 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
     }
   }
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
-    new ast.BinaryExpression(ast.BinaryOperator.SUB,
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    new ast.BinaryOperation(ast.BinaryOperator.SUB,
       super.convertToAst(numFirstTableColumns),
       ast.Literal.ofDouble(1))
   }
@@ -378,9 +378,9 @@ case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
     }
   }
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
-    new ast.BinaryExpression(ast.BinaryOperator.DIV, ast.Literal.ofDouble(1),
-      new ast.UnaryExpression(ast.UnaryOperator.TAN,
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    new ast.BinaryOperation(ast.BinaryOperator.DIV, ast.Literal.ofDouble(1),
+      new ast.UnaryOperation(ast.UnaryOperator.TAN,
         child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)))
   }
 }

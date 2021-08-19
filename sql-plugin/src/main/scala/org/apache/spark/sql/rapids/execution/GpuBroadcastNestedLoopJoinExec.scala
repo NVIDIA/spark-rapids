@@ -312,10 +312,7 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       assert(joinType.isInstanceOf[InnerLike], s"Unexpected unconditional join type: $joinType")
       new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, joinTime, totalTime)
     } else {
-      val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns) match {
-        case e: ast.Expression => e.compile()
-        case e => new ast.UnaryExpression(ast.UnaryOperator.IDENTITY, e).compile()
-      }
+      val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
       new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
         stream, streamAttributes, targetSize, compiledAst, spillCallback,
         joinTime = joinTime, totalTime = totalTime)

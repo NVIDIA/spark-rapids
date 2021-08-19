@@ -1023,6 +1023,31 @@ object WindowSpecCheck extends ExprChecks {
   }
 }
 
+object CreateMapCheck extends ExprChecks {
+
+  // Spark supports all types except for Map for key and value (Map is not supported
+  // even in nested types)
+  val keyValueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+    TypeSig.ARRAY + TypeSig.STRUCT).nested()
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    if (meta.childExprs.length != 2) {
+      // See https://github.com/NVIDIA/spark-rapids/issues/3229
+      meta.willNotWorkOnGpu("CreateMap only supports two expressions on GPU")
+    }
+  }
+
+  override def support(
+      dataType: TypeEnum.Value): Map[ExpressionContext, Map[String, SupportLevel]] = {
+    val support = keyValueSig.getSupportLevel(dataType, keyValueSig)
+    Map((ProjectExprContext,
+      Map(
+        ("key", support),
+        ("value", support))))
+  }
+}
+
+
 /**
  * A check for CreateNamedStruct.  The parameter values alternate between one type and another.
  * If this pattern shows up again we can make this more generic at that point.
