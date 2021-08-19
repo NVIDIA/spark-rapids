@@ -14,13 +14,18 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.spark304
+package org.apache.spark.sql.rapids.shims.spark304
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark304.RapidsShuffleInternalManager
+import org.apache.spark.sql.catalyst.analysis.Resolver
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.util.SchemaUtils
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends RapidsShuffleInternalManager(conf, isDriver) {
+object GpuSchemaUtils {
+
+  def checkColumnNameDuplication(
+      schema: StructType,
+      colType: String,
+      resolver: Resolver): Unit = {
+    SchemaUtils.checkColumnNameDuplication(schema.map(_.name), colType, resolver)
+  }
 }

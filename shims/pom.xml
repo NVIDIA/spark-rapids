@@ -70,6 +70,20 @@
             </modules>
         </profile>
         <profile>
+            <id>release304</id>
+            <modules>
+                <module>spark304</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <modules>
+                <module>spark311</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>with-classifier</id>
             <dependencies>
                 <dependency>

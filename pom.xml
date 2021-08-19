@@ -105,7 +105,23 @@
             <properties>
                 <spark.version.classifier>spark303</spark.version.classifier>
                 <spark.version>${spark303.version}</spark.version>
-                <spark.test.version>${spark302.version}</spark.test.version>
+                <spark.test.version>${spark303.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>release304</id>
+            <properties>
+                <spark.version.classifier>spark304</spark.version.classifier>
+                <spark.version>${spark304.version}</spark.version>
+                <spark.test.version>${spark304.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <properties>
+                <spark.version.classifier>spark311</spark.version.classifier>
+                <spark.version>${spark311.version}</spark.version>
+                <spark.test.version>${spark311.version}</spark.test.version>
             </properties>
         </profile>
         <profile>

@@ -66,6 +66,28 @@
             </dependencies>
         </profile>
         <profile>
+            <id>release304</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-spark304_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-spark311_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>databricks301</id>
             <dependencies>
                 <dependency>
