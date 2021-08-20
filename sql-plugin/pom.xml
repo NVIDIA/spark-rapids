@@ -44,6 +44,7 @@
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
         </dependency>
+        <!--
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-hive_${scala.binary.version}</artifactId>
@@ -52,10 +53,12 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
+-->
         <dependency>
           <groupId>org.apache.orc</groupId>
           <artifactId>orc-core</artifactId>
           <classifier>${orc.classifier}</classifier>
+          <version>1.5.8</version>
           <exclusions>
             <exclusion>
               <groupId>org.slf4j</groupId>
@@ -91,7 +94,46 @@
     </dependencies>
 
     <profiles>
-       <profile>
+        <profile>
+            <id>release311cdh</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.curator</groupId>
+                            <artifactId>curator-recipes</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-recipes</artifactId>
+                    <version>4.3.0.7.2.7.0-184</version>
+                </dependency>
+        <dependency>
+          <groupId>org.apache.orc</groupId>
+          <artifactId>orc-core</artifactId>
+          <classifier>${orc.classifier}</classifier>
+          <version>1.5.8</version>
+          <exclusions>
+            <exclusion>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-api</artifactId>
+            </exclusion>
+          </exclusions>
+        </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>with-classifier</id>
             <build>
                 <plugins>
