@@ -1,2 +1,2 @@
-App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,ReadFileFormat Score,Unsupported Read File Formats and Types
-Spark shell,local-1624892957956,37581.00,"",3751,37581,17801,58.47,false,0,"",20,100.00,""
+App Name,App ID,Score,Potential Problems,SQL Dataframe Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,ReadFileFormat Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Unsupported Nested Types
+Spark shell,local-1624892957956,37581.00,"",3751,37581,17801,58.47,false,0,"",20,100.00,"","",""

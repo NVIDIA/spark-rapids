@@ -64,6 +64,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     .add("Read Score Percent", IntegerType, true)
     .add("Read File Format Score", DoubleType, true)
     .add("Unsupported Read File Formats and Types", StringType, true)
+    .add("Unsupported Write Data Format", StringType, true)
+    .add("Unsupported Nested Types", StringType, true)
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -336,6 +338,16 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test nds q86 with failure test") {
     val logFiles = Array(s"$logDir/nds_q86_fail_test")
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
+  }
+
+  test("test event log write format") {
+    val logFiles = Array(s"$logDir/writeformat_eventlog")
+    runQualificationTest(logFiles, "write_format_expectation.csv")
+  }
+
+  test("test event log nested types in ReadSchema") {
+    val logFiles = Array(s"$logDir/nested_type_eventlog")
+    runQualificationTest(logFiles, "nested_type_expectation.csv")
   }
 
   // this event log has both decimal and non-decimal so comes out partial

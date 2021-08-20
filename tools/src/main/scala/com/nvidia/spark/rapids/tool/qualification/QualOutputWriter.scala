@@ -44,7 +44,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     val initHeader = s"App Name,$appIdStr,Score,Potential Problems,$sqlDurStr,$taskDurStr," +
       s"$appDurStr,Executor CPU Time Percent,App Duration Estimated," +
       "SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent," +
-      "Read File Format Score,Unsupported Read File Formats and Types"
+      "Read File Format Score,Unsupported Read File Formats and Types," +
+      "Unsupported Write Data Format,Unsupported Nested Types"
     if (reportReadSchema) {
       initHeader + ",Read Schema"
     } else {
@@ -73,8 +74,10 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     val failedIds = stringIfempty(appSum.failedSQLIds)
     // since csv, replace any commas with ; in the schema
     val readFileFormats = stringIfempty(appSum.readFileFormats.replace(",", ";"))
+    val nestedTypes = stringIfempty(appSum.nestedTypes.replace(",", ";"))
     val readFileScoreRounded = f"${appSum.readFileFormatScore}%1.2f"
     val readFormatNS = stringIfempty(appSum.readFileFormatAndTypesNotSupported)
+    val writeDataFormat = stringIfempty(appSum.writeDataFormat)
 
 
     val initRow = s"$appNameStr,$appIdStr,${appSum.score},$probStr," +
@@ -82,7 +85,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
       s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
       s"${appSum.readScorePercent},${appSum.readFileFormatScore}," +
-      s"${readFormatNS}"
+      s"${readFormatNS},${writeDataFormat},${nestedTypes}"
     if (reportReadSchema) {
       initRow + s",$readFileFormats"
     } else {
