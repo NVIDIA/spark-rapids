@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.unit
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{GpuBoundReference, GpuColumnVector, GpuLiteral, GpuUnitTests}
 
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.rapids.{GpuDateAdd, GpuDateSub}
 import org.apache.spark.sql.types.{DataTypes, DateType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -42,8 +43,10 @@ class DateTimeUnitTest extends GpuUnitTests {
               withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6),
                 IntegerType)) {
                 daysVector =>
-                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
-                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)
+                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType,
+                    false)(NamedExpression.newExprId, "date")
+                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType,
+                    false)(NamedExpression.newExprId, "days")
                   val batch = new ColumnarBatch(List(datesVector, daysVector).toArray,
                      TIMES_DAY.length)
 
@@ -78,8 +81,10 @@ class DateTimeUnitTest extends GpuUnitTests {
               withResource(GpuColumnVector.from(ColumnVector.fromInts(2, 32, 6, 9, 6),
                 IntegerType)) {
                 daysVector =>
-                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType, false)
-                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType, false)
+                  val datesExpressionVector = GpuBoundReference(0, DataTypes.DateType,
+                    false)(NamedExpression.newExprId, "date")
+                  val daysExpressionVector = GpuBoundReference(1, DataTypes.IntegerType,
+                    false)(NamedExpression.newExprId, "days")
                   val batch = new ColumnarBatch(List(datesVector, daysVector).toArray,
                     TIMES_DAY.length)
 

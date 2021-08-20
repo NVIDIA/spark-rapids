@@ -19,9 +19,27 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.ast
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, SortOrder}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+/**
+ * A Trait that allows an Expression to control how it and its child expressions are bound. This
+ * should be used with a lot of caution as binding can be really hard to debug if you get it wrong.
+ * The output of bind should have all instances of AttributeReference replaced with
+ * GpuAttributeReference. If not other code may try to replace it and produce the incorrect result.
+ * In fact because of how this works it is possible for bind to be called multiple times,
+ * with different input values. The first one should be the one used and all other times it is
+ * called it should be ignored. If bind has replaced all AttributeReferences then it should become
+ * a noop, but just be really careful.
+ */
+trait GpuBind {
+  /**
+   * Returns a modified version of an expressions with all AttributeReferences in the child
+   * expressions replaced with GpuBoundReference instances.
+   */
+  def bind(input: AttributeSeq): GpuExpression
+}
 
 object GpuBindReferences extends Logging {
 
@@ -35,7 +53,7 @@ object GpuBindReferences extends Logging {
           case _: SortOrder =>
           case other =>
             throw new IllegalArgumentException(
-              s"Bound an expression that shouldn't be here ${other.getClass}")
+              s"Found an expression that shouldn't be here ${other.getClass}")
         }
       }
     }
@@ -46,12 +64,14 @@ object GpuBindReferences extends Logging {
       expression: A,
       input: AttributeSeq): R = {
     val ret = expression.transform {
+      case bind: GpuBind =>
+        bind.bind(input)
       case a: AttributeReference =>
         val ordinal = input.indexOf(a.exprId)
         if (ordinal == -1) {
           sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
         } else {
-          GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
+          GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)(a.exprId, a.name)
         }
     }.asInstanceOf[R]
     postBindCheck(ret)
@@ -93,9 +113,11 @@ object GpuBindReferences extends Logging {
 }
 
 case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
+    (val exprId: ExprId, val name: String)
   extends GpuLeafExpression {
 
-  override def toString: String = s"input[$ordinal, ${dataType.simpleString}, $nullable]"
+  override def toString: String =
+    s"input[$ordinal, ${dataType.simpleString}, $nullable]($name#${exprId.id})"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     batch.column(ordinal) match {

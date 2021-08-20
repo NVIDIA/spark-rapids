@@ -27,7 +27,7 @@ trait Arm {
     try {
       block(r)
     } finally {
-      r.close()
+      r.safeClose()
     }
   }
 
