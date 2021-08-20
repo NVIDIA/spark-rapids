@@ -31,6 +31,10 @@
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
     <version>21.10.0-SNAPSHOT</version>
 
+    <modules>
+        <module>aggregator</module>
+    </modules>
+
     <profiles>
         <profile>
             <id>default</id>
@@ -45,14 +49,26 @@
                 <module>spark311</module>
                 <module>spark312</module>
                 <module>spark311cdh</module>
-                <module>aggregator</module>
             </modules>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
         </profile>
         <profile>
             <id>release301</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>301</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark301</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -64,9 +80,14 @@
         </profile>
         <profile>
             <id>release302</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>302</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark302</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -113,6 +134,9 @@
         </profile>
         <profile>
             <id>with-classifier</id>
+            <activation>
+                <property><name>buildver</name></property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -132,8 +156,15 @@
                 <module>spark303</module>
                 <module>spark311</module>
                 <module>spark312</module>
-                <module>aggregator</module>
             </modules>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
         </profile>
         <profile>
             <id>databricks311</id>
@@ -144,8 +175,15 @@
                 <module>spark303</module>
                 <module>spark311</module>
                 <module>spark312</module>
-                <module>aggregator</module>
             </modules>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
         </profile>
         <profile>
             <id>spark320</id>
@@ -156,8 +194,15 @@
                 <module>spark303</module>
                 <module>spark311</module>
                 <module>spark312</module>
-                <module>aggregator</module>
             </modules>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
         </profile>
         <profile>
             <id>snapshot-shims</id>
@@ -174,18 +219,19 @@
                 <module>spark311cdh</module>
                 <module>spark304</module>
                 <module>spark313</module>
-                <module>aggregator</module>
             </modules>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
         </profile>
     </profiles>
 
     <dependencies>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>provided</scope>
-        </dependency>
         <dependency>
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>

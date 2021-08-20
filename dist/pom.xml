@@ -72,6 +72,9 @@
     </profile>
     <profile>
         <id>with-classifier</id>
+        <activation>
+            <property><name>buildver</name></property>
+        </activation>
         <dependencies>
             <dependency>
                <groupId>com.nvidia</groupId>
@@ -167,9 +170,6 @@
                 </plugin>
             </plugins>
         </build>
-        <activation>
-            <activeByDefault>false</activeByDefault>
-        </activation>
     </profile>
   </profiles>
 

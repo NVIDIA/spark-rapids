@@ -86,6 +86,12 @@
     <profiles>
         <profile>
             <id>release301</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>301</value>
+                </property>
+            </activation>
             <properties>
                 <spark.version.classifier>spark301</spark.version.classifier>
                 <spark.version>${spark301.version}</spark.version>
@@ -102,6 +108,12 @@
         </profile>
         <profile>
             <id>release302</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>302</value>
+                </property>
+            </activation>
             <properties>
                 <spark.version.classifier>spark302</spark.version.classifier>
                 <spark.version>${spark302.version}</spark.version>
