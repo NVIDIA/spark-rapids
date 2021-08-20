@@ -148,7 +148,7 @@ run_test() {
         if [[ $CODE == "0" ]]; then
           sed -n -e '/test session starts/,/deselected,/ p' "$LOG_FILE" || true
         else
-	        cat "$LOG_FILE" || true
+          cat "$LOG_FILE" || true
         fi
         return $CODE
         ;;
