@@ -51,6 +51,12 @@
         </profile>
         <profile>
             <id>release301emr</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>301emr</value>
+                </property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -79,6 +85,12 @@
         </profile>
         <profile>
             <id>release303</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>303</value>
+                </property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -90,6 +102,12 @@
         </profile>
         <profile>
             <id>release304</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>304</value>
+                </property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -101,6 +119,12 @@
         </profile>
         <profile>
             <id>release311</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311</value>
+                </property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -112,6 +136,12 @@
         </profile>
         <profile>
             <id>release312</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>312</value>
+                </property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -123,6 +153,12 @@
         </profile>
         <profile>
             <id>release313</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>313</value>
+                </property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -134,6 +170,12 @@
         </profile>
         <profile>
             <id>release311cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311cdh</value>
+                </property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>

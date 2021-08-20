@@ -73,9 +73,14 @@
         </profile>
         <profile>
             <id>release301emr</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>301emr</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark301emr</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -92,44 +97,74 @@
         </profile>
         <profile>
             <id>release303</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>303</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark303</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
             <id>release304</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>304</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark304</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
             <id>release311</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark311</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
             <id>release312</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>312</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark312</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
             <id>release313</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>313</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark313</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
             <id>release311cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311cdh</value>
+                </property>
+            </activation>
             <modules>
                 <module>spark311cdh</module>
-                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
