@@ -3279,9 +3279,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
     wrap.tagForGpu()
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
-    val exp = conf.explain
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
-      if (!exp.equalsIgnoreCase("NONE")) {
+      if (conf.shouldExplain) {
         logWarning("Can't replace any part of this plan due to: " +
             s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
       }
@@ -3302,12 +3301,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         Seq.empty
       }
       wrap.runAfterTagRules()
-      if (!exp.equalsIgnoreCase("NONE")) {
+      if (conf.shouldExplain) {
         wrap.tagForExplain()
-        val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
+        val explain = wrap.explain(conf.shouldExplainAll)
         if (explain.nonEmpty) {
           logWarning(s"\n$explain")
-          if (conf.optimizerExplain.equalsIgnoreCase("ALL") && optimizations.nonEmpty) {
+          if (conf.optimizerShouldExplainAll && optimizations.nonEmpty) {
             logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")
           }
         }

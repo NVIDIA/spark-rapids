@@ -1211,7 +1211,7 @@ be done in the GPU kernel itself. An example of this is conditional joins. If yo
 want to join on `A.a >= B.b + 1` where `A` and `B` are separate tables or data
 frames, the `+` and `>=` operations cannot run as separate independent kernels
 because it is done on a combination of rows in both `A` and `B`. Instead part of the
-plan that Spark developed is turned into an abstract syntax tree and set to the GPU
+plan that Spark developed is turned into an abstract syntax tree and sent to the GPU
 where it can be interpreted. The number and types of operations supported in this
 are limited.
 <table>
@@ -1289,7 +1289,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -1379,7 +1379,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -1469,7 +1469,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -1580,7 +1580,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -1717,7 +1717,7 @@ are limited.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td>S</td>
 <td>S</td>
@@ -1943,7 +1943,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -2033,7 +2033,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -2196,7 +2196,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -2286,7 +2286,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -2355,7 +2355,7 @@ are limited.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowSpan="1">ast</td>
+<td rowSpan="1">AST</td>
 <td>result</td>
 <td>S</td>
 <td>S</td>
@@ -2539,7 +2539,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -2650,7 +2650,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -2761,7 +2761,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -2919,7 +2919,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -3098,7 +3098,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -3517,7 +3517,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -3633,7 +3633,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -3723,7 +3723,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -4900,7 +4900,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td>S</td>
 <td>S</td>
@@ -5011,7 +5011,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -5174,7 +5174,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -5745,7 +5745,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td>S</td>
 <td>S</td>
@@ -5877,7 +5877,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td>S</td>
 <td>S</td>
@@ -7132,7 +7132,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td>S</td>
 <td>S</td>
@@ -7290,7 +7290,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td>S</td>
 <td>S</td>
@@ -7448,7 +7448,7 @@ are limited.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowSpan="1">ast</td>
+<td rowSpan="1">AST</td>
 <td>result</td>
 <td>S</td>
 <td>S</td>
@@ -8107,7 +8107,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -8333,7 +8333,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td>S</td>
 <td> </td>
@@ -8653,7 +8653,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td> </td>
 <td> </td>
@@ -9384,7 +9384,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -9965,7 +9965,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -10055,7 +10055,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -10427,7 +10427,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -11579,7 +11579,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="3">ast</td>
+<td rowSpan="3">AST</td>
 <td>lhs</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -11690,7 +11690,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -11780,7 +11780,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td> </td>
@@ -12194,7 +12194,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -12310,7 +12310,7 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="2">ast</td>
+<td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
 <td>S</td>

@@ -712,7 +712,6 @@ case class ContextChecks(
     tagBase(exprMeta, exprMeta.willNotWorkInAst)
   }
 
-
   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
     tagBase(rapidsMeta, rapidsMeta.willNotWorkOnGpu)
   }
@@ -984,7 +983,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
   override def tagAst(exprMeta: BaseExprMeta[_]): Unit = {
     val checks = contexts.get(AstExprContext)
     if (checks.isEmpty) {
-      exprMeta.willNotWorkInAst(s"this is not supported by AST")
+      exprMeta.willNotWorkInAst(AstExprContext.notSupportedMsg)
     } else {
       checks.get.tagAst(exprMeta)
     }
@@ -1001,7 +1000,7 @@ object CaseWhenCheck extends ExprChecks {
   val sparkSig: TypeSig = TypeSig.all
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
-    meta.willNotWorkInAst("AST is not supported")
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
     // when this supports AST tagBase(exprMeta, meta.willNotWorkInAst)
   }
 
@@ -1051,7 +1050,7 @@ object WindowSpecCheck extends ExprChecks {
   val sparkSig: TypeSig = TypeSig.all
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
-    meta.willNotWorkInAst("AST is not supported")
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
     // when this supports AST tagBase(exprMeta, meta.willNotWorkInAst)
   }
 
@@ -1136,7 +1135,7 @@ object CreateNamedStructCheck extends ExprChecks {
   val sparkResultSig: TypeSig = TypeSig.STRUCT.nested(sparkValueSig)
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
-    meta.willNotWorkInAst("AST is not supported")
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
     // when this supports AST tagBase(exprMeta, meta.willNotWorkInAst)
   }
 
@@ -1271,7 +1270,7 @@ class CastChecks extends ExprChecks {
   }
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
-    meta.willNotWorkInAst("AST is not support by cast")
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
     // when this supports AST tagBase(meta, meta.willNotWorkInAst)
   }
 
@@ -1782,7 +1781,7 @@ object SupportedOpsDocs {
     println("want to join on `A.a >= B.b + 1` where `A` and `B` are separate tables or data")
     println("frames, the `+` and `>=` operations cannot run as separate independent kernels")
     println("because it is done on a combination of rows in both `A` and `B`. Instead part of the")
-    println("plan that Spark developed is turned into an abstract syntax tree and set to the GPU")
+    println("plan that Spark developed is turned into an abstract syntax tree and sent to the GPU")
     println("where it can be interpreted. The number and types of operations supported in this")
     println("are limited.")
     println("<table>")

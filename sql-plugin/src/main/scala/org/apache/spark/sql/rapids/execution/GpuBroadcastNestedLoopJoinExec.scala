@@ -54,7 +54,6 @@ class GpuBroadcastNestedLoopJoinMeta(
     join.joinType match {
       case _: InnerLike =>
       case LeftOuter | RightOuter | LeftSemi | LeftAnti =>
-      case LeftSemi | LeftAnti =>
         conditionMeta.foreach(requireAstForGpuOn)
       case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }

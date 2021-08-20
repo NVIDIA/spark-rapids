@@ -540,7 +540,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def tagForExplain(): Unit = {
     if (!canThisBeReplaced) {
-      childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu)
+      childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
@@ -555,6 +555,12 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   def requireAstForGpuOn(exprMeta: BaseExprMeta[_]): Unit = {
+    // willNotWorkOnGpu does not deduplicate reasons. Most of the time that is fine
+    // but here we want to avoid adding the reason twice, because this method can be
+    // called multiple times, and also the reason can automatically be added in if
+    // a child expression would not work in the non-AST case either.
+    // So only add it if canExprTreeBeReplaced changed after requiring that the
+    // given expression is AST-able.
     val previousExprReplaceVal = canExprTreeBeReplaced
     exprMeta.requireAstForGpu()
     val newExprReplaceVal = canExprTreeBeReplaced
@@ -780,7 +786,9 @@ object ProjectExprContext extends ExpressionContext {
  * not. This part is not done automatically.
  */
 object AstExprContext extends ExpressionContext  {
-  override def toString: String = "ast"
+  override def toString: String = "AST"
+
+  val notSupportedMsg = "this expression does not support AST"
 }
 object GroupByAggExprContext extends ExpressionContext  {
   override def toString: String = "aggregation"
@@ -819,7 +827,6 @@ object ExpressionContext {
 
   def getRegularOperatorContext(meta: RapidsMeta[_, _, _]): ExpressionContext = meta.wrapped match {
     case _: Expression if meta.parent.isDefined => getRegularOperatorContext(meta.parent.get)
-    // TODO do we want to look for joins/etc here and check the join type???
     case _ => ProjectExprContext
   }
 }

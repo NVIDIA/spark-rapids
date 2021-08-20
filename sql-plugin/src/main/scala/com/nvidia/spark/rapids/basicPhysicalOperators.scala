@@ -49,9 +49,8 @@ class GpuProjectExecMeta(
         return GpuProjectAstExec(gpuExprs, gpuChild)
       }
       // explain AST because this is optional and it is sometimes hard to debug
-      val exp = conf.explain
-      if (!exp.equalsIgnoreCase("NONE")) {
-        val explain = childExprs.map(_.explainAst(exp.equalsIgnoreCase("ALL")))
+      if (conf.shouldExplain) {
+        val explain = childExprs.map(_.explainAst(conf.shouldExplainAll))
             .filter(_.nonEmpty)
         if (explain.nonEmpty) {
           logWarning(s"AST PROJECT\n$explain")
