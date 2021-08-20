@@ -67,6 +67,12 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
@@ -83,16 +89,13 @@
                     <type>test-jar</type>
                     <scope>test</scope>
                 </dependency>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>test</scope>
-                </dependency>
             </dependencies>
         </profile>
         <profile>
             <id>with-classifier</id>
+            <activation>
+                <property><name>buildver</name></property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -100,13 +103,6 @@
                     <version>${project.version}</version>
                     <classifier>${spark.version.classifier}tests</classifier>
                     <type>test-jar</type>
-                    <scope>test</scope>
-                </dependency>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
                     <scope>test</scope>
                 </dependency>
             </dependencies>

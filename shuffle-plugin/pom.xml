@@ -52,12 +52,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
           <groupId>org.openucx</groupId>
           <artifactId>jucx</artifactId>
           <version>1.11</version>
@@ -66,8 +60,25 @@
     </dependencies>
 
     <profiles>
-       <profile>
+        <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>with-classifier</id>
+            <activation>
+                <property><name>buildver</name></property>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
