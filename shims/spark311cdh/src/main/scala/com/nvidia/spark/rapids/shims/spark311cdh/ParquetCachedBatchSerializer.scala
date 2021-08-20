@@ -960,13 +960,17 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         for (i <- 0 until columnsRequested.size) {
           if (!missingColumns(i)) {
             columnReaders(i) =
+                // TODO - https://github.com/NVIDIA/spark-rapids/issues/3265
+                // I added extra boolean parameter as false but I have not
+                // tested and we need to follow up
                 new VectorizedColumnReader(
                   columnsInCache.get(i),
                   typesInCache.get(i).getOriginalType,
                   pages.getPageReader(columnsInCache.get(i)),
                   null /*convertTz*/ ,
                   LegacyBehaviorPolicy.CORRECTED.toString,
-                  LegacyBehaviorPolicy.EXCEPTION.toString)
+                  LegacyBehaviorPolicy.EXCEPTION.toString,
+                  false)
           }
         }
         totalCountLoadedSoFar += pages.getRowCount
