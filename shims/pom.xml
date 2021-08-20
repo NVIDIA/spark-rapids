@@ -56,6 +56,13 @@
             </modules>
         </profile>
         <profile>
+            <id>release301emr</id>
+            <modules>
+                <module>spark301emr</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release302</id>
             <modules>
                 <module>spark302</module>
