@@ -43,19 +43,18 @@ class GpuBroadcastNestedLoopJoinMeta(
   val conditionMeta: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+  override def namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
+    JoinTypeChecks.nonEquiJoinMeta(conditionMeta)
+
   override val childExprs: Seq[BaseExprMeta[_]] = conditionMeta.toSeq
 
   override def tagPlanForGpu(): Unit = {
     val gpuBuildSide = ShimLoader.getSparkShims.getBuildSide(join)
     JoinTypeChecks.tagForGpu(join.joinType, this)
-    conditionMeta.foreach(_.tagForAst())
     join.joinType match {
       case _: InnerLike =>
       case LeftOuter | RightOuter | LeftSemi | LeftAnti =>
-        if (conditionMeta.exists(!_.canThisBeAst)) {
-          val astInfo = conditionMeta.get.explainAst(false)
-          willNotWorkOnGpu(s"AST cannot support join condition:\n$astInfo")
-        }
+        conditionMeta.foreach(requireAstForGpuOn)
       case _ => willNotWorkOnGpu(s"${join.joinType} currently is not supported")
     }
     join.joinType match {
@@ -93,7 +92,6 @@ class GpuBroadcastNestedLoopJoinMeta(
     verifyBuildSideWasReplaced(buildSide)
 
     val condition = conditionMeta.map(_.convertToGpu())
-    conditionMeta.foreach(_.tagForAst())
     val isAstCondition = conditionMeta.forall(_.canThisBeAst)
     join.joinType match {
       case _: InnerLike =>
