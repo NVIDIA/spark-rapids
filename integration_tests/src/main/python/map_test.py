@@ -14,12 +14,18 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat
+from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_311
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+
+basic_struct_gen = StructGen([
+    ['child' + str(ind), sub_gen]
+    for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
+    nullable=False)
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value(data_gen):
@@ -31,6 +37,23 @@ def test_simple_get_map_value(data_gen):
                 'a["key_9"]',
                 'a["NOT_FOUND"]',
                 'a["key_5"]'))
+
+@pytest.mark.parametrize('key_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
+@pytest.mark.parametrize('value_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
+def test_single_entry_map(key_gen, value_gen):
+    data_gen = [('a', key_gen), ('b', value_gen)]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map("literal_key", b) as map1',
+                'map(a, b) as map2'))
+
+@allow_non_gpu('ProjectExec,Alias,CreateMap')
+# until https://github.com/NVIDIA/spark-rapids/issues/3229 is implemented
+def test_map_expr_multiple_pairs():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_fallback_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                "map(a, b, b, a) as m1"), 'ProjectExec')
 
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
