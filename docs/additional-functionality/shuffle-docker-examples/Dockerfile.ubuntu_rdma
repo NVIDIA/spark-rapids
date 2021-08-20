@@ -20,7 +20,7 @@
 #   - RDMA_CORE_VERSION: Set to 32.1 to match the rdma-core line in the latest 
 #                        released MLNX_OFED 5.x driver
 #   - CUDA_VER: 11.2.2 to pick up the latest 11.2 CUDA base layer
-#   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matchin a specific UCX version and
+#   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matching a specific UCX version and
 #                               CUDA runtime from the UCX github repo.
 #                               See: https://github.com/openucx/ucx/releases/
 #
