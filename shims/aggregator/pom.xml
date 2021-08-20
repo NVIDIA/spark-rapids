@@ -33,153 +33,16 @@
 
    <profiles>
         <profile>
-            <id>release301</id>
+            <id>releaseOne</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>301</value>
                 </property>
             </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark301_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release301emr</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301emr</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark301emr_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release302</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>302</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark302_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release303</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>303</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark303_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release304</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>304</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark304_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release311</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark311_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release312</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>312</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark312_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release313</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>313</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark313_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release311cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311cdh</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark311cdh_${scala.binary.version}</artifactId>
+                    <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <scope>compile</scope>
                 </dependency>

@@ -60,111 +60,14 @@
             </dependencies>
         </profile>
         <profile>
-            <id>release301</id>
+            <id>releaseOne</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>301</value>
                 </property>
             </activation>
             <modules>
-                <module>spark301</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release301emr</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301emr</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark301emr</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release302</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>302</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark302</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release303</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>303</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark303</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release304</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>304</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark304</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release311</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark311</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release312</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>312</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark312</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release313</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>313</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark313</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release311cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311cdh</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark311cdh</module>
+                <module>${spark.version.classifier}</module>
             </modules>
         </profile>
         <profile>

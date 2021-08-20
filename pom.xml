@@ -201,7 +201,7 @@
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>311cds</value>
+                    <value>311cdh</value>
                 </property>
             </activation>
             <properties>
