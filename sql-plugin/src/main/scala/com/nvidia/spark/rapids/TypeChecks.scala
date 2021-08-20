@@ -546,6 +546,11 @@ object TypeSig {
       TIMESTAMP + STRING
 
   /**
+   * A signature for types that are generally supported for join keys.
+   */
+  val joinKeyTypes: TypeSig = (commonCudfTypes + NULL + DECIMAL_64 + STRUCT).nested()
+
+  /**
    * All floating point types
    */
   val fp: TypeSig = FLOAT + DOUBLE
@@ -790,9 +795,13 @@ object FileFormatChecks {
 /**
  * Checks the input and output types supported by a SparkPlan node. We don't currently separate
  * input checks from output checks.  We can add this in if something needs it.
+ *
+ * The extendedChecks map can be used to provide checks for specific fields within the meta class
+ * so that we can have specific checks for things like join keys.
  */
 class ExecChecks private(
     check: TypeSig,
+    val extendedChecks: Map[String, TypeSig],
     sparkSig: TypeSig,
     override val shown: Boolean = true)
     extends TypeChecks[SupportLevel] {
@@ -810,19 +819,47 @@ class ExecChecks private(
     tagUnsupportedTypes(meta, check, allowDecimal,
       meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
       "unsupported data types in input: %s")
+
+    val namedChildExprs = meta.namedChildExprs
+
+    val missing = namedChildExprs.keys.filterNot(extendedChecks.contains)
+    if (missing.nonEmpty) {
+      throw new IllegalStateException(s"${meta.getClass.getSimpleName} " +
+        s"is missing ExecChecks for ${missing.mkString(",")}")
+    }
+
+    extendedChecks.foreach {
+      case (fieldName, typeSig) =>
+        val fieldMeta = namedChildExprs(fieldName)
+          .flatMap(_.typeMeta.dataType)
+          .zipWithIndex
+          .map(t => StructField(s"c${t._2}", t._1))
+        tagUnsupportedTypes(meta, typeSig, allowDecimal, fieldMeta,
+          s"unsupported data types in '$fieldName': %s")
+    }
   }
 
   override def support(dataType: TypeEnum.Value): SupportLevel =
     check.getSupportLevel(dataType, sparkSig)
+
+  def supportExtended(fieldName: String, dataType: TypeEnum.Value): SupportLevel =
+    extendedChecks(fieldName).getSupportLevel(dataType, sparkSig)
 }
 
 /**
  * gives users an API to create ExecChecks.
  */
 object ExecChecks {
-  def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = new ExecChecks(check, sparkSig)
-
-  def hiddenHack() = new ExecChecks(TypeSig.all, TypeSig.all, shown = false)
+  def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = {
+    new ExecChecks(check, Map.empty, sparkSig)
+  }
+  def apply(check: TypeSig, extendedChecks: Map[String, TypeSig],
+      sparkSig: TypeSig) : ExecChecks = {
+    new ExecChecks(check, extendedChecks, sparkSig)
+  }
+  def hiddenHack() = {
+    new ExecChecks(TypeSig.all, Map.empty, TypeSig.all, shown = false)
+  }
 }
 
 /**
@@ -985,6 +1022,31 @@ object WindowSpecCheck extends ExprChecks {
           ("result", projectSupport))))
   }
 }
+
+object CreateMapCheck extends ExprChecks {
+
+  // Spark supports all types except for Map for key and value (Map is not supported
+  // even in nested types)
+  val keyValueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+    TypeSig.ARRAY + TypeSig.STRUCT).nested()
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    if (meta.childExprs.length != 2) {
+      // See https://github.com/NVIDIA/spark-rapids/issues/3229
+      meta.willNotWorkOnGpu("CreateMap only supports two expressions on GPU")
+    }
+  }
+
+  override def support(
+      dataType: TypeEnum.Value): Map[ExpressionContext, Map[String, SupportLevel]] = {
+    val support = keyValueSig.getSupportLevel(dataType, keyValueSig)
+    Map((ProjectExprContext,
+      Map(
+        ("key", support),
+        ("value", support))))
+  }
+}
+
 
 /**
  * A check for CreateNamedStruct.  The parameter values alternate between one type and another.
@@ -1371,6 +1433,7 @@ object SupportedOpsDocs {
     println("<tr>")
     println("<th>Executor</th>")
     println("<th>Description</th>")
+    println("<th>Context</th>")
     println("<th>Notes</th>")
     TypeEnum.values.foreach { t =>
       println(s"<th>$t</th>")
@@ -1537,8 +1600,15 @@ object SupportedOpsDocs {
           nextOutputAt = totalCount + headerEveryNLines
         }
         println("<tr>")
-        println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
-        println(s"<td>${rule.description}</td>")
+        val rowSpan = if (checks.isDefined) {
+          val exprChecks = checks.get.asInstanceOf[ExecChecks]
+          1 + exprChecks.extendedChecks.size
+        } else {
+          1
+        }
+        println(s"""<td rowspan="$rowSpan">${rule.tag.runtimeClass.getSimpleName}</td>""")
+        println(s"""<td rowspan="$rowSpan">${rule.description}</td>""")
+        println(s"<td>Input</td>")
         println(s"<td>${rule.notes().getOrElse("None")}</td>")
         if (checks.isDefined) {
           val exprChecks = checks.get.asInstanceOf[ExecChecks]
@@ -1552,6 +1622,21 @@ object SupportedOpsDocs {
         }
         println("</tr>")
         totalCount += 1
+
+        // context-specific checks
+        if (checks.isDefined) {
+          val exprChecks = checks.get.asInstanceOf[ExecChecks]
+          exprChecks.extendedChecks.keys.toSeq.sorted.foreach { ctx =>
+            println("<tr>")
+            println(s"<td>$ctx</td>")
+            println(s"<td>${rule.notes().getOrElse("None")}</td>")
+            TypeEnum.values.foreach { t =>
+              println(exprChecks.supportExtended(ctx, t).htmlTag)
+            }
+            println("</tr>")
+            totalCount += 1
+          }
+        }
       }
     }
     println("</table>")

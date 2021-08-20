@@ -44,11 +44,11 @@ case class GpuNot(child: Expression) extends CudfUnaryExpression
 
   override def unaryOp: UnaryOp = UnaryOp.NOT
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
     child match {
       case c: GpuEqualTo =>
         // optimize the AST expression since Spark doesn't have a NotEqual
-        new ast.BinaryExpression(ast.BinaryOperator.NOT_EQUAL,
+        new ast.BinaryOperation(ast.BinaryOperator.NOT_EQUAL,
           c.left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
           c.right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
       case _ => super.convertToAst(numFirstTableColumns)
@@ -293,11 +293,11 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
     }
   }
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
     // Currently AST computeColumn assumes nulls compare true for EQUAL, but NOT_EQUAL will
     // return null for null input.
-    new ast.UnaryExpression(ast.UnaryOperator.NOT,
-      new ast.BinaryExpression(ast.BinaryOperator.NOT_EQUAL,
+    new ast.UnaryOperation(ast.UnaryOperator.NOT,
+      new ast.BinaryOperation(ast.BinaryOperator.NOT_EQUAL,
         left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
         right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)))
   }

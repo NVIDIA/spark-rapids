@@ -769,7 +769,7 @@ object GpuOverrides {
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
-      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(),
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(),
       cudfWrite = TypeSig.commonCudfTypes,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
@@ -2795,6 +2795,13 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
       }
     ),
+    expr[CreateMap](
+      desc = "Create a map",
+      CreateMapCheck,
+      (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
+        override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
+      }
+    ),
     GpuScalaUDF.exprMeta
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
@@ -3154,10 +3161,8 @@ object GpuOverrides {
       "Window-operator backend",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested() +
-            TypeSig.psNote(TypeEnum.MAP, "Not supported as a partition by key") +
-            TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
-            TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        Map("partitionSpec" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)),
         TypeSig.all),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)

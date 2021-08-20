@@ -159,7 +159,7 @@ trait GpuExpression extends Expression with Arm {
    *                             single sequence into cudf's separate sequences.
    * @return top node of the equivalent AST
    */
-  def convertToAst(numFirstTableColumns: Int): ast.AstNode =
+  def convertToAst(numFirstTableColumns: Int): ast.AstExpression =
     throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
 }
 
@@ -227,10 +227,10 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.unaryOp(unaryOp)
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
     val astOp = CudfUnaryExpression.opToAstMap.getOrElse(unaryOp,
       throw new IllegalStateException(s"${this.getClass.getSimpleName} is not supported by AST"))
-    new ast.UnaryExpression(astOp,
+    new ast.UnaryOperation(astOp,
       child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
   }
 }
@@ -330,11 +330,11 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
     }
   }
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
     val astOp = CudfBinaryExpression.opToAstMap.getOrElse(binaryOp,
       throw new IllegalStateException(s"$this is not supported by AST"))
     assert(left.dataType == right.dataType)
-    new ast.BinaryExpression(astOp,
+    new ast.BinaryOperation(astOp,
       left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
       right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
   }
