@@ -23,7 +23,7 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
-import org.apache.spark.sql.rapids.execution.GpuHashJoin
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
 
 object GpuJoinUtils {
   def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
@@ -54,7 +54,7 @@ class GpuShuffledHashJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    Map("leftKeys" -> leftKeys, "rightKeys" -> rightKeys)
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)

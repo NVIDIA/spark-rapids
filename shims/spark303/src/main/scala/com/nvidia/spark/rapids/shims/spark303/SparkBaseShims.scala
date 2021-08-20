@@ -52,7 +52,7 @@ import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPy
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExecMeta, GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuPythonUDF, GpuWindowInPandasExecMetaBase}
 import org.apache.spark.sql.rapids.shims.spark303.{GpuSchemaUtils, ShuffleManagerShim}
 import org.apache.spark.sql.sources.BaseRelation
@@ -230,33 +230,15 @@ abstract class SparkBaseShims extends SparkShims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
-          TypeSig.DECIMAL_64),
-          Map("leftKeys" -> TypeSig.joinKeyTypes,
-            "rightKeys" -> TypeSig.joinKeyTypes),
-          TypeSig.all),
+        JoinTypeChecks.equiJoinExecChecks,
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
-            TypeSig.DECIMAL_64),
-          Map("leftKeys" -> TypeSig.joinKeyTypes,
-            "rightKeys" -> TypeSig.joinKeyTypes),
-          TypeSig.all),
+        JoinTypeChecks.equiJoinExecChecks,
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-            TypeSig.DECIMAL_64),
-          Map("leftKeys" -> TypeSig.joinKeyTypes,
-            "rightKeys" -> TypeSig.joinKeyTypes),
-          TypeSig.all),
+        JoinTypeChecks.equiJoinExecChecks,
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
@@ -318,7 +300,7 @@ abstract class SparkBaseShims extends SparkShims {
         (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
       GpuOverrides.expr[RegExpReplace](
         "RegExpReplace support for string literal input patterns",
-        ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+        ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
                 .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
@@ -340,7 +322,7 @@ abstract class SparkBaseShims extends SparkShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     getExprsSansTimeSub + (classOf[TimeSub] -> GpuOverrides.expr[TimeSub](
       "Subtracts interval from timestamp",
-      ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("interval", TypeSig.lit(TypeEnum.CALENDAR)
             .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),

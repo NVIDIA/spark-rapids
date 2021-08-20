@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SortExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
-import org.apache.spark.sql.rapids.execution.GpuHashJoin
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
 
 /**
  * HashJoin changed in Spark 3.1 requiring Shim
@@ -44,7 +44,7 @@ class GpuSortMergeJoinMeta(
   override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    Map("leftKeys" -> leftKeys, "rightKeys" -> rightKeys)
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
 
   override def tagPlanForGpu(): Unit = {
     // Use conditions from Hash Join
