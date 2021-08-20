@@ -21,11 +21,11 @@ import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Projection, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
@@ -265,7 +265,9 @@ object CudfRowTransitions {
     schema.forall(att => isSupportedType(att.dataType))
 }
 
-abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRdd: Boolean)
+abstract class GpuColumnarToRowExecParent(child: SparkPlan,
+    val exportColumnarRdd: Boolean,
+    val postTransition: Option[Projection])
     extends UnaryExecNode with GpuExec {
   import GpuMetric._
   // We need to do this so the assertions don't fail
@@ -293,12 +295,21 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
     val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, opTime, collectTime)
 
     val cdata = child.executeColumnar()
-    if (exportColumnarRdd) {
+    val rdata = if (exportColumnarRdd) {
       // If we are exporting columnar rdd we need an easy way for the code that walks the
       // RDDs to know where the columnar to row transition is happening.
       GpuColumnToRowMapPartitionsRDD.mapPartitions(cdata, f)
     } else {
       cdata.mapPartitions(f)
+    }
+
+    postTransition match {
+      case Some(projection) =>
+        rdata.mapPartitionsWithIndex { case (index, iterator) =>
+          projection.initialize(index)
+          iterator.map(projection)
+        }
+      case None => rdata
     }
   }
 }
@@ -338,5 +349,7 @@ object GpuColumnarToRowExecParent {
   }
 }
 
-case class GpuColumnarToRowExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
-   extends GpuColumnarToRowExecParent(child, exportColumnarRdd)
+case class GpuColumnarToRowExec(child: SparkPlan,
+    override val exportColumnarRdd: Boolean = false,
+    override val postTransition: Option[Projection] = None)
+    extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postTransition)

@@ -24,7 +24,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, SpecializedGetters, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Projection, SortOrder, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
@@ -796,7 +796,9 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 /**
  * GPU version of row to columnar transition.
  */
-case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
+case class GpuRowToColumnarExec(child: SparkPlan,
+    goal: CoalesceSizeGoal,
+    preTransition: Option[Projection] = None)
   extends UnaryExecNode with GpuExec {
   import GpuMetric._
 
@@ -833,7 +835,14 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
-    val rowBased = child.execute()
+    val rowBased = preTransition match {
+      case Some(projection) =>
+        child.execute().mapPartitionsWithIndex { case (index, iterator) =>
+          projection.initialize(index)
+          iterator.map(projection)
+        }
+      case None => child.execute()
+    }
 
     // cache in a local to avoid serializing the plan
     val localSchema = schema

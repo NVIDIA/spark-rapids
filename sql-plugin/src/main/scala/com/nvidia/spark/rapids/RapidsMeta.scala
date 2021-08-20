@@ -29,6 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.types.{ByteType, DataType, DoubleType, FloatType, ShortType}
 
 trait DataFromReplacementRule {
@@ -1079,6 +1080,10 @@ abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
    * overriding.
    */
   def aggBufferAttribute: AttributeReference
+
+  def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter
+
+  def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter
 }
 
 /**

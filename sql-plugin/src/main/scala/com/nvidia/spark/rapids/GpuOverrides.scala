@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
 import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
@@ -2748,13 +2749,19 @@ object GpuOverrides {
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectList(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
-        }
+
         override def aggBufferAttribute: AttributeReference = {
           val aggBuffer = c.aggBufferAttributes.head
           aggBuffer.copy(dataType = c.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
+
+        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+          new CpuToGpuCollectBufferConverter(c.child.dataType)
+
+        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+          new GpuToCpuCollectBufferConverter()
       }),
     expr[CollectSet](
       "Collect a set of unique elements, not supported in reduction.",
@@ -2767,13 +2774,19 @@ object GpuOverrides {
         Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64,
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
-        }
+
         override def aggBufferAttribute: AttributeReference = {
           val aggBuffer = c.aggBufferAttributes.head
           aggBuffer.copy(dataType = c.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
+
+        override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+          new CpuToGpuCollectBufferConverter(c.child.dataType)
+
+        override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+          new GpuToCpuCollectBufferConverter()
       }),
     expr[GetJsonObject](
       "Extracts a json object from path",
@@ -3225,6 +3238,11 @@ object GpuOverrides {
       case "CORRECTED" => CorrectedTimeParserPolicy
     }
   }
+
+  val preRowToColumnarTransition = TreeNodeTag[Projection](
+    "rapids.gpu.preRowToColumnarTransition")
+  val postColumnarToRowTransition = TreeNodeTag[Projection](
+    "rapids.gpu.postColumnarToRowTransition")
 
 }
 /** Tag the initial plan when AQE is enabled */

@@ -16,20 +16,21 @@
 
 package com.nvidia.spark.rapids
 
-import java.util
+import scala.annotation.tailrec
 
+import java.util
 import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst, Projection, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -38,8 +39,8 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
+import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types.{ArrayType, DataType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -1002,10 +1003,6 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
     }
 
   override def tagPlanForGpu(): Unit = {
-    // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
-    // previously stored on the spark plan to determine whether this plan can run on GPU
-    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
-
     super.tagPlanForGpu()
 
     // We can not run part of TypedImperativeAggregate functions on GPU, because GPU buffers
@@ -1019,7 +1016,7 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
     // during the preparation stage, there will be a run of GpuOverrides on the entire plan to
     // trigger these side effects if necessary, before AQE splits the entire query into several
     // query stages.
-    GpuTypedImperativeSupportedAggregateExecMeta.checkAndFallbackEntirely(this)
+    GpuTypedImperativeSupportedAggregateExecMeta.injectBufferConverter(this)
   }
 
   override def convertToGpu(): GpuExec = {
@@ -1108,52 +1105,116 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
 
 object GpuTypedImperativeSupportedAggregateExecMeta {
 
-  private val entireAggFallbackCheck = TreeNodeTag[Boolean](
+  private val bufferConversionInjection = TreeNodeTag[Boolean](
     "rapids.gpu.checkAndFallbackAggregateExecEntirely")
 
-  private def checkAndFallbackEntirely(
+  private def injectBufferConverter(
       meta: GpuTypedImperativeSupportedAggregateExecMeta[_]): Unit = {
     // We only run the check for final stages which contain TypedImperativeAggregate.
-    val needToCheck = meta.agg.aggregateExpressions.exists(e => e.mode == Final &&
-        e.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]])
+    val needToCheck = containTypedImperativeAggregate(meta, Some(Final))
     if (!needToCheck) return
     // Avoid duplicated check and fallback.
-    val checked = meta.agg.getTagValue[Boolean](entireAggFallbackCheck).contains(true)
+    val checked = meta.agg.getTagValue[Boolean](bufferConversionInjection).contains(true)
     if (checked) return
+    meta.agg.setTagValue(bufferConversionInjection, true)
 
-    meta.agg.setTagValue(entireAggFallbackCheck, true)
-    val logicalPlan = meta.agg.logicalLink.get
-    val stageMetas = mutable.ListBuffer[GpuBaseAggregateMeta[_]]()
-    // Go through all Aggregate stages to check whether all stages is GPU supported. If not,
-    // we fall back all GPU supported stages to CPU.
-    if (recursiveCheckForFallback(meta, logicalPlan, stageMetas)) {
-      stageMetas.foreach {
-        case aggMeta if aggMeta.canThisBeReplaced =>
-          aggMeta.willNotWorkOnGpu("Associated fallback for TypedImperativeAggregate")
-        case _ =>
-      }
+    val stages = getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
+
+    val needBufferConversion = stages.indices.map {
+      case i if i == stages.length - 1 => false
+      case i =>
+        (stages(i).canThisBeReplaced ^ stages(i + 1).canThisBeReplaced) &&
+            containTypedImperativeAggregate(stages(i)) &&
+            containTypedImperativeAggregate(stages(i + 1))
+    }
+
+    needBufferConversion.zipWithIndex.foreach {
+      case (needToConvert, i) if needToConvert =>
+        nextEdgeForConversion(stages(i)) match {
+          // create projection of preRowToColumnarTransition, and bind it to the child node (
+          // CPU plan) of GpuRowToColumnarExec
+          case (parent, child) if parent.canThisBeReplaced =>
+            val childPlan = child.wrapped.asInstanceOf[SparkPlan]
+            val projection = createCpuGpuProjection(stages(i), stages(i + 1), true)
+            childPlan.setTagValue(GpuOverrides.preRowToColumnarTransition, projection)
+          // create projection of postColumnarToRowTransition, and bind it to the parent node (
+          // CPU plan) of GpuColumnarToRowExec
+          case (parent, _) =>
+            val parentPlan = parent.wrapped.asInstanceOf[SparkPlan]
+            val projection = createCpuGpuProjection(stages(i), stages(i + 1), false)
+            parentPlan.setTagValue(GpuOverrides.postColumnarToRowTransition, projection)
+        }
+      case _ =>
     }
   }
 
-  /**
-   * Recursively collect all PlanMetas of input LogicalPlan. At the same time, and check whether
-   * existing plans which can NOT be replaced among them. If any, return true as the label of
-   * the entire fallback.
-   */
-  private def recursiveCheckForFallback(
-      currentMeta: SparkPlanMeta[_],
-      logical: LogicalPlan,
-      metaOfAllStages: mutable.ListBuffer[GpuBaseAggregateMeta[_]]): Boolean = {
+  private def containTypedImperativeAggregate(meta: GpuBaseAggregateMeta[_],
+      desiredMode: Option[AggregateMode] = None): Boolean = {
+    meta.agg.aggregateExpressions.exists {
+      case e: AggregateExpression if desiredMode.forall(_ == e.mode) =>
+        e.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]]
+      case _ => false
+    }
+  }
+
+  private def createCpuGpuProjection(mergeMeta: GpuBaseAggregateMeta[_],
+      partialMeta: GpuBaseAggregateMeta[_],
+      fromCpuToGpu: Boolean): Projection = {
+
+    val converters = mutable.Queue[Either[
+        CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter]]()
+    mergeMeta.childExprs.foreach {
+      case e if e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
+        e.wrapped.asInstanceOf[AggregateExpression].mode match {
+          case Final | PartialMerge =>
+            val typImpAggMeta = e.childExprs.head.asInstanceOf[TypedImperativeAggExprMeta[_]]
+            val converter = if (fromCpuToGpu) {
+              Left(typImpAggMeta.createCpuToGpuBufferConverter())
+            } else {
+              Right(typImpAggMeta.createGpuToCpuBufferConverter())
+            }
+            converters.enqueue(converter)
+          case _ =>
+        }
+      case _ =>
+    }
+
+    val expressions = partialMeta.resultExpressions.map {
+      case retExpr if retExpr.typeMeta.typeConverted =>
+        val attrRef = retExpr.wrapped.asInstanceOf[NamedExpression].toAttribute
+        converters.dequeue() match {
+          case Left(converter) => converter.createExpression(attrRef)
+          case Right(converter) => converter.createExpression(attrRef)
+        }
+      case retExpr =>
+        retExpr.wrapped.asInstanceOf[NamedExpression].toAttribute
+    }
+
+    UnsafeProjection.create(expressions)
+  }
+
+  private def getAggregateOfAllStages(
+      currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
     currentMeta match {
       case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
-        metaOfAllStages += aggMeta
-        val childCheck = recursiveCheckForFallback(aggMeta.childPlans.head,
-          logical, metaOfAllStages)
-        !aggMeta.canThisBeReplaced || childCheck
-      case unaryMeta: SparkPlanMeta[_] if unaryMeta.childPlans.length == 1 =>
-        recursiveCheckForFallback(unaryMeta.childPlans.head, logical, metaOfAllStages)
+        List(aggMeta) ++ getAggregateOfAllStages(aggMeta.childPlans.head, logical)
+      case shuffleMeta: GpuShuffleMeta =>
+        getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
+      case sortMeta: GpuSortMeta =>
+        getAggregateOfAllStages(sortMeta.childPlans.head, logical)
       case _ =>
-        false
+        List[GpuBaseAggregateMeta[_]]()
+    }
+  }
+
+  @tailrec
+  private def nextEdgeForConversion(
+      meta: SparkPlanMeta[_]): (SparkPlanMeta[_], SparkPlanMeta[_]) = {
+    val child = meta.childPlans.head
+    if (meta.canThisBeReplaced ^ child.canThisBeReplaced) {
+      meta -> child
+    } else {
+      nextEdgeForConversion(child)
     }
   }
 }

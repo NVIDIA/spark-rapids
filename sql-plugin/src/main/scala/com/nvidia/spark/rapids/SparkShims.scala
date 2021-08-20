@@ -30,7 +30,7 @@ import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, Projection, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -109,7 +109,8 @@ trait SparkShims {
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent
+      exportColumnRdd: Boolean,
+      postTransition: Option[Projection]): GpuColumnarToRowExecParent
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
 

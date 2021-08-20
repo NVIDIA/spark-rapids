@@ -489,8 +489,9 @@ abstract class SparkBaseShims extends SparkShims {
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
-    GpuColumnarToRowExec(plan, exportColumnRdd)
+      exportColumnRdd: Boolean,
+      postTransition: Option[Projection]): GpuColumnarToRowExecParent = {
+    GpuColumnarToRowExec(plan, exportColumnRdd, postTransition)
   }
 
   override def checkColumnNameDuplication(

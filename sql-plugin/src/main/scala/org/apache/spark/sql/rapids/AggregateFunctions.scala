@@ -20,11 +20,13 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnaryExpression, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.util.TypeUtils
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
+import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
 import org.apache.spark.sql.types._
 
 trait GpuAggregateFunction extends GpuExpression with GpuUnevaluable {
@@ -890,4 +892,58 @@ case class GpuCollectSet(
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.collectSet().onColumn(inputs.head._2)
+}
+
+trait CpuToGpuAggregateBufferConverter {
+  def createExpression(child: Expression): CpuToGpuBufferTransition
+}
+
+trait GpuToCpuAggregateBufferConverter {
+  def createExpression(child: Expression): GpuToCpuBufferTransition
+}
+
+trait CpuToGpuBufferTransition extends UnaryExpression with CodegenFallback
+
+trait GpuToCpuBufferTransition extends UnaryExpression with CodegenFallback {
+  override def dataType: DataType = BinaryType
+}
+
+class CpuToGpuCollectBufferConverter(
+    elementType: DataType) extends CpuToGpuAggregateBufferConverter {
+  def createExpression(child: Expression): CpuToGpuBufferTransition = {
+    CpuToGpuCollectBufferTransition(child, elementType)
+  }
+}
+
+case class CpuToGpuCollectBufferTransition(
+    override val child: Expression,
+    private val elementType: DataType) extends CpuToGpuBufferTransition {
+
+  private lazy val row = new UnsafeRow(1)
+
+  override def dataType: DataType = ArrayType(elementType, containsNull = false)
+
+  override protected def nullSafeEval(input: Any): ArrayData = {
+    val bytes = input.asInstanceOf[Array[Byte]]
+    row.pointTo(bytes, bytes.length)
+    row.getArray(0).copy()
+  }
+}
+
+class GpuToCpuCollectBufferConverter extends GpuToCpuAggregateBufferConverter {
+  def createExpression(child: Expression): GpuToCpuBufferTransition = {
+    GpuToCpuCollectBufferTransition(child)
+  }
+}
+
+case class GpuToCpuCollectBufferTransition(
+    override val child: Expression) extends GpuToCpuBufferTransition {
+
+  private lazy val projection = UnsafeProjection.create(
+    Array[DataType](ArrayType(elementType = child.dataType, containsNull = false)))
+
+  override protected def nullSafeEval(input: Any): Array[Byte] = {
+    val array = input.asInstanceOf[ArrayData]
+    projection.apply(InternalRow.apply(array)).getBytes
+  }
 }
