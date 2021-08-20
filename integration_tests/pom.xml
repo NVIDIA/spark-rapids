@@ -67,24 +67,49 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <profiles>
         <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <type>test-jar</type>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>with-classifier</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}tests</classifier>
+                    <type>test-jar</type>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
             <build>
                 <plugins>
                     <plugin>
@@ -97,7 +122,7 @@
                     <plugin>
                         <artifactId>maven-assembly-plugin</artifactId>
                         <configuration>
-                            <finalName>rapids-4-spark-integration-tests_${scala.binary.version}-${version}-${spark.version.classifier}</finalName>
+                            <finalName>rapids-4-spark-integration-tests_${scala.binary.version}-${project.version}-${spark.version.classifier}</finalName>
                         </configuration>
                     </plugin>
                 </plugins>
