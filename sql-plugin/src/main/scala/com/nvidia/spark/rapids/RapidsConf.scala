@@ -1473,6 +1473,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val explain: String = get(EXPLAIN)
 
+  lazy val shouldExplain: Boolean = !explain.equalsIgnoreCase("NONE")
+
+  lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
+
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
@@ -1649,6 +1653,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
+
+  lazy val optimizerShouldExplainAll: Boolean = optimizerExplain.equalsIgnoreCase("ALL")
 
   lazy val optimizerClassName: String = get(OPTIMIZER_CLASS_NAME)
 

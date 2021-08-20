@@ -169,6 +169,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|`cosh`|Hyperbolic cosine|true|None|
 <a name="sql.expression.Cot"></a>spark.rapids.sql.expression.Cot|`cot`|Cotangent|true|None|
 <a name="sql.expression.CreateArray"></a>spark.rapids.sql.expression.CreateArray|`array`| Returns an array with the given elements|true|None|
+<a name="sql.expression.CreateMap"></a>spark.rapids.sql.expression.CreateMap|`map`|Create a map|true|None|
 <a name="sql.expression.CreateNamedStruct"></a>spark.rapids.sql.expression.CreateNamedStruct|`named_struct`, `struct`|Creates a struct with the given field names and values|true|None|
 <a name="sql.expression.CurrentRow$"></a>spark.rapids.sql.expression.CurrentRow$| |Special boundary for a window frame, indicating stopping at the current row|true|None|
 <a name="sql.expression.DateAdd"></a>spark.rapids.sql.expression.DateAdd|`date_add`|Returns the date that is num_days after start_date|true|None|
@@ -338,7 +339,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.BroadcastExchangeExec"></a>spark.rapids.sql.exec.BroadcastExchangeExec|The backend for broadcast exchange of data|true|None|
 <a name="sql.exec.ShuffleExchangeExec"></a>spark.rapids.sql.exec.ShuffleExchangeExec|The backend for most data being exchanged between processes|true|None|
 <a name="sql.exec.BroadcastHashJoinExec"></a>spark.rapids.sql.exec.BroadcastHashJoinExec|Implementation of join using broadcast data|true|None|
-<a name="sql.exec.BroadcastNestedLoopJoinExec"></a>spark.rapids.sql.exec.BroadcastNestedLoopJoinExec|Implementation of join using brute force|true|None|
+<a name="sql.exec.BroadcastNestedLoopJoinExec"></a>spark.rapids.sql.exec.BroadcastNestedLoopJoinExec|Implementation of join using brute force. Full outer joins and joins where the broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not supported.|true|None|
 <a name="sql.exec.CartesianProductExec"></a>spark.rapids.sql.exec.CartesianProductExec|Implementation of join using brute force|true|None|
 <a name="sql.exec.ShuffledHashJoinExec"></a>spark.rapids.sql.exec.ShuffledHashJoinExec|Implementation of join using hashed shuffled data|true|None|
 <a name="sql.exec.SortMergeJoinExec"></a>spark.rapids.sql.exec.SortMergeJoinExec|Sort merge join, replacing with shuffled hash join|true|None|

@@ -42,7 +42,7 @@ case class GpuScalaUDF(
 object GpuScalaUDF {
   def exprMeta: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
     "User Defined Function, support requires the UDF to implement a RAPIDS accelerated interface",
-    ExprChecks.projectNotLambda(
+    ExprChecks.projectOnly(
       udfTypeSig,
       TypeSig.all,
       repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),

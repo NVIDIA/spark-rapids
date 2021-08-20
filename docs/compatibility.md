@@ -414,7 +414,7 @@ guaranteed to produce the same results as the CPU:
 LEGACY timeParserPolicy support has the following limitations when running on the GPU:
 
 - Only 4 digit years are supported
-- The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calender 
+- The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calendar 
   that Spark uses in legacy mode
 
 ## Formatting dates and timestamps as strings
