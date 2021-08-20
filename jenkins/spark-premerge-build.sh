@@ -131,7 +131,7 @@ case $BUILD_TYPE in
         ;;
 
     mvn_verify)
-        mvn_verify
+        #mvn_verify
         ;;
 
     ut | unit_test)
