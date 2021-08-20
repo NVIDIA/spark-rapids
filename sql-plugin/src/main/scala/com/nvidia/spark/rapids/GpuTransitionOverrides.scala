@@ -51,7 +51,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val c2r = p.children.map(optimizeGpuPlanTransitions).head
           .asInstanceOf[GpuColumnarToRowExecParent]
       val postTransition = p.getTagValue(GpuOverrides.postColumnarToRowTransition)
-      val c2rCopy = c2r.makeCopy(Array(c2r.child, c2r.exportColumnarRdd, postTransition))
+      val c2rCopy = c2r.makeCopy(Array(c2r.child.asInstanceOf[AnyRef],
+        c2r.exportColumnarRdd.asInstanceOf[AnyRef], postTransition.asInstanceOf[AnyRef]))
       p.withNewChildren(Array(c2rCopy))
     case p =>
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
@@ -172,7 +173,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val c2r = p.children.map(optimizeGpuPlanTransitions).head
           .asInstanceOf[GpuColumnarToRowExecParent]
       val postTransition = p.getTagValue(GpuOverrides.postColumnarToRowTransition)
-      val c2rCopy = c2r.makeCopy(Array(c2r.child, c2r.exportColumnarRdd, postTransition))
+      val c2rCopy = c2r.makeCopy(Array(c2r.child.asInstanceOf[AnyRef],
+        c2r.exportColumnarRdd.asInstanceOf[AnyRef], postTransition.asInstanceOf[AnyRef]))
       p.withNewChildren(Array(c2rCopy))
 
     case p =>

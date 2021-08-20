@@ -876,15 +876,15 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 
   val agg: BaseAggregateExec
 
-  protected val requiredChildDistributionExpressions: Option[Seq[BaseExprMeta[_]]] =
+  val requiredChildDistributionExpressions: Option[Seq[BaseExprMeta[_]]] =
     aggRequiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
-  protected val groupingExpressions: Seq[BaseExprMeta[_]] =
+  val groupingExpressions: Seq[BaseExprMeta[_]] =
     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  protected val aggregateExpressions: Seq[BaseExprMeta[_]] =
+  val aggregateExpressions: Seq[BaseExprMeta[_]] =
     agg.aggregateExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  protected val aggregateAttributes: Seq[BaseExprMeta[_]] =
+  val aggregateAttributes: Seq[BaseExprMeta[_]] =
     agg.aggregateAttributes.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  protected val resultExpressions: Seq[BaseExprMeta[_]] =
+  val resultExpressions: Seq[BaseExprMeta[_]] =
     agg.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] =
@@ -1133,13 +1133,13 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
         nextEdgeForConversion(stages(i)) match {
           // create projection of preRowToColumnarTransition, and bind it to the child node (
           // CPU plan) of GpuRowToColumnarExec
-          case (parent, child) if parent.canThisBeReplaced =>
+          case List(parent, child) if parent.canThisBeReplaced =>
             val childPlan = child.wrapped.asInstanceOf[SparkPlan]
             val projection = createCpuGpuProjection(stages(i), stages(i + 1), true)
             childPlan.setTagValue(GpuOverrides.preRowToColumnarTransition, projection)
           // create projection of postColumnarToRowTransition, and bind it to the parent node (
           // CPU plan) of GpuColumnarToRowExec
-          case (parent, _) =>
+          case List(parent, _) =>
             val parentPlan = parent.wrapped.asInstanceOf[SparkPlan]
             val projection = createCpuGpuProjection(stages(i), stages(i + 1), false)
             parentPlan.setTagValue(GpuOverrides.postColumnarToRowTransition, projection)
@@ -1197,7 +1197,8 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
       currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
     currentMeta match {
       case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
-        List(aggMeta) ++ getAggregateOfAllStages(aggMeta.childPlans.head, logical)
+        List[GpuBaseAggregateMeta[_]](aggMeta) ++
+            getAggregateOfAllStages(aggMeta.childPlans.head, logical)
       case shuffleMeta: GpuShuffleMeta =>
         getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
       case sortMeta: GpuSortMeta =>
@@ -1208,11 +1209,10 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
   }
 
   @tailrec
-  private def nextEdgeForConversion(
-      meta: SparkPlanMeta[_]): (SparkPlanMeta[_], SparkPlanMeta[_]) = {
+  private def nextEdgeForConversion(meta: SparkPlanMeta[_]): Seq[SparkPlanMeta[_]] = {
     val child = meta.childPlans.head
     if (meta.canThisBeReplaced ^ child.canThisBeReplaced) {
-      meta -> child
+      List(meta, child)
     } else {
       nextEdgeForConversion(child)
     }
