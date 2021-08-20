@@ -3082,7 +3082,10 @@ object GpuOverrides {
         TypeSig.DECIMAL_64 + TypeSig.STRUCT), TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
-      "Implementation of join using brute force",
+      "Implementation of join using brute force. Full outer joins and joins where the " +
+          "broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not " +
+          "supported. A non-inner join only is supported if the join condition expression can " +
+          "be converted to a GPU AST expression",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
           TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
         TypeSig.all),
