@@ -75,20 +75,34 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]]),
-                                                nested_struct,
-                                                struct_of_maps], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+                                     [all_basic_struct_gen,
+                                      StructGen([['child0', DecimalGen(7, 2)]]),
+                                      nested_struct,
+                                      struct_of_maps], ids=idfn)
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
 
-@pytest.mark.parametrize('data_gen', all_gen + [pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
-                                                pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]]), marks=nested_scalar_mark),
-                                                nested_struct,
-                                                StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
-                                                                      StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]]),
-                                                struct_of_maps], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+                                     [all_basic_struct_gen,
+                                      StructGen([['child0', DecimalGen(7, 2)]]),
+                                      nested_struct,
+                                      struct_of_maps], ids=idfn)
+# This tests union of two DFs of two cols each. The types of the left col and right col is the same
+def test_unionAll(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)))
+
+@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+                                     [all_basic_struct_gen,
+                                      pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
+                                      pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]]), marks=nested_scalar_mark),
+                                      nested_struct,
+                                      StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
+                                                            StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]]),
+                                      struct_of_maps], ids=idfn)
 @pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 # This tests the union of two DFs of structs with missing child column names. The missing child
 # column will be replaced by nulls in the output DF. This is a feature added in 3.1+
@@ -97,9 +111,11 @@ def test_union_by_missing_col_name(data_gen):
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
                                 .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + [all_basic_struct_gen, StructGen([['child0', DecimalGen(7, 2)]]),
-                                                nested_struct,
-                                                struct_of_maps], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+                                     [all_basic_struct_gen,
+                                      StructGen([['child0', DecimalGen(7, 2)]]),
+                                      nested_struct,
+                                      struct_of_maps], ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
