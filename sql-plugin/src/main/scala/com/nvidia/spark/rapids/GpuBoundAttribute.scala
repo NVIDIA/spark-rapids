@@ -23,6 +23,16 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeS
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * This allows for post processing of a plan after it is bound.
+ */
+trait GpuBindPost {
+  /**
+   * Returns a modified version of this as needed after references were bound.
+   */
+  def postBind: GpuExpression
+}
+
 object GpuBindReferences extends Logging {
 
   private[this] def postBindCheck[A <: Expression](base: A): Unit = {
@@ -31,11 +41,14 @@ object GpuBindReferences extends Logging {
       // looks at, otherwise we can check things that would not be modified.
       if (expr.containsChild.nonEmpty) {
         expr match {
+          case _: GpuNamedLambdaVariable =>
+            throw new IllegalArgumentException(
+              s"Found GpuNamedLambdaVariable that was not replaced")
           case _: GpuExpression =>
           case _: SortOrder =>
           case other =>
             throw new IllegalArgumentException(
-              s"Bound an expression that shouldn't be here ${other.getClass}")
+              s"Found an expression that shouldn't be here ${other.getClass}")
         }
       }
     }
@@ -45,7 +58,7 @@ object GpuBindReferences extends Logging {
   private[this] def bindRefInternal[A <: Expression, R <: Expression](
       expression: A,
       input: AttributeSeq): R = {
-    val ret = expression.transform {
+    val initiallyBound = expression.transform {
       case a: AttributeReference =>
         val ordinal = input.indexOf(a.exprId)
         if (ordinal == -1) {
@@ -53,6 +66,10 @@ object GpuBindReferences extends Logging {
         } else {
           GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
         }
+    }
+    val ret = initiallyBound.transformUp {
+      case post: GpuBindPost =>
+        post.postBind
     }.asInstanceOf[R]
     postBindCheck(ret)
     ret

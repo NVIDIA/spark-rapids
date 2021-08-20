@@ -2491,7 +2491,7 @@ object GpuOverrides {
       }
     ),
     expr[CreateArray](
-      " Returns an array with the given elements",
+      "Returns an array with the given elements",
       ExprChecks.projectOnly(
         TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
             TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
@@ -2516,6 +2516,84 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression =
           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
       }),
+    expr[LambdaFunction](
+      "Holds a higher order SQL function",
+      ExprChecks.projectOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.MAP).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("function",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+              TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all)),
+        Some(RepeatingParamCheck("arguments",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+              TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all))),
+      (in, conf, p, r) => new ExprMeta[LambdaFunction](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          val func = childExprs.head
+          val args = childExprs.tail
+          GpuLambdaFunction(func.convertToGpu(),
+            args.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+            in.hidden)
+        }
+      }),
+    expr[NamedLambdaVariable](
+      "A parameter to a LambdaFunction, a.k.a a higher order SQL function",
+      ExprChecks.projectOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.MAP).nested(),
+        TypeSig.all),
+      (in, conf, p, r) => new ExprMeta[NamedLambdaVariable](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuNamedLambdaVariable(in.name, in.dataType, in.nullable, in.exprId)
+        }
+      }),
+    expr[ArrayTransform](
+      "Transform elements in an array using the transform function. This is similar to a `map` " +
+          "in functional programming.",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("function",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            TypeSig.all))),
+      // TODO need some tagging because we can only support a lambda with a single
+      //  function and no parameters bound to other fields
+      (in, conf, p, r) => new ExprMeta[ArrayTransform](in, conf, p, r) {
+
+        override def tagExprForGpu(): Unit = {
+          in.function match {
+            case l: LambdaFunction =>
+              if (l.arguments.length != 1) {
+                willNotWorkOnGpu("array index var functions are not currently supported")
+              }
+              val hasAttReferences = l.function.find {
+                case _: AttributeReference => true
+                case _ => false
+              }.isDefined
+              if (hasAttReferences) {
+                willNotWorkOnGpu("a lambda function that references other columns is not " +
+                    "currently supported")
+              }
+            case other =>
+              willNotWorkOnGpu(s"Expected a LambdaFunction but found ${other.getClass}")
+          }
+        }
+
+        override def convertToGpu(): GpuExpression = {
+          GpuArrayTransform(childExprs.head.convertToGpu(),
+            childExprs(1).convertToGpu())
+        }
+      }
+    ),
     expr[StringLocate](
       "Substring search operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
