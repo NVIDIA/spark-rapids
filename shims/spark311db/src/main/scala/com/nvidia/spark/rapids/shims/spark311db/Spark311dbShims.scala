@@ -124,11 +124,9 @@ class Spark311dbShims extends Spark311Shims {
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-              TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested() +
-              TypeSig.psNote(TypeEnum.MAP, "Not supported as a partition by key") +
-              TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
-              TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
-            TypeSig.all),
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          Map("partitionSpec" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)),
+          TypeSig.all),
           (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       ),
       GpuOverrides.exec[FileSourceScanExec](

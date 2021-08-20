@@ -748,7 +748,7 @@ Accelerator supports are described below.
 </tr>
 <tr>
 <td rowspan="2">BroadcastNestedLoopJoinExec</td>
-<td rowspan="2">Implementation of join using brute force</td>
+<td rowspan="2">Implementation of join using brute force. Full outer joins and joins where the broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not supported.</td>
 <td rowspan="2">None</td>
 <td>condition<br/>(A non-inner join only is supported if the condition expression can be converted to a GPU AST expression)</td>
 <td>S</td>
@@ -15658,11 +15658,11 @@ dates or timestamps, or for a lack of type coercion support.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested DECIMAL, BINARY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, MAP, STRUCT, UDT</em></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>

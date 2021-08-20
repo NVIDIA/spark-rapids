@@ -845,8 +845,10 @@ integral_gens = [byte_gen, short_gen, int_gen, long_gen]
 double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
-decimal_gens = [decimal_gen_default, decimal_gen_neg_scale, decimal_gen_scale_precision,
+decimal_gens_no_neg = [decimal_gen_default, decimal_gen_scale_precision,
         decimal_gen_same_scale_precision, decimal_gen_64bit]
+
+decimal_gens = [decimal_gen_neg_scale] + decimal_gens_no_neg
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
