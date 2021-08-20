@@ -44,7 +44,6 @@
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
         </dependency>
-        <!--
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-hive_${scala.binary.version}</artifactId>
@@ -53,7 +52,6 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
--->
         <dependency>
           <groupId>org.apache.orc</groupId>
           <artifactId>orc-core</artifactId>

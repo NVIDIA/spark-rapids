@@ -111,31 +111,65 @@
         </dependencies>
     </profile>
     <profile>
-      <id>pre-merge</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.codehaus.mojo</groupId>
-            <artifactId>exec-maven-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>if_modified_files</id>
-                <phase>verify</phase>
-                <goals>
-                  <goal>exec</goal>
-                </goals>
-                <configuration>
-                  <executable>bash</executable>
-                  <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn verify:\n$MODIFIED"; exit 1;}'</commandlineArgs>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-        </plugins>
-      </build>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-      </activation>
+        <id>pre-merge</id>
+        <dependencies>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <!-- required for conf generation script -->
+               <groupId>org.apache.spark</groupId>
+               <artifactId>spark-sql_${scala.binary.version}</artifactId>
+               <scope>provided</scope>
+            </dependency>
+            <dependency>
+              <!-- required for conf generation script -->
+              <groupId>org.apache.spark</groupId>
+              <artifactId>spark-hive_${scala.binary.version}</artifactId>
+              <scope>provided</scope>
+            </dependency>
+        </dependencies>
+        <build>
+            <plugins>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>if_modified_files</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>exec</goal>
+                            </goals>
+                            <configuration>
+                                <executable>bash</executable>
+                                <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn verify:\n$MODIFIED"; exit 1;}'</commandlineArgs>
+                              </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </build>
+        <activation>
+            <activeByDefault>false</activeByDefault>
+        </activation>
     </profile>
   </profiles>
 
