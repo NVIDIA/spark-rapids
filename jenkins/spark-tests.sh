@@ -87,7 +87,7 @@ export BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
 --conf spark.executor.extraJavaOptions=-Duser.timezone=UTC \
 --conf spark.sql.session.timeZone=UTC"
 
-export SEQ_CONF="--executor-memory 12G \
+export SEQ_CONF="--executor-memory 16G \
 --total-executor-cores 6"
 
 # currently we hardcode the parallelism and configs based on our CI node's hardware specs,
@@ -159,7 +159,7 @@ export -f run_test
 # integration tests
 if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
   # put most time-consuming tests at the head of queue
-  time_consuming_tests="join_test.py generate_expr_test.py"
+  time_consuming_tests="join_test.py generate_expr_test.py parquet_write_test.py"
   tests_list=$(find "$SCRIPT_PATH"/src/main/python/ -name "*_test.py" -printf "%f ")
   tests=$(echo "$time_consuming_tests $tests_list" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
   # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
