@@ -314,36 +314,24 @@
             <properties>
                 <spark.test.version>${spark311cdh.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests-spark310+</module>
-            </modules>
         </profile>
         <profile>
             <id>spark312tests</id>
             <properties>
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests-spark310+</module>
-            </modules>
         </profile>
         <profile>
             <id>spark313tests</id>
             <properties>
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests-spark310+</module>
-            </modules>
         </profile>
         <profile>
             <id>spark320tests</id>
             <properties>
                 <spark.test.version>${spark320.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests-spark310+</module>
-            </modules>
         </profile>
 
         <profile>
