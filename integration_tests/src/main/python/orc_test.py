@@ -88,6 +88,8 @@ orc_gens_list = [orc_basic_gens,
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
 
+flattened_orc_gens = orc_basic_gens + orc_array_gens_sample + orc_struct_gens_sample
+
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.orc.enabled', 'spark.rapids.sql.format.orc.read.enabled'])
@@ -377,3 +379,26 @@ def test_read_struct_without_stream(spark_tmp_path):
             lambda spark : unary_op_df(spark, data_gen, 10).write.orc(data_path))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path))
+
+
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+def test_read_with_more_columns(spark_tmp_path, orc_gen, reader_confs, v1_enabled_list):
+    struct_gen = StructGen([('nested_col', orc_gen)])
+    # Map is not supported yet.
+    gen_list = [("top_pri", orc_gen), ("top_st", struct_gen),
+                ("top_ar", ArrayGen(struct_gen, max_length=10))]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    # This is a hack to get the type in a slightly less verbose way
+    extra_struct_gen = StructGen([('nested_col', orc_gen), ("extra_nested_col", orc_gen)])
+    extra_gen_list = [("top_pri", orc_gen), ("top_ar", ArrayGen(extra_struct_gen, max_length=10)),
+        ("top_st", extra_struct_gen), ("extra_top", orc_gen)]
+    rs = StructGen(extra_gen_list, nullable=False).data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(rs).orc(data_path),
+            conf=all_confs)
