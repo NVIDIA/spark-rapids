@@ -831,7 +831,4 @@ abstract class SparkBaseShims extends SparkShims {
   }
 
   override def hasAliasQuoteFix: Boolean = false
-
-  override def hasCastFloatTimestampUpcast: Boolean = false
-
 }
