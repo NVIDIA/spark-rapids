@@ -9,7 +9,7 @@ support all data types. The RAPIDS Accelerator for Apache Spark has further
 restrictions on what types are supported for processing. This tries
 to document what operations are supported and what data types each operation supports.
 Because Apache Spark is under active development too and this document was generated
-against version 3.1.2 of Spark. Most of this should still
+against version 3.0.1 of Spark. Most of this should still
 apply to other versions of Spark, but there may be slight changes.
 
 # General limitations
@@ -564,30 +564,6 @@ Accelerator supports are described below.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<td rowspan="1">InMemoryTableScanExec</td>
-<td rowspan="1">Implementation of InMemoryTableScanExec to use GPU accelerated Caching</td>
-<td>Input</td>
-<td>None</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
 <td rowspan="1">DataWritingCommandExec</td>
 <td rowspan="1">Writing data</td>
 <td rowspan="1">None</td>
@@ -929,8 +905,8 @@ Accelerator supports are described below.
 <tr>
 <th>Executor</th>
 <th>Description</th>
-<th>Context</th>
 <th>Notes</th>
+<th>Param(s)</th>
 <th>BOOLEAN</th>
 <th>BYTE</th>
 <th>SHORT</th>
@@ -951,10 +927,10 @@ Accelerator supports are described below.
 <th>UDT</th>
 </tr>
 <tr>
-<td rowspan="3">SortMergeJoinExec</td>
-<td rowspan="3">Sort merge join, replacing with shuffled hash join</td>
-<td>Input</td>
-<td>None</td>
+<td rowspan="4">SortMergeJoinExec</td>
+<td rowspan="4">Sort merge join, replacing with shuffled hash join</td>
+<td rowspan="4">None</td>
+<td>leftKeys</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
@@ -1035,9 +1011,6 @@ Accelerator supports are described below.
 <td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
 <td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, UDT</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -6443,140 +6416,12 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="10">RegExpReplace</td>
-<td rowSpan="10">`regexp_replace`</td>
-<td rowSpan="10">RegExpReplace support for string literal input patterns</td>
-<td rowSpan="10">None</td>
-<td rowSpan="5">project</td>
-<td>regex</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><em>PS<br/>very limited regex support;<br/>Literal value only</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>pos</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><em>PS<br/>only a value of 1 is supported</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>str</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>rep</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><em>PS<br/>Literal value only</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td rowSpan="5">lambda</td>
-<td>regex</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
+<td rowSpan="3">IntegralDivide</td>
+<td rowSpan="3">`div`</td>
+<td rowSpan="3">Division with a integer result</td>
+<td rowSpan="3">None</td>
+<td rowSpan="3">project</td>
+<td>lhs</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -6597,11 +6442,31 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td>pos</td>
+<td>rhs</td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td>S</td>
 <td> </td>
@@ -6619,8 +6484,12 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td>str</td>
-<td> </td>
+<td rowSpan="2">IsNaN</td>
+<td rowSpan="2">`isnan`</td>
+<td rowSpan="2">Checks if a value is NaN</td>
+<td rowSpan="2">None</td>
+<td rowSpan="2">project</td>
+<td>input</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -6641,7 +6510,8 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td>rep</td>
+<td>result</td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11550,80 +11420,6 @@ are limited.
 <th>MAP</th>
 <th>STRUCT</th>
 <th>UDT</th>
-<<<<<<< HEAD
-</tr>
-<tr>
-<td rowSpan="4">ToDegrees</td>
-<td rowSpan="4">`degrees`</td>
-<td rowSpan="4">Converts radians to degrees</td>
-<td rowSpan="4">None</td>
-<td rowSpan="2">project</td>
-<td>input</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td rowSpan="2">lambda</td>
-<td>input</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><b>NS</b></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>result</td>
-=======
 </tr>
 <tr>
 <td rowSpan="4">SubstringIndex</td>
@@ -11632,14 +11428,12 @@ are limited.
 <td rowSpan="4">None</td>
 <td rowSpan="4">project</td>
 <td>str</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11654,23 +11448,13 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="4">ToRadians</td>
-<td rowSpan="4">`radians`</td>
-<td rowSpan="4">Converts degrees to radians</td>
-<td rowSpan="4">None</td>
-<td rowSpan="2">project</td>
-<td>input</td>
-=======
 <td>delim</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11693,7 +11477,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11707,22 +11490,13 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="2">lambda</td>
-<td>input</td>
-=======
 <td>result</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<<<<<<< HEAD
-<td><b>NS</b></td>
-=======
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11744,16 +11518,12 @@ are limited.
 <td rowSpan="3">project</td>
 <td>lhs</td>
 <td> </td>
-<<<<<<< HEAD
-<td><b>NS</b></td>
-=======
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11767,14 +11537,6 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="6">ToUnixTimestamp</td>
-<td rowSpan="6">`to_unix_timestamp`</td>
-<td rowSpan="6">Returns the UNIX timestamp of the given time</td>
-<td rowSpan="6">None</td>
-<td rowSpan="3">project</td>
-<td>timeExp</td>
-=======
 <td>rhs</td>
 <td> </td>
 <td>S</td>
@@ -11784,22 +11546,19 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td> </td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
 <td> </td>
 </tr>
 <tr>
-<td>format</td>
+<td>result</td>
 <td> </td>
 <td>S</td>
 <td>S</td>
@@ -11813,10 +11572,10 @@ are limited.
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>A limited number of formats are supported;<br/>Literal value only</em></td>
 <td> </td>
 </tr>
 <tr>
@@ -11835,33 +11594,21 @@ are limited.
 <td><b>NS</b></td>
 <td> </td>
 <td> </td>
-<<<<<<< HEAD
-<td> </td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
-=======
 <td><b>NS</b></td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
 <td> </td>
 </tr>
 <tr>
 <td>rhs</td>
 <td> </td>
-<<<<<<< HEAD
-=======
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
 <td>S</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11875,14 +11622,6 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="3">lambda</td>
-<td>timeExp</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-=======
 <td>result</td>
 <td> </td>
 <td><b>NS</b></td>
@@ -11891,16 +11630,10 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
-<<<<<<< HEAD
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-=======
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -11910,30 +11643,22 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td>format</td>
-=======
 <td rowSpan="4">Tan</td>
 <td rowSpan="4">`tan`</td>
 <td rowSpan="4">Tangent</td>
 <td rowSpan="4">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<<<<<<< HEAD
-=======
 <td>S</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11949,13 +11674,9 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
 <td> </td>
 <td> </td>
-<<<<<<< HEAD
-=======
 <td>S</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11969,21 +11690,6 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="4">UnaryMinus</td>
-<td rowSpan="4">`negative`</td>
-<td rowSpan="4">Negate a numeric value</td>
-<td rowSpan="4">None</td>
-<td rowSpan="2">project</td>
-<td>input</td>
-<td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-=======
 <td rowSpan="2">AST</td>
 <td>input</td>
 <td> </td>
@@ -11995,14 +11701,11 @@ are limited.
 <td>S</td>
 <td> </td>
 <td> </td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12010,8 +11713,6 @@ are limited.
 </tr>
 <tr>
 <td>result</td>
-<<<<<<< HEAD
-=======
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12046,38 +11747,18 @@ are limited.
 <td> </td>
 <td>S</td>
 <td> </td>
->>>>>>> tgravescs/buildperspark
-<td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="2">lambda</td>
-<td>input</td>
-<td> </td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-=======
 <td>result</td>
 <td> </td>
 <td> </td>
@@ -12108,13 +11789,13 @@ are limited.
 <td> </td>
 <td> </td>
 <td>S</td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12123,26 +11804,19 @@ are limited.
 <tr>
 <td>result</td>
 <td> </td>
-<<<<<<< HEAD
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-=======
 <td> </td>
 <td> </td>
 <td> </td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td>S</td>
 <td> </td>
-<td><b>NS</b></td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12175,14 +11849,6 @@ are limited.
 <th>UDT</th>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="4">UnaryPositive</td>
-<td rowSpan="4">`positive`</td>
-<td rowSpan="4">A numeric value with a + in front of it</td>
-<td rowSpan="4">None</td>
-<td rowSpan="2">project</td>
-<td>input</td>
-=======
 <td rowSpan="3">TimeAdd</td>
 <td rowSpan="3"> </td>
 <td rowSpan="3">Adds interval to timestamp</td>
@@ -12284,7 +11950,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
->>>>>>> tgravescs/buildperspark
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12572,12 +12237,6 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="2">UnscaledValue</td>
-<td rowSpan="2"> </td>
-<td rowSpan="2">Convert a Decimal to an unscaled long value for some aggregation optimizations</td>
-<td rowSpan="2">None</td>
-=======
 <th>Expression</th>
 <th>SQL Functions(s)</th>
 <th>Description</th>
@@ -12608,7 +12267,6 @@ are limited.
 <td rowSpan="4">`positive`</td>
 <td rowSpan="4">A numeric value with a + in front of it</td>
 <td rowSpan="4">None</td>
->>>>>>> tgravescs/buildperspark
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -12862,43 +12520,10 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
-<td rowSpan="4">WeekDay</td>
-<td rowSpan="4">`weekday`</td>
-<td rowSpan="4">Returns the day of the week (0 = Monday...6=Sunday)</td>
-<td rowSpan="4">None</td>
-=======
 <td rowSpan="2">Upper</td>
 <td rowSpan="2">`upper`, `ucase`</td>
 <td rowSpan="2">String uppercase operator</td>
 <td rowSpan="2">This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.</td>
->>>>>>> tgravescs/buildperspark
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -13151,17 +12776,10 @@ are limited.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="4">Year</td>
-<td rowSpan="4">`year`</td>
-<td rowSpan="4">Returns the year from a date or timestamp</td>
-<td rowSpan="4">None</td>
-=======
 <td rowSpan="2">Year</td>
 <td rowSpan="2">`year`</td>
 <td rowSpan="2">Returns the year from a date or timestamp</td>
 <td rowSpan="2">None</td>
->>>>>>> tgravescs/buildperspark
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -14834,17 +14452,10 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="4">NormalizeNaNAndZero</td>
-<td rowSpan="4"> </td>
-<td rowSpan="4">Normalize NaN and zero</td>
-<td rowSpan="4">None</td>
-=======
 <td rowSpan="2">NormalizeNaNAndZero</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Normalize NaN and zero</td>
 <td rowSpan="2">None</td>
->>>>>>> tgravescs/buildperspark
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -14961,86 +14572,10 @@ are limited.
 <td><b>NS</b></td>
 </tr>
 <tr>
-<<<<<<< HEAD
-<td rowSpan="2">lambda</td>
-<td>param</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td>result</td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
-</tr>
-<tr>
-<td rowSpan="4">HiveSimpleUDF</td>
-<td rowSpan="4"> </td>
-<td rowSpan="4">Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface</td>
-<td rowSpan="4">None</td>
-=======
 <td rowSpan="2">HiveSimpleUDF</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface</td>
 <td rowSpan="2">None</td>
->>>>>>> tgravescs/buildperspark
 <td rowSpan="2">project</td>
 <td>param</td>
 <td>S</td>
@@ -15133,7 +14668,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td> </td>
@@ -15154,11 +14689,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15175,11 +14710,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15196,11 +14731,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15217,11 +14752,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15238,7 +14773,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
@@ -15259,7 +14794,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
@@ -15272,17 +14807,17 @@ and the accelerator produces the same result.
 </tr>
 <tr>
 <th>DATE</th>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15293,17 +14828,17 @@ and the accelerator produces the same result.
 </tr>
 <tr>
 <th>TIMESTAMP</th>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15343,7 +14878,7 @@ and the accelerator produces the same result.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
@@ -15428,12 +14963,12 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
-<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15449,7 +14984,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15470,14 +15005,14 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
+<td><em>PS<br/>the struct's children must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
-<td><em>PS<br/>the struct's children must also support being cast to the desired child type(s);<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>the struct's children must also support being cast to the desired child type(s);<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP;<br/>missing nested CALENDAR, UDT</em></td>
 <td> </td>
 </tr>
 <tr>
@@ -15491,7 +15026,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
