@@ -122,9 +122,12 @@ class Spark301dbShims extends Spark301Shims {
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-          Map("partitionSpec" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)),
-          TypeSig.all),
-        (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
+          TypeSig.all,
+          Map("partitionSpec" ->
+              InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+                TypeSig.all))),
+        (runningWindowFunctionExec, conf, p, r) =>
+          new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       ),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
