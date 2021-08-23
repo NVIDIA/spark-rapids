@@ -301,6 +301,7 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
             data_path,
             'DataWritingCommandExec')
 
+# This test is testing how the parquet_writer will behave if column has a validity mask without having any nulls
 def test_write_map_nullable(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
 
