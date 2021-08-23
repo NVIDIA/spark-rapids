@@ -1,52 +1,40 @@
-# RAPIDS Accelerator For Apache Spark
-NOTE: For the latest stable [README.md](https://github.com/nvidia/spark-rapids/blob/main/README.md) ensure you are on the main branch. The RAPIDS Accelerator for Apache Spark provides a set of plugins for Apache Spark that leverage GPUs to accelerate processing via the RAPIDS libraries and UCX. Documentation on the current release can be found [here](https://nvidia.github.io/spark-rapids/). 
+# Caerus Spark UDF Compiler: Modified from "RAPIDS Accelerator For Apache Spark"
 
-The RAPIDS Accelerator for Apache Spark provides a set of plugins for 
-[Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing
-via the [RAPIDS](https://rapids.ai) libraries and [UCX](https://www.openucx.org/).
+Currently Spark doesn't support any UDF pushdown with the exception of JDBC/database datascource case, and Spark UDF is run in a black box on compute-sdie, and Spark Catalyst, Spark SQL Optimizer, can't optimize UDF.
 
-To get started and try the plugin out use the [getting started guide](./docs/get-started/getting-started.md).
+[RAPIDS Accelerator For Apache Spark](https://github.com/NVIDIA/spark-rapids) is a Nvidia open source project to provide a set of plugins for Apache Spark that leverage GPUs to accelerate processing via the RAPIDS libraries and UCX. 
 
-## Compatibility
+Among these plugins, ["udf-compiler"](https://github.com/NVIDIA/spark-rapids/tree/branch-21.10/udf-compiler) is a UDF compiler extension (via Spark rule injection) to translate UDFs bytecode to Spark Catalyst expressions.
 
-The SQL plugin tries to produce results that are bit for bit identical with Apache Spark.
-Operator compatibility is documented [here](./docs/compatibility.md)
+The "udf-compiler" is similar to the [Spark SQL Macros](https://github.com/hbutani/spark-sql-macros) project we previously investigate, they all attempt to translate Spark UDFs into native Spark Catalyst expressions, which will be optimized by the Spark Catalysts for code generation/serialization, so that the UDFs can be pushed down as the best as we can to the data sources (thus to storage). The task time of such solutions is [2-3 times faster than the native Spark UDFs] (https://github.com/hbutani/spark-sql-macros)
 
-## Tuning
+Under the hood, the "udf-compiler" uses bytecode analyzer to translate, while the Macros use Scala metaprogramming mechanism to translate. The bytecode translation is easier to debug.
 
-To get started tuning your job and get the most performance out of it please start with the
-[tuning guide](./docs/tuning-guide.md).
+Compare to Spark SQL Macros project we previously investigated, "udf-compiler" has the following advantages:
+- It is a fully automated solution that can translate spark UDFs without the need to change existing Spark application code
+- It doesn't have the restriction on UDF registration: 
+  - The Macros solution doesn't support UDF pushdwon if UDF is defined as a variable, such UDF definition (without register call) is often used in dataframe APIs  
+  - The Macros solution needs all functions are defined in the UDM function body 
 
-## Configuration
+The feature set of the "udf-compiler" solution is still less than the Macros solution, but the "udf-compiler" is still being actively developed, the feature gaps might be filled in the future. 
 
-The plugin has a set of Spark configs that control its behavior and are documented 
-[here](docs/configs.md).
+The feature gap examples of the "udf-compiler" solution are listed as follows:
+- It doesn't support tuple, map and collections
+- It has less DateTime support than the Macros solution: monthsBetween, getDayInYear, getDayOfWeek etc.
+- It doesn't support complex UDfs like recursive UDFs
 
-## Issues
+The full supported features comparison can be found in the following documents:
+- [udf-compiler](https://github.com/NVIDIA/spark-rapids/blob/branch-21.10/docs/additional-functionality/udf-to-catalyst-expressions.md)
+- [Spark_SQL_Macro_examples](https://github.com/hbutani/spark-sql-macros/wiki/Spark_SQL_Macro_examples)
 
-We use github issues to track bugs, feature requests, and to try and answer questions. You
-may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
+One of the issues of the "udf-compiler" is that it has dependency on GPU setting, it requires user to install many cuda related drivers to the system, and it might have runtime issues when system doesn't have the GPU hardware. This will limit the usage of "udf-compiler", especially for our UDF data source/storage pushdown (Near Data Processing) use cases. In order to address this issue, certain modifications are made to remove GPU dependency. Users can follow instructions below to deploy and use udf-compiler in NDP use cases.
 
-## Download
 
-The jar files for the most recent release can be retrieved from the [download](docs/download.md)
-page. 
+## Get Started
 
-## Building From Source
+[TODO]
 
-See the [build instructions in the contributing guide](CONTRIBUTING.md#building-from-source).
+## References
+[TODO]
 
-## Testing 
 
-Tests are described [here](tests/README.md).
-
-## Integration
-The RAPIDS Accelerator For Apache Spark does provide some APIs for doing zero copy data
-transfer into other GPU enabled applications.  It is described
-[here](docs/ml-integration.md).
-
-Currently, we are working with XGBoost to try to provide this integration out of the box. 
-
-You may need to disable RMM caching when exporting data to an ML library as that library
-will likely want to use all of the GPU's memory and if it is not aware of RMM it will not have
-access to any of the memory that RMM is holding.
