@@ -119,12 +119,16 @@ object GpuParquetFileFormat {
         case s: StructType =>
           builder.withStructColumn(
             parquetWriterOptionsFromSchema(
+              // we are setting this to nullable, in case the parent is a Map's key and wants to
+              // set this to false
               structBuilder(name, nullable),
               s,
               writeInt96).build())
         case a: ArrayType =>
           builder.withListColumn(
             parquetWriterOptionsFromField(
+              // we are setting this to nullable, in case the parent is a Map's key and wants to
+              // set this to false
               listBuilder(name, nullable),
               a.elementType,
               name,
