@@ -113,20 +113,6 @@
             </properties>
         </profile>
         <profile>
-            <id>release301</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark301</spark.version.classifier>
-                <spark.version>${spark301.version}</spark.version>
-                <spark.test.version>${spark301.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
             <id>release301emr</id>
             <activation>
                 <property>
@@ -138,20 +124,6 @@
                 <spark.version.classifier>spark301emr</spark.version.classifier>
                 <spark.version>${spark301emr.version}</spark.version>
                 <spark.test.version>${spark301emr.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>release302</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>302</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark302</spark.version.classifier>
-                <spark.version>${spark302.version}</spark.version>
-                <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
         </profile>
         <profile>
