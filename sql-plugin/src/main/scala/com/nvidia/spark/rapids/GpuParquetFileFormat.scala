@@ -111,47 +111,47 @@ object GpuParquetFileFormat {
       name: String,
       writeInt96: Boolean,
       nullable: Boolean): T = {
-      dataType match {
-        case dt: DecimalType =>
-          builder.withDecimalColumn(name, dt.precision, nullable)
-        case TimestampType =>
-          builder.withTimestampColumn(name, writeInt96, nullable)
-        case s: StructType =>
-          builder.withStructColumn(
-            parquetWriterOptionsFromSchema(
-              // we are setting this to nullable, in case the parent is a Map's key and wants to
-              // set this to false
-              structBuilder(name, nullable),
-              s,
-              writeInt96).build())
-        case a: ArrayType =>
-          builder.withListColumn(
+    dataType match {
+      case dt: DecimalType =>
+        builder.withDecimalColumn(name, dt.precision, nullable)
+      case TimestampType =>
+        builder.withTimestampColumn(name, writeInt96, nullable)
+      case s: StructType =>
+        builder.withStructColumn(
+          parquetWriterOptionsFromSchema(
+            // we are setting this to nullable, in case the parent is a Map's key and wants to
+            // set this to false
+            structBuilder(name, nullable),
+            s,
+            writeInt96).build())
+      case a: ArrayType =>
+        builder.withListColumn(
+          parquetWriterOptionsFromField(
+            // we are setting this to nullable, in case the parent is a Map's key and wants to
+            // set this to false
+            listBuilder(name, nullable),
+            a.elementType,
+            name,
+            writeInt96,
+            true).build())
+      case m: MapType =>
+        builder.withMapColumn(
+          mapColumn(name,
             parquetWriterOptionsFromField(
-              // we are setting this to nullable, in case the parent is a Map's key and wants to
-              // set this to false
-              listBuilder(name, nullable),
-              a.elementType,
-              name,
+              ParquetWriterOptions.builder(),
+              m.keyType,
+              "key",
               writeInt96,
-              true).build())
-        case m: MapType =>
-          builder.withMapColumn(
-            mapColumn(name,
-              parquetWriterOptionsFromField(
-                ParquetWriterOptions.builder(),
-                m.keyType,
-                "key",
-                writeInt96,
-                false).build().getChildColumnOptions()(0),
-              parquetWriterOptionsFromField(
-                ParquetWriterOptions.builder(),
-                m.valueType,
-                "value",
-                writeInt96,
-                nullable).build().getChildColumnOptions()(0)))
-        case _ =>
-          builder.withColumns(nullable, name)
-      }
+              false).build().getChildColumnOptions()(0),
+            parquetWriterOptionsFromField(
+              ParquetWriterOptions.builder(),
+              m.valueType,
+              "value",
+              writeInt96,
+              nullable).build().getChildColumnOptions()(0)))
+      case _ =>
+        builder.withColumns(nullable, name)
+    }
     builder.asInstanceOf[T]
   }
 

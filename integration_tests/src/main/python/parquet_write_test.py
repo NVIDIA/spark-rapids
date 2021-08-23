@@ -37,7 +37,8 @@ writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
 
 
 def limited_timestamp(nullable=True):
-    return TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc), nullable=nullable)
+    return TimestampGen(start=datetime(1677, 9, 22, tzinfo=timezone.utc), end=datetime(2262, 4, 11, tzinfo=timezone.utc),
+                        nullable=nullable)
 
 parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                     string_gen, boolean_gen, date_gen,
@@ -45,21 +46,29 @@ parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_ge
                     # see https://github.com/rapidsai/cudf/issues/8070
                     limited_timestamp()]
 
-parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, limited_timestamp]] + [simple_string_to_string_map_gen]
+parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in
+                          [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen,
+                           limited_timestamp]] + [simple_string_to_string_map_gen]
 
-parquet_struct_gen = [StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
-                      StructGen([['child0', StructGen([[ 'child1', byte_gen]])]]),
+parquet_struct_gen = [StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
+                      StructGen([['child0', StructGen([['child1', byte_gen]])]]),
                       StructGen([['child0', MapGen(StringGen(nullable=False), StringGen())], ['child1', IntegerGen()]])]
 
-parquet_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen] + \
-                    [ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen]
+parquet_array_gen = [ArrayGen(sub_gen, max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen] + [
+    ArrayGen(ArrayGen(sub_gen, max_length=10), max_length=10) for sub_gen in parquet_basic_gen + parquet_struct_gen]
 
-parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
-                                        MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
-                                        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+                                                           ArrayGen(string_gen), max_length=10),
+                                                    MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen,
+                                                           max_length=10),
+                                                    MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+                                                           simple_string_to_string_map_gen)]
 
-parquet_map_gens = parquet_map_gens_sample + [MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()), MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
-parquet_write_gens_list = [parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens + parquet_map_gens]
+parquet_map_gens = parquet_map_gens_sample + [
+    MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
+    MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
+parquet_write_gens_list = [
+    parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
