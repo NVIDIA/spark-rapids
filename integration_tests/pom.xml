@@ -42,11 +42,6 @@
             <artifactId>scala-library</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <version>${spark.test.version}</version>
-        </dependency>
-        <dependency>
             <groupId>org.rogach</groupId>
             <artifactId>scallop_${scala.binary.version}</artifactId>
         </dependency>
@@ -89,6 +84,11 @@
                     <type>test-jar</type>
                     <scope>test</scope>
                 </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark.test.version}</version>
+                </dependency>
             </dependencies>
         </profile>
         <profile>
@@ -104,6 +104,11 @@
                     <classifier>${spark.version.classifier}tests</classifier>
                     <type>test-jar</type>
                     <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark.test.version}</version>
                 </dependency>
             </dependencies>
             <build>
@@ -123,6 +128,43 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+        <profile>
+            <id>release311cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311cdh</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <!-- it seems CDH jars pull an old version of Guava but need new version
+                         to run with, so here we override Guava version for testing -->
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                    <version>28.0-jre</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.curator</groupId>
+                            <artifactId>curator-recipes</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-recipes</artifactId>
+                    <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
         </profile>
     </profiles>
 

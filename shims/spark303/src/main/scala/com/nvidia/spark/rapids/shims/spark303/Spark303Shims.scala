@@ -16,11 +16,10 @@
 
 package com.nvidia.spark.rapids.shims.spark303
 
-import com.nvidia.spark.rapids.ShimVersion
-import com.nvidia.spark.rapids.shims.spark302.Spark302Shims
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark303.RapidsShuffleManager
 
-class Spark303Shims extends Spark302Shims {
+class Spark303Shims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
