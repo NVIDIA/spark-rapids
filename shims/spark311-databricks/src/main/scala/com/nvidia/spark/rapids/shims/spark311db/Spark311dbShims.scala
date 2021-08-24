@@ -18,6 +18,10 @@ package com.nvidia.spark.rapids.shims.spark311db
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark311db.RapidsShuffleManager
+import org.apache.parquet.schema.MessageType
+
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.internal.SQLConf
 
 class Spark311dbShims extends SparkBaseShims {
 

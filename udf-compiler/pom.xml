@@ -43,6 +43,7 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
+	<!--
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
@@ -56,6 +57,7 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+-->
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
@@ -104,6 +106,23 @@
                 </plugins>
             </build>
         </profile>
+       <profile>
+            <id>release311db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+           </dependencies>
+       </profile>
        <profile>
             <id>release311cdh</id>
             <activation>

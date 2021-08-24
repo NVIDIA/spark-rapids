@@ -19,11 +19,11 @@ package com.nvidia.spark.rapids.shims.spark311db
 import java.net.URI
 import java.nio.ByteBuffer
 
+import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
-import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
@@ -43,7 +43,6 @@ import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, Shuffle
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -60,9 +59,6 @@ import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
-/**
- * Base Shim for Spark 3.1.1 that can be used by other 3.1.x versions and to easily diff
- */
 abstract class SparkBaseShims extends SparkShims {
 
   override def parquetRebaseReadKey: String =
@@ -77,19 +73,6 @@ abstract class SparkBaseShims extends SparkShims {
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
   override def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
-
-  override def getParquetFilters(
-      schema: MessageType,
-      pushDownDate: Boolean,
-      pushDownTimestamp: Boolean,
-      pushDownDecimal: Boolean,
-      pushDownStartWith: Boolean,
-      pushDownInFilterThreshold: Int,
-      caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
-    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
-      pushDownInFilterThreshold, caseSensitive)
-  }
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
