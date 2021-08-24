@@ -1107,25 +1107,25 @@ object CreateMapCheck extends ExprChecks {
     val context = exprMeta.context
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
-    }
-
-    // if there are more than two key-value pairs then there is the possibility of duplicate keys
-    if (meta.childExprs.length > 2) {
-      // check for duplicate keys if the keys are literal values
-      val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
-      if (keyExprs.forall(_.wrapped.isInstanceOf[Literal])) {
-        val keys = keyExprs.map(_.wrapped.asInstanceOf[Literal].value)
-        val uniqueKeys = new mutable.HashSet[Any]()
-        for (key <- keys) {
-          if (!uniqueKeys.add(key)) {
-            meta.willNotWorkOnGpu("CreateMap with duplicate literal keys is not supported")
+    } else {
+      // if there are more than two key-value pairs then there is the possibility of duplicate keys
+      if (meta.childExprs.length > 2) {
+        // check for duplicate keys if the keys are literal values
+        val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
+        if (keyExprs.forall(_.wrapped.isInstanceOf[Literal])) {
+          val keys = keyExprs.map(_.wrapped.asInstanceOf[Literal].value)
+          val uniqueKeys = new mutable.HashSet[Any]()
+          for (key <- keys) {
+            if (!uniqueKeys.add(key)) {
+              meta.willNotWorkOnGpu("CreateMap with duplicate literal keys is not supported")
+            }
           }
+        } else if (!meta.conf.isCreateMapEnabled) {
+          meta.willNotWorkOnGpu("CreateMap is not enabled by default when there are " +
+            "multiple key-value pairs and where the keys are not literal values because handling " +
+            "of duplicate keys is not compatible with Spark. " +
+            s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
         }
-      } else if (!meta.conf.isCreateMapEnabled) {
-        meta.willNotWorkOnGpu("CreateMap is not enabled by default when there are " +
-          "multiple key-value pairs and where the keys are not literal values because handling " +
-          "of duplicate keys is not compatible with Spark. " +
-          s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
       }
     }
   }
