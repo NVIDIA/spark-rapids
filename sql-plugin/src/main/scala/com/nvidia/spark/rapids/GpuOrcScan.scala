@@ -1602,6 +1602,19 @@ class MultiFileOrcPartitionReader(
   implicit def toOrcExtraInfo(in: ExtraInfo): OrcExtraInfo =
     in.asInstanceOf[OrcExtraInfo]
 
+  // Estimate the size of StripeInformation with the worst case.
+  // The serialized size may be different because of the different values.
+  // Here set most of values to "Long.MaxValue" to get the worst case.
+  lazy val sizeOfStripeInformation = {
+    OrcProto.StripeInformation.newBuilder()
+      .setOffset(Long.MaxValue)
+      .setIndexLength(0) // Index stream is pruned
+      .setDataLength(Long.MaxValue)
+      .setFooterLength(Int.MaxValue) // StripeFooter size should be small
+      .setNumberOfRows(Long.MaxValue)
+      .build().getSerializedSize
+  }
+
   // The runner to copy stripes to the offset of HostMemoryBuffer and update
   // the StripeInformation to construct the file Footer
   class OrcCopyStripesRunner(
@@ -1712,12 +1725,20 @@ class MultiFileOrcPartitionReader(
         stripes.foreach { stripeMeta =>
           // account for the size of every stripe including index + data + stripe footer
           size += stripeMeta.getBlockSize
+
+          // add StripeInformation size in advance which should be calculated in Footer
+          size += sizeOfStripeInformation
         }
-        // the ctx is the same for all stripes
-        val ctx = stripes(0).ctx
-        // the original file's footer should be worst-case
-        size += ctx.fileTail.getPostscript.getFooterLength
     }
+
+    val blockIter = filesAndBlocks.valuesIterator
+    if (blockIter.hasNext) {
+      val blocks = blockIter.next()
+
+      // add the first orc file's footer length to cover ORC schema and other information
+      size += blocks(0).ctx.fileTail.getPostscript.getFooterLength
+    }
+
     // Per ORC v1 spec, the size of Postscript must be less than 256 bytes.
     size += 256
     // finally the single-byte postscript length at the end of the file
