@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.udf
 
-import com.nvidia.spark.rapids.RapidsConf
+//import com.nvidia.spark.rapids.RapidsConf
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
@@ -43,9 +43,13 @@ case class GpuScalaUDFLogical(udf: ScalaUDF) extends Expression with Logging {
     // call the compiler
     try {
       val expr = CatalystExpressionBuilder(udf.function).compile(udf.children)
+      //Console.println("catalystExpressionBuilder(udf.function).compile(udf.children)")
       if (expr.isDefined) {
+        //Console.println("expr.isDefined = " + expr.get)
         expr.get
       } else {
+        //Console.println("expr.isDefined false")
+        //Console.println("udf = " + udf)
         udf
       }
     } catch {

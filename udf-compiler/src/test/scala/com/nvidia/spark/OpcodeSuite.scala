@@ -22,7 +22,7 @@ import java.time.format.DateTimeFormatter
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.RapidsConf
+//import com.nvidia.spark.rapids.RapidsConf
 import org.scalatest.Assertions._
 import org.scalatest.FunSuite
 
@@ -38,7 +38,7 @@ class OpcodeSuite extends FunSuite {
   val conf: SparkConf = new SparkConf()
     .set("spark.sql.extensions", "com.nvidia.spark.udf.Plugin")
     .set("spark.rapids.sql.udfCompiler.enabled", "true")
-    .set(RapidsConf.EXPLAIN.key, "true")
+    //.set(RapidsConf.EXPLAIN.key, "true")
 
   val spark: SparkSession =
     SparkSession.builder()

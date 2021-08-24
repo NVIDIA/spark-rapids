@@ -16,45 +16,51 @@
 
 package com.nvidia.spark.udf
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.RapidsConf
+//import ai.rapids.cudf.{NvtxColor, NvtxRange}
+//import com.nvidia.spark.rapids.RapidsConf
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSessionExtensions
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression, ScalaUDF}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, Project}
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.rapids.GpuScalaUDF.getRapidsUDFInstance
+//import org.apache.spark.sql.rapids.GpuScalaUDF.getRapidsUDFInstance
 
 class Plugin extends Function1[SparkSessionExtensions, Unit] with Logging {
+  //Console.println("udf compiler is enabled")
   override def apply(extensions: SparkSessionExtensions): Unit = {
-    logWarning("Installing rapids UDF compiler extensions to Spark. The compiler is disabled" +
-        s" by default. To enable it, set `${RapidsConf.UDF_COMPILER_ENABLED}` to true")
+    //Console.println("udf compiler is enabled")
+    //logWarning("Installing rapids UDF compiler extensions to Spark. The compiler is disabled" +
+      //  s" by default. To enable it, set `${RapidsConf.UDF_COMPILER_ENABLED}` to true")
     extensions.injectResolutionRule(_ => LogicalPlanRules())
   }
 }
 
 case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
+  //Console.println("udf compiler logical plan inserted")
   def replacePartialFunc(plan: LogicalPlan): PartialFunction[Expression, Expression] = {
     case d: Expression => {
-      val nvtx = new NvtxRange("replace UDF", NvtxColor.BLUE)
+      //val nvtx = new NvtxRange("replace UDF", NvtxColor.BLUE)
+      //Console.println("udf compiler expression is enabled")
       try {
         attemptToReplaceExpression(plan, d)
       } finally {
-        nvtx.close()
+        //nvtx.close()
       }
     }
   }
 
   def attemptToReplaceExpression(plan: LogicalPlan, exp: Expression): Expression = {
-    val conf = new RapidsConf(plan.conf)
+    //val conf = new RapidsConf(plan.conf)
     // iterating over NamedExpression
+    //Console.println("udf compiler attempt to replace is enabled")
     exp match {
       // Check if this UDF implements RapidsUDF interface. If so, the UDF has already provided a
       // columnar execution that could run on GPU, then no need to translate it to Catalyst
       // expressions. If not, compile it.
-      case f: ScalaUDF if getRapidsUDFInstance(f.function).isEmpty =>
-        GpuScalaUDFLogical(f).compile(conf.isTestEnabled)
+      //case f: ScalaUDF if getRapidsUDFInstance(f.function).isEmpty =>
+      case f: ScalaUDF =>
+        GpuScalaUDFLogical(f).compile(true)
       case _ =>
         if (exp == null) {
           exp
@@ -81,8 +87,10 @@ case class LogicalPlanRules() extends Rule[LogicalPlan] with Logging {
   }
 
   override def apply(plan: LogicalPlan): LogicalPlan = {
-    val conf = new RapidsConf(plan.conf)
-    if (conf.isUdfCompilerEnabled) {
+    //val conf = new RapidsConf(plan.conf)
+    //Console.println("udf compiler attempt to replace is enabled: apply")
+    //if (conf.isUdfCompilerEnabled) {
+    if (true) {
       plan match {
         case project: Project =>
           Project(project.projectList.map(e => attemptToReplaceExpression(plan, e))
