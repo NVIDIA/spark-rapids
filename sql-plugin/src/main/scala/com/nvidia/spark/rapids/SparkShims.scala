@@ -21,7 +21,7 @@ import java.nio.ByteBuffer
 
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
@@ -40,7 +40,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile}
+import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
@@ -237,4 +237,8 @@ trait SparkShims {
   def hasAliasQuoteFix: Boolean
 
   def hasCastFloatTimestampUpcast: Boolean
+
+  def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
+
+  def broadcastModeTransform(mode: BroadcastMode, toArray: Array[InternalRow]): Any
 }

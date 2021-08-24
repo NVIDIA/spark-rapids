@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import com.nvidia.spark.rapids._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
@@ -834,4 +834,10 @@ abstract class SparkBaseShims extends SparkShims {
 
   override def hasCastFloatTimestampUpcast: Boolean = false
 
+  override def filesFromFileIndex(fileIndex: PartitioningAwareFileIndex): Seq[FileStatus] = {
+    fileIndex.allFiles()
+  }
+
+  def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
+    mode.transform(rows)
 }
