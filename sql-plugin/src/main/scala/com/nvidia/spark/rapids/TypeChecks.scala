@@ -1112,9 +1112,9 @@ object CreateMapCheck extends ExprChecks {
       if (meta.childExprs.length > 2) {
         // check for duplicate keys if the keys are literal values
         val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
-        if (keyExprs.forall(e => GpuOverrides.extractLit(
-            e.wrapped.asInstanceOf[Expression]).isDefined)) {
-          val keys = keyExprs.map(_.wrapped.asInstanceOf[Literal].value)
+        val litKeys = keyExprs.map(e => GpuOverrides.extractLit(e.wrapped.asInstanceOf[Expression]))
+        if (litKeys.forall(_.isDefined)) {
+          val keys = litKeys.map(_.get.value)
           val uniqueKeys = new mutable.HashSet[Any]()
           for (key <- keys) {
             if (!uniqueKeys.add(key)) {
