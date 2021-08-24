@@ -3855,7 +3855,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP</em></td>
-<td> </td>
+<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP</em></td>
 <td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP</em></td>
 <td> </td>
 </tr>
@@ -4201,9 +4201,12 @@ are limited.
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP</em></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP</em></td>
-<td><em>PS<br/>max nested DECIMAL precision of 18;<br/>UTC is only supported TZ for nested TIMESTAMP</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td> </td>
 </tr>
 <tr>
