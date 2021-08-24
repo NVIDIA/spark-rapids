@@ -137,7 +137,7 @@ abstract class AppBase(
 
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
-    if (planInfo.metadata.contains("ReadSchema")) {
+    if (planInfo.metadata != null && planInfo.metadata.contains("ReadSchema")) {
       childRes :+ planInfo
     } else {
       childRes
