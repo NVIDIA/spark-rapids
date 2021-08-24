@@ -43,10 +43,6 @@
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
             <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
             <type>test-jar</type>
             <scope>test</scope>
@@ -67,9 +63,42 @@
             </activation>
             <dependencies>
                 <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                </dependency>
+                <dependency>
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release311cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311cdh</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.curator</groupId>
+                            <artifactId>curator-recipes</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-recipes</artifactId>
+                    <version>4.3.0.7.2.7.0-184</version>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
@@ -80,6 +109,10 @@
                 <property><name>buildver</name></property>
             </activation>
             <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                </dependency>
                 <dependency>
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>

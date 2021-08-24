@@ -31,9 +31,6 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
 class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,

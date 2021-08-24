@@ -114,13 +114,6 @@
             </activation>
             <dependencies>
                 <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
@@ -141,6 +134,13 @@
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                    <version>28.0-jre</version>
+                    <scope>provided</scope>
                 </dependency>
             </dependencies>
             <build>

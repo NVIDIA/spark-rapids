@@ -29,7 +29,6 @@ import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
-// FileScan changed in Spark 3.1.0 so need to compile in Shim
 case class GpuOrcScan(
     sparkSession: SparkSession,
     hadoopConf: Configuration,
