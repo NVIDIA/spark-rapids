@@ -160,32 +160,88 @@
                         /databricks/jars/----workspace_spark_3_1--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_2.12_deploy.jar
                     </systemPath>
                 </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-parquet-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+                        /databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks6.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-parquet2-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+			    /databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-common--org.apache.parquet__parquet-common__1.10.1-databricks6.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-parquet3-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+			    /databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__1.10.1-databricks6.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-parquet4-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+			    /databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-format--org.apache.parquet__parquet-format__2.4.0.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow1-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+			    /databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__2.0.0.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow2-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+/databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory-core--org.apache.arrow__arrow-memory-core__2.0.0.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow3-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+/databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory-netty--org.apache.arrow__arrow-memory-netty__2.0.0.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow4-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+/databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__2.0.0.jar
+                    </systemPath>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive2-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+/databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__2.3.7.jar
+                    </systemPath>
+                </dependency>
             </dependencies>
-	    <!--
-	    <build>
-	    <plugins>
-		    <plugin>
-  <groupId>com.googlecode.addjars-maven-plugin</groupId>
-  <artifactId>addjars-maven-plugin</artifactId>
-  <version>1.0.2</version>
-  <executions>
-    <execution>
-        <goals>
-            <goal>add-jars</goal>
-        </goals>
-        <configuration>
-            <resources>
-                <resource>
-			<directory>/databricks/jars</directory>
-                </resource>
-            </resources>
-        </configuration>
-    </execution>
-  </executions>
-</plugin>
-	    </plugins>
-    </build>
--->
         </profile>
         <profile>
             <id>with-classifier</id>
