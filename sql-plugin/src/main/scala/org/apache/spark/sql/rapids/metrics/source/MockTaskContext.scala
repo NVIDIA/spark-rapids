@@ -61,7 +61,7 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
 
   override private[spark] def getKillReason() = None
 
-  override private[spark] def taskMemoryManager() = null
+  override def taskMemoryManager() = null
 
   override private[spark] def registerAccumulator(a: AccumulatorV2[_, _]): Unit = {}
 

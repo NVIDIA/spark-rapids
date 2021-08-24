@@ -153,6 +153,12 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
                     <artifactId>spark-catalyst-db_${scala.binary.version}</artifactId>
                     <version>3.1.1-databricks</version>
                     <scope>system</scope>
