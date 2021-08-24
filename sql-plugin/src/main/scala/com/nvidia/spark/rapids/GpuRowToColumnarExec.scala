@@ -24,7 +24,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Projection, SortOrder, SpecializedGetters, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, SpecializedGetters, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
@@ -798,11 +798,14 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
  */
 case class GpuRowToColumnarExec(child: SparkPlan,
     goal: CoalesceSizeGoal,
-    preTransition: Option[Projection] = None)
+    preTransition: Option[Seq[NamedExpression]] = None)
   extends UnaryExecNode with GpuExec {
   import GpuMetric._
 
-  override def output: Seq[Attribute] = child.output
+  override def output: Seq[Attribute] = preTransition match {
+    case Some(transitions) => transitions.map(_.toAttribute)
+    case None => child.output
+  }
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
@@ -836,8 +839,9 @@ case class GpuRowToColumnarExec(child: SparkPlan,
     val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
     val rowBased = preTransition match {
-      case Some(projection) =>
+      case Some(transformations) =>
         child.execute().mapPartitionsWithIndex { case (index, iterator) =>
+          val projection = UnsafeProjection.create(transformations, child.output)
           projection.initialize(index)
           iterator.map(projection)
         }

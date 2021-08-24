@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -594,7 +595,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       !childPlans.exists(_.canThisBeReplaced) &&
         (plan.conf.adaptiveExecutionEnabled ||
         !parent.exists(_.canThisBeReplaced))) {
+
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
+
+      childPlans.head.wrapped
+          .getTagValue(GpuOverrides.preRowToColumnarTransition).foreach { r2c =>
+        wrapped.setTagValue(GpuOverrides.preRowToColumnarTransition, r2c)
+      }
     }
   }
 
@@ -704,7 +711,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       //
       // We can safely call childPlan.canThisBeReplaced here, because outputAttributes is called
       // via tagSelfForGpu. At this point, tagging of the child plan has already happened.
-      if (childPlans.head.canThisBeReplaced) {
+      if (childPlans.head.canThisBeReplaced || childPlans.head.runtimeTypeConversionAvailable) {
         childPlans.head.outputAttributes
       } else {
         wrapped.output
@@ -722,6 +729,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * Whether to pass through the outputAttributes of childPlan's meta, only for UnaryPlan
    */
   protected val useOutputAttributesOfChild: Boolean = false
+
+  val runtimeTypeConversionAvailable: Boolean = false
 }
 
 /**

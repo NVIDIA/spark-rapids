@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import java.io.{ByteArrayInputStream, ObjectInputStream}
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
@@ -23,11 +25,12 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnaryExpression, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnaryExpression, UnsafeArrayData, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
-import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
+import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.Platform
 
 trait GpuAggregateFunction extends GpuExpression with GpuUnevaluable {
   // using the child reference, define the shape of the vectors sent to
@@ -939,11 +942,10 @@ class GpuToCpuCollectBufferConverter extends GpuToCpuAggregateBufferConverter {
 case class GpuToCpuCollectBufferTransition(
     override val child: Expression) extends GpuToCpuBufferTransition {
 
-  private lazy val projection = UnsafeProjection.create(
-    Array[DataType](ArrayType(elementType = child.dataType, containsNull = false)))
+  private lazy val projection = UnsafeProjection.create(Array(child.dataType))
 
   override protected def nullSafeEval(input: Any): Array[Byte] = {
-    val array = input.asInstanceOf[ArrayData]
-    projection.apply(InternalRow.apply(array)).getBytes
+    val arrayData = input.asInstanceOf[ArrayData]
+    projection.apply(InternalRow.apply(arrayData)).getBytes
   }
 }

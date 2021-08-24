@@ -16,17 +16,17 @@
 
 package com.nvidia.spark.rapids
 
-import scala.annotation.tailrec
-
 import java.util
+
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -1002,21 +1002,19 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
       None
     }
 
+  override val runtimeTypeConversionAvailable: Boolean = true
+
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
 
-    // We can not run part of TypedImperativeAggregate functions on GPU, because GPU buffers
-    // are inconsistent with CPU buffers. Therefore, we have to fall back all Aggregate stages
-    // to CPU once any of them did fallback, in order to guarantee no partial-accelerated
-    // TypedImperativeAggregate function.
-    //
-    // This fallback procedure adapts AQE. As what GpuExchanges do, it leverages the
-    // `gpuSupportedTag` to store the information about whether instances are GPU-supported
-    // or not, which is produced by the side effect of `willNotWorkOnGpu`. When AQE is on,
-    // during the preparation stage, there will be a run of GpuOverrides on the entire plan to
-    // trigger these side effects if necessary, before AQE splits the entire query into several
-    // query stages.
-    GpuTypedImperativeSupportedAggregateExecMeta.injectBufferConverter(this)
+    // If a typedImperativeAggregate function run across CPU and GPU (ex: Partial mode on CPU,
+    // Merge mode on GPU), it will lead to a runtime crash. Because aggregation buffers produced
+    // by the previous stage of function are NOT in the same format as the later stage consuming.
+    // To fix the gap between CPU and GPU buffers, we inject runtime buffer converters for
+    // TypedImperativeAggregate functions which run across CPU and GPU.
+    // The injection also works when AQE is on, since it leverages the TreeNodeTag to cache buffer
+    // converters.
+    GpuTypedImperativeSupportedAggregateExecMeta.injectBufferConverters(this)
   }
 
   override def convertToGpu(): GpuExec = {
@@ -1105,66 +1103,76 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
 
 object GpuTypedImperativeSupportedAggregateExecMeta {
 
-  private val bufferConversionInjection = TreeNodeTag[Boolean](
-    "rapids.gpu.checkAndFallbackAggregateExecEntirely")
+  private val bufferConverterInjected = TreeNodeTag[Boolean](
+    "rapids.gpu.bufferConverterInjected")
 
-  private def injectBufferConverter(
+  /**
+   *
+   */
+  private def injectBufferConverters(
       meta: GpuTypedImperativeSupportedAggregateExecMeta[_]): Unit = {
     // We only run the check for final stages which contain TypedImperativeAggregate.
     val needToCheck = containTypedImperativeAggregate(meta, Some(Final))
     if (!needToCheck) return
     // Avoid duplicated check and fallback.
-    val checked = meta.agg.getTagValue[Boolean](bufferConversionInjection).contains(true)
+    val checked = meta.agg.getTagValue[Boolean](bufferConverterInjected).contains(true)
     if (checked) return
-    meta.agg.setTagValue(bufferConversionInjection, true)
+    meta.agg.setTagValue(bufferConverterInjected, true)
 
+    // Fetch AggregateMetas of all stages which belong to current Aggregate
     val stages = getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
 
+    // Find out stages in which the buffer converters are essential.
     val needBufferConversion = stages.indices.map {
       case i if i == stages.length - 1 => false
       case i =>
+        // Buffer converters are only needed to inject between two stages if [A] and [B].
+        // [A]. there will be a R2C or C2R transition between them
+        // [B]. there exists TypedImperativeAggregate functions in each of them
         (stages(i).canThisBeReplaced ^ stages(i + 1).canThisBeReplaced) &&
             containTypedImperativeAggregate(stages(i)) &&
             containTypedImperativeAggregate(stages(i + 1))
     }
 
+    // Bind converters as TreeNodeTags into the CPU plans who are right before/after the potential
+    // R2C/C2R transitions (the transitions are yet inserted).
     needBufferConversion.zipWithIndex.foreach {
       case (needToConvert, i) if needToConvert =>
         nextEdgeForConversion(stages(i)) match {
-          // create projection of preRowToColumnarTransition, and bind it to the child node (
-          // CPU plan) of GpuRowToColumnarExec
+          // create preRowToColumnarTransition, and bind it to the child node (CPU plan) of
+          // GpuRowToColumnarExec
           case List(parent, child) if parent.canThisBeReplaced =>
             val childPlan = child.wrapped.asInstanceOf[SparkPlan]
-            val projection = createCpuGpuProjection(stages(i), stages(i + 1), true)
-            childPlan.setTagValue(GpuOverrides.preRowToColumnarTransition, projection)
-          // create projection of postColumnarToRowTransition, and bind it to the parent node (
-          // CPU plan) of GpuColumnarToRowExec
+            val expressions = createCpuGpuConversion(stages(i), stages(i + 1), true)
+            childPlan.setTagValue(GpuOverrides.preRowToColumnarTransition, expressions)
+          // create postColumnarToRowTransition, and bind it to the parent node (CPU plan) of
+          // GpuColumnarToRowExec
           case List(parent, _) =>
             val parentPlan = parent.wrapped.asInstanceOf[SparkPlan]
-            val projection = createCpuGpuProjection(stages(i), stages(i + 1), false)
-            parentPlan.setTagValue(GpuOverrides.postColumnarToRowTransition, projection)
+            val expressions = createCpuGpuConversion(stages(i), stages(i + 1), false)
+            parentPlan.setTagValue(GpuOverrides.postColumnarToRowTransition, expressions)
         }
       case _ =>
     }
   }
 
   private def containTypedImperativeAggregate(meta: GpuBaseAggregateMeta[_],
-      desiredMode: Option[AggregateMode] = None): Boolean = {
+      desiredMode: Option[AggregateMode] = None): Boolean =
     meta.agg.aggregateExpressions.exists {
       case e: AggregateExpression if desiredMode.forall(_ == e.mode) =>
         e.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]]
       case _ => false
     }
-  }
 
-  private def createCpuGpuProjection(mergeMeta: GpuBaseAggregateMeta[_],
-      partialMeta: GpuBaseAggregateMeta[_],
-      fromCpuToGpu: Boolean): Projection = {
+  private def createCpuGpuConversion(mergeAggMeta: GpuBaseAggregateMeta[_],
+      partialAggMeta: GpuBaseAggregateMeta[_],
+      fromCpuToGpu: Boolean): Seq[NamedExpression] = {
 
     val converters = mutable.Queue[Either[
         CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter]]()
-    mergeMeta.childExprs.foreach {
-      case e if e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
+    mergeAggMeta.childExprs.foreach {
+      case e if e.childExprs.length == 1 &&
+          e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
         e.wrapped.asInstanceOf[AggregateExpression].mode match {
           case Final | PartialMerge =>
             val typImpAggMeta = e.childExprs.head.asInstanceOf[TypedImperativeAggExprMeta[_]]
@@ -1179,18 +1187,28 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
       case _ =>
     }
 
-    val expressions = partialMeta.resultExpressions.map {
+    val expressions = partialAggMeta.resultExpressions.map {
       case retExpr if retExpr.typeMeta.typeConverted =>
-        val attrRef = retExpr.wrapped.asInstanceOf[NamedExpression].toAttribute
+        val resultExpr = retExpr.wrapped.asInstanceOf[AttributeReference]
+        val ref = if (fromCpuToGpu) {
+          resultExpr
+        } else {
+          resultExpr.copy(dataType = retExpr.typeMeta.dataType.get)(
+            resultExpr.exprId, resultExpr.qualifier)
+        }
         converters.dequeue() match {
-          case Left(converter) => converter.createExpression(attrRef)
-          case Right(converter) => converter.createExpression(attrRef)
+          case Left(converter) =>
+            ShimLoader.getSparkShims.alias(converter.createExpression(ref),
+              ref.name + "_converted")(NamedExpression.newExprId)
+          case Right(converter) =>
+            ShimLoader.getSparkShims.alias(converter.createExpression(ref),
+              ref.name + "_converted")(NamedExpression.newExprId)
         }
       case retExpr =>
-        retExpr.wrapped.asInstanceOf[NamedExpression].toAttribute
+        retExpr.wrapped.asInstanceOf[NamedExpression]
     }
 
-    UnsafeProjection.create(expressions)
+    expressions
   }
 
   private def getAggregateOfAllStages(

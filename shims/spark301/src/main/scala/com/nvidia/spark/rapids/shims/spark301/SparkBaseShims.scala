@@ -490,7 +490,7 @@ abstract class SparkBaseShims extends SparkShims {
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
       exportColumnRdd: Boolean,
-      postTransition: Option[Projection]): GpuColumnarToRowExecParent = {
+      postTransition: Option[Seq[NamedExpression]]): GpuColumnarToRowExecParent = {
     GpuColumnarToRowExec(plan, exportColumnRdd, postTransition)
   }
 

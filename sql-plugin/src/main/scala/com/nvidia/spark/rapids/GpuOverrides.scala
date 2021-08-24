@@ -3183,21 +3183,31 @@ object GpuOverrides {
     exec[CustomShuffleReaderExec](
       "A wrapper of shuffle query stage",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-        TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+          TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (exec, conf, p, r) =>
-      new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
-        override def tagPlanForGpu(): Unit = {
-          if (!exec.child.supportsColumnar) {
-            willNotWorkOnGpu(
-              "Unable to replace CustomShuffleReader due to child not being columnar")
+        new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
+          override def tagPlanForGpu(): Unit = {
+            if (!exec.child.supportsColumnar) {
+              willNotWorkOnGpu(
+                "Unable to replace CustomShuffleReader due to child not being columnar")
+            }
+            val shuffleEx = exec.child.asInstanceOf[ShuffleQueryStageExec].plan
+            shuffleEx.getTagValue(GpuOverrides.preRowToColumnarTransition).foreach { r2c =>
+              wrapped.setTagValue(GpuOverrides.preRowToColumnarTransition, r2c)
+            }
           }
-        }
 
-        override def convertToGpu(): GpuExec = {
-          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
-            exec.partitionSpecs)
-        }
-      }),
+          override def convertToGpu(): GpuExec = {
+            GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
+              exec.partitionSpecs)
+          }
+
+          override def outputAttributes: Seq[Attribute] = {
+            val shuffleEx = exec.child.asInstanceOf[ShuffleQueryStageExec].plan
+            shuffleEx.getTagValue(GpuOverrides.shuffleExOutputAttributes)
+                .getOrElse(shuffleEx.output)
+          }
+        }),
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",
@@ -3239,11 +3249,14 @@ object GpuOverrides {
     }
   }
 
-  val preRowToColumnarTransition = TreeNodeTag[Projection](
+  val preRowToColumnarTransition = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.preRowToColumnarTransition")
-  val postColumnarToRowTransition = TreeNodeTag[Projection](
+
+  val postColumnarToRowTransition = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.postColumnarToRowTransition")
 
+  val shuffleExOutputAttributes = TreeNodeTag[Seq[Attribute]](
+    "rapids.gpu.shuffleExOutputAttributes")
 }
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {

@@ -21,11 +21,11 @@ import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Projection, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
@@ -267,13 +267,16 @@ object CudfRowTransitions {
 
 abstract class GpuColumnarToRowExecParent(child: SparkPlan,
     val exportColumnarRdd: Boolean,
-    val postTransition: Option[Projection])
+    val postTransition: Option[Seq[NamedExpression]])
     extends UnaryExecNode with GpuExec {
   import GpuMetric._
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 
-  override def output: Seq[Attribute] = child.output
+  override def output: Seq[Attribute] = postTransition match {
+    case Some(transitions) => transitions.map(_.toAttribute)
+    case None => child.output
+  }
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
@@ -304,8 +307,9 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan,
     }
 
     postTransition match {
-      case Some(projection) =>
+      case Some(transformations) =>
         rdata.mapPartitionsWithIndex { case (index, iterator) =>
+          val projection = UnsafeProjection.create(transformations, child.output)
           projection.initialize(index)
           iterator.map(projection)
         }
@@ -351,5 +355,5 @@ object GpuColumnarToRowExecParent {
 
 case class GpuColumnarToRowExec(child: SparkPlan,
     override val exportColumnarRdd: Boolean = false,
-    override val postTransition: Option[Projection] = None)
+    override val postTransition: Option[Seq[NamedExpression]] = None)
     extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postTransition)

@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
+import org.apache.spark.sql.rapids.GpuShuffleDependency
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
@@ -86,6 +86,10 @@ class GpuShuffleMeta(
                   s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")
             }
       case _ =>
+    }
+
+    if (wrapped.getTagValue(GpuOverrides.shuffleExOutputAttributes).isEmpty) {
+      wrapped.setTagValue(GpuOverrides.shuffleExOutputAttributes, outputAttributes)
     }
   }
 

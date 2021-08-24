@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, Spa
 import com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
-import org.apache.spark.sql.catalyst.expressions.Projection
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
@@ -69,7 +69,8 @@ class Spark311CDHShims extends Spark311Shims {
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean, postTransition: Option[Projection]): GpuColumnarToRowExecParent = {
+      exportColumnRdd: Boolean,
+      postTransition: Option[Seq[NamedExpression]]): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {

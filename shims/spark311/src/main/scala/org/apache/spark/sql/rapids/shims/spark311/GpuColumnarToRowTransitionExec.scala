@@ -18,11 +18,11 @@ package org.apache.spark.sql.rapids.shims.spark311
 
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent
 
-import org.apache.spark.sql.catalyst.expressions.Projection
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 
 case class GpuColumnarToRowTransitionExec(child: SparkPlan,
     override val exportColumnarRdd: Boolean = false,
-    override val postTransition: Option[Projection] = None)
+    override val postTransition: Option[Seq[NamedExpression]] = None)
     extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postTransition)
         with ColumnarToRowTransition
