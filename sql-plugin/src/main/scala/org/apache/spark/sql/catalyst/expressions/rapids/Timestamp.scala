@@ -27,7 +27,7 @@ object TimeStamp {
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[GetTimestamp](
       "Gets timestamps from strings using given pattern.",
-      ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("timeExp",
             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP,
             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP),

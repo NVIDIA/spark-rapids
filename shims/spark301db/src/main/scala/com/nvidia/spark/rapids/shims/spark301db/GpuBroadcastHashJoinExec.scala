@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.rapids.execution.{GpuHashJoin, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuBroadcastHashJoinMeta(
@@ -44,11 +44,10 @@ class GpuBroadcastHashJoinMeta(
   val condition: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    Map("leftKeys" -> leftKeys, "rightKeys" -> rightKeys)
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
 
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)

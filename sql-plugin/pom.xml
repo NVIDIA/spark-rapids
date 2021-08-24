@@ -90,6 +90,26 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+        <profile>
+            <id>with-classifier</id>
+            <activation>
+                <property><name>buildver</name></property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <configuration>
+                            <classifier>${spark.version.classifier}</classifier>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
     <build>
         <resources>
           <resource>

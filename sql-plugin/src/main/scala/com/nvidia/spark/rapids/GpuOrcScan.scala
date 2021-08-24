@@ -58,7 +58,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{Decimal, DecimalType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -381,6 +381,55 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     rawOut.write(postScriptLength.toInt)
   }
 
+  protected def getPrecisionsList(types: Seq[TypeDescription]): Seq[Int] = {
+    types.flatMap { t =>
+      t.getCategory match {
+        case TypeDescription.Category.DECIMAL => Seq(t.getPrecision)
+        case c if !c.isPrimitive => getPrecisionsList(t.getChildren.asScala)
+        case _ => Seq.empty[Int]
+      }
+    }
+  }
+
+  /**
+   * Cast columns with precision that can be stored in an int to DECIMAL32, to save space.
+   *
+   * @param table the input table, will be closed after returning.
+   * @param schema the schema of the table
+   * @param readSchema the read schema from Spark
+   * @return a new table with cast columns
+   */
+  protected def typeCastForDecimalIfNeededAndClose(table: Table, schema: Seq[TypeDescription],
+      readSchema: StructType): Table = {
+    assert(table.getNumberOfColumns == schema.length)
+    // 'readSchema' may have more columns than 'schema', but for now ORC reader does not support
+    // this case, being tracked by the issue: https://github.com/NVIDIA/spark-rapids/issues/3058.
+    assert(table.getNumberOfColumns == readSchema.length)
+
+    // check if there are cols with precision that can be stored in an int
+    val typeCastingNeeded = getPrecisionsList(schema).exists(p => p <= Decimal.MAX_INT_DIGITS)
+    if (typeCastingNeeded) {
+      withResource(table) { t =>
+        withResource(new Array[ColumnVector](t.getNumberOfColumns)) { newCols =>
+          (0 until t.getNumberOfColumns).foreach { id =>
+            val readField = readSchema(id)
+            val origCol = t.getColumn(id)
+            val newCol = ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol,
+              readField.dataType,
+              (dt, cv) => cv.getType.isDecimalType &&
+                !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
+              (dt, cv) =>
+                cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType])))
+            newCols(id) = newCol
+          }
+          new Table(newCols: _*)
+        }
+      }
+    } else {
+      table
+    }
+  }
+
 }
 
 /**
@@ -630,7 +679,9 @@ class GpuOrcPartitionReader(
               s"but read $numColumns from $partFile")
         }
         metrics(NUM_OUTPUT_BATCHES) += 1
-        Some(table)
+        val colTypes = ctx.updatedReadSchema.getChildren.asScala.toArray
+        val tableSchema = ctx.requestedMapping.map(_.map(colTypes(_))).getOrElse(colTypes)
+        Some(typeCastForDecimalIfNeededAndClose(table, tableSchema, readDataSchema))
       }
     } finally {
       if (dataBuffer != null) {
@@ -1398,7 +1449,9 @@ class MultiFileCloudOrcPartitionReader(
       }
 
       metrics(NUM_OUTPUT_BATCHES) += 1
-      Some(table)
+      val colTypes = updatedReadSchema.getChildren.asScala.toArray
+      val tableSchema = requestedMapping.map(_.map(colTypes(_))).getOrElse(colTypes)
+      Some(typeCastForDecimalIfNeededAndClose(table, tableSchema, readDataSchema))
     }
 
     withResource(table) { _ =>
@@ -1777,7 +1830,9 @@ class MultiFileOrcPartitionReader(
     }
 
     metrics(NUM_OUTPUT_BATCHES) += 1
-    table
+    val colTypes = clippedSchema.getChildren.asScala.toArray
+    val tableSchema = extraInfo.requestedMapping.map(_.map(colTypes(_))).getOrElse(colTypes)
+    typeCastForDecimalIfNeededAndClose(table, tableSchema, readDataSchema)
   }
 
   /**
