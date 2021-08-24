@@ -74,6 +74,7 @@ CATALYSTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--sql--catalyst--catalyst
 ANNOTJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--tags--tags-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 COREJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--core--core-hive-2.3__hadoop-2.7_${SCALA_VERSION}_deploy.jar
 COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_VERSION}.pom
+HIVEJAR=----workspace_spark_3_1--sql--hive--hive_2.12_deploy_shaded.jar
 COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_VERSION}
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
@@ -83,6 +84,14 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar \
    -DpomFile=$COREPOMPATH/$COREPOM
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$HIVEJAR\
+   -DgroupId=org.apache.spark \
+   -DartifactId=spark-hive_$SCALA_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \

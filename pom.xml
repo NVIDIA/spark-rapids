@@ -169,6 +169,21 @@
             </properties>
         </profile>
         <profile>
+            <id>release311db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311db</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version.classifier>spark311-databricks</spark.version.classifier>
+                <spark.version>${spark311db.version}</spark.version>
+                <spark.test.version>${spark311db.version}</spark.test.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+            </properties>
+        </profile>
+        <profile>
             <id>release312</id>
             <activation>
                 <property>
@@ -822,10 +837,6 @@
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
-        </repository>
-        <repository>
-            <id>cloudera-repo</id>
-            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
         </repository>
     </repositories>
 </project>

@@ -107,7 +107,7 @@
         <profile>
             <id>databricks311</id>
             <modules>
-                <module>spark311db</module>
+                <module>spark311-databricks</module>
                 <module>spark301</module>
                 <module>spark302</module>
                 <module>spark303</module>
