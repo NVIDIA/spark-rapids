@@ -26,7 +26,7 @@
     <version>21.10.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <url>https://github.com/NVIDIA</url>
+    <url>https://nvidia.github.io/spark-rapids/</url>
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
