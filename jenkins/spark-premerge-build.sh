@@ -96,7 +96,7 @@ unit_test() {
     # TODO: this function should be named as 'integration_test()' but it would break backward compatibility. Need find a way to fix this.
     echo "Run integration testings..."
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
-    TEST_TAGS="not slow_test" TEST_TYPE="pre-commit" TEST_PARALLEL=5 ./integration_tests/run_pyspark_from_build.sh
+    TEST_TAGS="not slow_test" TEST_TYPE="pre-commit" TEST_PARALLEL=4 ./integration_tests/run_pyspark_from_build.sh
 }
 
 
