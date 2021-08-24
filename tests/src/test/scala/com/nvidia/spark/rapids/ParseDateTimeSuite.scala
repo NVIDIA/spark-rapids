@@ -357,16 +357,22 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     }
   }
 
-  test("literals: ensure current_time is correct") {
+  test("literals: ensure time literals are correct") {
     val conf = new SparkConf()
     val df = withGpuSparkSession(spark => {
-      spark.sql("SELECT current_date()")
+      spark.sql("SELECT current_date(), current_timestamp(), now() FROM RANGE(1, 10)")
     }, conf)
-    val time = df.collect().head.getDate(0).getTime()
-    val systemCurrentTime = System.currentTimeMillis()
-    val diff = systemCurrentTime - time
 
-    assert(diff.abs <= 8.64E7)
+    val times = df.collect()
+    val systemCurrentTime = System.currentTimeMillis()
+    val res = times.forall(time => {
+      val diffDate = systemCurrentTime - time.getDate(0).getTime()
+      val diffTimestamp = systemCurrentTime - time.getTimestamp(1).getTime()
+      val diffNow = systemCurrentTime - time.getTimestamp(2).getTime()
+      diffDate.abs <= 8.64E7 & diffTimestamp.abs <= 1000 & diffNow.abs <= 1000
+    })
+
+    assert(res)
   }
 
   private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {
