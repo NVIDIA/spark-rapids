@@ -470,11 +470,11 @@ We can input multiple Spark event logs and this tool can compare environments, e
 
 - Compare the durations/versions/gpuMode on or off:
 
-### A. Information Collected ###
-
-- Application Information:
 
 ```
+### A. Information Collected ###
+Application Information:
+
 +--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
 |appIndex|appName    |appId                  |sparkUser|startTime    |endTime      |duration|durationStr|sparkVersion|pluginEnabled|
 +--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
@@ -696,9 +696,9 @@ Below we will aggregate the task level metrics at different levels to do some an
 
 - Job + Stage level aggregated task metrics:
 
+```
 ### B. Analysis ###
 
-```
 Job + Stage level aggregated task metrics:
 +--------+-------+--------+--------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
 |appIndex|ID     |numTasks|Duration|diskBytesSpilled_sum|duration_sum|duration_max|duration_min|duration_avg|executorCPUTime_sum|executorDeserializeCPUTime_sum|executorDeserializeTime_sum|executorRunTime_sum|gettingResultTime_sum|input_bytesRead_sum|input_recordsRead_sum|jvmGCTime_sum|memoryBytesSpilled_sum|output_bytesWritten_sum|output_recordsWritten_sum|peakExecutionMemory_max|resultSerializationTime_sum|resultSize_max|sr_fetchWaitTime_sum|sr_localBlocksFetched_sum|sr_localBytesRead_sum|sr_remoteBlocksFetched_sum|sr_remoteBytesRead_sum|sr_remoteBytesReadToDisk_sum|sr_totalBytesRead_sum|sw_bytesWritten_sum|sw_recordsWritten_sum|sw_writeTime_sum|
