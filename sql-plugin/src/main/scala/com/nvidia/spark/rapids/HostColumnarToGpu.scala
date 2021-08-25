@@ -16,12 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import java.{util => ju}
 import java.nio.ByteBuffer
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import java.{util => ju}
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
@@ -30,7 +31,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
@@ -376,7 +377,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
  * Put columnar formatted data on the GPU.
  */
 case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
-  extends UnaryExecNode
+  extends ShimUnaryExecNode
   with GpuExec {
   import GpuMetric._
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

@@ -21,15 +21,22 @@ import org.apache.spark.sql.catalyst.plans.logical.Command
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
 
 trait ShimExpression extends Expression
+
 trait ShimUnaryExpression extends UnaryExpression
+
 trait ShimBinaryExpression extends BinaryExpression
-trait ShimSparkPlan extends SparkPlan
-trait ShimUnaryExecNode extends UnaryExecNode
-trait ShimBinaryExecNode extends BinaryExecNode
+
 trait ShimTernaryExpression extends TernaryExpression {
   def first: Expression
   def second: Expression
   def third: Expression
   final def children: Seq[Expression] = IndexedSeq(first, second, third)
 }
+
+trait ShimSparkPlan extends SparkPlan
+
+trait ShimUnaryExecNode extends UnaryExecNode
+
+trait ShimBinaryExecNode extends BinaryExecNode
+
 trait ShimUnaryCommand extends Command

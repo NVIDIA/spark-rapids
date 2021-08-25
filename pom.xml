@@ -577,7 +577,7 @@
                             <phase>generate-sources</phase>
                             <configuration>
                                 <sources>
-                                    <source>${project.basedir}/src/main-${buildver}/scala</source>
+                                    <source>${project.basedir}/src/main-301/scala</source>
                                 </sources>
                             </configuration>
                         </execution>

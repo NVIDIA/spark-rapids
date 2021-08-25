@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.sql.{ShimExpression, ShimTernaryExpression}
+import com.nvidia.spark.rapids.shims.sql.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -178,7 +178,7 @@ abstract class GpuUnevaluableUnaryExpression extends GpuUnaryExpression with Gpu
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
+abstract class GpuUnaryExpression extends ShimUnaryExpression with GpuExpression {
   protected def doColumnar(input: GpuColumnVector): ColumnVector
 
   def outputTypeOverride: DType = null
@@ -236,7 +236,7 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
   }
 }
 
-trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
+trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
 
   def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector
   def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector

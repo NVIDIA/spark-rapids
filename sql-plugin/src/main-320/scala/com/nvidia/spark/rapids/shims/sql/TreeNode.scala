@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.sql
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
@@ -36,6 +36,16 @@ trait ShimBinaryExpression extends BinaryExpression {
     legacyWithNewChildren(Seq(newLeft, newRight))
 }
 
+trait ShimTernaryExpression extends TernaryExpression {
+  override def withNewChildrenInternal(
+      newFirst: Expression,
+      newSecond: Expression,
+      newThird: Expression
+  ): Expression = {
+    legacyWithNewChildren(Seq(newFirst, newSecond, newThird))
+  }
+}
+
 trait ShimSparkPlan extends SparkPlan {
   override def withNewChildrenInternal(newChildren: IndexedSeq[SparkPlan]): SparkPlan = {
     legacyWithNewChildren(newChildren)
@@ -51,16 +61,6 @@ trait ShimUnaryExecNode extends UnaryExecNode {
 trait ShimBinaryExecNode extends BinaryExecNode {
   override def withNewChildrenInternal(newLeft: SparkPlan, newRight: SparkPlan): SparkPlan = {
     legacyWithNewChildren(Seq(newLeft, newRight))
-  }
-}
-
-trait ShimTernaryExpression extends TernaryExpression {
-  override def withNewChildrenInternal(
-      newFirst: Expression,
-      newSecond: Expression,
-      newThird: Expression
-  ): Expression = {
-    legacyWithNewChildren(Seq(newFirst, newSecond, newThird))
   }
 }
 

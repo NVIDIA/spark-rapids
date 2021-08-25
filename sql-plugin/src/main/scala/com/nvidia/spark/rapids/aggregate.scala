@@ -16,14 +16,14 @@
 
 package com.nvidia.spark.rapids
 
-import java.util
-
 import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import java.util
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -36,7 +36,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateExpression}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -1226,7 +1226,7 @@ case class GpuHashAggregateExec(
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan,
-    configuredTargetBatchSize: Long) extends UnaryExecNode with GpuExec with Arm {
+    configuredTargetBatchSize: Long) extends ShimUnaryExecNode with GpuExec with Arm {
   private lazy val uniqueModes: Seq[AggregateMode] = aggregateExpressions.map(_.mode).distinct
 
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
