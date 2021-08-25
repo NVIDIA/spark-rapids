@@ -47,8 +47,8 @@ ai.rapids.cudf.CudaException: forward compatibility was attempted on non support
         at com.nvidia.spark.rapids.GpuDeviceManager$.findGpuAndAcquire(GpuDeviceManager.scala:78)
 ```
 
-More information about cards that support forward compatability can be found
-[here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#faq)
+More information about cards that support forward compatibility can be found
+[here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#faq).
 
 ### How can I check if the RAPIDS Accelerator is installed and which version is running?
 
