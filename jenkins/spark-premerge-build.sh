@@ -111,6 +111,13 @@ MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 
+# If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
+# Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
+M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
+if [ -s "$M2_CACHE_TAR" ] ; then
+    tar xvf $M2_CACHE_TAR -C ~/
+fi
+
 # Download a full version of spark
 $MVN_GET_CMD \
     -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
