@@ -310,7 +310,10 @@ for [Downloading Apache Spark 3.x](http://spark.apache.org/downloads.html)
 
 ### Profiling tool functions
 
-#### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
+#### A. Collect Information or Compare Information
+
+Note: Compare mode is enabled by `-c` option if more than 1 event logs are as input.
+
 - Application information
 - Executors information
 - Rapids related parameters
