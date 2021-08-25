@@ -16,7 +16,7 @@ GPU generated event logs.
 This document covers below topics:
 
 * TOC
-  {:toc}
+{:toc}
       
 ## Prerequisites
 - Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
