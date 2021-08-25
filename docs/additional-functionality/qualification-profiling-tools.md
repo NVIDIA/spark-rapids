@@ -15,20 +15,8 @@ GPU generated event logs.
 
 This document covers below topics:
 
-* [Prerequisites](#Prerequisites)
-* [Download the tools jar or compile it](#Download-the-tools-jar-or-compile-it)
-* [Qualification Tool](#Qualification-Tool)
-    * [Qualification tool functions](#Qualification-tool-functions)
-    * [Download the Spark 3 distribution](#Download-the-Spark-3-distribution)
-    * [How to use qualification tool](#How-to-use-qualification-tool)
-    * [Qualification tool options](#Qualification-tool-options)
-    * [Qualification tool output](#Qualification-tool-output)
-* [Profiling Tool](#Profiling-Tool)
-    * [Profiling tool functions](#Profiling-tool-functions)
-    * [Profiling tool metrics definitions](#Profiling-tool-metrics-definitions)
-    * [How to use profiling tool](#How-to-use-profiling-tool)
-    * [Profiling tool options](#Profiling-tool-options)
-    * [Profiling tool output](#Profiling-tool-output)
+* TOC
+  {:toc}
       
 ## Prerequisites
 - Spark 3.0.1 or newer, the Qualification tool just needs the Spark jars and the Profiling tool
