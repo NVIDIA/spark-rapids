@@ -53,7 +53,8 @@ import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
-import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExecMeta, GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuPythonUDF, GpuWindowInPandasExecMetaBase}
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.shims.spark301emr._
 import org.apache.spark.sql.rapids.shims.spark301emr.{GpuSchemaUtils, ShuffleManagerShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._

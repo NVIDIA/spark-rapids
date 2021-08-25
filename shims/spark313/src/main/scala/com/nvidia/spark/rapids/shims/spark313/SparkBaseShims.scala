@@ -53,7 +53,8 @@ import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
-import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.shims.spark313._
 import org.apache.spark.sql.rapids.shims.spark313._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
