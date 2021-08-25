@@ -1122,8 +1122,16 @@ abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
    */
   def aggBufferAttribute: AttributeReference
 
+  /**
+   * Returns a buffer converter who can generate a Expression to transform the aggregation
+   * buffer of wrapped function from CPU format to GPU format.
+   */
   def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter
 
+  /**
+   * Returns a buffer converter who can generate a Expression to transform the aggregation
+   * buffer of wrapped function from GPU format to CPU format.
+   */
   def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter
 }
 
