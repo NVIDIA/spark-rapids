@@ -21,7 +21,6 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -115,6 +114,7 @@ class GpuCartesianRDD(
     sc: SparkContext,
     boundCondition: Option[GpuExpression],
     numFirstTableColumns: Int,
+    streamAttributes: Seq[Attribute],
     spillCallback: SpillCallback,
     targetSize: Long,
     joinTime: GpuMetric,
@@ -186,9 +186,13 @@ class GpuCartesianRDD(
       }
 
       GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
-        Cross, numFirstTableColumns, batch, streamIterator, targetSize, GpuBuildLeft,
-        boundCondition, spillCallback, numOutputRows, joinOutputRows, numOutputBatches,
-        joinTime, totalTime)
+        Cross, GpuBuildLeft, numFirstTableColumns, batch, streamIterator, streamAttributes,
+        targetSize, boundCondition, spillCallback,
+        numOutputRows = numOutputRows,
+        joinOutputRows = joinOutputRows,
+        numOutputBatches = numOutputBatches,
+        joinTime = joinTime,
+        totalTime = totalTime)
     }
   }
 
@@ -273,6 +277,7 @@ case class GpuCartesianProductExec(
       new GpuCartesianRDD(sparkContext,
         boundCondition,
         numFirstTableColumns,
+        right.output,
         spillCallback,
         targetSizeBytes,
         joinTime,

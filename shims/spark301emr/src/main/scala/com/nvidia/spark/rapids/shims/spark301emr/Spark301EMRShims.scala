@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,9 @@ package com.nvidia.spark.rapids.shims.spark301emr
 import java.lang.reflect.Constructor
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark301.Spark301Shims
 import com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager
 
-class Spark301EMRShims extends Spark301Shims {
+class Spark301EMRShims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 

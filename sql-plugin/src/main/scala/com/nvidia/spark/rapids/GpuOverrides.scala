@@ -53,7 +53,7 @@ import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, GpuShuffleMeta}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, GpuShuffleMeta, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -766,7 +766,7 @@ object GpuOverrides {
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.ARRAY +
           TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT +
-          TypeSig.ARRAY).nested(),
+          TypeSig.ARRAY + TypeSig.MAP).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
@@ -778,7 +778,8 @@ object GpuOverrides {
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
       "Holds a static value from the query",
-      ExprChecks.projectNotLambda(
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.CALENDAR
             + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
             .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
@@ -793,7 +794,8 @@ object GpuOverrides {
       }),
     expr[Alias](
       "Gives a column a name",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
             + TypeSig.DECIMAL_64).nested(),
         TypeSig.all),
@@ -803,8 +805,11 @@ object GpuOverrides {
       }),
     expr[AttributeReference](
       "References an input column",
-      ExprChecks.projectNotLambda((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP +
-                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes,
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+        TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         // This is the only NOOP operator.  It goes away when things are bound
         override def convertToGpu(): Expression = att
@@ -816,19 +821,17 @@ object GpuOverrides {
             super.print(append, depth, all)
           }
         }
-
-        override def tagSelfForAst(): Unit = {}
       }),
     expr[PromotePrecision](
       "PromotePrecision before arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.DECIMAL_64,
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_64,
         TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
       }),
     expr[CheckOverflow](
       "CheckOverflow after arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.DECIMAL_64,
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_64,
         TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[CheckOverflow](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -973,7 +976,7 @@ object GpuOverrides {
     expr[PreciseTimestampConversion](
       "Expression used internally to convert the TimestampType to Long and back without losing " +
           "precision, i.e. in microseconds. Used in time windowing.",
-      ExprChecks.unaryProjectNotLambda(
+      ExprChecks.unaryProject(
         TypeSig.TIMESTAMP + TypeSig.LONG,
         TypeSig.TIMESTAMP + TypeSig.LONG,
         TypeSig.TIMESTAMP + TypeSig.LONG,
@@ -984,15 +987,17 @@ object GpuOverrides {
       }),
     expr[UnaryMinus](
       "Negate a numeric value",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes,
         TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
-      (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryMinus(child)
       }),
     expr[UnaryPositive](
       "A numeric value with a + in front of it",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.astTypes,
         TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
@@ -1000,50 +1005,50 @@ object GpuOverrides {
       }),
     expr[Year](
       "Returns the year from a date or timestamp",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[Year](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuYear(child)
       }),
     expr[Month](
       "Returns the month from a date or timestamp",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[Month](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuMonth(child)
       }),
     expr[Quarter](
       "Returns the quarter of the year for date, in the range 1 to 4",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[Quarter](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuQuarter(child)
       }),
     expr[DayOfMonth](
       "Returns the day of the month from a date or timestamp",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[DayOfMonth](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfMonth(child)
       }),
     expr[DayOfYear](
       "Returns the day of the year from a date or timestamp",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[DayOfYear](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfYear(child)
       }),
     expr[Abs](
       "Absolute value",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.gpuNumeric, TypeSig.numeric),
-      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) with AstImplicitCasts {
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child)
       }),
     expr[Acos](
       "Inverse cosine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Acos](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAcos(child)
       }),
     expr[Acosh](
       "Inverse hyperbolic cosine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Acosh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           if (conf.includeImprovedFloat) {
@@ -1054,13 +1059,13 @@ object GpuOverrides {
       }),
     expr[Asin](
       "Inverse sine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Asin](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAsin(child)
       }),
     expr[Asinh](
       "Inverse hyperbolic sine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Asinh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           if (conf.includeImprovedFloat) {
@@ -1080,19 +1085,19 @@ object GpuOverrides {
       }),
     expr[Sqrt](
       "Square root",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Sqrt](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuSqrt(child)
       }),
     expr[Cbrt](
       "Cube root",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Cbrt](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCbrt(child)
       }),
     expr[Floor](
       "Floor of a number",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectInputMatchesOutput(
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_64,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[Floor](a, conf, p, r) {
@@ -1100,7 +1105,7 @@ object GpuOverrides {
       }),
     expr[Ceil](
       "Ceiling of a number",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectInputMatchesOutput(
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_64,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[Ceil](a, conf, p, r) {
@@ -1108,13 +1113,14 @@ object GpuOverrides {
       }),
     expr[Not](
       "Boolean not operator",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.BOOLEAN, TypeSig.BOOLEAN),
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.astTypes, TypeSig.BOOLEAN, TypeSig.BOOLEAN),
       (a, conf, p, r) => new UnaryAstExprMeta[Not](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuNot(child)
       }),
     expr[IsNull](
       "Checks if a value is null",
-      ExprChecks.unaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
         TypeSig.all),
@@ -1123,7 +1129,7 @@ object GpuOverrides {
       }),
     expr[IsNotNull](
       "Checks if a value is not null",
-      ExprChecks.unaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
         TypeSig.all),
@@ -1132,27 +1138,27 @@ object GpuOverrides {
       }),
     expr[IsNaN](
       "Checks if a value is NaN",
-      ExprChecks.unaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         TypeSig.DOUBLE + TypeSig.FLOAT, TypeSig.DOUBLE + TypeSig.FLOAT),
       (a, conf, p, r) => new UnaryExprMeta[IsNaN](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNan(child)
       }),
     expr[Rint](
       "Rounds up a double value to the nearest double equal to an integer",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Rint](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuRint(child)
       }),
     expr[BitwiseNot](
       "Returns the bitwise NOT of the operands",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
-        TypeSig.integral, TypeSig.integral),
-      (a, conf, p, r) => new UnaryAstExprMeta[BitwiseNot](a, conf, p, r) with AstImplicitCasts {
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral),
+      (a, conf, p, r) => new UnaryAstExprMeta[BitwiseNot](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
       }),
     expr[AtLeastNNonNulls](
       "Checks if number of non null/Nan values is greater than a given value",
-      ExprChecks.projectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
@@ -1163,7 +1169,7 @@ object GpuOverrides {
       }),
     expr[DateAdd](
       "Returns the date that is num_days after start_date",
-      ExprChecks.binaryProjectNotLambda(TypeSig.DATE, TypeSig.DATE,
+      ExprChecks.binaryProject(TypeSig.DATE, TypeSig.DATE,
         ("startDate", TypeSig.DATE, TypeSig.DATE),
         ("days",
             TypeSig.INT + TypeSig.SHORT + TypeSig.BYTE,
@@ -1174,7 +1180,7 @@ object GpuOverrides {
       }),
     expr[DateSub](
       "Returns the date that is num_days before start_date",
-      ExprChecks.binaryProjectNotLambda(TypeSig.DATE, TypeSig.DATE,
+      ExprChecks.binaryProject(TypeSig.DATE, TypeSig.DATE,
         ("startDate", TypeSig.DATE, TypeSig.DATE),
         ("days",
             TypeSig.INT + TypeSig.SHORT + TypeSig.BYTE,
@@ -1185,7 +1191,7 @@ object GpuOverrides {
       }),
     expr[NaNvl](
       "Evaluates to `left` iff left is not NaN, `right` otherwise",
-      ExprChecks.binaryProjectNotLambda(TypeSig.fp, TypeSig.fp,
+      ExprChecks.binaryProject(TypeSig.fp, TypeSig.fp,
         ("lhs", TypeSig.fp, TypeSig.fp),
         ("rhs", TypeSig.fp, TypeSig.fp)),
       (a, conf, p, r) => new BinaryExprMeta[NaNvl](a, conf, p, r) {
@@ -1194,7 +1200,7 @@ object GpuOverrides {
       }),
     expr[ShiftLeft](
       "Bitwise shift left (<<)",
-      ExprChecks.binaryProjectNotLambda(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
+      ExprChecks.binaryProject(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
         ("value", TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG),
         ("amount", TypeSig.INT, TypeSig.INT)),
       (a, conf, p, r) => new BinaryExprMeta[ShiftLeft](a, conf, p, r) {
@@ -1203,7 +1209,7 @@ object GpuOverrides {
       }),
     expr[ShiftRight](
       "Bitwise shift right (>>)",
-      ExprChecks.binaryProjectNotLambda(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
+      ExprChecks.binaryProject(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
         ("value", TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG),
         ("amount", TypeSig.INT, TypeSig.INT)),
       (a, conf, p, r) => new BinaryExprMeta[ShiftRight](a, conf, p, r) {
@@ -1212,7 +1218,7 @@ object GpuOverrides {
       }),
     expr[ShiftRightUnsigned](
       "Bitwise unsigned shift right (>>>)",
-      ExprChecks.binaryProjectNotLambda(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
+      ExprChecks.binaryProject(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
         ("value", TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG),
         ("amount", TypeSig.INT, TypeSig.INT)),
       (a, conf, p, r) => new BinaryExprMeta[ShiftRightUnsigned](a, conf, p, r) {
@@ -1221,34 +1227,37 @@ object GpuOverrides {
       }),
     expr[BitwiseAnd](
       "Returns the bitwise AND of the operands",
-      ExprChecks.binaryProjectNotLambda(TypeSig.integral, TypeSig.integral,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral,
         ("lhs", TypeSig.integral, TypeSig.integral),
         ("rhs", TypeSig.integral, TypeSig.integral)),
-      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseAnd](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseAnd](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseAnd(lhs, rhs)
       }),
     expr[BitwiseOr](
       "Returns the bitwise OR of the operands",
-      ExprChecks.binaryProjectNotLambda(TypeSig.integral, TypeSig.integral,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral,
         ("lhs", TypeSig.integral, TypeSig.integral),
         ("rhs", TypeSig.integral, TypeSig.integral)),
-      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseOr](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseOr](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseOr(lhs, rhs)
       }),
     expr[BitwiseXor](
       "Returns the bitwise XOR of the operands",
-      ExprChecks.binaryProjectNotLambda(TypeSig.integral, TypeSig.integral,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes, TypeSig.integral, TypeSig.integral,
         ("lhs", TypeSig.integral, TypeSig.integral),
         ("rhs", TypeSig.integral, TypeSig.integral)),
-      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseXor](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new BinaryAstExprMeta[BitwiseXor](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuBitwiseXor(lhs, rhs)
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
-      ExprChecks.projectNotLambda(
+      ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
@@ -1259,7 +1268,7 @@ object GpuOverrides {
       }),
     expr[Least] (
       "Returns the least value of all parameters, skipping null values",
-      ExprChecks.projectNotLambda(
+      ExprChecks.projectOnly(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
@@ -1269,7 +1278,7 @@ object GpuOverrides {
       }),
     expr[Greatest] (
       "Returns the greatest value of all parameters, skipping null values",
-      ExprChecks.projectNotLambda(
+      ExprChecks.projectOnly(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
@@ -1279,38 +1288,38 @@ object GpuOverrides {
       }),
     expr[Atan](
       "Inverse tangent",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Atan](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAtan(child)
       }),
     expr[Atanh](
       "Inverse hyperbolic tangent",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Atanh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuAtanh(child)
       }),
     expr[Cos](
       "Cosine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Cos](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCos(child)
       }),
     expr[Exp](
       "Euler's number e raised to a power",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Exp](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuExp(child)
       }),
     expr[Expm1](
       "Euler's number e raised to a power minus 1",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Expm1](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuExpm1(child)
       }),
     expr[InitCap](
       "Returns str with the first letter of each word in uppercase. " +
       "All other letters are in lowercase",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[InitCap](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
       }).incompat(CASE_MODIFICATION_INCOMPAT),
@@ -1343,7 +1352,7 @@ object GpuOverrides {
       }),
     expr[Logarithm](
       "Log variable base",
-      ExprChecks.binaryProjectNotLambda(TypeSig.DOUBLE, TypeSig.DOUBLE,
+      ExprChecks.binaryProject(TypeSig.DOUBLE, TypeSig.DOUBLE,
         ("value", TypeSig.DOUBLE, TypeSig.DOUBLE),
         ("base", TypeSig.DOUBLE, TypeSig.DOUBLE)),
       (a, conf, p, r) => new BinaryExprMeta[Logarithm](a, conf, p, r) {
@@ -1353,43 +1362,43 @@ object GpuOverrides {
       }),
     expr[Sin](
       "Sine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Sin](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuSin(child)
       }),
     expr[Sinh](
       "Hyperbolic sine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Sinh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuSinh(child)
       }),
     expr[Cosh](
       "Hyperbolic cosine",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Cosh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCosh(child)
       }),
     expr[Cot](
       "Cotangent",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Cot](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuCot(child)
       }),
     expr[Tanh](
       "Hyperbolic tangent",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Tanh](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuTanh(child)
       }),
     expr[Tan](
       "Tangent",
-      ExprChecks.mathUnary,
+      ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Tan](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuTan(child)
       }),
     expr[NormalizeNaNAndZero](
       "Normalize NaN and zero",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectInputMatchesOutput(
         TypeSig.DOUBLE + TypeSig.FLOAT,
         TypeSig.DOUBLE + TypeSig.FLOAT),
       (a, conf, p, r) => new UnaryExprMeta[NormalizeNaNAndZero](a, conf, p, r) {
@@ -1398,7 +1407,7 @@ object GpuOverrides {
       }),
     expr[KnownFloatingPointNormalized](
       "Tag to prevent redundant normalization",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectInputMatchesOutput(
         TypeSig.DOUBLE + TypeSig.FLOAT,
         TypeSig.DOUBLE + TypeSig.FLOAT),
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
@@ -1407,7 +1416,7 @@ object GpuOverrides {
       }),
     expr[KnownNotNull](
       "Tag an expression as known to not be null",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(
+      ExprChecks.unaryProjectInputMatchesOutput(
         _notNullCudfTypes, TypeSig.all),
       (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -1415,7 +1424,7 @@ object GpuOverrides {
       }),
     expr[DateDiff](
       "Returns the number of days from startDate to endDate",
-      ExprChecks.binaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.binaryProject(TypeSig.INT, TypeSig.INT,
         ("lhs", TypeSig.DATE, TypeSig.DATE),
         ("rhs", TypeSig.DATE, TypeSig.DATE)),
       (a, conf, p, r) => new BinaryExprMeta[DateDiff](a, conf, p, r) {
@@ -1425,7 +1434,7 @@ object GpuOverrides {
     }),
     expr[TimeAdd](
       "Adds interval to timestamp",
-      ExprChecks.binaryProjectNotLambda(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
         ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("interval", TypeSig.lit(TypeEnum.CALENDAR)
           .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
@@ -1446,7 +1455,7 @@ object GpuOverrides {
     }),
     expr[DateAddInterval](
       "Adds interval to date",
-      ExprChecks.binaryProjectNotLambda(TypeSig.DATE, TypeSig.DATE,
+      ExprChecks.binaryProject(TypeSig.DATE, TypeSig.DATE,
         ("start", TypeSig.DATE, TypeSig.DATE),
         ("interval", TypeSig.lit(TypeEnum.CALENDAR)
           .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
@@ -1468,7 +1477,7 @@ object GpuOverrides {
         }),
     expr[DateFormatClass](
       "Converts timestamp to a value of string in the format specified by the date format",
-      ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
         ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("strfmt", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
@@ -1480,7 +1489,7 @@ object GpuOverrides {
     ),
     expr[ToUnixTimestamp](
       "Returns the UNIX timestamp of the given time",
-      ExprChecks.binaryProjectNotLambda(TypeSig.LONG, TypeSig.LONG,
+      ExprChecks.binaryProject(TypeSig.LONG, TypeSig.LONG,
         ("timeExp",
             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP,
             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP),
@@ -1499,7 +1508,7 @@ object GpuOverrides {
       }),
     expr[UnixTimestamp](
       "Returns the UNIX timestamp of current or specified time",
-      ExprChecks.binaryProjectNotLambda(TypeSig.LONG, TypeSig.LONG,
+      ExprChecks.binaryProject(TypeSig.LONG, TypeSig.LONG,
         ("timeExp",
             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP,
             TypeSig.STRING + TypeSig.DATE + TypeSig.TIMESTAMP),
@@ -1518,7 +1527,7 @@ object GpuOverrides {
       }),
     expr[Hour](
       "Returns the hour component of the string/timestamp",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -1529,7 +1538,7 @@ object GpuOverrides {
       }),
     expr[Minute](
       "Returns the minute component of the string/timestamp",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -1541,7 +1550,7 @@ object GpuOverrides {
       }),
     expr[Second](
       "Returns the second component of the string/timestamp",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -1553,7 +1562,7 @@ object GpuOverrides {
       }),
     expr[WeekDay](
       "Returns the day of the week (0 = Monday...6=Sunday)",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[WeekDay](a, conf, p, r) {
         override def convertToGpu(expr: Expression): GpuExpression =
@@ -1561,7 +1570,7 @@ object GpuOverrides {
       }),
     expr[DayOfWeek](
       "Returns the day of the week (1 = Sunday...7=Saturday)",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[DayOfWeek](a, conf, p, r) {
         override def convertToGpu(expr: Expression): GpuExpression =
@@ -1569,14 +1578,14 @@ object GpuOverrides {
       }),
     expr[LastDay](
       "Returns the last day of the month which the date belongs to",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.DATE, TypeSig.DATE),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[LastDay](a, conf, p, r) {
         override def convertToGpu(expr: Expression): GpuExpression =
           GpuLastDay(expr)
       }),
     expr[FromUnixTime](
       "Get the string from a unix timestamp",
-      ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
         ("sec", TypeSig.LONG, TypeSig.LONG),
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
@@ -1588,7 +1597,7 @@ object GpuOverrides {
       }),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProjectNotLambda(TypeSig.integral + TypeSig.fp, TypeSig.numeric,
+      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.numeric,
         ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric),
         ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
@@ -1597,34 +1606,37 @@ object GpuOverrides {
       }),
     expr[Add](
       "Addition",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes,
         TypeSig.gpuNumeric, TypeSig.numericAndInterval,
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
-      (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuAdd(lhs, rhs)
       }),
     expr[Subtract](
       "Subtraction",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes,
         TypeSig.gpuNumeric, TypeSig.numericAndInterval,
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
-      (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs)
       }),
     expr[Multiply](
       "Multiplication",
-      ExprChecks.binaryProjectNotLambda(TypeSig.gpuNumeric +
-          TypeSig.psNote(TypeEnum.DECIMAL,
-            "Because of Spark's inner workings the full range of decimal precision " +
-                "(even for 64-bit values) is not supported."),
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes,
+        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
+          "Because of Spark's inner workings the full range of decimal precision " +
+              "(even for 64-bit values) is not supported."),
         TypeSig.numeric,
         ("lhs", TypeSig.gpuNumeric, TypeSig.numeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numeric)),
-      (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // Multiplication of Decimal types is a little odd. Spark will cast the inputs
           // to a common wider value where scale is max of the two input scales, and precision is
@@ -1658,7 +1670,7 @@ object GpuOverrides {
       }),
     expr[And](
       "Logical AND",
-      ExprChecks.binaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[And](a, conf, p, r) {
@@ -1667,7 +1679,7 @@ object GpuOverrides {
       }),
     expr[Or](
       "Logical OR",
-      ExprChecks.binaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[Or](a, conf, p, r) {
@@ -1676,7 +1688,7 @@ object GpuOverrides {
       }),
     expr[EqualNullSafe](
       "Check if the values are equal including nulls <=>",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable)),
@@ -1686,37 +1698,40 @@ object GpuOverrides {
       }),
     expr[EqualTo](
       "Check if the values are equal",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable)),
-      (a, conf, p, r) => new BinaryAstCompareExprMeta[EqualTo](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[EqualTo](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
       }),
     expr[GreaterThan](
       "> operator",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryAstCompareExprMeta[GreaterThan](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[GreaterThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
       }),
     expr[GreaterThanOrEqual](
       ">= operator",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryAstCompareExprMeta[GreaterThanOrEqual](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
       }),
     expr[In](
       "IN operator",
-      ExprChecks.projectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         Seq(ParamCheck("value", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
           TypeSig.comparable)),
         Some(RepeatingParamCheck("list",
@@ -1738,7 +1753,7 @@ object GpuOverrides {
       }),
     expr[InSet](
       "INSET operator",
-      ExprChecks.unaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable),
       (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -1751,21 +1766,23 @@ object GpuOverrides {
       }),
     expr[LessThan](
       "< operator",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryAstCompareExprMeta[LessThan](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[LessThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
       }),
     expr[LessThanOrEqual](
       "<= operator",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
         ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
-      (a, conf, p, r) => new BinaryAstCompareExprMeta[LessThanOrEqual](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
       }),
@@ -1788,7 +1805,7 @@ object GpuOverrides {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectNotLambda(
+      ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
@@ -1806,17 +1823,17 @@ object GpuOverrides {
       }),
     expr[Pow](
       "lhs ^ rhs",
-      ExprChecks.binaryProjectNotLambda(
-        TypeSig.DOUBLE, TypeSig.DOUBLE,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes, TypeSig.DOUBLE, TypeSig.DOUBLE,
         ("lhs", TypeSig.DOUBLE, TypeSig.DOUBLE),
         ("rhs", TypeSig.DOUBLE, TypeSig.DOUBLE)),
-      (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) with AstImplicitCasts {
+      (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPow(lhs, rhs)
       }),
     expr[Divide](
       "Division",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.DOUBLE +
             TypeSig.psNote(TypeEnum.DECIMAL,
               "Because of Spark's inner workings the full range of decimal precision " +
@@ -1890,7 +1907,7 @@ object GpuOverrides {
       }),
     expr[IntegralDivide](
       "Division with a integer result",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.LONG, TypeSig.LONG,
         ("lhs", TypeSig.LONG + TypeSig.DECIMAL_64, TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
         ("rhs", TypeSig.LONG + TypeSig.DECIMAL_64, TypeSig.LONG + TypeSig.DECIMAL_128_FULL)),
@@ -1900,7 +1917,7 @@ object GpuOverrides {
       }),
     expr[Remainder](
       "Remainder or modulo",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.integral + TypeSig.fp, TypeSig.numeric,
         ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric),
         ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.numeric)),
@@ -2167,7 +2184,7 @@ object GpuOverrides {
       }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.gpuNumeric, TypeSig.numeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
@@ -2188,7 +2205,7 @@ object GpuOverrides {
       }),
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.gpuNumeric, TypeSig.numeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
@@ -2236,7 +2253,7 @@ object GpuOverrides {
         }),
     expr[Rand](
       "Generate a random column with i.i.d. uniformly distributed values in [0, 1)",
-      ExprChecks.projectNotLambda(TypeSig.DOUBLE, TypeSig.DOUBLE,
+      ExprChecks.projectOnly(TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("seed",
           (TypeSig.INT + TypeSig.LONG).withAllLit(),
           (TypeSig.INT + TypeSig.LONG).withAllLit()))),
@@ -2245,58 +2262,58 @@ object GpuOverrides {
       }),
     expr[SparkPartitionID] (
       "Returns the current partition id",
-      ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT),
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT),
       (a, conf, p, r) => new ExprMeta[SparkPartitionID](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuSparkPartitionID()
       }),
     expr[MonotonicallyIncreasingID] (
       "Returns monotonically increasing 64-bit integers",
-      ExprChecks.projectNotLambda(TypeSig.LONG, TypeSig.LONG),
+      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG),
       (a, conf, p, r) => new ExprMeta[MonotonicallyIncreasingID](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuMonotonicallyIncreasingID()
       }),
     expr[InputFileName] (
       "Returns the name of the file being read, or empty string if not available",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING),
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new ExprMeta[InputFileName](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuInputFileName()
       }),
     expr[InputFileBlockStart] (
       "Returns the start offset of the block being read, or -1 if not available",
-      ExprChecks.projectNotLambda(TypeSig.LONG, TypeSig.LONG),
+      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG),
       (a, conf, p, r) => new ExprMeta[InputFileBlockStart](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuInputFileBlockStart()
       }),
     expr[InputFileBlockLength] (
       "Returns the length of the block being read, or -1 if not available",
-      ExprChecks.projectNotLambda(TypeSig.LONG, TypeSig.LONG),
+      ExprChecks.projectOnly(TypeSig.LONG, TypeSig.LONG),
       (a, conf, p, r) => new ExprMeta[InputFileBlockLength](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
       }),
     expr[Md5] (
       "MD5 hash operator",
-      ExprChecks.unaryProjectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING,
         TypeSig.BINARY, TypeSig.BINARY),
       (a, conf, p, r) => new UnaryExprMeta[Md5](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
       }),
     expr[Upper](
       "String uppercase operator",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[Upper](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUpper(child)
       })
       .incompat(CASE_MODIFICATION_INCOMPAT),
     expr[Lower](
       "String lowercase operator",
-      ExprChecks.unaryProjectNotLambdaInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.STRING, TypeSig.STRING),
       (a, conf, p, r) => new UnaryExprMeta[Lower](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLower(child)
       })
       .incompat(CASE_MODIFICATION_INCOMPAT),
     expr[StringLPad](
       "Pad a string on the left",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("len", TypeSig.lit(TypeEnum.INT), TypeSig.INT),
           ParamCheck("pad", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
@@ -2317,7 +2334,7 @@ object GpuOverrides {
       }),
     expr[StringRPad](
       "Pad a string on the right",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("len", TypeSig.lit(TypeEnum.INT), TypeSig.INT),
           ParamCheck("pad", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
@@ -2338,7 +2355,7 @@ object GpuOverrides {
       }),
     expr[StringSplit](
        "Splits `str` around occurrences that match `regex`",
-      ExprChecks.projectNotLambda(TypeSig.ARRAY.nested(TypeSig.STRING),
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.STRING),
         TypeSig.ARRAY.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING)
@@ -2348,7 +2365,7 @@ object GpuOverrides {
       (in, conf, p, r) => new GpuStringSplitMeta(in, conf, p, r)),
     expr[GetStructField](
       "Gets the named field of the struct",
-      ExprChecks.unaryProjectNotLambda(
+      ExprChecks.unaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL +
             TypeSig.DECIMAL_64).nested(),
         TypeSig.all,
@@ -2361,7 +2378,7 @@ object GpuOverrides {
       }),
     expr[GetArrayItem](
       "Gets the field at `ordinal` in the Array",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
             TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
         TypeSig.all,
@@ -2372,14 +2389,14 @@ object GpuOverrides {
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
     expr[GetMapValue](
       "Gets Value from a Map based on a key",
-      ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.all,
         ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
         "Returns value for the given key in value if column is map.",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
           TypeSig.DECIMAL_64 + TypeSig.MAP).nested(), TypeSig.all,
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
@@ -2399,12 +2416,12 @@ object GpuOverrides {
           val checks = in.left.dataType match {
             case _: MapType =>
               // Match exactly with the checks for GetMapValue
-              ExprChecks.binaryProjectNotLambda(TypeSig.STRING, TypeSig.all,
+              ExprChecks.binaryProject(TypeSig.STRING, TypeSig.all,
                 ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
                 ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all))
             case _: ArrayType =>
               // Match exactly with the checks for GetArrayItem
-              ExprChecks.binaryProjectNotLambda(
+              ExprChecks.binaryProject(
                 (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
                   TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
                 TypeSig.all,
@@ -2431,7 +2448,7 @@ object GpuOverrides {
       }),
     expr[ArrayContains](
       "Returns a boolean if the array contains the passed in key",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.BOOLEAN,
         TypeSig.BOOLEAN,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
@@ -2462,7 +2479,7 @@ object GpuOverrides {
       }),
     expr[SortArray](
       "Returns a sorted array with the input array and the ascending / descending order",
-      ExprChecks.binaryProjectNotLambda(
+      ExprChecks.binaryProject(
         TypeSig.ARRAY.nested(_gpuCommonTypes),
         TypeSig.ARRAY.nested(TypeSig.all),
         ("array", TypeSig.ARRAY.nested(_gpuCommonTypes),
@@ -2476,7 +2493,7 @@ object GpuOverrides {
     ),
     expr[CreateArray](
       " Returns an array with the given elements",
-      ExprChecks.projectNotLambda(
+      ExprChecks.projectOnly(
         TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
             TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
@@ -2502,7 +2519,7 @@ object GpuOverrides {
       }),
     expr[StringLocate](
       "Substring search operator",
-      ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         Seq(ParamCheck("substr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("start", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
@@ -2515,7 +2532,7 @@ object GpuOverrides {
       }),
     expr[Substring](
       "Substring operator",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
           ParamCheck("pos", TypeSig.lit(TypeEnum.INT), TypeSig.INT),
           ParamCheck("len", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
@@ -2528,7 +2545,7 @@ object GpuOverrides {
       }),
     expr[SubstringIndex](
       "substring_index operator",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("delim", TypeSig.lit(TypeEnum.STRING)
               .withPsNote(TypeEnum.STRING, "only a single character is allowed"), TypeSig.STRING),
@@ -2537,7 +2554,7 @@ object GpuOverrides {
     expr[StringRepeat](
       "StringRepeat operator that repeats the given strings with numbers of times " +
         "given by repeatTimes",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("input", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("repeatTimes", TypeSig.INT, TypeSig.INT))),
       (in, conf, p, r) => new BinaryExprMeta[StringRepeat](in, conf, p, r) {
@@ -2547,7 +2564,7 @@ object GpuOverrides {
       }),
     expr[StringReplace](
       "StringReplace operator",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("src", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("replace", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
@@ -2560,7 +2577,7 @@ object GpuOverrides {
       }),
     expr[StringTrim](
       "StringTrim operator",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("src", TypeSig.STRING, TypeSig.STRING)),
         // Should really be an OptionalParam
         Some(RepeatingParamCheck("trimStr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
@@ -2572,7 +2589,7 @@ object GpuOverrides {
       }),
     expr[StringTrimLeft](
       "StringTrimLeft operator",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("src", TypeSig.STRING, TypeSig.STRING)),
         // Should really be an OptionalParam
         Some(RepeatingParamCheck("trimStr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
@@ -2585,7 +2602,7 @@ object GpuOverrides {
         }),
     expr[StringTrimRight](
       "StringTrimRight operator",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("src", TypeSig.STRING, TypeSig.STRING)),
         // Should really be an OptionalParam
         Some(RepeatingParamCheck("trimStr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
@@ -2598,7 +2615,7 @@ object GpuOverrides {
         }),
     expr[StartsWith](
       "Starts with",
-      ExprChecks.binaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("src", TypeSig.STRING, TypeSig.STRING),
         ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[StartsWith](a, conf, p, r) {
@@ -2607,7 +2624,7 @@ object GpuOverrides {
       }),
     expr[EndsWith](
       "Ends with",
-      ExprChecks.binaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("src", TypeSig.STRING, TypeSig.STRING),
         ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[EndsWith](a, conf, p, r) {
@@ -2616,7 +2633,7 @@ object GpuOverrides {
       }),
     expr[Concat](
       "List/String concatenate",
-      ExprChecks.projectNotLambda((TypeSig.STRING + TypeSig.ARRAY).nested(
+      ExprChecks.projectOnly((TypeSig.STRING + TypeSig.ARRAY).nested(
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
         (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("input",
@@ -2629,7 +2646,7 @@ object GpuOverrides {
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
         "string using a given separator",
-      ExprChecks.projectNotLambda(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING),
           (TypeSig.STRING + TypeSig.ARRAY).nested(TypeSig.STRING)))),
@@ -2647,7 +2664,7 @@ object GpuOverrides {
       }),
     expr[Murmur3Hash] (
       "Murmur3 hash operator",
-      ExprChecks.projectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
           TypeSig.all))),
@@ -2659,7 +2676,7 @@ object GpuOverrides {
       }),
     expr[Contains](
       "Contains",
-      ExprChecks.binaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("src", TypeSig.STRING, TypeSig.STRING),
         ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[Contains](a, conf, p, r) {
@@ -2668,7 +2685,7 @@ object GpuOverrides {
       }),
     expr[Like](
       "Like",
-      ExprChecks.binaryProjectNotLambda(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("src", TypeSig.STRING, TypeSig.STRING),
         ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
@@ -2677,14 +2694,14 @@ object GpuOverrides {
       }),
     expr[Length](
       "String character length or binary byte length",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
       (a, conf, p, r) => new UnaryExprMeta[Length](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
       }),
     expr[Size](
       "The size of an array or a map",
-      ExprChecks.unaryProjectNotLambda(TypeSig.INT, TypeSig.INT,
+      ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL
             + TypeSig.DECIMAL_64 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
@@ -2983,9 +3000,10 @@ object GpuOverrides {
     exec[DataWritingCommandExec](
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes +
-        TypeSig.DECIMAL_64.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
-        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
-        TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
+          TypeSig.DECIMAL_64.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
+          TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
+          TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
+          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =
@@ -3078,11 +3096,11 @@ object GpuOverrides {
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
-            + TypeSig.STRUCT + TypeSig.MAP)
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP +
+        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.MAP)
         .withPsNote(TypeEnum.STRUCT,
-          "unionByName will not optionally impute nulls for missing struct fields  " +
+          "unionByName will not optionally impute nulls for missing struct fields " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
       (union, conf, p, r) => new SparkPlanMeta[UnionExec](union, conf, p, r) {
         override def convertToGpu(): GpuExec =
@@ -3095,10 +3113,10 @@ object GpuOverrides {
         TypeSig.DECIMAL_64 + TypeSig.STRUCT), TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
-      "Implementation of join using brute force",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64),
-        TypeSig.all),
+      "Implementation of join using brute force. Full outer joins and joins where the " +
+          "broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not " +
+          "supported.",
+      JoinTypeChecks.nonEquiJoinChecks,
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
@@ -3172,11 +3190,11 @@ object GpuOverrides {
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",
-      ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-        Map("partitionSpec" -> (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)),
-        TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all,
+        Map("partitionSpec" ->
+            InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),
@@ -3298,9 +3316,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
     wrap.tagForGpu()
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
-    val exp = conf.explain
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
-      if (!exp.equalsIgnoreCase("NONE")) {
+      if (conf.shouldExplain) {
         logWarning("Can't replace any part of this plan due to: " +
             s"${reasonsToNotReplaceEntirePlan.mkString(",")}")
       }
@@ -3321,12 +3338,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         Seq.empty
       }
       wrap.runAfterTagRules()
-      if (!exp.equalsIgnoreCase("NONE")) {
+      if (conf.shouldExplain) {
         wrap.tagForExplain()
-        val explain = wrap.explain(exp.equalsIgnoreCase("ALL"))
+        val explain = wrap.explain(conf.shouldExplainAll)
         if (explain.nonEmpty) {
           logWarning(s"\n$explain")
-          if (conf.optimizerExplain.equalsIgnoreCase("ALL") && optimizations.nonEmpty) {
+          if (conf.optimizerShouldExplainAll && optimizations.nonEmpty) {
             logWarning(s"Cost-based optimizations applied:\n${optimizations.mkString("\n")}")
           }
         }

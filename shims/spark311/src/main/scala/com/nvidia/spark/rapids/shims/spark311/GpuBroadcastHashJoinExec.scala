@@ -17,11 +17,10 @@
 package com.nvidia.spark.rapids.shims.spark311
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark301.GpuBroadcastExchangeExec
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
@@ -29,12 +28,9 @@ import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.rapids.execution.{GpuHashJoin, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
 class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
@@ -49,10 +45,10 @@ class GpuBroadcastHashJoinMeta(
   val condition: Option[BaseExprMeta[_]] =
     join.condition.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
-  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
-
   override val namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] =
-    Map("leftKeys" -> leftKeys, "rightKeys" -> rightKeys)
+    JoinTypeChecks.equiJoinMeta(leftKeys, rightKeys, condition)
+
+  override val childExprs: Seq[BaseExprMeta[_]] = leftKeys ++ rightKeys ++ condition
 
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, join.leftKeys, join.rightKeys, join.condition)

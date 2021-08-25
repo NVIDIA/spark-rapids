@@ -20,18 +20,17 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, LambdaFunction, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
-import org.apache.spark.sql.types.{ByteType, DataType, DoubleType, FloatType, ShortType}
+import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
   val operationName: String
@@ -444,7 +443,7 @@ abstract class PartMeta[INPUT <: Partitioning](part: INPUT,
 }
 
 /**
- * Metadata for Partitioning]] with no rule found
+ * Metadata for Partitioning with no rule found
  */
 final class RuleNotFoundPartMeta[INPUT <: Partitioning](
     part: INPUT,
@@ -542,7 +541,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def tagForExplain(): Unit = {
     if (!canThisBeReplaced) {
-      childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu)
+      childExprs.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
@@ -554,6 +553,22 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
     }
     childPlans.foreach(_.tagForExplain())
+  }
+
+  def requireAstForGpuOn(exprMeta: BaseExprMeta[_]): Unit = {
+    // willNotWorkOnGpu does not deduplicate reasons. Most of the time that is fine
+    // but here we want to avoid adding the reason twice, because this method can be
+    // called multiple times, and also the reason can automatically be added in if
+    // a child expression would not work in the non-AST case either.
+    // So only add it if canExprTreeBeReplaced changed after requiring that the
+    // given expression is AST-able.
+    val previousExprReplaceVal = canExprTreeBeReplaced
+    exprMeta.requireAstForGpu()
+    val newExprReplaceVal = canExprTreeBeReplaced
+    if (previousExprReplaceVal != newExprReplaceVal &&
+        !newExprReplaceVal) {
+      willNotWorkOnGpu("not all expressions can be replaced")
+    }
   }
 
   override val childPlans: Seq[SparkPlanMeta[SparkPlan]] =
@@ -779,8 +794,17 @@ sealed abstract class ExpressionContext
 object ProjectExprContext extends ExpressionContext {
   override def toString: String = "project"
 }
-object LambdaExprContext extends ExpressionContext  {
-  override def toString: String = "lambda"
+/**
+ * This is a special context. All other contexts are determined by the Spark query in a generic way.
+ * AST support in many cases is an optimization and so it is tagged and checked after it is
+ * determined that this operation will run on the GPU. In other cases it is required. In those cases
+ * AST support is determined and used when tagging the metas to see if they will work on the GPU or
+ * not. This part is not done automatically.
+ */
+object AstExprContext extends ExpressionContext  {
+  override def toString: String = "AST"
+
+  val notSupportedMsg = "this expression does not support AST"
 }
 object GroupByAggExprContext extends ExpressionContext  {
   override def toString: String = "aggregation"
@@ -818,7 +842,6 @@ object ExpressionContext {
   }
 
   def getRegularOperatorContext(meta: RapidsMeta[_, _, _]): ExpressionContext = meta.wrapped match {
-    case _: LambdaFunction => LambdaExprContext
     case _: Expression if meta.parent.isDefined => getRegularOperatorContext(meta.parent.get)
     case _ => ProjectExprContext
   }
@@ -868,9 +891,6 @@ object DataTypeMeta {
   }
 }
 
-/** Trait to mark metadata for expressions that have AST implicit casting issues */
-trait AstImplicitCasts
-
 /**
  * Base class for metadata around `Expression`.
  */
@@ -918,7 +938,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
   private var overrideType: Option[DataType] = None
 
   lazy val context: ExpressionContext = expr match {
-    case _: LambdaFunction => LambdaExprContext
     case _: WindowExpression => WindowAggExprContext
     case _: WindowFunction => WindowAggExprContext
     case _: AggregateFunction => ExpressionContext.getAggregateFunctionContext(this)
@@ -943,33 +962,40 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   final def willNotWorkInAst(because: String): Unit = cannotBeAstReasons.add(because)
 
-  final def canThisBeAst: Boolean = childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
+  final def canThisBeAst: Boolean = {
+    tagForAst()
+    childExprs.forall(_.canThisBeAst) && cannotBeAstReasons.isEmpty
+  }
 
-  final def tagForAst(): Unit = {
-    if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
-      willNotWorkInAst(s"Cannot convert to AST. Is ConstantFolding excluded? Expression " +
-          s"$wrapped is foldable and operates on non literals")
+  final def requireAstForGpu(): Unit = {
+    tagForAst()
+    cannotBeAstReasons.foreach { reason =>
+      willNotWorkOnGpu(s"AST is required and $reason")
     }
+    childExprs.foreach(_.requireAstForGpu())
+  }
 
-    if (!TypeSig.astTypes.isSupportedByPlugin(wrapped.dataType, conf.decimalTypeEnabled)) {
-      willNotWorkInAst(s"${expr.dataType} not supported by AST expressions")
-    }
-
-    if (isInstanceOf[AstImplicitCasts]) {
-      wrapped.dataType match {
-        case ByteType | ShortType =>
-          willNotWorkInAst("AST implicitly upcasts byte or short inputs")
-        case _ =>
+  private var taggedForAst = false
+  private final def tagForAst(): Unit = {
+    if (!taggedForAst) {
+      if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
+        willNotWorkInAst(s"Cannot convert to AST. Is ConstantFolding excluded? Expression " +
+            s"$wrapped is foldable and operates on non literals")
       }
-    }
 
-    childExprs.foreach(_.tagForAst())
-    tagSelfForAst()
+      rule.getChecks.foreach {
+        case exprCheck: ExprChecks => exprCheck.tagAst(this)
+        case other => throw new IllegalArgumentException(s"Unexpected check found $other")
+      }
+
+      tagSelfForAst()
+      taggedForAst = true
+    }
   }
 
   /** Called to verify that this expression will work as a GPU AST expression. */
   protected def tagSelfForAst(): Unit = {
-    willNotWorkInAst(s"${wrapped.getClass.getSimpleName} has no AST mapping")
+    // NOOP
   }
 
   protected def willWorkInAstInfo: String = {
@@ -1005,6 +1031,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   def explainAst(all: Boolean): String = {
+    tagForAst()
     val appender = new StringBuilder()
     printAst(appender, 0, all)
     appender.toString()
@@ -1044,8 +1071,6 @@ abstract class UnaryAstExprMeta[INPUT <: UnaryExpression](
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
     extends UnaryExprMeta[INPUT](expr, conf, parent, rule) {
-
-  override def tagSelfForAst(): Unit = {}
 }
 
 /**
@@ -1132,24 +1157,6 @@ abstract class BinaryAstExprMeta[INPUT <: BinaryExpression](
     if (wrapped.left.dataType != wrapped.right.dataType) {
       willNotWorkInAst("AST binary expression operand types must match, found " +
           s"${wrapped.left.dataType},${wrapped.right.dataType}")
-    }
-  }
-}
-
-/** Base metadata class for comparison expressions that support conversion to AST */
-abstract class BinaryAstCompareExprMeta[INPUT <: BinaryExpression](
-    expr: INPUT,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends BinaryAstExprMeta[INPUT](expr, conf, parent, rule) {
-
-  override def tagSelfForAst(): Unit = {
-    super.tagSelfForAst()
-    wrapped.left.dataType match {
-      case FloatType | DoubleType =>
-        willNotWorkInAst("AST comparison does not support floating point")
-      case _ =>
     }
   }
 }

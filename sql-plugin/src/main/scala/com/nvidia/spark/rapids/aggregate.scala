@@ -1067,19 +1067,13 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
     val desiredInputAggBufTypes = mutable.HashMap.empty[ExprId, DataType]
     // Collects exprId from TypedImperativeAggBufferAttributes, and maps them to the data type
     // of `TypedImperativeAggExprMeta.aggBufferAttribute`.
-    agg.aggregateExpressions.zipWithIndex.foreach {
-      case (expr, i) if expr.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]] =>
+    aggregateExpressions.map(_.childExprs.head).foreach {
+      case aggMeta: TypedImperativeAggExprMeta[_] =>
+        val aggFn = aggMeta.wrapped.asInstanceOf[TypedImperativeAggregate[_]]
+        val desiredType = aggMeta.aggBufferAttribute.dataType
 
-        val aggFn = expr.aggregateFunction
-        val aggMeta = aggregateExpressions(i).childExprs.head
-            .asInstanceOf[TypedImperativeAggExprMeta[_]]
-        val desiredDataType = aggMeta.aggBufferAttribute.dataType
-
-        var buf = aggFn.aggBufferAttributes.head
-        desiredAggBufTypes(buf.exprId) = desiredDataType
-
-        buf = aggFn.inputAggBufferAttributes.head
-        desiredInputAggBufTypes(buf.exprId) = desiredDataType
+        desiredAggBufTypes(aggFn.aggBufferAttributes.head.exprId) = desiredType
+        desiredInputAggBufTypes(aggFn.inputAggBufferAttributes.head.exprId) = desiredType
 
       case _ =>
     }

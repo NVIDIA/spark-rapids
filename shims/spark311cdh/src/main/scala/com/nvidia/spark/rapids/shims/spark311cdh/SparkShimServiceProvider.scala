@@ -20,13 +20,14 @@ import com.nvidia.spark.rapids.{ClouderaShimVersion, SparkShims}
 
 object SparkShimServiceProvider {
   val VERSION = ClouderaShimVersion(3, 1, 1, "3.1.7270")
-  val VERSIONNAMES = Seq(s"3.1.1.3.1.7270")
+  // cdh version can have numbers after after 7270
+  val CDH_BASE_VERSION = "3.1.1.3.1.7270"
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
   def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+    version.contains(SparkShimServiceProvider.CDH_BASE_VERSION)
   }
 
   def buildShim: SparkShims = {
