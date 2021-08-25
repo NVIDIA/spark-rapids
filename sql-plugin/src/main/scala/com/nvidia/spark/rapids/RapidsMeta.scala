@@ -704,14 +704,16 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case None if useOutputAttributesOfChild =>
       require(wrapped.children.length == 1,
         "useOutputAttributesOfChild ONLY works on UnaryPlan")
-      // We will check whether the child plan can be replaced or not. We only pass through the
-      // outputAttributes of the child plan when it is GPU enabled. Otherwise, we should fetch the
-      // outputAttributes from the wrapped plan, because type overriding of RapidsMeta is
-      // specialized for the GPU runtime.
+      // We pass through the outputAttributes of the child plan only if it will be really applied
+      // in the runtime. We can pass through either if child plan can be replaced by GPU overrides;
+      // or if child plan is available for runtime type conversion. The later condition indicates
+      // the CPU to GPU data transition will be introduced as the pre-processing of the adjacent
+      // GpuRowToColumnarExec, though the child plan can't produce output attributes for GPU.
+      // Otherwise, we should fetch the outputAttributes from the wrapped plan.
       //
       // We can safely call childPlan.canThisBeReplaced here, because outputAttributes is called
-      // via tagSelfForGpu. At this point, tagging of the child plan has already happened.
-      if (childPlans.head.canThisBeReplaced || childPlans.head.runtimeTypeConversionAvailable) {
+      // via tagSelfForGpu. At this point, tagging of the child plan has already taken place.
+      if (childPlans.head.canThisBeReplaced || childPlans.head.availableRuntimeDataTransition) {
         childPlans.head.outputAttributes
       } else {
         wrapped.output
@@ -730,7 +732,12 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    */
   protected val useOutputAttributesOfChild: Boolean = false
 
-  val runtimeTypeConversionAvailable: Boolean = false
+  /**
+   * Whether there exists runtime data transition for the wrapped plan, if true, the overriding
+   * of output attributes will always work even when the wrapped plan can't be replaced by GPU
+   * overrides.
+   */
+  val availableRuntimeDataTransition: Boolean = false
 }
 
 /**

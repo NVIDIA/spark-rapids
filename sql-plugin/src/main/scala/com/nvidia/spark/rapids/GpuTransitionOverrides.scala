@@ -47,6 +47,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal, preTransition)
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       getColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+    // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
     case p if p.getTagValue(GpuOverrides.postColumnarToRowTransition).nonEmpty =>
       val c2r = p.children.map(optimizeGpuPlanTransitions).head
           .asInstanceOf[GpuColumnarToRowExecParent]
@@ -170,6 +171,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         case other => getColumnarToRowExec(other)
       }
 
+    // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
     case p if p.getTagValue(GpuOverrides.postColumnarToRowTransition).nonEmpty =>
       val c2r = p.children.map(optimizeAdaptiveTransitions(_, Some(p))).head
           .asInstanceOf[GpuColumnarToRowExecParent]

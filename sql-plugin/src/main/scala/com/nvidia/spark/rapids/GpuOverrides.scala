@@ -3202,10 +3202,18 @@ object GpuOverrides {
               exec.partitionSpecs)
           }
 
+          // extract output attributes of the underlying ShuffleExchange
           override def outputAttributes: Seq[Attribute] = {
             val shuffleEx = exec.child.asInstanceOf[ShuffleQueryStageExec].plan
-            shuffleEx.getTagValue(GpuOverrides.shuffleExOutputAttributes)
+            shuffleEx.getTagValue(GpuShuffleMeta.shuffleExOutputAttributes)
                 .getOrElse(shuffleEx.output)
+          }
+
+          // fetch availableRuntimeDataTransition of the underlying ShuffleExchange
+          override val availableRuntimeDataTransition: Boolean = {
+            val shuffleEx = exec.child.asInstanceOf[ShuffleQueryStageExec].plan
+            shuffleEx.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition)
+                .getOrElse(false)
           }
         }),
     exec[FlatMapCoGroupsInPandasExec](
@@ -3254,9 +3262,6 @@ object GpuOverrides {
 
   val postColumnarToRowTransition = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.postColumnarToRowTransition")
-
-  val shuffleExOutputAttributes = TreeNodeTag[Seq[Attribute]](
-    "rapids.gpu.shuffleExOutputAttributes")
 }
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
