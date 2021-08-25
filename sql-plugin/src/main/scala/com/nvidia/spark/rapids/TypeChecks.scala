@@ -150,7 +150,7 @@ final class TypeSig private(
   }
 
   /**
-   * Combine two type signatures together.  Base types and child types will be the union of
+   * Combine two type signatures together. Base types and child types will be the union of
    * both as will limitations on literal values.
    * @param other what to combine with.
    * @return the new signature
