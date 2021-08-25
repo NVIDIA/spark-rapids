@@ -2540,7 +2540,7 @@ object GpuOverrides {
         }
       }),
     expr[NamedLambdaVariable](
-      "A parameter to a LambdaFunction, a.k.a a higher order SQL function",
+      "A parameter to a higher order SQL function",
       ExprChecks.projectOnly(
         (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP).nested(),

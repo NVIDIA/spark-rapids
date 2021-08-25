@@ -36,7 +36,7 @@ trait Arm {
     try {
       block(r)
     } finally {
-      r.foreach(_.close())
+      r.foreach(_.safeClose())
     }
   }
 
@@ -73,9 +73,9 @@ trait Arm {
       block(r)
     } finally {
       r match {
-        case c: AutoCloseable => c.close()
-        case scala.util.Left(c: AutoCloseable) => c.close()
-        case scala.util.Right(c: AutoCloseable) => c.close()
+        case c: AutoCloseable => c.safeClose()
+        case scala.util.Left(c: AutoCloseable) => c.safeClose()
+        case scala.util.Right(c: AutoCloseable) => c.safeClose()
         case _ => //NOOP
       }
     }
@@ -133,7 +133,9 @@ trait Arm {
     } catch {
       case t: Throwable =>
         try {
-          r.free()
+          if (r != null) {
+            r.free()
+          }
         } catch {
           case e: Throwable =>
             t.addSuppressed(e)

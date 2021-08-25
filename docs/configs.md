@@ -239,7 +239,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|`*`|Multiplication|true|None|
 <a name="sql.expression.Murmur3Hash"></a>spark.rapids.sql.expression.Murmur3Hash|`hash`|Murmur3 hash operator|true|None|
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|
-<a name="sql.expression.NamedLambdaVariable"></a>spark.rapids.sql.expression.NamedLambdaVariable| |A parameter to a LambdaFunction, a.k.a a higher order SQL function|true|None|
+<a name="sql.expression.NamedLambdaVariable"></a>spark.rapids.sql.expression.NamedLambdaVariable| |A parameter to a higher order SQL function|true|None|
 <a name="sql.expression.Not"></a>spark.rapids.sql.expression.Not|`!`, `not`|Boolean not operator|true|None|
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|`pmod`|Pmod|true|None|

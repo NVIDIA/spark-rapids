@@ -24,18 +24,14 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * A Trait that allows an Expression to control how it and its child expressions are bound. This
+ * A trait that allows an Expression to control how it and its child expressions are bound. This
  * should be used with a lot of caution as binding can be really hard to debug if you get it wrong.
  * The output of bind should have all instances of AttributeReference replaced with
- * GpuAttributeReference. If not other code may try to replace it and produce the incorrect result.
- * In fact because of how this works it is possible for bind to be called multiple times,
- * with different input values. The first one should be the one used and all other times it is
- * called it should be ignored. If bind has replaced all AttributeReferences then it should become
- * a noop, but just be really careful.
+ * GpuBoundReference.
  */
 trait GpuBind {
   /**
-   * Returns a modified version of an expressions with all AttributeReferences in the child
+   * Returns a modified version of `this` with at a minimum all AttributeReferences in the child
    * expressions replaced with GpuBoundReference instances.
    */
   def bind(input: AttributeSeq): GpuExpression
@@ -59,11 +55,28 @@ object GpuBindReferences extends Logging {
     }
   }
 
-  // Mostly copied from BoundAttribute.scala so we can do columnar processing
-  private[this] def bindRefInternal[A <: Expression, R <: Expression](
+  /**
+   * An alternative to `Expression.transformDown`, but when a result is returned by `rule` it is
+   * assumed that it handled processing exp and all of its children, so rule will not be called on
+   * the children of that result recursively.
+   */
+  def transformNoRecursionOnReplacement(exp: Expression)
+      (rule: PartialFunction[Expression, Expression]): Expression = {
+    rule.lift(exp) match {
+      case None =>
+        exp.mapChildren(c => transformNoRecursionOnReplacement(c)(rule))
+      case Some(e) =>
+        e
+    }
+  }
+
+  // Mostly copied from BoundAttribute.scala but with a few big changes so we can do columnar
+  // processing. Use with Caution
+  def bindRefInternal[A <: Expression, R <: Expression](
       expression: A,
-      input: AttributeSeq): R = {
-    val ret = expression.transform {
+      input: AttributeSeq,
+      partial: PartialFunction[Expression, Expression] = PartialFunction.empty): R = {
+    val regularMatch: PartialFunction[Expression, Expression] = {
       case bind: GpuBind =>
         bind.bind(input)
       case a: AttributeReference =>
@@ -73,7 +86,9 @@ object GpuBindReferences extends Logging {
         } else {
           GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)(a.exprId, a.name)
         }
-    }.asInstanceOf[R]
+    }
+    val matchFunc = regularMatch.orElse(partial)
+    val ret = transformNoRecursionOnReplacement(expression)(matchFunc).asInstanceOf[R]
     postBindCheck(ret)
     ret
   }

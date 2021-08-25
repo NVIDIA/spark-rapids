@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,7 +101,7 @@ trait GpuHigherOrderFunction extends GpuExpression {
 /**
  * Trait for functions having as input one argument and one function.
  */
-trait SimpleGpuHigherOrderFunction extends GpuHigherOrderFunction  {
+trait GpuSimpleHigherOrderFunction extends GpuHigherOrderFunction  {
 
   def argument: Expression
 
@@ -117,7 +117,7 @@ case class GpuArrayTransform(
     function: Expression,
     isBound: Boolean = false,
     boundIntermediate: Seq[GpuExpression] = Seq.empty)
-    extends SimpleGpuHigherOrderFunction
+    extends GpuSimpleHigherOrderFunction
         with GpuBind {
 
   override def dataType: ArrayType = ArrayType(function.dataType, function.nullable)
@@ -132,14 +132,12 @@ case class GpuArrayTransform(
   }
 
   override def bind(input: AttributeSeq): GpuExpression = {
-    if (isBound) {
-      // Because of how the transformations work we can end up trying to bind an argument twice
-      // and the later ones will have the wrong set of input attributes, so don't change once
-      // we are bound the first time...
-      return this
-    }
-
-    val boundArg = GpuBindReferences.bindGpuReference(argument, input)
+    // Bind the argument parameter, but it can also be a lambda variable...
+    val boundArg = GpuBindReferences.bindRefInternal[Expression, GpuExpression](argument, input, {
+      case lr: GpuNamedLambdaVariable if input.indexOf(lr.exprId) >= 0 =>
+        val ordinal = input.indexOf(lr.exprId)
+        GpuBoundReference(ordinal, lr.dataType, input(ordinal).nullable)(lr.exprId, lr.name)
+    })
 
     // `function` is a lambda function. In CPU Spark a lambda function's parameters are wrapping
     // AtomicReference values and the parent expression sets the values before they are processed.
@@ -202,13 +200,9 @@ case class GpuArrayTransform(
     }.toMap
 
     // Now we actually bind all of the attribute references and GpuNamedLambdaVariables
-    // with the appropriate replacements.  Note that we need to make sure that we call
-    // GpuBind.bind as we do the other replacements, because we don't want to descend down
-    // below it to try and replace anything.  This only works because bind should replace
-    // everything it needs to with GpuBoundReference instances so then nothing under it
-    // would match the patterns we are using to transform it.
+    // with the appropriate replacements.
 
-    val childFunction = lambdaFunction.function.transform {
+    val childFunction = GpuBindReferences.transformNoRecursionOnReplacement(lambdaFunction) {
       case bind: GpuBind =>
         bind.bind(argsAndRefsAtters)
       case a: AttributeReference =>
@@ -223,7 +217,6 @@ case class GpuArrayTransform(
     boundThis
   }
 
-  // okay so I need to know the expression ids at this point, or at least all of the original inputs
   private[this] def makeElementProjectBatch(
       inputBatch: ColumnarBatch,
       listColumn: cudf.ColumnVector): ColumnarBatch = {

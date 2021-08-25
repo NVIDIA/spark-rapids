@@ -8450,7 +8450,7 @@ are limited.
 <tr>
 <td rowSpan="1">NamedLambdaVariable</td>
 <td rowSpan="1"> </td>
-<td rowSpan="1">A parameter to a LambdaFunction, a.k.a a higher order SQL function</td>
+<td rowSpan="1">A parameter to a higher order SQL function</td>
 <td rowSpan="1">None</td>
 <td rowSpan="1">project</td>
 <td>result</td>
