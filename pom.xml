@@ -76,7 +76,6 @@
         <module>shims</module>
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
-        <module>tools</module>
         <module>udf-compiler</module>
         <module>udf-examples</module>
     </modules>
@@ -90,6 +89,7 @@
             <modules>
                 <module>api_validation</module>
                 <module>tests</module>
+                <module>tools</module>
             </modules>
        </profile>
        <profile>
@@ -141,6 +141,10 @@
                 <spark.version>${spark301emr.version}</spark.version>
                 <spark.test.version>${spark301emr.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>api_validation</module>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>release303</id>
@@ -155,6 +159,10 @@
                 <spark.version>${spark303.version}</spark.version>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>api_validation</module>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>release304</id>
@@ -190,6 +198,7 @@
             <modules>
                 <module>tests</module>
                 <module>api_validation</module>
+                <module>tools</module>
             </modules>
         </profile>
         <profile>
@@ -331,24 +340,36 @@
             <properties>
                 <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>spark302tests</id>
             <properties>
                 <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>spark303tests</id>
             <properties>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>spark304tests</id>
             <properties>
                 <spark.test.version>${spark304.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>spark311tests</id>
@@ -357,6 +378,7 @@
             </properties>
             <modules>
                 <module>tests-spark310+</module>
+                <module>tests</module>
             </modules>
         </profile>
         <profile>
@@ -364,26 +386,37 @@
             <properties>
                 <spark.test.version>${spark311cdh.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>spark312tests</id>
             <properties>
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>spark313tests</id>
             <properties>
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>spark320tests</id>
             <properties>
                 <spark.test.version>${spark320.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
-
         <profile>
             <id>cuda11</id>
             <properties>
