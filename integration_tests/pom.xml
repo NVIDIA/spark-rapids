@@ -97,7 +97,6 @@
                 <property><name>buildver</name></property>
             </activation>
             <dependencies>
-		    <!--
                 <dependency>
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
@@ -106,7 +105,6 @@
                     <type>test-jar</type>
                     <scope>test</scope>
                 </dependency>
--->
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
@@ -176,6 +174,24 @@
                 </property>
             </activation>
             <dependencies>
+		<dependency>
+                    <groupId>org.scala-lang</groupId>
+                    <artifactId>scala-reflect</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>provided</scope>
+                </dependency>
+		<dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow-memory-db_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+		<dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow-vector-db_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
@@ -206,7 +222,6 @@
 
     <build>
         <plugins>
-		<!--
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
@@ -227,7 +242,6 @@
                     </execution>
                 </executions>
             </plugin>
--->
             <!-- disable surefire as we are using scalatest only -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -236,7 +250,6 @@
                     <skipTests>true</skipTests>
                 </configuration>
             </plugin>
-	    <!--
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
@@ -245,7 +258,6 @@
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
             </plugin>
--->
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>

@@ -197,6 +197,9 @@
                 <spark.test.version>${spark311db.version}</spark.test.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
             </properties>
+            <modules>
+                <module>tests</module>
+            </modules>
         </profile>
         <profile>
             <id>release312</id>
