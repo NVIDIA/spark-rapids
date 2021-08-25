@@ -765,7 +765,7 @@ object GpuOverrides {
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.ARRAY +
           TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT +
-          TypeSig.ARRAY).nested(),
+          TypeSig.ARRAY + TypeSig.MAP).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
@@ -3041,9 +3041,10 @@ object GpuOverrides {
     exec[DataWritingCommandExec](
       "Writing data",
       ExecChecks((TypeSig.commonCudfTypes +
-        TypeSig.DECIMAL_64.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
-        TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
-        TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
+          TypeSig.DECIMAL_64.withPsNote(TypeEnum.DECIMAL, "Only supported for Parquet") +
+          TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
+          TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
+          TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet")).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {
         override val childDataWriteCmds: scala.Seq[DataWritingCommandMeta[_]] =

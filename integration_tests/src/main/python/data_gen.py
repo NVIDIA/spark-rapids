@@ -657,6 +657,14 @@ def _mark_as_lit(data, data_type):
         # but this works for all of them
         dateString = data.strftime("%Y-%m-%d").zfill(10)
         return f.lit(dateString).cast(data_type)
+    elif isinstance(data_type, MapType):
+        assert isinstance(data, dict)
+        # Sadly you cannot create a literal from just a dict/tuple in pyspark
+        col_array = []
+        for k in data:
+            col_array.append(_mark_as_lit(k, data_type.keyType))
+            col_array.append(_mark_as_lit(data[k], data_type.valueType))
+        return f.create_map(*col_array)
     else:
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)

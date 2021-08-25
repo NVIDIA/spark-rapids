@@ -60,27 +60,14 @@
             </dependencies>
         </profile>
         <profile>
-            <id>release301</id>
+            <id>releaseOne</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>301</value>
                 </property>
             </activation>
             <modules>
-                <module>spark301</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>release302</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>302</value>
-                </property>
-            </activation>
-            <modules>
-                <module>spark302</module>
+                <module>${spark.version.classifier}</module>
             </modules>
         </profile>
         <profile>

@@ -35,9 +35,9 @@ mvn_verify() {
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
-    # Here run Python integration tests tagged with 'slow_test' only, that would require long duration or big memory. Such split would help
-    # balance test duration and memory consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'unit_test()' respectively.
-    mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TEST_TAGS="slow_test" \
+    # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
+    # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'unit_test()' respectively.
+    mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
         -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=5 -Dcuda.version=$CUDA_CLASSIFIER
 
     # Run the unit tests for other Spark versions but dont run full python integration tests
@@ -96,7 +96,7 @@ unit_test() {
     # TODO: this function should be named as 'integration_test()' but it would break backward compatibility. Need find a way to fix this.
     echo "Run integration testings..."
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
-    TEST_TAGS="not slow_test" TEST_TYPE="pre-commit" TEST_PARALLEL=4 ./integration_tests/run_pyspark_from_build.sh
+    TEST_TAGS="not premerge_ci_1" TEST_TYPE="pre-commit" TEST_PARALLEL=4 ./integration_tests/run_pyspark_from_build.sh
 }
 
 
@@ -110,6 +110,13 @@ MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
+
+# If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
+# Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
+M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
+if [ -s "$M2_CACHE_TAR" ] ; then
+    tar xvf $M2_CACHE_TAR -C ~/
+fi
 
 # Download a full version of spark
 $MVN_GET_CMD \

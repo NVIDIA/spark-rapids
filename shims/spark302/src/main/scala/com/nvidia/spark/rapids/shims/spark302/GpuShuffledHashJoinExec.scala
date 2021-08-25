@@ -34,9 +34,6 @@ object GpuJoinUtils {
   }
 }
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
 class GpuShuffledHashJoinMeta(
     join: ShuffledHashJoinExec,
     conf: RapidsConf,

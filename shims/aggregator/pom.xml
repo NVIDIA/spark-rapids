@@ -33,34 +33,16 @@
 
    <profiles>
         <profile>
-            <id>release301</id>
+            <id>releaseOne</id>
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>301</value>
                 </property>
             </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark301_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>compile</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>release302</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>302</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-spark302_${scala.binary.version}</artifactId>
+                    <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <scope>compile</scope>
                 </dependency>
