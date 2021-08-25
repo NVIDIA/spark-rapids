@@ -638,7 +638,8 @@ abstract class SparkBaseShims extends SparkShims {
   }
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
-     exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
+      exportColumnRdd: Boolean,
+      postTransition: Option[Seq[NamedExpression]]): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {
