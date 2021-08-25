@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from functools import reduce
 from spark_session import is_before_spark_311
@@ -53,3 +53,12 @@ def test_cast_empty_string_to_int():
 def test_cast_nested(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)))
+
+@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
+@pytest.mark.parametrize('data_gen,to_type', [
+    # maps are not supported for casting to a String, but structs are, so we need to verify this
+    (StructGen([('structF1', StructGen([('structF11', MapGen(ByteGen(nullable=False), byte_gen))]))]), StringType())])
+def test_cast_nested_fallback(data_gen, to_type):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)),
+            'Cast')
