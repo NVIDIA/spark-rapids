@@ -42,7 +42,6 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <modules>
-                <module>spark301emr</module>
                 <module>spark301</module>
                 <module>spark302</module>
                 <module>spark303</module>
