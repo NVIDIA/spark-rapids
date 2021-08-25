@@ -100,6 +100,40 @@
             </dependency>
         </dependencies>
     </profile>
+   <profile>
+        <id>release311db</id>
+        <activation>
+            <property>
+                <name>buildver</name>
+                <value>311db</value>
+            </property>
+        </activation>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                <version>3.1.1-databricks</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-hive-serde-db_${scala.binary.version}</artifactId>
+                <version>3.1.1-databricks</version>
+                <scope>system</scope>
+                <systemPath>
+                    /databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-serde--org.apache.hive__hive-serde__2.3.7.jar
+                </systemPath>
+            </dependency>
+	    <dependency>
+                <groupId>org.apache.spark</groupId>
+                <artifactId>spark-hive2-db_${scala.binary.version}</artifactId>
+                <version>3.1.1-databricks</version>
+                <scope>system</scope>
+                <systemPath>
+/databricks/jars/----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__2.3.7.jar
+                </systemPath>
+            </dependency>
+        </dependencies>
+    </profile>
     <profile>
         <id>with-classifier</id>
         <activation>

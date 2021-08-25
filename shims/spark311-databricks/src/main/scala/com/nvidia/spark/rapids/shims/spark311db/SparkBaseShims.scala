@@ -25,7 +25,7 @@ import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkContext, SparkEnv, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -43,12 +43,14 @@ import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, Shuffle
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.rapids.execution.python.shims.spark311db._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
@@ -826,8 +828,8 @@ abstract class SparkBaseShims extends SparkShims {
   }
 
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
-    case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
-    case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
   }
 
   /** dropped by SPARK-34234 */
@@ -843,10 +845,10 @@ abstract class SparkBaseShims extends SparkShims {
 
   override def hasCastFloatTimestampUpcast: Boolean = false
 
-  override def filesFromFileIndex(fileIndex: PartitioningAwareFileIndex): Seq[FileStatus] = {
-    fileIndex.allFiles()
+  override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
+    fileCatalog.allFiles().map(_.toFileStatus)
   }
 
   def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
-    mode.transform(rows)
+    mode.transform(rows, TaskContext.get.taskMemoryManager())
 }

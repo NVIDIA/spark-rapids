@@ -163,6 +163,41 @@
                 </dependency>
             </dependencies>
         </profile>
+	<profile>
+            <id>release311db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-core_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-catalyst-db_${scala.binary.version}</artifactId>
+                    <version>3.1.1-databricks</version>
+                    <scope>system</scope>
+                    <systemPath>
+                        /databricks/jars/----workspace_spark_3_1--sql--catalyst--catalyst-hive-2.3__hadoop-2.7_2.12_deploy.jar
+                    </systemPath>
+                </dependency>
+            </dependencies>
+        </profile>
     </profiles>
 
     <build>
