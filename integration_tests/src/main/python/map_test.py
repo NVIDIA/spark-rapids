@@ -39,7 +39,7 @@ def test_simple_get_map_value(data_gen):
                 'a["key_5"]'))
 
 @pytest.mark.parametrize('key_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
-@pytest.mark.parametrize('value_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
+@pytest.mark.parametrize('value_gen', [StringGen(nullable=True), IntegerGen(nullable=True), basic_struct_gen], ids=idfn)
 def test_single_entry_map(key_gen, value_gen):
     data_gen = [('a', key_gen), ('b', value_gen)]
     assert_gpu_and_cpu_are_equal_collect(
@@ -47,13 +47,39 @@ def test_single_entry_map(key_gen, value_gen):
                 'map("literal_key", b) as map1',
                 'map(a, b) as map2'))
 
-@allow_non_gpu('ProjectExec,Alias,CreateMap')
-# until https://github.com/NVIDIA/spark-rapids/issues/3229 is implemented
+def test_map_expr_no_pairs():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map() as m1'))
+
 def test_map_expr_multiple_pairs():
+    # we don't hit duplicate keys in this test due to the high cardinality of the generated strings
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map("key1", b, "key2", a) as m1',
+                'map(a, b, b, a) as m2'),
+                conf={'spark.rapids.sql.createMap.enabled':True})
+
+@allow_non_gpu('ProjectExec,Alias,CreateMap,Literal')
+def test_map_expr_dupe_keys_fallback():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_fallback_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
-                "map(a, b, b, a) as m1"), 'ProjectExec')
+                'map("key1", b, "key1", a) as m1'),
+                'ProjectExec',
+                conf={'spark.rapids.sql.createMap.enabled':True,
+                    'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+
+@allow_non_gpu('ProjectExec,Alias,CreateMap,Literal')
+def test_map_expr_multi_non_literal_keys_fallback():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_fallback_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map(a, b, b, a) as m1'),
+                'ProjectExec',
+                conf={'spark.rapids.sql.createMap.enabled':False})
 
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
