@@ -547,6 +547,20 @@ def test_hash_groupby_collect_partial_replace_fallback_with_other_agg(conf, aqe_
     group by k1""",
         conf=local_conf)
 
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
+               'HashAggregateExec', 'HashPartitioning',
+               'ApproximatePercentile', 'Alias', 'Literal', 'AggregateExpression')
+def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback():
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
+                                     ('v', LongRangeGen())], length=100),
+        exist_classes='ApproximatePercentile,ObjectHashAggregateExec',
+        non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
+        table_name='table',
+        sql="""select k,
+        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""")
+
 @approximate_float
 @ignore_order
 @incompat

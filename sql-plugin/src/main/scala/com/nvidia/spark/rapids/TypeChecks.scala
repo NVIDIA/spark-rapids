@@ -20,9 +20,11 @@ import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
 import ai.rapids.cudf.DType
+import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
+
 
 /**
  * The level of support that the plugin has for a given type.  Used for documentation generation.
@@ -995,7 +997,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  */
 object CaseWhenCheck extends ExprChecks {
   val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-    TypeSig.ARRAY + TypeSig.STRUCT).nested()
+    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
 
   val sparkSig: TypeSig = TypeSig.all
 
@@ -1088,10 +1090,13 @@ object WindowSpecCheck extends ExprChecks {
 
 object CreateMapCheck extends ExprChecks {
 
-  // Spark supports all types except for Map for key and value (Map is not supported
+  // Spark supports all types except for Map for key (Map is not supported
   // even in child types)
-  val keyValueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
     TypeSig.ARRAY + TypeSig.STRUCT).nested()
+
+  private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+    TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
     meta.willNotWorkInAst("CreateMap is not supported by AST")
@@ -1103,20 +1108,35 @@ object CreateMapCheck extends ExprChecks {
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
-      if (meta.childExprs.length != 2) {
-        // See https://github.com/NVIDIA/spark-rapids/issues/3229
-        meta.willNotWorkOnGpu("CreateMap only supports two expressions on GPU")
+      // if there are more than two key-value pairs then there is the possibility of duplicate keys
+      if (meta.childExprs.length > 2) {
+        // check for duplicate keys if the keys are literal values
+        val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
+        val litKeys = keyExprs.map(e => GpuOverrides.extractLit(e.wrapped.asInstanceOf[Expression]))
+        if (litKeys.forall(_.isDefined)) {
+          val keys = litKeys.map(_.get.value)
+          val uniqueKeys = new mutable.HashSet[Any]()
+          for (key <- keys) {
+            if (!uniqueKeys.add(key)) {
+              meta.willNotWorkOnGpu("CreateMap with duplicate literal keys is not supported")
+            }
+          }
+        } else if (!meta.conf.isCreateMapEnabled) {
+          meta.willNotWorkOnGpu("CreateMap is not enabled by default when there are " +
+            "multiple key-value pairs and where the keys are not literal values because handling " +
+            "of duplicate keys is not compatible with Spark. " +
+            s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
+        }
       }
     }
   }
 
   override def support(
       dataType: TypeEnum.Value): Map[ExpressionContext, Map[String, SupportLevel]] = {
-    val support = keyValueSig.getSupportLevel(dataType, keyValueSig)
     Map((ProjectExprContext,
       Map(
-        ("key", support),
-        ("value", support))))
+        ("key", keySig.getSupportLevel(dataType, keySig)),
+        ("value", valueSig.getSupportLevel(dataType, valueSig)))))
   }
 }
 

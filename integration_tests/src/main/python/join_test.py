@@ -20,8 +20,8 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, with_spark_session
 
-# Mark all tests in current file as slow test since it would require ~30mins in total
-pytestmark = pytest.mark.slow_test
+# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
+pytestmark = pytest.mark.premerge_ci_1
 
 all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter']
 
