@@ -41,14 +41,15 @@ sudo apt install -y maven
 
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
-if [[ -n $SPARKSRCTGZ ]]
-then
-    rm -rf spark-rapids
-    mkdir spark-rapids
-    echo  "tar -zxf $SPARKSRCTGZ -C spark-rapids"
-    tar -zxf $SPARKSRCTGZ -C spark-rapids
-    cd spark-rapids
-fi
+
+#if [[ -n $SPARKSRCTGZ ]]
+#then
+#    rm -rf spark-rapids
+#    mkdir spark-rapids
+#    echo  "tar -zxf $SPARKSRCTGZ -C spark-rapids"
+#    tar -zxf $SPARKSRCTGZ -C spark-rapids
+#    cd spark-rapids
+#fi
 
 export WORKSPACE=`pwd`
 
@@ -76,6 +77,7 @@ COREJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--core--core-hive-2.3__hadoop
 COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_VERSION}.pom
 HIVEJAR=----workspace_spark_3_1--sql--hive--hive_2.12_deploy_shaded.jar
 HIVEEXECJAR=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__2.3.7.jar
+HIVESERDEJAR=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-serde--org.apache.hive__hive-serde__2.3.7.jar
 COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_VERSION}
 
 PARQUETHADOOPJAR=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks6.jar
@@ -101,6 +103,26 @@ JSON4S=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.json4s--j
 
 SCALAREFLECT=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-lang--scala-reflect_2.12--org.scala-lang__scala-reflect__2.12.10.jar
 
+JAVAASSIST=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.javassist--javassist--org.javassist__javassist__3.25.0-GA.jar
+
+#SCALALIB=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-lang--scala-library_2.12--org.scala-lang__scala-library__2.12.10.jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$JAVAASSIST\
+   -DgroupId=org.javaassist\
+   -DartifactId=javaassist \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+#mvn -B install:install-file \
+#   -Dmaven.repo.local=$M2DIR \
+#   -Dfile=$JARDIR/$SCALALIB \
+#   -DgroupId=org.scala-lang \
+#   -DartifactId=scala-library \
+#   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+#   -Dpackaging=jar
+#
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$SCALAREFLECT \
@@ -189,6 +211,13 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$HIVESERDEJAR \
+   -DgroupId=org.apache.spark \
+   -DartifactId=spark-hive-serde-db_$SCALA_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \

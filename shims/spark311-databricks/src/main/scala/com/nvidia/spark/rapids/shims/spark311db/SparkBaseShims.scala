@@ -622,7 +622,7 @@ abstract class SparkBaseShims extends SparkShims {
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions)
+    new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
