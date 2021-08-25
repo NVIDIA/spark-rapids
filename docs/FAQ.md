@@ -37,8 +37,8 @@ the latest release.
 
 The plugin is tested and supported on V100, T4, A10, A30 and A100 datacenter GPUs.  It is possible
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
-does not support [CUDA enhanced
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases),
+does not support [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
 and will need CUDA 11.2 installed. If not, the following error will be displayed:
 
 ```
@@ -46,6 +46,9 @@ ai.rapids.cudf.CudaException: forward compatibility was attempted on non support
         at ai.rapids.cudf.Cuda.getDeviceCount(Native Method)
         at com.nvidia.spark.rapids.GpuDeviceManager$.findGpuAndAcquire(GpuDeviceManager.scala:78)
 ```
+
+More information about cards that support forward compatability can be found
+[here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#faq)
 
 ### How can I check if the RAPIDS Accelerator is installed and which version is running?
 
