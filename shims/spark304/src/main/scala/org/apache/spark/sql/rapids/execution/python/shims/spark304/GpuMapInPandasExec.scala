@@ -27,7 +27,8 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expre
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python._
-import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils.executePython
+import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.shims.spark304.BatchGroupUtils.executePython
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
