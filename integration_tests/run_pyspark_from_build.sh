@@ -129,7 +129,7 @@ else
     SPARK_TASK_MAXFAILURES=1
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
-    export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
+    export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}:/databricks/jars/*"
     export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
