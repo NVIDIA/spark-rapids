@@ -155,10 +155,6 @@
                 <spark.version>${spark303.version}</spark.version>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>api_validation</module>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>release304</id>
@@ -263,104 +259,6 @@
             <modules>
                 <module>tests</module>
             </modules>
-        </profile>
-        <profile>
-            <id>release301emr</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301emr</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark301emr</spark.version.classifier>
-                <spark.version>${spark301emr.version}</spark.version>
-                <spark.test.version>${spark301emr.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>release303</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>303</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark303</spark.version.classifier>
-                <spark.version>${spark303.version}</spark.version>
-                <spark.test.version>${spark303.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>release304</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>304</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark304</spark.version.classifier>
-                <spark.version>${spark304.version}</spark.version>
-                <spark.test.version>${spark304.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>release311</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark311</spark.version.classifier>
-                <spark.version>${spark311.version}</spark.version>
-                <spark.test.version>${spark311.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>release312</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>312</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark312</spark.version.classifier>
-                <spark.version>${spark312.version}</spark.version>
-                <spark.test.version>${spark312.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>release313</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>313</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark313</spark.version.classifier>
-                <spark.version>${spark313.version}</spark.version>
-                <spark.test.version>${spark313.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>release311cdh</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311cdh</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark311cdh</spark.version.classifier>
-                <spark.version>${spark311cdh.version}</spark.version>
-                <spark.test.version>${spark311cdh.version}</spark.test.version>
-            </properties>
         </profile>
         <profile>
             <id>udf-compiler</id>
