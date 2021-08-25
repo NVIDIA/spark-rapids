@@ -194,6 +194,15 @@
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- it seems CDH jars pull an old version of Guava but need new version
+                         to run with, so here we override Guava version for testing -->
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                    <version>29.0-jre</version>
+                    <scope>test</scope>
                 </dependency>
             </dependencies>
             <build>

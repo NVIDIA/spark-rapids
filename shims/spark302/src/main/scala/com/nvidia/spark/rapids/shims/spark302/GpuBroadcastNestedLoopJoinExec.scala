@@ -24,9 +24,6 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.rapids.execution._
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
 case class GpuBroadcastNestedLoopJoinExec(
     left: SparkPlan,
     right: SparkPlan,

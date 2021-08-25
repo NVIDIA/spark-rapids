@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
 all_gens = all_gen + [NullGen()]
-all_nested_gens = array_gens_sample + struct_gens_sample
+all_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
 
 # Create dedicated data gens of nested type for 'if' tests here with two exclusions:

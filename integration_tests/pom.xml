@@ -141,10 +141,12 @@
             </activation>
             <dependencies>
                 <dependency>
+                    <!-- it seems CDH jars pull an old version of Guava but need new version
+                         to run with, so here we override Guava version for testing -->
                     <groupId>com.google.guava</groupId>
                     <artifactId>guava</artifactId>
-                    <version>28.0-jre</version>
-                    <scope>provided</scope>
+                    <version>29.0-jre</version>
+                    <scope>test</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
@@ -177,11 +179,13 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-core_${scala.binary.version}</artifactId>
                     <version>3.1.1-databricks</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>

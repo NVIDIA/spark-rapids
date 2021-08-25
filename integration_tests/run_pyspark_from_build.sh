@@ -90,7 +90,7 @@ else
         MEMORY_FRACTION=`python -c "print(1/($TEST_PARALLEL + 1))"`
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
-    RUN_DIR="$SCRIPTPATH"/target/run_dir
+    RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
