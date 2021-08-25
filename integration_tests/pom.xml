@@ -182,15 +182,27 @@
                 </dependency>
 		<dependency>
                     <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow-format-db_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
                     <artifactId>spark-arrow-memory-db_${scala.binary.version}</artifactId>
                     <version>${spark311db.version}</version>
-                    <scope>provided</scope>
+                    <scope>compile</scope>
                 </dependency>
-		<dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-arrow-memory-netty-db_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-arrow-vector-db_${scala.binary.version}</artifactId>
                     <version>${spark311db.version}</version>
-                    <scope>provided</scope>
+                    <scope>compile</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
