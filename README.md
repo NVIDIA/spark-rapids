@@ -6,7 +6,7 @@ Currently Spark doesn't support any UDF pushdown with the exception of JDBC/data
 
 Among these plugins, ["udf-compiler"](https://github.com/NVIDIA/spark-rapids/tree/branch-21.10/udf-compiler) is a UDF compiler extension (via Spark rule injection) to translate UDFs bytecode to Spark Catalyst expressions.
 
-The "udf-compiler" is similar to the [Spark SQL Macros](https://github.com/hbutani/spark-sql-macros) project we previously investigate, they all attempt to translate Spark UDFs into native Spark Catalyst expressions, which will be optimized by the Spark Catalysts for code generation/serialization, so that the UDFs can be pushed down as the best as we can to the data sources (thus to storage). The task time of such solutions is [2-3 times faster than the native Spark UDFs] (https://github.com/hbutani/spark-sql-macros)
+The "udf-compiler" is similar to the [Spark SQL Macros](https://github.com/hbutani/spark-sql-macros) project we previously investigate, they all attempt to translate Spark UDFs into native Spark Catalyst expressions, which will be optimized by the Spark Catalysts for code generation/serialization, so that the UDFs can be pushed down as the best as we can to the data sources (thus to storage). The task time of such solutions is [2-3 times faster than the native Spark UDFs](https://github.com/hbutani/spark-sql-macros)
 
 Under the hood, the "udf-compiler" uses bytecode analyzer to translate, while the Macros use Scala metaprogramming mechanism to translate. The bytecode translation is easier to debug.
 
@@ -45,7 +45,7 @@ root@ubuntu1804:/home/ubuntu/openinfralabs/caerus-spark-udf-compiler-from-rapids
 root@ubuntu1804:/home/ubuntu/openinfralabs/caerus-spark-udf-compiler-from-rapids#
 ```
 ### Step 2: Use UDF Compiler Jar
-- spark-submit: see caerus-udf repo for a detail example
+- spark-submit: see caerus-udf repo for a detail example. See more detail UDF pushdown example in [caerus-udf](https://github.com/open-infrastructure-labs/caerus-udf/tree/master/examples/spark-udf)
 ```
  spark-submit 
   --driver-library-path path-to-udf-compiler-jar\rapids-4-spark-udf_2.12-21.10.0-SNAPSHOT.jar \
