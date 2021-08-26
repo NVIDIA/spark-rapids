@@ -85,12 +85,6 @@
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
-            <version>3.1.1-databricks</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_${scala.binary.version}</artifactId>
             <version>${spark311db.version}</version>
             <scope>provided</scope>
@@ -99,6 +93,49 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-annotation_${scala.binary.version}</artifactId>
             <version>${spark311db.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+
+    <profiles>
+        <profile>
+            <id>default</id>
+	    <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+	    <properties>
+                <parquet.version>1.10.1</parquet.version>
+                <arrow.version>0.15.1</arrow.version>
+            </properties>
+            <dependencies>
+	    <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-vector</artifactId>
+                <version>${arrow.version}</version>
+                <scope>provided</scope>
+            </dependency>
+	    <dependency>
+                <groupId>org.apache.parquet</groupId>
+                <artifactId>parquet-column</artifactId>
+                <version>${parquet.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release311db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311db</value>
+                </property>
+            </activation>
+            <dependencies>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
+            <version>3.1.1-databricks</version>
             <scope>provided</scope>
         </dependency>
 	<dependency>
@@ -173,5 +210,8 @@
             <version>${spark311db.version}</version>
             <scope>provided</scope>
         </dependency>
-    </dependencies>
+            </dependencies>
+        </profile>
+    </profiles>
+
 </project>

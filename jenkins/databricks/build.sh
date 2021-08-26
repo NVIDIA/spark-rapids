@@ -66,6 +66,7 @@ RAPIDS_UDF_JAR=rapids-4-spark-udf-examples_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERS
 echo "Scala version is: $SCALA_VERSION"
 if [[ -z $INSTALL_DEPS_ONLY ]]
 then
+    echo "Running maven to pull Spark dependencies"
     mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
 fi
 # export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
@@ -144,6 +145,7 @@ mvn -B install:install-file \
 
 
 if [[ -z $INSTALL_DEPS_ONLY ]]
+then
 
 # this install pom file from Spache Spark 3.1.1, whereas new build doesn't
 mvn -B install:install-file \
