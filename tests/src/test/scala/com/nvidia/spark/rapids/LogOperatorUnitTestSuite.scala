@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,15 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.rapids.{GpuAdd, GpuLog, GpuLogarithm}
-import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
+import org.apache.spark.sql.types.{DataTypes, StructType}
 
 class LogOperatorUnitTestSuite extends GpuExpressionTestSuite {
 
   private val schema = FuzzerUtils.createSchema(Seq(DataTypes.DoubleType))
-  private val childExpr: GpuBoundReference = GpuBoundReference(0, DataTypes.DoubleType,
-    nullable = false)
+  private val childExpr: GpuBoundReference =
+    GpuBoundReference(0, DataTypes.DoubleType, nullable = false)(NamedExpression.newExprId, "input")
 
   test("log") {
 
