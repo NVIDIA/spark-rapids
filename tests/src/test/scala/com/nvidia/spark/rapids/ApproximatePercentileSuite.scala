@@ -16,29 +16,45 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
-
 import scala.util.Random
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.functions.{col, expr}
 import org.apache.spark.sql.types.{DataType, DataTypes}
 
 class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
-  testSparkResultsAreEqual("Approx percentile with grouping, ints, default delta",
-      spark => salaries(spark, DataTypes.IntegerType)) {
-    doTest(Array(0.25, 0.5, 0.75), ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
+  val DEFAULT_PERCENTILES = Array(0.05, 0.25, 0.5, 0.75, 0.95)
+
+  testSparkResultsAreEqual("Approx percentile with grouping, ints, delta 100",
+    spark => salaries(spark, DataTypes.IntegerType)) {
+    doTest(DEFAULT_PERCENTILES, 100)
   }
 
-  testSparkResultsAreEqual("Approx percentile with grouping, ints, delta 10000",
+  testSparkResultsAreEqual("Approx percentile with grouping, ints, delta 1000",
     spark => salaries(spark, DataTypes.IntegerType)) {
-    doTest(Array(0.25, 0.5, 0.75), 100)
+    doTest(DEFAULT_PERCENTILES, 1000)
+  }
+
+  testSparkResultsAreEqual("Approx percentile with grouping, ints, default delta",
+    spark => salaries(spark, DataTypes.IntegerType)) {
+    doTest(DEFAULT_PERCENTILES, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
   }
 
   testSparkResultsAreEqual("Approx percentile with grouping, doubles, delta 100",
     spark => salaries(spark, DataTypes.DoubleType)) {
-    doTest(Array(0.25, 0.5, 0.75), 100)
+    doTest(DEFAULT_PERCENTILES, 100)
+  }
+
+  testSparkResultsAreEqual("Approx percentile with grouping, doubles, delta 1000",
+    spark => salaries(spark, DataTypes.DoubleType)) {
+    doTest(DEFAULT_PERCENTILES, 1000)
+  }
+
+  testSparkResultsAreEqual("Approx percentile with grouping, doubles, default delta",
+    spark => salaries(spark, DataTypes.DoubleType)) {
+    doTest(DEFAULT_PERCENTILES, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
   }
 
   private def doTest(percentiles: Array[Double], delta: Int): DataFrame => DataFrame = {
@@ -55,7 +71,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       case DataTypes.DoubleType => 1d
       case DataTypes.IntegerType => 1
     }
-    Range(0, 5).flatMap(_ => Seq(
+    Range(0, 250).flatMap(_ => Seq(
       ("a", 1000 * base + rand.nextInt(1000)),
       ("b", 10000 * base + rand.nextInt(10000)),
       ("c", 100000 * base + rand.nextInt(100000)),
