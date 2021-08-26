@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, Da
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.sql.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
@@ -119,8 +120,11 @@ abstract class GpuTimeMath(
     start: Expression,
     interval: Expression,
     timeZoneId: Option[String] = None)
-   extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes
-   with Serializable {
+   extends ShimBinaryExpression
+       with GpuExpression
+       with TimeZoneAwareExpression
+       with ExpectsInputTypes
+       with Serializable {
 
   def this(start: Expression, interval: Expression) = this(start, interval, None)
 
