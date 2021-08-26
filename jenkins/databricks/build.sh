@@ -110,9 +110,6 @@ SCALALIB=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-l
 
 PROTOBUFJAVA=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
 
-SLF4JJCL=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.slf4j--jcl-over-slf4j--org.slf4j__jcl-over-slf4j__1.7.30.jar
-SLF4JJUL=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.slf4j--jul-to-slf4j--org.slf4j__jul-to-slf4j__1.7.30.jar
-
 JACKSONCORE=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__2.10.0.jar
 
 mvn -B install:install-file \
@@ -120,22 +117,6 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$JACKSONCORE\
    -DgroupId=com.fasterxml.jackson.core \
    -DartifactId=jackson-core \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$SLF4JJCL\
-   -DgroupId=org.slf4j \
-   -DartifactId=jcl-over-slf4j \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$SLF4JJUL \
-   -DgroupId=org.slf4j \
-   -DartifactId=jul-to-slf4j \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
@@ -155,22 +136,6 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-#mvn -B install:install-file \
-#   -Dmaven.repo.local=$M2DIR \
-#   -Dfile=$JARDIR/$SCALALIB \
-#   -DgroupId=org.scala-lang \
-#   -DartifactId=scala-library \
-#   -Dversion=2.12.8 \
-#   -Dpackaging=jar
-#
-#mvn -B install:install-file \
-#   -Dmaven.repo.local=$M2DIR \
-#   -Dfile=$JARDIR/$SCALAREFLECT \
-#   -DgroupId=org.scala-lang \
-#   -DartifactId=scala-reflect \
-#   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-#   -Dpackaging=jar
-#
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$JSON4S \
