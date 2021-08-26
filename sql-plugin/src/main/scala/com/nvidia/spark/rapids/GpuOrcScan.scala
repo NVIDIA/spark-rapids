@@ -392,10 +392,11 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
   }
 
   /**
-   * Cast columns with precision that can be stored in an int to DECIMAL32, to save space.
-   * Besides the plugin makes the assumption that if the precision is small enough to fit
-   * in a DECIMAL32, then CUDF has it stored as a DECIMAL32. Getting this wrong may lead
-   * to a number of problems later on.
+   * Cast columns with precision that can be stored in an int to DECIMAL32.
+   *
+   * The plugin requires decimals being stored as DECIMAL32 if the precision is small enough
+   * to fit in an int. And getting this wrong may lead to a number of problems later on. However
+   * the cuDF ORC reader always read decimals as DECIMAL64, so do this conversion when needed.
    *
    * @param table the input table, will be closed after returning.
    * @param schema the schema of the table
@@ -1222,8 +1223,8 @@ private case class GpuOrcFileFilterHandler(
     private def isSchemaCompatible(
         fileSchema: TypeDescription,
         readSchema: TypeDescription): Boolean = {
-      fileSchema == readSchema ||
-        fileSchema != null && readSchema != null &&
+      (fileSchema == readSchema) ||
+        (fileSchema != null && readSchema != null &&
           fileSchema.getCategory == readSchema.getCategory && {
           if (readSchema.getChildren != null) {
             readSchema.getChildren.asScala.forall(rc =>
@@ -1231,7 +1232,7 @@ private case class GpuOrcFileFilterHandler(
           } else {
             false
           }
-        }
+        })
     }
 
     /**

@@ -365,7 +365,8 @@ def test_read_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs
 # This is for the corner case of reading only a struct column that has no nulls.
 # Then there will be no streams in a stripe connecting to this column (Its ROW_INDEX
 # streams have been pruned by the Plugin.), and CUDF throws an exception for such case.
-# Here is the tracking issue: 'https://github.com/rapidsai/cudf/issues/8878'.
+# Here is the tracking issue: 'https://github.com/rapidsai/cudf/issues/8878'. But it has
+# been fixed. Still keep the test here to have this corner case tested.
 def test_read_struct_without_stream(spark_tmp_path):
     data_gen = StructGen([['c_byte', ByteGen(nullable=False)]], nullable=False)
     data_path = spark_tmp_path + '/ORC_DATA'
