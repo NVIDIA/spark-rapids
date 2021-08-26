@@ -2570,6 +2570,25 @@ object GpuOverrides {
           GpuArrayTransform(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
+    expr[TransformValues](
+      "Transform values in a map using a transform function.",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            TypeSig.all))),
+      (in, conf, p, r) => new ExprMeta[TransformValues](in, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuTransformValues(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
+        }
+      }),
     expr[StringLocate](
       "Substring search operator",
       ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
