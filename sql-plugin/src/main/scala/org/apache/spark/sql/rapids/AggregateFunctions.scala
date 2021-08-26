@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -251,6 +251,31 @@ class CudfMin(ref: Expression) extends CudfAggregate(ref) {
   override lazy val updateAggregate: GroupByAggregation = GroupByAggregation.min()
   override lazy val mergeAggregate: GroupByAggregation = GroupByAggregation.min()
   override def toString(): String = "CudfMin"
+}
+
+class CudfTDigest(
+    ref: Expression,
+    percentileExpr: GpuLiteral,
+    accuracyExpression: GpuLiteral)
+  extends CudfAggregate(ref) {
+  // Mark as lazy so that accuracyExpression is not evaluated during tree transformation.
+  private lazy val accuracy = accuracyExpression.value.toString.toInt
+
+  override lazy val updateReductionAggregate: ColumnVector => Scalar =
+    throw new UnsupportedOperationException()
+  override lazy val mergeReductionAggregate: ColumnVector => Scalar =
+    throw new UnsupportedOperationException()
+  override val updateAggregate: GroupByAggregation = GroupByAggregation.createTDigest(accuracy)
+  override val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeTDigest(accuracy)
+  override def toString(): String = "CudfTDigest"
+  override def dataType: DataType = ArrayType(new StructType(Array(
+    StructField("a", DataTypes.DoubleType),
+    StructField("b", DataTypes.DoubleType)
+  )), containsNull = false)
+
+  override def nullable: Boolean = false
+  override def children: Seq[Expression] = Seq(ref)
+  override protected def otherCopyArgs: Seq[AnyRef] = Seq(percentileExpr, accuracyExpression)
 }
 
 class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {

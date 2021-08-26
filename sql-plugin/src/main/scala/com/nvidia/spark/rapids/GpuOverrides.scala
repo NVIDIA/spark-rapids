@@ -2792,6 +2792,33 @@ object GpuOverrides {
           aggBuffer.copy(dataType = c.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
       }),
+    expr[ApproximatePercentile](
+      "Approximate percentile",
+      ExprChecks.fullAggAndProject(
+        TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.DECIMAL_64),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(
+          ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64, TypeSig.all),
+          ParamCheck("percentage",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
+            TypeSig.all),
+          ParamCheck("accuracy", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64, TypeSig.all)
+        )),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          childExprs.length match {
+            case 2 => GpuApproximatePercentile(childExprs.head,
+              childExprs(1).asInstanceOf[GpuLiteral])
+            case 3 => GpuApproximatePercentile(childExprs.head,
+              childExprs(1).asInstanceOf[GpuLiteral],
+              childExprs(2).asInstanceOf[GpuLiteral])
+          }
+        }
+        override def aggBufferAttribute: AttributeReference = {
+          val aggBuffer = c.aggBufferAttributes.head
+          aggBuffer.copy(dataType = c.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+        }
+      }),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
