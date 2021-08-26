@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.shims.spark312
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark312.RapidsShuffleManager
 
+import org.apache.spark.sql.internal.SQLConf
+
 class Spark312Shims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
@@ -28,4 +30,20 @@ class Spark312Shims extends SparkBaseShims {
   }
 
   override def hasCastFloatTimestampUpcast: Boolean = true
+
+  override def int96ParquetRebaseRead(conf: SQLConf): String = {
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
+  }
+
+  override def int96ParquetRebaseWrite(conf: SQLConf): String = {
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
+  }
+
+  override def int96ParquetRebaseReadKey: String = {
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
+  }
+
+  override def int96ParquetRebaseWriteKey: String = {
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+  }
 }
