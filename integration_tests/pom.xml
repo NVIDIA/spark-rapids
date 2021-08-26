@@ -201,7 +201,7 @@
                 <dependency>
                     <groupId>org.scala-lang</groupId>
                     <artifactId>scala-reflect</artifactId>
-                    <version>${spark311db.version}</version>
+                    <version>${scala.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>

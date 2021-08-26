@@ -106,18 +106,22 @@ SCALAREFLECT=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.sca
 
 JAVAASSIST=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.javassist--javassist--org.javassist__javassist__3.25.0-GA.jar
 
-ORCMAPRED=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__1.5.12.jar
-ORCCORE=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-core--org.apache.orc__orc-core__1.5.12.jar
-ORCSHIM=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-shims--org.apache.orc__orc-shims__1.5.12.jar
-
 SCALALIB=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-lang--scala-library_2.12--org.scala-lang__scala-library__2.12.10.jar
-
-FLATBUF=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.google.flatbuffers--flatbuffers-java--com.google.flatbuffers__flatbuffers-java__1.9.0.jar
 
 PROTOBUFJAVA=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
 
 SLF4JJCL=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.slf4j--jcl-over-slf4j--org.slf4j__jcl-over-slf4j__1.7.30.jar
 SLF4JJUL=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.slf4j--jul-to-slf4j--org.slf4j__jul-to-slf4j__1.7.30.jar
+
+JACKSONCORE=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__2.10.0.jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$JACKSONCORE\
+   -DgroupId=com.fasterxml.jackson.core \
+   -DartifactId=jackson-core \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
@@ -145,60 +149,28 @@ mvn -B install:install-file \
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$FLATBUF\
-   -DgroupId=com.google.flatbuffers \
-   -DartifactId=flatbuffers-java \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$ORCSHIM\
-   -DgroupId=org.apache.orc \
-   -DartifactId=orc-shims \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$ORCCORE\
-   -DgroupId=org.apache.orc \
-   -DartifactId=orc-core \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$ORCMAPRED\
-   -DgroupId=org.apache.orc \
-   -DartifactId=orc-mapreduce \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$JAVAASSIST\
    -DgroupId=org.javaassist\
    -DartifactId=javaassist \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$SCALALIB \
-   -DgroupId=org.scala-lang \
-   -DartifactId=scala-library \
-   -Dversion=2.12.8 \
-   -Dpackaging=jar
-
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$SCALAREFLECT \
-   -DgroupId=org.scala-lang \
-   -DartifactId=scala-reflect \
-   -Dversion=2.12.8 \
-   -Dpackaging=jar
-
+#mvn -B install:install-file \
+#   -Dmaven.repo.local=$M2DIR \
+#   -Dfile=$JARDIR/$SCALALIB \
+#   -DgroupId=org.scala-lang \
+#   -DartifactId=scala-library \
+#   -Dversion=2.12.8 \
+#   -Dpackaging=jar
+#
+#mvn -B install:install-file \
+#   -Dmaven.repo.local=$M2DIR \
+#   -Dfile=$JARDIR/$SCALAREFLECT \
+#   -DgroupId=org.scala-lang \
+#   -DartifactId=scala-reflect \
+#   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+#   -Dpackaging=jar
+#
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$JSON4S \

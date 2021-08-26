@@ -138,12 +138,6 @@
                 <version>${spark311db.version}</version>
                 <scope>provided</scope>
            </dependency>
-           <dependency>
-              <groupId>org.scala-lang</groupId>
-              <artifactId>scala-library</artifactId>
-              <version>${spark311db.version}</version>
-              <scope>provided</scope>
-           </dependency>
         </dependencies>
     </profile>
     <profile>

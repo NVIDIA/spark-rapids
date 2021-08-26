@@ -198,10 +198,8 @@
                 <spark.test.version>${spark311db.version}</spark.test.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <slf4j.version>${spark311db.version}</slf4j.version>
-                <orc.version>${spark311db.version}</orc.version>
                 <hive.storage.api.version>${spark311db.version}</hive.storage.api.version>
                 <protobuf.java.version>${spark311db.version}</protobuf.java.version>
-                <flatbuffers.java.version>${spark311db.version}</flatbuffers.java.version>
             </properties>
             <modules>
                 <module>tests</module>
