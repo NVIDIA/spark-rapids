@@ -48,7 +48,6 @@
           <groupId>org.apache.orc</groupId>
           <artifactId>orc-core</artifactId>
           <classifier>${orc.classifier}</classifier>
-          <version>1.5.8</version>
           <exclusions>
             <exclusion>
               <groupId>org.slf4j</groupId>
@@ -145,36 +144,16 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-		    <scope>provided</scope>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-core_${scala.binary.version}</artifactId>
-                    <version>3.1.1-databricks</version>
-		    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-network-common_${scala.binary.version}</artifactId>
-                    <version>3.1.1-databricks</version>
-		    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-launcher_${scala.binary.version}</artifactId>
-                    <version>3.1.1-databricks</version>
-		    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
-                    <version>3.1.1-databricks</version>
-		    <scope>provided</scope>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
@@ -184,33 +163,51 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-network-common_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-launcher_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.json4s</groupId>
-		    <artifactId>JsonAST</artifactId>
-                    <version>3.1.1-databricks</version>
+                    <artifactId>JsonAST</artifactId>
+                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.commons</groupId>
-		    <artifactId>commons-io</artifactId>
-                    <version>3.1.1-databricks</version>
+                    <artifactId>commons-io</artifactId>
+                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.scala-lang</groupId>
-		    <artifactId>scala-reflect</artifactId>
-                    <version>3.1.1-databricks</version>
+                    <artifactId>scala-reflect</artifactId>
+                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.commons</groupId>
-		    <artifactId>commons-lang3</artifactId>
-                    <version>3.1.1-databricks</version>
+                    <artifactId>commons-lang3</artifactId>
+                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>com.esotericsoftware.kryo</groupId>
-		    <artifactId>kryo-shaded-db</artifactId>
-                    <version>3.1.1-databricks</version>
+                    <artifactId>kryo-shaded-db</artifactId>
+                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>

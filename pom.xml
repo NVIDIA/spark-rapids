@@ -465,34 +465,34 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>ai.rapids</groupId>
-                <artifactId>cudf</artifactId>
-                <version>${cudf.version}</version>
-                <classifier>${cuda.version}</classifier>
-                <scope>provided</scope>
+              <groupId>ai.rapids</groupId>
+              <artifactId>cudf</artifactId>
+              <version>${cudf.version}</version>
+              <classifier>${cuda.version}</classifier>
+              <scope>provided</scope>
             </dependency>
             <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>jul-to-slf4j</artifactId>
-                <version>${slf4j.version}</version>
+              <groupId>org.slf4j</groupId>
+              <artifactId>jul-to-slf4j</artifactId>
+              <version>${slf4j.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>jcl-over-slf4j</artifactId>
-                <version>${slf4j.version}</version>
-                <!-- runtime scope is appropriate, but causes SBT build problems -->
+              <groupId>org.slf4j</groupId>
+              <artifactId>jcl-over-slf4j</artifactId>
+              <version>${slf4j.version}</version>
+              <!-- runtime scope is appropriate, but causes SBT build problems -->
             </dependency>
             <dependency>
-                <groupId>org.scala-lang</groupId>
-                <artifactId>scala-library</artifactId>
-                <version>${scala.version}</version>
-                <scope>provided</scope>
+              <groupId>org.scala-lang</groupId>
+              <artifactId>scala-library</artifactId>
+              <version>${scala.version}</version>
+              <scope>provided</scope>
             </dependency>
             <dependency>
-                <groupId>org.apache.spark</groupId>
-                <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                <version>${spark.version}</version>
-		<scope>provided</scope>
+              <groupId>org.apache.spark</groupId>
+              <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+              <version>${spark.version}</version>
+              <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
@@ -506,6 +506,7 @@
               <version>${spark.version}</version>
               <scope>provided</scope>
             </dependency>
+            <!--
             <dependency>
               <groupId>org.apache.spark</groupId>
               <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
@@ -513,6 +514,7 @@
               <type>test-jar</type>
               <scope>test</scope>
             </dependency>
+-->
             <dependency>
               <groupId>org.apache.orc</groupId>
               <artifactId>orc-core</artifactId>
@@ -591,20 +593,20 @@
               <version>2.5.0</version>
             </dependency>
             <dependency>
-                <groupId>com.google.flatbuffers</groupId>
-                <artifactId>flatbuffers-java</artifactId>
-                <version>1.11.0</version>
+              <groupId>com.google.flatbuffers</groupId>
+              <artifactId>flatbuffers-java</artifactId>
+              <version>1.11.0</version>
             </dependency>
             <dependency>
-                <groupId>org.rogach</groupId>
-                <artifactId>scallop_${scala.binary.version}</artifactId>
-                <version>3.5.1</version>
+              <groupId>org.rogach</groupId>
+              <artifactId>scallop_${scala.binary.version}</artifactId>
+              <version>3.5.1</version>
             </dependency>
             <dependency>
-                <groupId>org.scalatest</groupId>
-                <artifactId>scalatest_${scala.binary.version}</artifactId>
-                <version>3.0.5</version>
-                <scope>test</scope>
+              <groupId>org.scalatest</groupId>
+              <artifactId>scalatest_${scala.binary.version}</artifactId>
+              <version>3.0.5</version>
+              <scope>test</scope>
             </dependency>
             <dependency>
               <groupId>org.junit.jupiter</groupId>

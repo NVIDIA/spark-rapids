@@ -112,7 +112,6 @@
             <dependency>
                 <groupId>org.apache.spark</groupId>
                 <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                <version>${spark311db.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
@@ -130,19 +129,19 @@
            <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-io</artifactId>
-                <version>3.1.1-databricks</version>
+                <version>${spark311db.version}</version>
                 <scope>provided</scope>
            </dependency>
            <dependency>
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-common</artifactId>
-                <version>3.1.1-databricks</version>
+                <version>${spark311db.version}</version>
                 <scope>provided</scope>
            </dependency>
-	   <dependency>
+           <dependency>
               <groupId>org.scala-lang</groupId>
               <artifactId>scala-library</artifactId>
-              <version>${scala.version}</version>
+              <version>${spark311db.version}</version>
               <scope>provided</scope>
            </dependency>
         </dependencies>

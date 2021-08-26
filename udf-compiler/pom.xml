@@ -43,21 +43,6 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
-	<!--
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <type>test-jar</type>
-            <scope>test</scope>
-            <version>${spark.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
--->
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
@@ -115,7 +100,7 @@
                 </property>
             </activation>
             <dependencies>
-		<dependency>
+        <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
                     <scope>provided</scope>
@@ -123,25 +108,24 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-core_${scala.binary.version}</artifactId>
-                    <version>3.1.1-databricks</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.javaassist</groupId>
-		    <artifactId>javaassist</artifactId>
+                    <artifactId>javaassist</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
-                    <version>3.1.1-databricks</version>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
@@ -280,9 +264,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
-		<configuration>
+                <configuration>
                     <includeTestSourceDirectory>true</includeTestSourceDirectory>
-		</configuration>
+                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -165,7 +165,7 @@
                 </dependency>
             </dependencies>
         </profile>
-	<profile>
+    <profile>
             <id>release311db</id>
             <activation>
                 <property>
@@ -174,13 +174,33 @@
                 </property>
             </activation>
             <dependencies>
-		<dependency>
-                    <groupId>org.scala-lang</groupId>
-                    <artifactId>scala-reflect</artifactId>
-                    <version>3.1.1-databricks</version>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
                     <scope>provided</scope>
                 </dependency>
-		<dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-core_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.scala-lang</groupId>
+                    <artifactId>scala-reflect</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-arrow-format-db_${scala.binary.version}</artifactId>
                     <version>${spark311db.version}</version>
@@ -203,30 +223,6 @@
                     <artifactId>spark-arrow-vector-db_${scala.binary.version}</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>compile</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-core_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>
