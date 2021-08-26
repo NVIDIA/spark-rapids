@@ -192,6 +192,7 @@
                 </property>
             </activation>
             <properties>
+                <shim.module.name>spark311db</shim.module.name>
                 <spark.version.classifier>spark311-databricks</spark.version.classifier>
                 <spark.version>${spark311db.version}</spark.version>
                 <spark.test.version>${spark311db.version}</spark.test.version>
@@ -458,6 +459,7 @@
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
         <guava.cdh.version>30.0-jre</guava.cdh.version>
+        <shim.module.name>${spark.version.classifier}</shim.module.name>
     </properties>
 
     <dependencyManagement>
