@@ -24,6 +24,8 @@ BUILD_PROFILES=$3
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$4
 BUILD_PROFILES=${BUILD_PROFILES:-'databricks311,!snapshot-shims'}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.1'}
+# set this to anything (true) to skip building with mvn and it will only install the dependencies into .m2
+INSTALL_DEPS_ONLY=""
 # the version of Spark used when we install the Databricks jars in .m2
 # 3.1.0-databricks is add because its actually based on Spark 3.1.1
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
@@ -42,14 +44,14 @@ sudo apt install -y maven
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/
 
-#if [[ -n $SPARKSRCTGZ ]]
-#then
-#    rm -rf spark-rapids
-#    mkdir spark-rapids
-#    echo  "tar -zxf $SPARKSRCTGZ -C spark-rapids"
-#    tar -zxf $SPARKSRCTGZ -C spark-rapids
-#    cd spark-rapids
-#fi
+if [[ -n $SPARKSRCTGZ ]]
+then
+    rm -rf spark-rapids
+    mkdir spark-rapids
+    echo  "tar -zxf $SPARKSRCTGZ -C spark-rapids"
+    tar -zxf $SPARKSRCTGZ -C spark-rapids
+    cd spark-rapids
+fi
 
 export WORKSPACE=`pwd`
 
@@ -62,7 +64,10 @@ RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 RAPIDS_UDF_JAR=rapids-4-spark-udf-examples_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
-#mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
+if [[ -z $INSTALL_DEPS_ONLY ]]
+then
+    mvn -B -P${BUILD_PROFILES} clean package -DskipTests || true
+fi
 # export 'M2DIR' so that shims can get the correct cudf/spark dependnecy info
 export M2DIR=/home/ubuntu/.m2/repository
 CUDF_JAR=${M2DIR}/ai/rapids/cudf/${CUDF_VERSION}/cudf-${CUDF_VERSION}-${CUDA_VERSION}.jar
@@ -102,15 +107,14 @@ APACHECOMMONSLANG3=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--o
 
 JSON4S=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.json4s--json4s-ast_2.12--org.json4s__json4s-ast_2.12__3.7.0-M5.jar
 
-SCALAREFLECT=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-lang--scala-reflect_2.12--org.scala-lang__scala-reflect__2.12.10.jar
-
 JAVAASSIST=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.javassist--javassist--org.javassist__javassist__3.25.0-GA.jar
-
-SCALALIB=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-lang--scala-library_2.12--org.scala-lang__scala-library__2.12.10.jar
 
 PROTOBUFJAVA=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
 
 JACKSONCORE=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__2.10.0.jar
+
+HADOOPCOMMON=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-common--org.apache.hadoop__hadoop-common__2.7.4.jar
+HADOOPMAPRED=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-mapreduce-client-core--org.apache.hadoop__hadoop-mapreduce-client-core__2.7.4.jar
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
@@ -321,8 +325,6 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-HADOOPCOMMON=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-common--org.apache.hadoop__hadoop-common__2.7.4.jar
-
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$HADOOPCOMMON \
@@ -331,7 +333,6 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-HADOOPMAPRED=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-mapreduce-client-core--org.apache.hadoop__hadoop-mapreduce-client-core__2.7.4.jar
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$HADOOPMAPRED \
@@ -340,10 +341,10 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
+if [[ -z $INSTALL_DEPS_ONLY ]]
+then
+    mvn -B -P${BUILD_PROFILES} clean package -DskipTests
+fi
 
-
-
-#mvn -B -P${BUILD_PROFILES} clean package -DskipTests
-
-#cd /home/ubuntu
-#tar -zcf spark-rapids-built.tgz spark-rapids
+cd /home/ubuntu
+tar -zcf spark-rapids-built.tgz spark-rapids
