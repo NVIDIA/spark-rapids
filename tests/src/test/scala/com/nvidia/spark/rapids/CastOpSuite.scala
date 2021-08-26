@@ -28,7 +28,7 @@ import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -440,7 +440,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
     assert(checks.gpuCanCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
-    val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
+    val childExpr: GpuBoundReference =
+      GpuBoundReference(0, dataType, nullable = false)(NamedExpression.newExprId, "arg")
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType),
       dataType,
       DataTypes.StringType,

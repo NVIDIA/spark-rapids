@@ -457,6 +457,7 @@
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
+        <guava.cdh.version>30.0-jre</guava.cdh.version>
     </properties>
 
     <dependencyManagement>

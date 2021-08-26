@@ -643,6 +643,9 @@ def _mark_as_lit(data, data_type):
     # To support nested types, 'data_type' is required.
     assert data_type is not None
 
+    if data is None:
+        return f.lit(data).cast(data_type)
+
     if isinstance(data_type, ArrayType):
         assert isinstance(data, list)
         # Sadly you cannot create a literal from just an array in pyspark
@@ -652,7 +655,7 @@ def _mark_as_lit(data, data_type):
         # Sadly you cannot create a literal from just a dict/tuple in pyspark
         children = zip(data, data_type.fields)
         return f.struct([_mark_as_lit(x, fd.dataType).alias(fd.name) for x, fd in children])
-    elif isinstance(data_type, DateType) and data is not None:
+    elif isinstance(data_type, DateType):
         # Due to https://bugs.python.org/issue13305 we need to zero pad for years prior to 1000,
         # but this works for all of them
         dateString = data.strftime("%Y-%m-%d").zfill(10)
