@@ -78,6 +78,7 @@
         <module>sql-plugin</module>
         <module>udf-compiler</module>
         <module>udf-examples</module>
+        <module>tests</module>
     </modules>
 
     <profiles>
@@ -88,7 +89,6 @@
             </activation>
             <modules>
                 <module>api_validation</module>
-                <module>tests</module>
                 <module>tools</module>
             </modules>
        </profile>
@@ -107,7 +107,6 @@
             </properties>
             <modules>
                 <module>api_validation</module>
-                <module>tests</module>
             </modules>
         </profile>
         <profile>
@@ -125,7 +124,6 @@
             </properties>
             <modules>
                 <module>api_validation</module>
-                <module>tests</module>
             </modules>
         </profile>
         <profile>
@@ -143,7 +141,6 @@
             </properties>
             <modules>
                 <module>api_validation</module>
-                <module>tests</module>
             </modules>
         </profile>
         <profile>
@@ -160,7 +157,6 @@
                 <spark.test.version>${spark304.version}</spark.test.version>
             </properties>
             <modules>
-                <module>tests</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -178,7 +174,6 @@
                 <spark.test.version>${spark311.version}</spark.test.version>
             </properties>
             <modules>
-                <module>tests</module>
                 <module>api_validation</module>
                 <module>tools</module>
             </modules>
@@ -200,9 +195,6 @@
                 <hive.storage.api.version>${spark311db.version}</hive.storage.api.version>
                 <protobuf.java.version>${spark311db.version}</protobuf.java.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>release312</id>
@@ -218,7 +210,6 @@
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
             <modules>
-                <module>tests</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -236,7 +227,6 @@
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
             <modules>
-                <module>tests</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -253,9 +243,6 @@
                 <spark.version>${spark311cdh.version}</spark.version>
                 <spark.test.version>${spark311cdh.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>udf-compiler</id>
