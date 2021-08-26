@@ -65,7 +65,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     .add("Read File Format Score", DoubleType, true)
     .add("Unsupported Read File Formats and Types", StringType, true)
     .add("Unsupported Write Data Format", StringType, true)
-    .add("Unsupported Nested Types", StringType, true)
+    .add("Complex Types", StringType, true)
+    .add("Unsupported Nested Complex Types", StringType, true)
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),

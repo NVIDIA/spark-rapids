@@ -42,6 +42,7 @@ class QualAppInfo(
   var lastJobEndTime: Option[Long] = None
   var lastSQLEndTime: Option[Long] = None
   val writeDataFormat: ArrayBuffer[String] = ArrayBuffer[String]()
+  var isDataSourceV2 = false
 
   var appInfo: Option[QualApplicationInfo] = None
   val sqlStart: HashMap[Long, QualSQLExecutionInfo] = HashMap[Long, QualSQLExecutionInfo]()
@@ -185,28 +186,71 @@ class QualAppInfo(
     }.getOrElse(1.0)
   }
 
-  def reportNestedType(): String = {
+  def reportComplexTypes(): (String, String) = {
     if (dataSourceInfo.size != 0) {
       val schema = dataSourceInfo.map { ds => ds.schema }
-      val nestedSchema = parseReadSchemaForNestedTypes(schema.mkString(";"))
-      nestedSchema
+      val (complexTypes, complexNestedTypes) = parseReadSchemaForNestedTypes(schema)
+      (complexTypes, complexNestedTypes)
     } else {
-      ""
+      ("", "")
     }
   }
 
-  def parseReadSchemaForNestedTypes(schema: String): String = {
-    val distinctSchemas = schema.split(";").distinct
-    val schemaTypes = distinctSchemas.map(x => x.split(":", 2)(1))
+  def parseReadSchemaForNestedTypes(schema: ArrayBuffer[String]): (String, String) = {
+    val tempStringBuilder = new StringBuilder()
+    val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
+    var angleBracketsCount = 0
+    var parenthesesCount = 0
+    val distinctSchema = schema.distinct.mkString(",")
 
-    // check for nested types in schema
-    val filterNestedTypes = schemaTypes.map { x =>
-      if (x.contains("array<") | x.contains("struct>") | x.contains("map")) x else ""
+    // Get the nested types i.e everything between < >
+    for (char <- distinctSchema) {
+      char match {
+        case '<' => angleBracketsCount += 1
+        case '>' => angleBracketsCount -= 1
+        case '(' => parenthesesCount += 1
+        case ')' => parenthesesCount -= 1
+        case _ =>
+      }
+      if (angleBracketsCount == 0 && parenthesesCount == 0 && char.equals(',')) {
+        individualSchema += tempStringBuilder.toString
+        tempStringBuilder.setLength(0)
+      }
+      else {
+        tempStringBuilder.append(char);
+      }
+    }
+    if (!tempStringBuilder.isEmpty) {
+      individualSchema += tempStringBuilder.toString
+    }
+
+    // Omit columnName and get only schemas
+    val schemaTypes = individualSchema.map(x => x.split(":", 2)(1))//.distinct
+
+    // Filter only complex types.
+    // Example: array<string>, array<struct<string, string>>
+    val complexTypes = schemaTypes.filter(x =>
+      x.startsWith("array<") || x.startsWith("map<") || x.startsWith("struct<"))
+
+    // Determine nested complex types from complex types
+    // Example: array<struct<string, string>> is nested complex type.
+    val nestedComplexTypes = complexTypes.map { x =>
+      val startIndex = x.indexOf('<')
+      val lastIndex = x.lastIndexOf('>')
+      val string = x.substring(startIndex, lastIndex)
+
+      if (string.contains("array<") || string.contains("struct<")
+          || string.contains("map<")) {
+        x
+      } else ""
     }
 
     // Since it is saved as csv, replace commas with ;
-    val res = filterNestedTypes.toList.filter(_.nonEmpty).mkString(";").replace(",", ";")
-    res
+    val complexTypesResult = complexTypes.filter(_.nonEmpty).mkString(";").replace(",", ";")
+    val nestedComplexTypesResult = nestedComplexTypes.filter(
+      _.nonEmpty).mkString(";").replace(",", ";")
+
+    (complexTypesResult, nestedComplexTypesResult)
   }
 
   def aggregateStats(): Option[QualificationSummaryInfo] = {
@@ -231,13 +275,17 @@ class QualAppInfo(
         s"${format}[$typeString]"
       }.mkString(";")
       val writeFormat = writeFormatNotSupported(writeDataFormat)
-      val nestedTypes = reportNestedType
+      val (allComplexTypes, nestedComplexTypes) = if (!isDataSourceV2) {
+        reportComplexTypes
+      } else {
+        ("NA", "NA")
+      }
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
-        getAllReadFileFormats, writeFormat, nestedTypes)
+        getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes)
     }
   }
 
@@ -260,16 +308,21 @@ class QualAppInfo(
         val writeFormat = node.desc.split(",")(2)
         writeDataFormat += writeFormat
       }
+      // Check if it is DataSourceV2. If it is V2, then we cannot determine the complete ReadSchema
+      // as it will be incomplete. It will be appended as ... if the schema is very large.
+      if (node.name.equals("BatchScan")) {
+        isDataSourceV2 = true
+      }
     }
   }
 
   def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
-    val supportedWriteDataFormat = Array("parquet", "orc")
-    //Filter unsupported write data format
-    val unSupportedWriteFormat = writeFormat.map(x => x.toUpperCase.trim).filterNot(
-      supportedWriteDataFormat.map(x => x.toUpperCase.trim).contains(_))
+    // Filter unsupported write data format
+    val unSupportedWriteFormat = pluginTypeChecker.map { checker =>
+      checker.writeDataFormat(writeFormat)
+    }.getOrElse(ArrayBuffer[String]())
 
-    unSupportedWriteFormat.distinct.mkString(";")
+    unSupportedWriteFormat.distinct.mkString(";").toUpperCase
   }
 }
 
@@ -316,7 +369,8 @@ case class QualificationSummaryInfo(
     readFileFormatAndTypesNotSupported: String,
     readFileFormats: String,
     writeDataFormat: String,
-    nestedTypes: String)
+    complexTypes: String,
+    nestedComplexTypes: String)
 
 object QualAppInfo extends Logging {
   def createApp(

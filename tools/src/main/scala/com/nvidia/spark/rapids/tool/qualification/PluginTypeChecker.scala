@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.HashMap
+import scala.collection.mutable.{ArrayBuffer,HashMap}
 import scala.io.{BufferedSource, Source}
 
 /**
@@ -42,6 +42,8 @@ class PluginTypeChecker {
   // var for testing puposes
   private var formatsToSupportedCategory = readSupportedTypesForPlugin
 
+  private var supportedWriteDataFormats =  writeDataFormatForPlugin
+
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
@@ -51,6 +53,35 @@ class PluginTypeChecker {
   private def readSupportedTypesForPlugin: Map[String, Map[String, Seq[String]]] = {
     val source = Source.fromResource(DEFAULT_DS_FILE)
     readSupportedTypesForPlugin(source)
+  }
+
+  private def writeDataFormatForPlugin: ArrayBuffer[String] = {
+    val source = Source.fromResource(DEFAULT_DS_FILE)
+    val supportedWriteFormat = ArrayBuffer[String]()
+    try {
+      val fileContents = source.getLines().toSeq
+      if (fileContents.size < 2) {
+        throw new IllegalStateException("supportedDataSource file appears corrupt," +
+            " must have at least the header and one line")
+      }
+      // first line is header
+      val header = fileContents.head.split(",").map(_.toLowerCase)
+      fileContents.tail.foreach { line =>
+        val cols = line.split(",")
+        if (header.size != cols.size) {
+          throw new IllegalStateException("supportedDataSource file appears corrupt," +
+              " header length doesn't match rows length")
+        }
+        val format = cols(0).toLowerCase
+        val direction = cols(1).toLowerCase()
+        if (direction.equals("write")) {
+          supportedWriteFormat += format
+        }
+      }
+    } finally {
+      source.close()
+    }
+    supportedWriteFormat
   }
 
   // file format should be like this:
@@ -139,5 +170,10 @@ class PluginTypeChecker {
         (0.0, Set("*"))
     }
     score
+  }
+
+  def writeDataFormat(writeFormat: ArrayBuffer[String]) = {
+    writeFormat.map(x => x.toLowerCase.trim).filterNot(
+      supportedWriteDataFormats.map(x => x.trim).contains(_))
   }
 }
