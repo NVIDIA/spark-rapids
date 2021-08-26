@@ -637,6 +637,14 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
+    .doc("The GPU-enabled version of the `CreateMap` expression (`map` SQL function) does not " +
+      "detect duplicate keys in all cases and does not guarantee which key wins if there are " +
+      "duplicates. When this config is set to true, `CreateMap` will be enabled to run on the " +
+      "GPU even when there might be duplicate keys.")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
       .booleanConf
@@ -1473,6 +1481,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val explain: String = get(EXPLAIN)
 
+  lazy val shouldExplain: Boolean = !explain.equalsIgnoreCase("NONE")
+
+  lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
+
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
@@ -1538,6 +1550,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
+
+  lazy val isCreateMapEnabled: Boolean = get(ENABLE_CREATE_MAP)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
@@ -1649,6 +1663,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
+
+  lazy val optimizerShouldExplainAll: Boolean = optimizerExplain.equalsIgnoreCase("ALL")
 
   lazy val optimizerClassName: String = get(OPTIMIZER_CLASS_NAME)
 

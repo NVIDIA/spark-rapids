@@ -201,6 +201,12 @@ trait LazySpillableColumnarBatch extends LazySpillable {
    * Get the batch that this wraps and unspill it if needed.
    */
   def getBatch: ColumnarBatch
+
+  /**
+   * Release the underlying batch to the caller who is responsible for closing it. The resulting
+   * batch will NOT be closed when this instance is closed.
+   */
+  def releaseBatch(): ColumnarBatch
 }
 
 object LazySpillableColumnarBatch {
@@ -218,12 +224,19 @@ object LazySpillableColumnarBatch {
 /**
  * A version of `LazySpillableColumnarBatch` where instead of closing the underlying
  * batch it is only spilled. This is used for cases, like with a streaming hash join
- * where the data itself needs to out live the JoinGatherer it is haded off to.
+ * where the data itself needs to out live the JoinGatherer it is handed off to.
  */
 case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableColumnarBatch)
-    extends LazySpillableColumnarBatch {
+    extends LazySpillableColumnarBatch with Arm {
   override def getBatch: ColumnarBatch =
     wrapped.getBatch
+
+  override def releaseBatch(): ColumnarBatch = {
+    closeOnExcept(GpuColumnVector.incRefCounts(wrapped.getBatch)) { batch =>
+      wrapped.allowSpilling()
+      batch
+    }
+  }
 
   override def numRows: Int = wrapped.numRows
   override def numCols: Int = wrapped.numCols
@@ -262,7 +275,15 @@ class LazySpillableColumnarBatchImpl(
         cached = spill.map(_.getColumnarBatch())
       }
     }
-    cached.get
+    cached.getOrElse(throw new IllegalStateException("batch is closed"))
+  }
+
+  override def releaseBatch(): ColumnarBatch = {
+    closeOnExcept(getBatch) { batch =>
+      cached = None
+      close()
+      batch
+    }
   }
 
   override def allowSpilling(): Unit = {
