@@ -149,6 +149,12 @@ pipeline {
         } // end of Build docker image
 
         stage("Determine Project Version") {
+            when {
+                expression {
+                    !skipped
+                }
+            }
+
             steps {
                 script {
                     unstash "source_tree"
