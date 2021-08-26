@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 
+import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -213,7 +214,7 @@ case class GpuProjectAstExec(
             withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
               numOutputBatches += 1
               numOutputRows += cb.numRows()
-              val projectedTable = withResource(GpuColumnVector.from(cb)) { table =>
+              val projectedTable = withResource(tableFromBatch(cb)) { table =>
                 withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
                   new Table(projectedColumns:_*)
                 }
@@ -228,6 +229,20 @@ case class GpuProjectAstExec(
         override def close(): Unit = {
           compiledAstExprs.safeClose()
           compiledAstExprs = Nil
+        }
+
+        private def tableFromBatch(cb: ColumnarBatch): Table = {
+          if (cb.numCols != 0) {
+            GpuColumnVector.from(cb)
+          } else {
+            // Count-only batch but cudf Table cannot be created with no columns.
+            // Create the cheapest table we can to evaluate the AST expression.
+            withResource(Scalar.fromBool(false)) { falseScalar =>
+              withResource(cudf.ColumnVector.fromScalar(falseScalar, cb.numRows())) { falseColumn =>
+                new Table(falseColumn)
+              }
+            }
+          }
         }
       }
     }
