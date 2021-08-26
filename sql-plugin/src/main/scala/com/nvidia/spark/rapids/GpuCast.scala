@@ -287,7 +287,7 @@ object GpuCast extends Arm {
   }
 
 
-  private def recursiveDoColumnar(
+  def recursiveDoColumnar(
       input: ColumnView,
       fromDataType: DataType,
       toDataType: DataType,

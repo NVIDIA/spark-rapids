@@ -16,11 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, HostColumnVector, RollingAggregationOnColumn}
+import ai.rapids.cudf.{ColumnVector, RollingAggregationOnColumn}
+import com.nvidia.spark.rapids.GpuCast.{recursiveDoColumnar}
 
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.catalyst.util.ArrayData
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{CudfTDigest, GpuAggregateFunction}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -50,7 +52,7 @@ case class GpuApproximatePercentile (
       accuracyExpression) :: Nil
 
   override lazy val evaluateExpression: Expression = {
-    ApproxPercentileFromTDigestExpr(outputBuf, percentiles)
+    ApproxPercentileFromTDigestExpr(outputBuf, percentiles, child.dataType)
   }
 
   protected final lazy val inputBuf: AttributeReference =
@@ -111,12 +113,27 @@ object GpuApproximatePercentile {
 
 case class ApproxPercentileFromTDigestExpr(
     child: Expression,
-    percentiles: Array[Double])
+    percentiles: Array[Double],
+    finalDataType: DataType)
   extends GpuExpression {
   override def columnarEval(batch: ColumnarBatch): Any = {
     val expr = child.asInstanceOf[GpuExpression]
     withResource(expr.columnarEval(batch).asInstanceOf[GpuColumnVector]) { cv =>
-      GpuColumnVector.from(cv.getBase.approxPercentile(percentiles), dataType)
+      withResource(cv.getBase.approxPercentile(percentiles)) { percentiles =>
+        if (child.dataType == DataTypes.DoubleType) {
+          GpuColumnVector.from(percentiles, dataType)
+        } else {
+          // cast cuDF Array[Double] to Array[child.dataType]
+          withResource(percentiles.getChildColumnView(0)) { childView =>
+            withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
+                ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false)) { childCv =>
+              withResource(percentiles.replaceListChild(childCv)) { x =>
+                GpuColumnVector.from(x.copyToColumnVector(), ArrayType(finalDataType))
+              }
+            }
+          }
+        }
+      }
     }
   }
   override def nullable: Boolean = false
