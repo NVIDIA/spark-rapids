@@ -492,37 +492,34 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled) {
-      val start = System.nanoTime()
-      var updatedPlan = insertHashOptimizeSorts(plan)
-      updatedPlan = updateScansForInput(updatedPlan)
-      updatedPlan = insertColumnarFromGpu(updatedPlan)
-      updatedPlan = insertCoalesce(updatedPlan)
-      // only insert shuffle coalesces when using normal shuffle
-      if (!GpuShuffleEnv.shouldUseRapidsShuffle(rapidsConf)) {
-        updatedPlan = insertShuffleCoalesce(updatedPlan)
+      GpuOverrides.logDuration(rapidsConf.shouldExplain,
+        t => f"GPU plan transition optimization took $t%.2f ms") {
+        var updatedPlan = insertHashOptimizeSorts(plan)
+        updatedPlan = updateScansForInput(updatedPlan)
+        updatedPlan = insertColumnarFromGpu(updatedPlan)
+        updatedPlan = insertCoalesce(updatedPlan)
+        // only insert shuffle coalesces when using normal shuffle
+        if (!GpuShuffleEnv.shouldUseRapidsShuffle(rapidsConf)) {
+          updatedPlan = insertShuffleCoalesce(updatedPlan)
+        }
+        if (plan.conf.adaptiveExecutionEnabled) {
+          updatedPlan = optimizeAdaptiveTransitions(updatedPlan, None)
+        } else {
+          updatedPlan = optimizeGpuPlanTransitions(updatedPlan)
+        }
+        updatedPlan = optimizeCoalesce(updatedPlan)
+        if (rapidsConf.exportColumnarRdd) {
+          updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
+        }
+        if (rapidsConf.isTestEnabled) {
+          assertIsOnTheGpu(updatedPlan, rapidsConf)
+          // Generate the canonicalized plan to ensure no incompatibilities.
+          // The plan itself is not currently checked.
+          updatedPlan.canonicalized
+          validateExecsInGpuPlan(updatedPlan, rapidsConf)
+        }
+        updatedPlan
       }
-      if (plan.conf.adaptiveExecutionEnabled) {
-        updatedPlan = optimizeAdaptiveTransitions(updatedPlan, None)
-      } else {
-        updatedPlan = optimizeGpuPlanTransitions(updatedPlan)
-      }
-      updatedPlan = optimizeCoalesce(updatedPlan)
-      if (rapidsConf.exportColumnarRdd) {
-        updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
-      }
-      if (rapidsConf.isTestEnabled) {
-        assertIsOnTheGpu(updatedPlan, rapidsConf)
-        // Generate the canonicalized plan to ensure no incompatibilities.
-        // The plan itself is not currently checked.
-        updatedPlan.canonicalized
-        validateExecsInGpuPlan(updatedPlan, rapidsConf)
-      }
-      val end = System.nanoTime()
-      if (rapidsConf.shouldExplain) {
-        val timeMs = (end - start) / 1000000.0
-        logInfo(f"GPU plan transition optimization took $timeMs%.2f ms")
-      }
-      updatedPlan
     } else {
       plan
     }

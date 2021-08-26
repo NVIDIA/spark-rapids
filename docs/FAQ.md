@@ -191,7 +191,7 @@ Explain will also log how long these translations took at the INFO level with li
 
 ```
 INFO GpuOverrides: Plan conversion to the GPU took 3.13 ms
-INFO GpuTransitionOverrides: GPU plan transition optimization took 1.66 ms
+INFO GpuOverrides: GPU plan transition optimization took 1.66 ms
 ```
 
 Because it is at the INFO level, the default logging level for `spark-shell` is not going to display
