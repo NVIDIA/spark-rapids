@@ -3314,9 +3314,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
+      val start = System.nanoTime()
       val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
         // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
         // distribution expressions are not semantically equal.
@@ -3324,7 +3325,13 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       } else {
         plan
       }
-      applyOverrides(updatedPlan, conf)
+      val ret = applyOverrides(updatedPlan, conf)
+      val end = System.nanoTime()
+      if (conf.shouldExplain) {
+        val timeMs = (end - start) / 1000000.0
+        logInfo(f"Plan conversion to the GPU took $timeMs%.2f ms")
+      }
+      ret
     } else {
       plan
     }

@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.lang.reflect.Method
 
+import scala.annotation.tailrec
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
@@ -159,6 +161,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
+  @tailrec
   private def isGpuShuffleLike(execNode: SparkPlan): Boolean = execNode match {
     case _: GpuShuffleExchangeExecBase | _: GpuCustomShuffleReaderExec => true
     case qs: ShuffleQueryStageExec => isGpuShuffleLike(qs.plan)
@@ -445,7 +448,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             !conf.testingAllowedNonGpu.exists(nonGpuClass =>
                 PlanUtils.sameClass(plan, nonGpuClass))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
-            s"${plan.getClass}\n${plan}")
+            s"${plan.getClass}\n$plan")
         }
         // filter out the output expressions since those are not GPU expressions
         val planOutput = plan.output.toSet
@@ -472,7 +475,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       // to set to make uniq execs
       val execsFound = PlanUtils.findOperators(plan, planContainsInstanceOf).toSet
-      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
+      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass.getSimpleName))
       require(execsNotFound.isEmpty,
         s"Plan ${plan.toString()} does not contain the following execs: " +
         execsNotFound.mkString(","))
@@ -489,6 +492,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled) {
+      val start = System.nanoTime()
       var updatedPlan = insertHashOptimizeSorts(plan)
       updatedPlan = updateScansForInput(updatedPlan)
       updatedPlan = insertColumnarFromGpu(updatedPlan)
@@ -512,6 +516,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         // The plan itself is not currently checked.
         updatedPlan.canonicalized
         validateExecsInGpuPlan(updatedPlan, rapidsConf)
+      }
+      val end = System.nanoTime()
+      if (rapidsConf.shouldExplain) {
+        val timeMs = (end - start) / 1000000.0
+        logInfo(f"GPU plan transition optimization took $timeMs%.2f ms")
       }
       updatedPlan
     } else {
