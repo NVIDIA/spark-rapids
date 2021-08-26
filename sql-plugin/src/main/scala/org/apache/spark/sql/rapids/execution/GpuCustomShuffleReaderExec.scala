@@ -61,12 +61,15 @@ case class GpuCustomShuffleReaderExec(
         partitionSpecs.map(_.asInstanceOf[PartialMapperPartitionSpec].mapIndex).toSet.size ==
             partitionSpecs.length) {
       child match {
-        case ShuffleQueryStageExec(_, s: ShuffleExchangeLike) =>
-          s.child.outputPartitioning
-        case ShuffleQueryStageExec(_, r @ ReusedExchangeExec(_, s: ShuffleExchangeLike)) =>
-          s.child.outputPartitioning match {
-            case e: Expression => r.updateAttr(e).asInstanceOf[Partitioning]
-            case other => other
+        case sqse: ShuffleQueryStageExec if sqse.plan.isInstanceOf[ShuffleExchangeLike] =>
+          sqse.plan.asInstanceOf[ShuffleExchangeLike].child.outputPartitioning
+        case sqse: ShuffleQueryStageExec if sqse.plan.isInstanceOf[ReusedExchangeExec] =>
+          val reused = sqse.plan.asInstanceOf[ReusedExchangeExec]
+          reused.child match {
+            case sel: ShuffleExchangeLike => sel.child.outputPartitioning match {
+              case e: Expression => reused.updateAttr(e).asInstanceOf[Partitioning]
+              case other => other
+            }
           }
         case _ =>
           throw new IllegalStateException("operating on canonicalization plan")

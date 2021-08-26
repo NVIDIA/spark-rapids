@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,9 +28,10 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {
     buildSide.wrapped match {
-      case BroadcastQueryStageExec(_, _: GpuBroadcastExchangeExecBase) => true
-      case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
-        reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
+      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] ||
+          bqse.plan.isInstanceOf[ReusedExchangeExec] &&
+          bqse.plan.asInstanceOf[ReusedExchangeExec]
+              .child.isInstanceOf[GpuBroadcastExchangeExecBase]
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
       case _: GpuBroadcastExchangeExecBase => true
       case _ => buildSide.canThisBeReplaced
@@ -39,9 +40,10 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
     val buildSideOnGpu = buildSide match {
-      case BroadcastQueryStageExec(_, _: GpuBroadcastExchangeExecBase) => true
-      case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
-        reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
+      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] ||
+          bqse.plan.isInstanceOf[ReusedExchangeExec] &&
+              bqse.plan.asInstanceOf[ReusedExchangeExec]
+                  .child.isInstanceOf[GpuBroadcastExchangeExecBase]
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
       case _: GpuBroadcastExchangeExecBase => true
       case _ => false

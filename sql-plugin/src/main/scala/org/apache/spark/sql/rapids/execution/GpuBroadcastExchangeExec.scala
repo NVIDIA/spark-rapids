@@ -290,7 +290,7 @@ abstract class GpuBroadcastExchangeExecBase(
       override def call(): Broadcast[Any] = {
         // This will run in another thread. Set the execution id so that we can connect these jobs
         // with the correct execution.
-        SQLExecution.withExecutionId(sqlContext.sparkSession, executionId) {
+        SQLExecution.withExecutionId(sparkSession, executionId) {
           val totalRange = new MetricRange(totalTime)
           try {
             // Setup a job group here so later it may get cancelled by groupId if necessary.

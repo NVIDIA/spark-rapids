@@ -59,7 +59,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
   private lazy val sideEffectResult: Seq[ColumnarBatch] =
-    cmd.runColumnar(sqlContext.sparkSession, child)
+    cmd.runColumnar(sparkSession, child)
 
   override def output: Seq[Attribute] = cmd.output
 
@@ -82,7 +82,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    sqlContext.sparkContext.parallelize(sideEffectResult, 1)
+    sparkContext.parallelize(sideEffectResult, 1)
   }
 
   // Need single batch in some cases, at least until out of core sort is done

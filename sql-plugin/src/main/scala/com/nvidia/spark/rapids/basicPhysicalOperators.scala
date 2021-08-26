@@ -422,7 +422,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     if (isEmptyRange) {
       sparkContext.emptyRDD[ColumnarBatch]
     } else {
-      sqlContext
+      sparkSession
           .sparkContext
           .parallelize(0 until numSlices, numSlices)
           .mapPartitionsWithIndex { (i, _) =>
@@ -506,7 +506,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 }
 
 
-case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
+case class GpuUnionExec(children: Seq[SparkPlan]) extends GpuExec {
 
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {

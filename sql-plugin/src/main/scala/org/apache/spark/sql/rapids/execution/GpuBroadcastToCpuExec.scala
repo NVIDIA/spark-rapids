@@ -23,7 +23,7 @@ import scala.collection.mutable.ListBuffer
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor}
-import com.nvidia.spark.rapids.{GpuMetric, MetricRange, NvtxWithMetrics, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.{GpuMetric, MetricRange, NvtxWithMetrics, RapidsHostColumnVector, ShimLoader}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 
 import org.apache.spark.SparkException
@@ -64,7 +64,7 @@ case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkP
       override def call(): Broadcast[Any] = {
         // This will run in another thread. Set the execution id so that we can connect these jobs
         // with the correct execution.
-        SQLExecution.withExecutionId(sqlContext.sparkSession, executionId) {
+        SQLExecution.withExecutionId(sparkSession, executionId) {
           val totalRange = new MetricRange(totalTime)
           try {
             // Setup a job group here so later it may get cancelled by groupId if necessary.
@@ -112,8 +112,8 @@ case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkP
                 "broadcast build", NvtxColor.DARK_GREEN, buildTime)) { _ =>
                 val toUnsafe = UnsafeProjection.create(output, output)
                 val unsafeRows = rows.iterator.map(toUnsafe)
-                val relation = mode.transform(unsafeRows.toArray)
-
+                val relation = ShimLoader.getSparkShims
+                    .broadcastModeTransform(mode, unsafeRows.toArray)
                 val dataSize = relation match {
                   case map: KnownSizeEstimation =>
                     map.estimatedSize

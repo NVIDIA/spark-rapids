@@ -44,7 +44,6 @@ class GpuWindowExpressionMeta(
       literal.dataType match {
         case IntegerType =>
           literal.value.asInstanceOf[Int]
-          literal.value.asInstanceOf[Int]
         case t =>
           willNotWorkOnGpu(s"unsupported window boundary type $t")
           -1
@@ -72,7 +71,7 @@ class GpuWindowExpressionMeta(
             val lower = getAndCheckRowBoundaryValue(spec.lower)
             val upper = getAndCheckRowBoundaryValue(spec.upper)
             windowFunction match {
-              case Lead(_, _, _) | Lag(_, _, _) => // ignored we are good
+              case _: Lead | _: Lag => // ignored we are good
               case _ =>
                 // need to be sure that the lower/upper are acceptable
                 if (lower > 0) {
@@ -1321,8 +1320,8 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
   lazy val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
   lazy val offset: BaseExprMeta[_] = {
     expr match {
-      case Lead(_,_,_) => // Supported.
-      case Lag(_,_,_) =>  // Supported.
+      case _: Lead => // Supported.
+      case _: Lag =>  // Supported.
       case other =>
         throw new IllegalStateException(
           s"Only LEAD/LAG offset window functions are supported. Found: $other")
@@ -1344,8 +1343,8 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
 
   override def tagExprForGpu(): Unit = {
     expr match {
-      case Lead(_,_,_) => // Supported.
-      case Lag(_,_,_) =>  // Supported.
+      case _: Lead => // Supported.
+      case _: Lag =>  // Supported.
       case other =>
         willNotWorkOnGpu( s"Only LEAD/LAG offset window functions are supported. Found: $other")
     }

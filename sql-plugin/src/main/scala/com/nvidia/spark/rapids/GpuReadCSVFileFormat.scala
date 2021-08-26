@@ -68,7 +68,7 @@ object GpuReadCSVFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuCSVScan.tagSupport(
-      fsse.sqlContext.sparkSession,
+      ShimLoader.getSparkShims.sessionFromPlan(fsse),
       fsse.relation.dataSchema,
       fsse.output.toStructType,
       fsse.relation.options,
