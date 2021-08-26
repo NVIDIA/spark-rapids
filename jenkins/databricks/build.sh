@@ -154,7 +154,7 @@ mvn -B install:install-file \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-core_$SCALA_VERSION \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+   -Dpackaging=jar \
    -DpomFile=$COREPOMPATH/$COREPOM
 
 else
