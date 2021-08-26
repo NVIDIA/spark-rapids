@@ -326,8 +326,7 @@ final class TypeSig private(
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
           ZoneId.systemDefault().normalized() == GpuOverrides.UTC_TIMEZONE_ID
       case StringType => check.contains(TypeEnum.STRING)
-      case dt: DecimalType if check.contains(TypeEnum.DECIMAL) && allowDecimal =>
-          dt.precision <= DType.DECIMAL64_MAX_PRECISION
+      case dt: DecimalType if check.contains(TypeEnum.DECIMAL) && allowDecimal => true
       case NullType => check.contains(TypeEnum.NULL)
       case BinaryType => check.contains(TypeEnum.BINARY)
       case CalendarIntervalType => check.contains(TypeEnum.CALENDAR)

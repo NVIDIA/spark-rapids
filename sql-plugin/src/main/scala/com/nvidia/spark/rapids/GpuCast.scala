@@ -1295,12 +1295,22 @@ case class GpuCast(
 
     def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
       if (to.scale == from.scale) {
-        if (isFrom32Bit == isTo32Bit) {
-          checkedInput.incRefCount()
-        } else {
+//        if (isFrom32Bit == isTo32Bit) {
+//          checkedInput.incRefCount()
+//        } else {
           // the input is already checked, just cast it
-          checkedInput.castTo(cudfDecimal)
-        }
+        //ADD debug here KUHU
+          val res = checkedInput.castTo(cudfDecimal)
+          System.err.println("KUHU checkedInput row 0 =" +
+            checkedInput.asInstanceOf[ColumnView].copyToHost().getBigDecimal(0))
+        System.err.println("KUHU checkedInput row 1 =" +
+          checkedInput.asInstanceOf[ColumnView].copyToHost().getBigDecimal(1))
+        System.err.println("KUHU res row 0 =" +
+          res.asInstanceOf[ColumnView].copyToHost().getBigDecimal(0))
+          System.err.println("KUHU res row 1 =" +
+            res.asInstanceOf[ColumnView].copyToHost().getBigDecimal(1))
+        return res
+//        }
       } else if (to.scale > from.scale) {
         checkedInput.castTo(cudfDecimal)
       } else {

@@ -29,8 +29,10 @@ object DecimalUtil {
   def createCudfDecimal(precision: Int, scale: Int): DType = {
     if (precision <= Decimal.MAX_INT_DIGITS) {
       DType.create(DType.DTypeEnum.DECIMAL32, -scale)
-    } else {
+    } else if (precision <= Decimal.MAX_LONG_DIGITS) {
       DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+    } else {
+      DType.create(DType.DTypeEnum.DECIMAL128, -scale)
     }
   }
 

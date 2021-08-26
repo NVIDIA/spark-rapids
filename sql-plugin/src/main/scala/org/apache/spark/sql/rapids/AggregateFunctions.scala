@@ -224,7 +224,7 @@ class CudfSum(ref: Expression) extends CudfAggregate(ref) {
   @transient val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
 
   override val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.sum(rapidsSumType)
+    (col: cudf.ColumnVector) => col.castTo(rapidsSumType).sum(rapidsSumType)
 
   override val mergeReductionAggregate: cudf.ColumnVector => cudf.Scalar = updateReductionAggregate
 

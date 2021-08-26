@@ -481,12 +481,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       // Decimal supportable check has been conducted in the GPU plan overriding stage.
       // So, we don't have to handle decimal-supportable problem at here.
       DecimalType dt = (DecimalType) type;
-      if (dt.precision() > DType.DECIMAL64_MAX_PRECISION) {
-        return null;
-      } else {
-        return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
+      System.err.println("KUHU dt type=" + dt);
+      return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
       }
-    }
     return null;
   }
 

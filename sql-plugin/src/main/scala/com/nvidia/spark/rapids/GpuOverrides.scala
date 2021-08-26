@@ -1629,7 +1629,8 @@ object GpuOverrides {
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
-              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+              //check const from cudf
+              if (intermediateResult.precision > 38) {
                 willNotWorkOnGpu("The actual output precision of the multiply is too large" +
                     s" to fit on the GPU $intermediateResult")
               }
@@ -2002,9 +2003,9 @@ object GpuOverrides {
       "Max aggregate operator",
       ExprChecksImpl(
         ExprChecks.fullAgg(
-          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2029,9 +2030,9 @@ object GpuOverrides {
       "Min aggregate operator",
       ExprChecksImpl(
         ExprChecks.fullAgg(
-          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL, TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2056,8 +2057,8 @@ object GpuOverrides {
       "Sum aggregate operator",
       ExprChecksImpl(
         ExprChecks.fullAgg(
-          TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL,
-          Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))
+          TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL, TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL,
+          Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL, TypeSig.numeric))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2083,8 +2084,8 @@ object GpuOverrides {
     expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(
-        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL,
-        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
+        TypeSig.DOUBLE + TypeSig.DECIMAL, TypeSig.DOUBLE + TypeSig.DECIMAL,
+        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric + TypeSig.DECIMAL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
