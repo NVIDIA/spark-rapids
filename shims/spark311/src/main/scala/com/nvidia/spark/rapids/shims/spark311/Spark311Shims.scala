@@ -19,27 +19,11 @@ package com.nvidia.spark.rapids.shims.spark311
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
 
-import org.apache.spark.sql.catalyst.expressions.NamedExpression
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.internal.StaticSQLConf
-
 class Spark311Shims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
-  }
-
-  override def getGpuColumnarToRowTransition(plan: SparkPlan,
-      exportColumnRdd: Boolean,
-      postTransition: Option[Seq[NamedExpression]]): GpuColumnarToRowExecParent = {
-    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = Class.forName(serName)
-    if (serClass == classOf[ParquetCachedBatchSerializer]) {
-      org.apache.spark.sql.rapids.shims.spark311.GpuColumnarToRowTransitionExec(plan)
-    } else {
-      GpuColumnarToRowExec(plan)
-    }
   }
 }

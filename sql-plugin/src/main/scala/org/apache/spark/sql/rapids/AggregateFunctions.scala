@@ -927,6 +927,11 @@ case class CpuToGpuCollectBufferTransition(
   override def dataType: DataType = ArrayType(elementType, containsNull = false)
 
   override protected def nullSafeEval(input: Any): ArrayData = {
+    // Converts binary buffer into UnSafeArrayData, according to the deserialize method of Collect.
+    // The input binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. Since array of elements exactly matches the GPU format, we
+    // don't need to do any conversion in memory level. Instead, we simply bind the binary data to
+    // a reused UnsafeRow. Then, fetch the only field as ArrayData.
     val bytes = input.asInstanceOf[Array[Byte]]
     row.pointTo(bytes, bytes.length)
     row.getArray(0).copy()
@@ -945,6 +950,12 @@ case class GpuToCpuCollectBufferTransition(
   private lazy val projection = UnsafeProjection.create(Array(child.dataType))
 
   override protected def nullSafeEval(input: Any): Array[Byte] = {
+    // Converts UnSafeArrayData into binary buffer, according to the serialize method of Collect.
+    // The binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. As Collect.serialize, we create an UnsafeProjection to
+    // transform ArrayData to binary view of the single field UnsafeRow. Unlike Collect.serialize,
+    // we don't have to build ArrayData from on-heap array, since the input is already formatted
+    // in ArrayData(UnsafeArrayData).
     val arrayData = input.asInstanceOf[ArrayData]
     projection.apply(InternalRow.apply(arrayData)).getBytes
   }

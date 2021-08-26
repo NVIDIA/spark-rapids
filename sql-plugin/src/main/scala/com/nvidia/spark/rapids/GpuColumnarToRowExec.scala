@@ -267,15 +267,15 @@ object CudfRowTransitions {
 
 abstract class GpuColumnarToRowExecParent(child: SparkPlan,
     val exportColumnarRdd: Boolean,
-    val postTransition: Option[Seq[NamedExpression]])
+    val postProjection: Seq[NamedExpression])
     extends UnaryExecNode with GpuExec {
   import GpuMetric._
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 
-  override def output: Seq[Attribute] = postTransition match {
-    case Some(transitions) => transitions.map(_.toAttribute)
-    case None => child.output
+  override def output: Seq[Attribute] = postProjection match {
+    case expressions if expressions.isEmpty => child.output
+    case expressions => expressions.map(_.toAttribute)
   }
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
@@ -306,14 +306,15 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan,
       cdata.mapPartitions(f)
     }
 
-    postTransition match {
-      case Some(transformations) =>
+    postProjection match {
+      case transformations if transformations.nonEmpty =>
         rdata.mapPartitionsWithIndex { case (index, iterator) =>
           val projection = UnsafeProjection.create(transformations, child.output)
           projection.initialize(index)
           iterator.map(projection)
         }
-      case None => rdata
+      case _ =>
+        rdata
     }
   }
 }
@@ -355,5 +356,5 @@ object GpuColumnarToRowExecParent {
 
 case class GpuColumnarToRowExec(child: SparkPlan,
     override val exportColumnarRdd: Boolean = false,
-    override val postTransition: Option[Seq[NamedExpression]] = None)
-    extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postTransition)
+    override val postProjection: Seq[NamedExpression] = Seq.empty)
+    extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postProjection)

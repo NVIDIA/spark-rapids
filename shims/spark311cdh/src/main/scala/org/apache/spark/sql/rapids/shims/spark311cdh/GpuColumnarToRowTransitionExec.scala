@@ -23,6 +23,6 @@ import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 
 case class GpuColumnarToRowTransitionExec(child: SparkPlan,
     override val exportColumnarRdd: Boolean = false,
-    override val postTransition: Option[Seq[NamedExpression]] = None)
-    extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postTransition)
+    override val postProjection: Seq[NamedExpression] = Seq.empty)
+    extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postProjection)
         with ColumnarToRowTransition

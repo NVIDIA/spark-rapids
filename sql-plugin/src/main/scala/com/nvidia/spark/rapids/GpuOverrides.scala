@@ -53,7 +53,7 @@ import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastNestedLoopJoinMeta, GpuCustomShuffleReaderExec, GpuShuffleExchangeExecBase, GpuShuffleMeta, JoinTypeChecks}
+import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
@@ -2779,6 +2779,8 @@ object GpuOverrides {
 
         override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
           new GpuToCpuCollectBufferConverter()
+
+        override val supportBufferConversion: Boolean = true
       }),
     expr[CollectSet](
       "Collect a set of unique elements, not supported in reduction.",
@@ -2804,6 +2806,8 @@ object GpuOverrides {
 
         override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
           new GpuToCpuCollectBufferConverter()
+
+        override val supportBufferConversion: Boolean = true
       }),
     expr[GetJsonObject](
       "Extracts a json object from path",
@@ -3202,38 +3206,8 @@ object GpuOverrides {
       "A wrapper of shuffle query stage",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
           TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
-      (exec, conf, p, r) =>
-        new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            if (!exec.child.supportsColumnar) {
-              willNotWorkOnGpu(
-                "Unable to replace CustomShuffleReader due to child not being columnar")
-            }
-            val shuffleEx = exec.child.asInstanceOf[ShuffleQueryStageExec].plan
-            shuffleEx.getTagValue(GpuOverrides.preRowToColumnarTransition).foreach { r2c =>
-              wrapped.setTagValue(GpuOverrides.preRowToColumnarTransition, r2c)
-            }
-          }
-
-          override def convertToGpu(): GpuExec = {
-            GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
-              exec.partitionSpecs)
-          }
-
-          // extract output attributes of the underlying ShuffleExchange
-          override def outputAttributes: Seq[Attribute] = {
-            val shuffleEx = exec.child.asInstanceOf[ShuffleQueryStageExec].plan
-            shuffleEx.getTagValue(GpuShuffleMeta.shuffleExOutputAttributes)
-                .getOrElse(shuffleEx.output)
-          }
-
-          // fetch availableRuntimeDataTransition of the underlying ShuffleExchange
-          override val availableRuntimeDataTransition: Boolean = {
-            val shuffleEx = exec.child.asInstanceOf[ShuffleQueryStageExec].plan
-            shuffleEx.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition)
-                .getOrElse(false)
-          }
-        }),
+      (reader, conf, p, r) => new GpuCustomShuffleReaderMeta(reader, conf, p, r)
+    ),
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",
@@ -3275,11 +3249,10 @@ object GpuOverrides {
     }
   }
 
-  val preRowToColumnarTransition = TreeNodeTag[Seq[NamedExpression]](
-    "rapids.gpu.preRowToColumnarTransition")
+  val preRowToColProjection = TreeNodeTag[Seq[NamedExpression]]("rapids.gpu.preRowToColProcessing")
 
-  val postColumnarToRowTransition = TreeNodeTag[Seq[NamedExpression]](
-    "rapids.gpu.postColumnarToRowTransition")
+  val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
+    "rapids.gpu.postColToRowProcessing")
 }
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {

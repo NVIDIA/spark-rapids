@@ -978,7 +978,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
  * Base class for metadata around `SortAggregateExec` and `ObjectHashAggregateExec`, which may
  * contain TypedImperativeAggregate functions in aggregate expressions.
  */
-abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
+abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggregateExec](
     plan: INPUT,
     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
     conf: RapidsConf,
@@ -1002,7 +1002,11 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
       None
     }
 
-  override val availableRuntimeDataTransition: Boolean = true
+  override val availableRuntimeDataTransition: Boolean =
+    aggregateExpressions.map(_.childExprs.head).forall {
+      case aggMeta: TypedImperativeAggExprMeta[_] => aggMeta.supportBufferConversion
+      case _ => true
+    }
 
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
@@ -1010,12 +1014,14 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: SparkPlan](
     // If a typedImperativeAggregate function run across CPU and GPU (ex: Partial mode on CPU,
     // Merge mode on GPU), it will lead to a runtime crash. Because aggregation buffers produced
     // by the previous stage of function are NOT in the same format as the later stage consuming.
-    // To fix the gap between CPU and GPU buffers, we build runtime buffer converters and bind them
-    // to target plans, so these converters can be integrated into R2C/C2R Transitions during
-    // GpuTransitionOverrides.
+    // If buffer converters are available for all incompatible buffers, we will build these buffer
+    // converters and bind them to certain plans, in order to integrate these converters into
+    // R2C/C2R Transitions during GpuTransitionOverrides to fix the gap between GPU and CPU.
+    // Otherwise, we have to fall back all Aggregate stages to CPU once any of them did fallback.
+    //
     // The binding also works when AQE is on, since it leverages the TreeNodeTag to cache buffer
     // converters.
-    GpuTypedImperativeSupportedAggregateExecMeta.bindBufferConverters(this)
+    GpuTypedImperativeSupportedAggregateExecMeta.handleAggregationBuffer(this)
   }
 
   override def convertToGpu(): GpuExec = {
@@ -1104,21 +1110,22 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
   /**
    * The method will bind buffer converters (CPU Expressions) to certain CPU Plans if necessary,
    * so the method returns nothing. The binding work will help us to insert these converters as
-   * pre/post processors of GpuRowToColumnarExec/GpuColumnarToRowExec during the materialization
+   * pre/post processing of GpuRowToColumnarExec/GpuColumnarToRowExec during the materialization
    * of these transition Plans.
    *
    * In the beginning, it collects all physical Aggregate Plans (stages) of current Aggregate.
    * Then, it goes through all stages in pair, to check whether buffer converters need to be
    * inserted between its child and itself.
-   * After that, it creates buffer converters based on the createBufferConverter methods of
-   * TypedImperativeAggExprMeta.
-   * At last, it binds these newly-created converters to certain Plans.
+   * If it is necessary, it goes on to check whether all these buffers are available to convert.
+   * If not, it falls back all stages to CPU to keep consistency of intermediate data; Otherwise,
+   * it creates buffer converters based on the createBufferConverter methods of
+   * TypedImperativeAggExprMeta, and binds these newly-created converters to certain Plans.
    *
-   * It is critical and sophisticated to find out where to bind these converters. Generally, we
-   * need to find out CPU plans right before/after the potential R2C/C2R transitions, so as to
-   * integrate these converters during post columnar overriding. These plans may be Aggregate
-   * stages themselves. They may also be plans inserted between Aggregate stages (such as:
-   * ShuffleExchangeExec, SortExec).
+   * In terms of binding, it is critical and sophisticated to find out where to bind these
+   * converters. Generally, we need to find out CPU plans right before/after the potential R2C/C2R
+   * transitions, so as to integrate these converters during post columnar overriding. These plans
+   * may be Aggregate stages themselves. They may also be plans inserted between Aggregate stages,
+   * such as: ShuffleExchangeExec, SortExec.
    *
    * The binding carries out by storing buffer converters as tag values of certain CPU Plans. These
    * plans are either the child of GpuRowToColumnarExec or the parent of GpuColumnarToRowExec. The
@@ -1127,7 +1134,7 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
    * yet created. And GPU Plans created by RapidsMeta don't keep the tags of their CPU
    * counterparts.
    */
-  private def bindBufferConverters(
+  private def handleAggregationBuffer(
       meta: GpuTypedImperativeSupportedAggregateExecMeta[_]): Unit = {
     // We only run the check for final stages which contain TypedImperativeAggregate.
     val needToCheck = containTypedImperativeAggregate(meta, Some(Final))
@@ -1152,13 +1159,39 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
             containTypedImperativeAggregate(stages(i + 1))
     }
 
-    // Bind converters as TreeNodeTags into the CPU plans who are right before/after the potential
-    // R2C/C2R transitions (the transitions are yet inserted).
-    // These converters are CPU expressions, and they will be integrated into GpuRowToColumnarExec/
-    // GpuColumnarToRowExec as pre/post transitions. What we do here, is to create these converters
-    // according to the stage pairs.
+    // Return if all internal aggregation buffers are compatible with GPU Overrides.
+    if (needBufferConversion.forall(!_)) return
+
+    // Fall back all GPU supported stages to CPU, if there exists TypedImperativeAggregate buffer
+    // who doesn't support data format transition in runtime. Otherwise, build buffer converters
+    // and bind them to certain SparkPlans.
+    val entireFallback = !stages.zip(needBufferConversion).forall { case (stage, needConvert) =>
+      !needConvert || stage.availableRuntimeDataTransition
+    }
+    if (entireFallback) {
+      stages.foreach {
+        case aggMeta if aggMeta.canThisBeReplaced =>
+          aggMeta.willNotWorkOnGpu("Associated fallback for TypedImperativeAggregate")
+        case _ =>
+      }
+    } else {
+      bindBufferConverters(stages, needBufferConversion)
+    }
+  }
+
+  /**
+   * Bind converters as TreeNodeTags into the CPU plans who are right before/after the potential
+   * R2C/C2R transitions (the transitions are yet inserted).
+   *
+   * These converters are CPU expressions, and they will be integrated into GpuRowToColumnarExec/
+   * GpuColumnarToRowExec as pre/post transitions. What we do here, is to create these converters
+   * according to the stage pairs.
+   */
+  private def bindBufferConverters(stages: Seq[GpuBaseAggregateMeta[_]],
+      needBufferConversion: Seq[Boolean]): Unit = {
+
     needBufferConversion.zipWithIndex.foreach {
-      case (needToConvert, i) if needToConvert =>
+      case (needConvert, i) if needConvert =>
         // Find the next edge from the given stage which is a splitting point between CPU plans
         // and GPU plans. The method returns a pair of plans around the edge. For instance,
         //
@@ -1176,13 +1209,13 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
           case List(parent, child) if parent.canThisBeReplaced =>
             val childPlan = child.wrapped.asInstanceOf[SparkPlan]
             val expressions = createBufferConverter(stages(i), stages(i + 1), true)
-            childPlan.setTagValue(GpuOverrides.preRowToColumnarTransition, expressions)
+            childPlan.setTagValue(GpuOverrides.preRowToColProjection, expressions)
           // create postColumnarToRowTransition, and bind it to the parent node (CPU plan) of
           // GpuColumnarToRowExec
           case List(parent, _) =>
             val parentPlan = parent.wrapped.asInstanceOf[SparkPlan]
             val expressions = createBufferConverter(stages(i), stages(i + 1), false)
-            parentPlan.setTagValue(GpuOverrides.postColumnarToRowTransition, expressions)
+            parentPlan.setTagValue(GpuOverrides.postColToRowProjection, expressions)
         }
       case _ =>
     }

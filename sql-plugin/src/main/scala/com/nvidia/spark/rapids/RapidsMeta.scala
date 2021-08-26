@@ -614,8 +614,8 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
 
       childPlans.head.wrapped
-          .getTagValue(GpuOverrides.preRowToColumnarTransition).foreach { r2c =>
-        wrapped.setTagValue(GpuOverrides.preRowToColumnarTransition, r2c)
+          .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
+        wrapped.setTagValue(GpuOverrides.preRowToColProjection, r2c)
       }
     }
   }
@@ -1126,13 +1126,17 @@ abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
    * Returns a buffer converter who can generate a Expression to transform the aggregation
    * buffer of wrapped function from CPU format to GPU format.
    */
-  def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter
+  def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+    throw new NotImplementedError("")
 
   /**
    * Returns a buffer converter who can generate a Expression to transform the aggregation
    * buffer of wrapped function from GPU format to CPU format.
    */
-  def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter
+  def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+    throw new NotImplementedError("")
+
+  val supportBufferConversion: Boolean = false
 }
 
 /**

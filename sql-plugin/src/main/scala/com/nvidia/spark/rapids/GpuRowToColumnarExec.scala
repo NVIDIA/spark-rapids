@@ -798,13 +798,13 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
  */
 case class GpuRowToColumnarExec(child: SparkPlan,
     goal: CoalesceSizeGoal,
-    preTransition: Option[Seq[NamedExpression]] = None)
+    preProcessing: Seq[NamedExpression] = Seq.empty)
   extends UnaryExecNode with GpuExec {
   import GpuMetric._
 
-  override def output: Seq[Attribute] = preTransition match {
-    case Some(transitions) => transitions.map(_.toAttribute)
-    case None => child.output
+  override def output: Seq[Attribute] = preProcessing match {
+    case expressions if expressions.isEmpty => child.output
+    case expressions => expressions.map(_.toAttribute)
   }
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
@@ -838,14 +838,15 @@ case class GpuRowToColumnarExec(child: SparkPlan,
     val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
-    val rowBased = preTransition match {
-      case Some(transformations) =>
+    val rowBased = preProcessing match {
+      case transformations if transformations.nonEmpty =>
         child.execute().mapPartitionsWithIndex { case (index, iterator) =>
           val projection = UnsafeProjection.create(transformations, child.output)
           projection.initialize(index)
           iterator.map(projection)
         }
-      case None => child.execute()
+      case _ =>
+        child.execute()
     }
 
     // cache in a local to avoid serializing the plan
