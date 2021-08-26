@@ -27,7 +27,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistrib
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.execution.python.shims.spark301.BatchGroupUtils._
+import org.apache.spark.sql.rapids.execution.python.shims.spark313.BatchGroupUtils._
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
