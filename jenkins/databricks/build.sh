@@ -78,6 +78,7 @@ COREPOM=spark-core_${SCALA_VERSION}-${BASE_SPARK_VERSION}.pom
 HIVEJAR=----workspace_spark_3_1--sql--hive--hive_2.12_deploy_shaded.jar
 HIVEEXECJAR=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-exec-core--org.apache.hive__hive-exec-core__2.3.7.jar
 HIVESERDEJAR=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-serde--org.apache.hive__hive-serde__2.3.7.jar
+HIVESTORAGE=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.2.jar
 COREPOMPATH=$M2DIR/org/apache/spark/spark-core_${SCALA_VERSION}/${BASE_SPARK_VERSION}
 
 PARQUETHADOOPJAR=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__1.10.1-databricks6.jar
@@ -105,7 +106,74 @@ SCALAREFLECT=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.sca
 
 JAVAASSIST=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.javassist--javassist--org.javassist__javassist__3.25.0-GA.jar
 
-#SCALALIB=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-lang--scala-library_2.12--org.scala-lang__scala-library__2.12.10.jar
+ORCMAPRED=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__1.5.12.jar
+ORCCORE=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-core--org.apache.orc__orc-core__1.5.12.jar
+ORCSHIM=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.apache.orc--orc-shims--org.apache.orc__orc-shims__1.5.12.jar
+
+SCALALIB=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.scala-lang--scala-library_2.12--org.scala-lang__scala-library__2.12.10.jar
+
+FLATBUF=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.google.flatbuffers--flatbuffers-java--com.google.flatbuffers__flatbuffers-java__1.9.0.jar
+
+PROTOBUFJAVA=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
+
+SLF4JJCL=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.slf4j--jcl-over-slf4j--org.slf4j__jcl-over-slf4j__1.7.30.jar
+SLF4JJUL=----workspace_spark_3_1--maven-trees--hive-2.3__hadoop-2.7--org.slf4j--jul-to-slf4j--org.slf4j__jul-to-slf4j__1.7.30.jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$SLF4JJCL\
+   -DgroupId=org.slf4j \
+   -DartifactId=jcl-over-slf4j \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$SLF4JJUL \
+   -DgroupId=org.slf4j \
+   -DartifactId=jul-to-slf4j \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$PROTOBUFJAVA \
+   -DgroupId=com.google.protobuf \
+   -DartifactId=protobuf-java \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$FLATBUF\
+   -DgroupId=com.google.flatbuffers \
+   -DartifactId=flatbuffers-java \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORCSHIM\
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-shims \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORCCORE\
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-core \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$ORCMAPRED\
+   -DgroupId=org.apache.orc \
+   -DartifactId=orc-mapreduce \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
 
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
@@ -115,20 +183,20 @@ mvn -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-#mvn -B install:install-file \
-#   -Dmaven.repo.local=$M2DIR \
-#   -Dfile=$JARDIR/$SCALALIB \
-#   -DgroupId=org.scala-lang \
-#   -DartifactId=scala-library \
-#   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-#   -Dpackaging=jar
-#
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$SCALALIB \
+   -DgroupId=org.scala-lang \
+   -DartifactId=scala-library \
+   -Dversion=2.12.8 \
+   -Dpackaging=jar
+
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$SCALAREFLECT \
    -DgroupId=org.scala-lang \
    -DartifactId=scala-reflect \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dversion=2.12.8 \
    -Dpackaging=jar
 
 mvn -B install:install-file \
@@ -192,6 +260,14 @@ mvn -B install:install-file \
    -Dfile=$JARDIR/$COREJAR \
    -DgroupId=org.apache.spark \
    -DartifactId=spark-core_$SCALA_VERSION \
+   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+   -Dpackaging=jar
+
+mvn -B install:install-file \
+   -Dmaven.repo.local=$M2DIR \
+   -Dfile=$JARDIR/$HIVESTORAGE \
+   -DgroupId=org.apache.hive \
+   -DartifactId=hive-storage-api \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
