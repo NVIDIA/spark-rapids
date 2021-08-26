@@ -20,6 +20,7 @@ from functools import reduce
 from spark_session import is_before_spark_311
 from marks import allow_non_gpu
 from pyspark.sql.types import *
+from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
 
 # Once we support arrays as literals then we can support a[null] and
@@ -164,4 +165,36 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
         spark, data_gen).select(element_at(col('a'), 100)),
                                conf={'spark.sql.ansi.enabled':True,
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_array_transform(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                'transform(a, item -> item) as ident',
+                'transform(a, item -> null) as n',
+                'transform(a, item -> 1) as one',
+                'transform(a, (item, index) -> index) as indexed',
+                'transform(a, item -> b) as b_val',
+                'transform(a, (item, index) -> index - b) as math_on_index']
+        element_type = data_gen.data_type.elementType
+        # decimal types can grow too large so we are avoiding those here for now
+        if isinstance(element_type, IntegralType):
+            columns.extend(['transform(a, item -> item + 1) as add',
+                'transform(a, item -> item + item) as mul',
+                'transform(a, (item, index) -> item + index + b) as all_add'])
+
+        if isinstance(element_type, StringType):
+            columns.extend(['transform(a, entry -> concat(entry, "-test")) as con'])
+
+        if isinstance(element_type, ArrayType):
+            columns.extend(['transform(a, entry -> transform(entry, sub_entry -> 1)) as sub_one',
+                'transform(a, (entry, index) -> transform(entry, (sub_entry, sub_index) -> index)) as index_as_sub_entry',
+                'transform(a, (entry, index) -> transform(entry, (sub_entry, sub_index) -> index + sub_index)) as index_add_sub_index',
+                'transform(a, (entry, index) -> transform(entry, (sub_entry, sub_index) -> index + sub_index + b)) as add_indexes_and_value'])
+
+        return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, 
+            conf=allow_negative_scale_of_decimal_conf)
 

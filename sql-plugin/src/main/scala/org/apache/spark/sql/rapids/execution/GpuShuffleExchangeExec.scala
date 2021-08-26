@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
+import org.apache.spark.sql.rapids.GpuShuffleDependency
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
@@ -230,7 +230,8 @@ object GpuShuffleExchangeExec {
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
       val shim = ShimLoader.getSparkShims
       val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
-        shim.sortOrder(GpuBoundReference(index, attr.dataType, attr.nullable), Ascending)
+        shim.sortOrder(GpuBoundReference(index, attr.dataType,
+          attr.nullable)(attr.exprId, attr.name), Ascending)
         // Force the sequence to materialize so we don't have issues with serializing too much
       }.toArray.toSeq
       val sorter = new GpuSorter(boundReferences, outputAttributes)
