@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util
+
 import scala.collection.mutable
 
 import ai.rapids.cudf
@@ -23,7 +25,6 @@ import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
-import java.util
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging

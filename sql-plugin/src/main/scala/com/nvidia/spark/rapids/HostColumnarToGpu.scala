@@ -16,13 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.{util => ju}
 import java.nio.ByteBuffer
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
-import java.{util => ju}
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 
