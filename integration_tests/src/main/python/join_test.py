@@ -423,6 +423,8 @@ def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type)
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
+        # Compute the distinct of the join result to verify the join produces a proper dataframe
+        # for downstream processing.
         return left.join(broadcast(right), how=join_type).distinct()
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
@@ -437,6 +439,8 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
+        # Compute the distinct of the join result to verify the join produces a proper dataframe
+        # for downstream processing.
         return broadcast(left).join(right, how=join_type).distinct()
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
