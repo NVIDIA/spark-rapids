@@ -489,9 +489,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           }
         case LeftAnti =>
           // degenerate case, no rows are returned.
-          left.executeColumnar().mapPartitions { _ =>
-            Iterator.single(new ColumnarBatch(Array(), 0))
-          }
+          val childRDD = left.executeColumnar()
+          new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, childRDD.getNumPartitions)
         case _ =>
           // Everything else is treated like an unconditional cross join
           val buildSide = getGpuBuildSide
