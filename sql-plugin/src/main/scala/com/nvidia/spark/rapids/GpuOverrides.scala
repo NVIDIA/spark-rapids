@@ -974,7 +974,7 @@ object GpuOverrides {
       }),
     expr[PreciseTimestampConversion](
       "Expression used internally to convert the TimestampType to Long and back without losing " +
-          "precision, i.e. in microseconds. Used in time windowing.",
+          "precision, i.e. in microseconds. Used in time windowing",
       ExprChecks.unaryProject(
         TypeSig.TIMESTAMP + TypeSig.LONG,
         TypeSig.TIMESTAMP + TypeSig.LONG,
@@ -2225,7 +2225,7 @@ object GpuOverrides {
       }),
     expr[PythonUDF](
       "UDF run in an external python process. Does not actually run on the GPU, but " +
-          "the transfer of data to/from it can be accelerated.",
+          "the transfer of data to/from it can be accelerated",
       ExprChecks.fullAggAndProject(
         // Different types of Pandas UDF support different sets of output type. Please refer to
         //   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
@@ -2394,7 +2394,7 @@ object GpuOverrides {
       (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r)),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
-        "Returns value for the given key in value if column is map.",
+        "Returns value for the given key in value if column is map",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
           TypeSig.DECIMAL_64 + TypeSig.MAP).nested(), TypeSig.all,
@@ -2552,7 +2552,7 @@ object GpuOverrides {
       }),
     expr[ArrayTransform](
       "Transform elements in an array using the transform function. This is similar to a `map` " +
-          "in functional programming.",
+          "in functional programming",
       ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
@@ -2571,7 +2571,7 @@ object GpuOverrides {
         }
       }),
     expr[TransformValues](
-      "Transform values in a map using a transform function.",
+      "Transform values in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
@@ -2797,7 +2797,7 @@ object GpuOverrides {
           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
       }),
     expr[Explode](
-      "Given an input array produces a sequence of rows for each value in the array.",
+      "Given an input array produces a sequence of rows for each value in the array",
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
@@ -2812,7 +2812,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuExplode(childExprs.head.convertToGpu())
       }),
     expr[PosExplode](
-      "Given an input array produces a sequence of rows for each value in the array.",
+      "Given an input array produces a sequence of rows for each value in the array",
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
@@ -2827,7 +2827,7 @@ object GpuOverrides {
         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
       }),
     expr[CollectList](
-      "Collect a list of non-unique elements, not supported in reduction.",
+      "Collect a list of non-unique elements, not supported in reduction",
       // GpuCollectList is not yet supported in Reduction context.
       ExprChecks.aggNotReduction(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
@@ -2847,7 +2847,7 @@ object GpuOverrides {
         }
       }),
     expr[CollectSet](
-      "Collect a set of unique elements, not supported in reduction.",
+      "Collect a set of unique elements, not supported in reduction",
       // GpuCollectSet is not yet supported in Reduction context.
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
@@ -3074,7 +3074,7 @@ object GpuOverrides {
             childPlans.head.convertIfNeeded())
       }),
     exec[TakeOrderedAndProjectExec](
-      "Take the first limit elements as defined by the sortOrder, and do projection if needed.",
+      "Take the first limit elements as defined by the sortOrder, and do projection if needed",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
@@ -3175,7 +3175,7 @@ object GpuOverrides {
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force. Full outer joins and joins where the " +
           "broadcast side matches the join side (e.g.: LeftOuter with left broadcast) are not " +
-          "supported.",
+          "supported",
       JoinTypeChecks.nonEquiJoinChecks,
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
