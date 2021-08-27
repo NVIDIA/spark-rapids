@@ -188,8 +188,7 @@ class QualAppInfo(
   def reportComplexTypes(): (String, String) = {
     if (dataSourceInfo.size != 0) {
       val schema = dataSourceInfo.map { ds => ds.schema }
-      val (complexTypes, complexNestedTypes) = parseReadSchemaForNestedTypes(schema)
-      (complexTypes, complexNestedTypes)
+      parseReadSchemaForNestedTypes(schema)
     } else {
       ("", "")
     }
@@ -230,6 +229,7 @@ class QualAppInfo(
     val incompleteSchema = individualSchema.filter(x => x.contains("..."))
     val completeSchema = individualSchema.filterNot(x => x.contains("..."))
 
+    // Check if it has types
     val incompleteTypes = incompleteSchema.map { x =>
       if (x.contains("...") && x.contains(":")) {
         x.split(":", 2)(1).split("\\.\\.\\.")(0)
@@ -237,10 +237,8 @@ class QualAppInfo(
         ""
       }
     }
-
     // Omit columnName and get only schemas
     val completeTypes = completeSchema.map(x => x.split(":", 2)(1))
-
     val schemaTypes = completeTypes ++ incompleteTypes
 
     // Filter only complex types.
@@ -250,22 +248,19 @@ class QualAppInfo(
 
     // Determine nested complex types from complex types
     // Example: array<struct<string, string>> is nested complex type.
-    val nestedComplexTypes = complexTypes.map { complexType =>
+    val nestedComplexTypes = complexTypes.filter(complexType => {
       val startIndex = complexType.indexOf('<')
       val closedBracket = complexType.lastIndexOf('>')
       // If String is incomplete due to dsv2, then '>' may not be present. In that case traverse
-      // until leng
+      // until length of the incomplete string
       val lastIndex = if (closedBracket == -1) {
         complexType.length - 1
       } else {
         closedBracket
       }
       val string = complexType.substring(startIndex, lastIndex + 1)
-      if (string.contains("array<") || string.contains("struct<")
-          || string.contains("map<")) {
-        complexType
-      } else ""
-    }
+      string.contains("array<") || string.contains("struct<") || string.contains("map<")
+    })
 
     // Since it is saved as csv, replace commas with ;
     val complexTypesResult = complexTypes.filter(_.nonEmpty).mkString(";").replace(",", ";")

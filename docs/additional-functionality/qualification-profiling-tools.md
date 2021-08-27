@@ -145,9 +145,10 @@ had to estimate it, it means the event log was missing the application finished 
 or sql execution time we find as the end time used to calculate the duration.
 
 `Complex Types and Unsupported Nested Complex Types` looks at the Read Schema and reports if there are any complex types(array, struct or maps)
-in the schema. Note that it can read only DataSource V1. If it is DataSource V2 reader, then the read schema will be incomplete in the 
-event log. It will be appended with ... if the read schema is very large. For event logs with DataSource V2, it will be reported as "NA" for 
-these fields.
+in the schema. Nested complex types are types complex types which contain other complex types(Example: array<struct<string,string>>).
+Note that it can read all the schemas for DataSource V1. If it is DataSource V2 reader, then the read schema will be incomplete in the
+event log. It will be appended with ... if the read schema is very large. We read until ... and report if there are any complex types and
+nested complex types in that.
 
 Note that SQL queries that contain failed jobs are not included.
 
@@ -156,7 +157,7 @@ Sample output in csv:
 ```
 App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Unsupported Nested Complex Types
 job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,"",JSON,array<struct<city:string;state:string>>;map<string;string>,array<struct<city:string;state:string>>
-job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]",JSON;CSV,""
+job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]",JSON;CSV,"",""
 ```
 
 Sample output in text:
