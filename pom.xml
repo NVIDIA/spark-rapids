@@ -231,6 +231,40 @@
             </modules>
         </profile>
         <profile>
+            <id>release320</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>320</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version.classifier>spark320</spark.version.classifier>
+                <spark.version>${spark320.version}</spark.version>
+                <spark.test.version>${spark320.version}</spark.test.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark${buildver}/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>release311cdh</id>
             <activation>
                 <property>
@@ -404,8 +438,8 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark301.version}</spark.version>
-        <spark.version.classifier></spark.version.classifier>
         <spark.test.version>${spark301.version}</spark.test.version>
+        <spark.version.classifier></spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>21.10.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -609,6 +643,23 @@
     <build>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>3.2.0</version>
+                    <executions>
+                        <execution>
+                            <id>add-profile-src</id>
+                            <goals><goal>add-source</goal></goals>
+                            <phase>generate-sources</phase>
+                            <configuration>
+                                <sources>
+                                    <source>${project.basedir}/src/main/spark301/scala</source>
+                                </sources>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>

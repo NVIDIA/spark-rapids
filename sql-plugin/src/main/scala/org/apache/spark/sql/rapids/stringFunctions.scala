@@ -64,7 +64,9 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
 
   override def dataType: DataType = IntegerType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
-  override def children: Seq[Expression] = Seq(substr, col, start)
+  def first: Expression = substr
+  def second: Expression = col
+  def third: Expression = start
 
   def this(substr: Expression, col: Expression) = {
     this(substr, col, GpuLiteral(1, IntegerType))
@@ -227,6 +229,8 @@ case class GpuStringTrim(column: Expression, trimParameters: Option[Expression] 
 
   override protected def direction: String = "BOTH"
 
+  val trimMethod = "gpuTrim"
+
   override def strippedColumnVector(column: GpuColumnVector, t: Scalar): GpuColumnVector =
     GpuColumnVector.from(column.getBase.strip(t), dataType)
 }
@@ -245,6 +249,8 @@ case class GpuStringTrimLeft(column: Expression, trimParameters: Option[Expressi
 
   override protected def direction: String = "LEADING"
 
+  val trimMethod = "gpuTrimLeft"
+
   override def strippedColumnVector(column: GpuColumnVector, t: Scalar): GpuColumnVector =
     GpuColumnVector.from(column.getBase.lstrip(t), dataType)
 }
@@ -262,6 +268,8 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
   def this(column: Expression) = this(column, None)
 
   override protected def direction: String = "TRAILING"
+
+  val trimMethod = "gpuTrimRight"
 
   override def strippedColumnVector(column:GpuColumnVector, t:Scalar): GpuColumnVector =
     GpuColumnVector.from(column.getBase.rstrip(t), dataType)
@@ -415,7 +423,9 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(StringType, BinaryType), IntegerType, IntegerType)
 
-  override def children: Seq[Expression] = Seq(str, pos, len)
+  def first: Expression = str
+  def second: Expression = pos
+  def third: Expression = len
 
   def this(str: Expression, pos: Expression) = {
     this(str, pos, GpuLiteral(Integer.MAX_VALUE, IntegerType))
@@ -571,7 +581,9 @@ case class GpuStringReplace(
 
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
-  override def children: Seq[Expression] = Seq(srcExpr, searchExpr, replaceExpr)
+  def first: Expression = srcExpr
+  def second: Expression = searchExpr
+  def third: Expression = replaceExpr
 
   def this(srcExpr: Expression, searchExpr: Expression) = {
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
@@ -800,7 +812,11 @@ case class GpuSubstringIndex(strExpr: Expression,
 
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
-  override def children: Seq[Expression] = Seq(strExpr, ignoredDelimExpr, ignoredCountExpr)
+
+  def first: Expression = strExpr
+  def second: Expression = ignoredDelimExpr
+  def third: Expression = ignoredCountExpr
+
   override def prettyName: String = "substring_index"
 
   // This is a bit hacked up at the moment. We are going to use a regular expression to extract
@@ -877,7 +893,10 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
   val pad: Expression
   val direction: PadSide
 
-  override def children: Seq[Expression] = str :: len :: pad :: Nil
+  def first: Expression = str
+  def second: Expression = len
+  def third: Expression = pad
+
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, IntegerType, StringType)
 
@@ -996,7 +1015,9 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
 
   override def dataType: DataType = ArrayType(StringType)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
-  override def children: Seq[Expression] = str :: regex :: limit :: Nil
+  def first: Expression = str
+  def second: Expression = regex
+  def third: Expression = limit
 
   def this(exp: Expression, regex: Expression) = this(exp, regex, GpuLiteral(-1, IntegerType))
 

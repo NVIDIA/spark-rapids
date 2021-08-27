@@ -414,7 +414,7 @@ def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type)
     assert_gpu_fallback_collect(do_join, 'BroadcastNestedLoopJoinExec', conf=conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     def do_join(spark):
@@ -423,12 +423,14 @@ def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type)
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
-        return left.join(broadcast(right), how=join_type)
+        # Compute the distinct of the join result to verify the join produces a proper dataframe
+        # for downstream processing.
+        return left.join(broadcast(right), how=join_type).distinct()
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
 def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     def do_join(spark):
@@ -437,12 +439,12 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
-        return broadcast(left).join(right, how=join_type)
+        # Compute the distinct of the join result to verify the join produces a proper dataframe
+        # for downstream processing.
+        return broadcast(left).join(right, how=join_type).distinct()
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/3244')
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
