@@ -38,59 +38,33 @@ class PluginTypeChecker {
   private val DEFAULT_DS_FILE = "supportedDataSource.csv"
 
   // map of file format => Map[support category => Seq[Datatypes for that category]]
-  // contains the details of formats to which ones have datatypes not supported
-  // var for testing puposes
-  private var formatsToSupportedCategory = readSupportedTypesForPlugin
-
-  private var supportedWriteDataFormats =  writeDataFormatForPlugin
+  // contains the details of formats to which ones have datatypes not supported.
+  // Write formats contains only the formats that are supported. Types cannot be determined
+  // from event logs for write formats.
+  // var for testing purposes
+  private val (readFormatsAndTypes, writeFormats) = readSupportedTypesForPlugin
 
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    formatsToSupportedCategory = readSupportedTypesForPlugin(source)
+    var (readFormatsAndTypes, writeFormats) = supportedFormatsAndTypesForPlugin(source)
   }
 
-  private def readSupportedTypesForPlugin: Map[String, Map[String, Seq[String]]] = {
+  private def readSupportedTypesForPlugin: (
+      Map[String, Map[String, Seq[String]]], ArrayBuffer[String]) = {
     val source = Source.fromResource(DEFAULT_DS_FILE)
-    readSupportedTypesForPlugin(source)
-  }
-
-  private def writeDataFormatForPlugin: ArrayBuffer[String] = {
-    val source = Source.fromResource(DEFAULT_DS_FILE)
-    val supportedWriteFormat = ArrayBuffer[String]()
-    try {
-      val fileContents = source.getLines().toSeq
-      if (fileContents.size < 2) {
-        throw new IllegalStateException("supportedDataSource file appears corrupt," +
-            " must have at least the header and one line")
-      }
-      // first line is header
-      val header = fileContents.head.split(",").map(_.toLowerCase)
-      fileContents.tail.foreach { line =>
-        val cols = line.split(",")
-        if (header.size != cols.size) {
-          throw new IllegalStateException("supportedDataSource file appears corrupt," +
-              " header length doesn't match rows length")
-        }
-        val format = cols(0).toLowerCase
-        val direction = cols(1).toLowerCase()
-        if (direction.equals("write")) {
-          supportedWriteFormat += format
-        }
-      }
-    } finally {
-      source.close()
-    }
-    supportedWriteFormat
+    supportedFormatsAndTypesForPlugin(source)
   }
 
   // file format should be like this:
   // Format,Direction,BOOLEAN,BYTE,SHORT,INT,LONG,FLOAT,DOUBLE,DATE,...
   // CSV,read,S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
-  private def readSupportedTypesForPlugin(
-      source: BufferedSource): Map[String, Map[String, Seq[String]]] = {
+  // Parquet,write,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+  private def supportedFormatsAndTypesForPlugin(
+      source: BufferedSource): (Map[String, Map[String, Seq[String]]], ArrayBuffer[String]) = {
     // get the types the Rapids Plugin supports
     val allSupportedReadSources = HashMap.empty[String, Map[String, Seq[String]]]
+    val allSupportedWriteFormats = ArrayBuffer[String]()
     try {
       val fileContents = source.getLines().toSeq
       if (fileContents.size < 2) {
@@ -116,12 +90,14 @@ class PluginTypeChecker {
           val allNsTypes = nsTypes.flatMap(t => getOtherTypes(t) :+ t)
           val allBySup = HashMap(NS -> allNsTypes)
           allSupportedReadSources.put(format, allBySup.toMap)
+        } else if (direction.equals("write")) {
+          allSupportedWriteFormats += format
         }
       }
     } finally {
       source.close()
     }
-    allSupportedReadSources.toMap
+    (allSupportedReadSources.toMap, allSupportedWriteFormats)
   }
 
   def getOtherTypes(typeRead: String): Seq[String] = {
@@ -145,7 +121,7 @@ class PluginTypeChecker {
   def scoreReadDataTypes(format: String, schema: String): (Double, Set[String]) = {
     val schemaLower = schema.toLowerCase
     val formatInLower = format.toLowerCase
-    val typesBySup = formatsToSupportedCategory.get(formatInLower)
+    val typesBySup = readFormatsAndTypes.get(formatInLower)
     val score = typesBySup match {
       case Some(dtSupMap) =>
         // check if any of the not supported types are in the schema
@@ -174,6 +150,6 @@ class PluginTypeChecker {
 
   def writeDataFormat(writeFormat: ArrayBuffer[String]) = {
     writeFormat.map(x => x.toLowerCase.trim).filterNot(
-      supportedWriteDataFormats.map(x => x.trim).contains(_))
+      writeFormats.map(x => x.trim).contains(_))
   }
 }

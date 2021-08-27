@@ -42,7 +42,6 @@ class QualAppInfo(
   var lastJobEndTime: Option[Long] = None
   var lastSQLEndTime: Option[Long] = None
   val writeDataFormat: ArrayBuffer[String] = ArrayBuffer[String]()
-  var isDataSourceV2 = false
 
   var appInfo: Option[QualApplicationInfo] = None
   val sqlStart: HashMap[Long, QualSQLExecutionInfo] = HashMap[Long, QualSQLExecutionInfo]()
@@ -208,6 +207,8 @@ class QualAppInfo(
       char match {
         case '<' => angleBracketsCount += 1
         case '>' => angleBracketsCount -= 1
+        // If the schema has decimals, Example decimal(6,2) then we have to make sure it has both
+        // opening and closing parentheses(unless the string is incomplete due to V2 reader.
         case '(' => parenthesesCount += 1
         case ')' => parenthesesCount -= 1
         case _ =>
@@ -224,8 +225,23 @@ class QualAppInfo(
       individualSchema += tempStringBuilder.toString
     }
 
+    // If DataSource V2 is used, then Schema may be incomplete with ... appended at the end.
+    // We determine complex types and nested complex types until ...
+    val incompleteSchema = individualSchema.filter(x => x.contains("..."))
+    val completeSchema = individualSchema.filterNot(x => x.contains("..."))
+
+    val incompleteTypes = incompleteSchema.map { x =>
+      if (x.contains("...") && x.contains(":")) {
+        x.split(":", 2)(1).split("\\.\\.\\.")(0)
+      } else {
+        ""
+      }
+    }
+
     // Omit columnName and get only schemas
-    val schemaTypes = individualSchema.map(x => x.split(":", 2)(1))//.distinct
+    val completeTypes = completeSchema.map(x => x.split(":", 2)(1))
+
+    val schemaTypes = completeTypes ++ incompleteTypes
 
     // Filter only complex types.
     // Example: array<string>, array<struct<string, string>>
@@ -234,14 +250,20 @@ class QualAppInfo(
 
     // Determine nested complex types from complex types
     // Example: array<struct<string, string>> is nested complex type.
-    val nestedComplexTypes = complexTypes.map { x =>
-      val startIndex = x.indexOf('<')
-      val lastIndex = x.lastIndexOf('>')
-      val string = x.substring(startIndex, lastIndex)
-
+    val nestedComplexTypes = complexTypes.map { complexType =>
+      val startIndex = complexType.indexOf('<')
+      val closedBracket = complexType.lastIndexOf('>')
+      // If String is incomplete due to dsv2, then '>' may not be present. In that case traverse
+      // until leng
+      val lastIndex = if (closedBracket == -1) {
+        complexType.length - 1
+      } else {
+        closedBracket
+      }
+      val string = complexType.substring(startIndex, lastIndex + 1)
       if (string.contains("array<") || string.contains("struct<")
           || string.contains("map<")) {
-        x
+        complexType
       } else ""
     }
 
@@ -275,11 +297,7 @@ class QualAppInfo(
         s"${format}[$typeString]"
       }.mkString(";")
       val writeFormat = writeFormatNotSupported(writeDataFormat)
-      val (allComplexTypes, nestedComplexTypes) = if (!isDataSourceV2) {
-        reportComplexTypes
-      } else {
-        ("NA", "NA")
-      }
+      val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
@@ -307,11 +325,6 @@ class QualAppInfo(
       if (node.name.contains("InsertIntoHadoopFsRelationCommand")) {
         val writeFormat = node.desc.split(",")(2)
         writeDataFormat += writeFormat
-      }
-      // Check if it is DataSourceV2. If it is V2, then we cannot determine the complete ReadSchema
-      // as it will be incomplete. It will be appended as ... if the schema is very large.
-      if (node.name.equals("BatchScan")) {
-        isDataSourceV2 = true
       }
     }
   }
