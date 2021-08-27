@@ -257,4 +257,6 @@ trait SparkShims {
       partitions: Seq[InputPartition],
       readerFactory: PartitionReaderFactory
   ): RDD[InternalRow]
+
+  def isCustomReaderExec(x: SparkPlan): Boolean
 }

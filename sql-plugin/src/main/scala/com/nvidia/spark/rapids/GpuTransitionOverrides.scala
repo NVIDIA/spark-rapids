@@ -116,7 +116,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
         parent match {
-          case Some(_: GpuCustomShuffleReaderExec | _: CustomShuffleReaderExec) =>
+          case Some(x) if ShimLoader.getSparkShims.isCustomReaderExec(x) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
@@ -422,7 +422,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: BroadcastHashJoinExec | _: BroadcastNestedLoopJoinExec
           if isAdaptiveEnabled =>
         // broadcasts are left on CPU for now when AQE is enabled
-      case _: AdaptiveSparkPlanExec | _: QueryStageExec | _: CustomShuffleReaderExec =>
+      case p if ShimLoader.getSparkShims.isAqePlan(p)  =>
         // we do not yet fully support GPU-acceleration when AQE is enabled, so we skip checking
         // the plan in this case - https://github.com/NVIDIA/spark-rapids/issues/5
       case lts: LocalTableScanExec =>
@@ -530,10 +530,18 @@ object GpuTransitionOverrides {
    */
   def getNonQueryStagePlan(plan: SparkPlan): SparkPlan = {
     plan match {
-      case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case BroadcastQueryStageExec(_, plan) => plan
-      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case ShuffleQueryStageExec(_, plan) => plan
+      case bqse: BroadcastQueryStageExec =>
+        if (bqse.plan.isInstanceOf[ReusedExchangeExec]) {
+          bqse.plan.asInstanceOf[ReusedExchangeExec].child
+        } else {
+          bqse.plan
+        }
+      case sqse: ShuffleQueryStageExec =>
+        if (sqse.plan.isInstanceOf[ReusedExchangeExec]) {
+          sqse.plan.asInstanceOf[ReusedExchangeExec].child
+        } else {
+          sqse.plan
+        }
       case _ => plan
     }
   }

@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.command.{RepairTableCommand, RunnableComma
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.SQLConf
 
-class Spark320Shims extends Spark311Shims {
+class Spark320Shims extends SparkShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
 
   override def parquetRebaseReadKey: String =

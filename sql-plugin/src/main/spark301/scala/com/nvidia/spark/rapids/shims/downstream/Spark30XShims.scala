@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.shims.downstream
 
 import com.nvidia.spark.rapids.{GpuDataSourceRDD, SparkPlanMeta, SparkShims}
 import org.apache.hadoop.fs.FileStatus
-
 import org.apache.spark.SparkContext
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 
 trait Spark30XShims extends SparkShims {
   override def parquetRebaseReadKey: String =
@@ -88,5 +89,9 @@ trait Spark30XShims extends SparkShims {
          _: QueryStageExec |
          _: CustomShuffleReaderExec => true
     case _ => false
+  }
+
+  override def isCustomReaderExec(x: SparkPlan): Boolean = x match {
+    case _: GpuCustomShuffleReaderExec | _: CustomShuffleReaderExec => true
   }
 }
