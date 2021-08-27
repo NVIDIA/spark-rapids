@@ -76,9 +76,9 @@
         <module>shims</module>
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
+        <module>tests</module>
         <module>udf-compiler</module>
         <module>udf-examples</module>
-        <module>tests</module>
     </modules>
 
     <profiles>
