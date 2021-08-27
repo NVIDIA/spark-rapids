@@ -14,16 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301db
+package com.nvidia.spark.rapids.spark301db
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark301db.RapidsShuffleManager
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.shims.spark302.RapidsShuffleInternalManager
 
-class Spark301dbShims extends SparkBaseShims {
-
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
+/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
+sealed class RapidsShuffleManager(
+    conf: SparkConf,
+    isDriver: Boolean) extends RapidsShuffleInternalManager(conf, isDriver) {
 }

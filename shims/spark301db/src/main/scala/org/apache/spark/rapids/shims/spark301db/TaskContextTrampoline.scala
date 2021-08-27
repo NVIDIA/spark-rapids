@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301db
+package org.apache.spark.rapids.shims.spark301db
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.spark301db.RapidsShuffleManager
+import org.apache.spark.TaskContext
+import org.apache.spark.memory.TaskMemoryManager
 
-class Spark301dbShims extends SparkBaseShims {
+object TaskContextTrampoline {
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
+  def getTaskMemoryManager(): TaskMemoryManager = {
+    TaskContext.get.taskMemoryManager()
   }
 }

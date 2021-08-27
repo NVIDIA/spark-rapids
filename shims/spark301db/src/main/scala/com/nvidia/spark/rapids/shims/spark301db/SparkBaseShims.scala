@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shims.spark301db
 import java.net.URI
 import java.nio.ByteBuffer
 
+import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -642,8 +643,8 @@ abstract class SparkBaseShims extends SparkShims {
   override def shouldFailDivByZero(): Boolean = false
 
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
-    case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
-    case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
   }
 
   /** dropped by SPARK-34234 */
