@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.sql.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -110,7 +111,7 @@ object GpuExpressionsUtils extends Arm {
  * An Expression that cannot be evaluated in the traditional row-by-row sense (hence Unevaluable)
  * but instead can be evaluated on an entire column batch at once.
  */
-trait GpuExpression extends Expression with Arm {
+trait GpuExpression extends ShimExpression with Arm {
 
   // copied from Unevaluable to avoid inheriting  final foldable
   //
@@ -177,7 +178,7 @@ abstract class GpuUnevaluableUnaryExpression extends GpuUnaryExpression with Gpu
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
+abstract class GpuUnaryExpression extends ShimUnaryExpression with GpuExpression {
   protected def doColumnar(input: GpuColumnVector): ColumnVector
 
   def outputTypeOverride: DType = null
@@ -235,7 +236,7 @@ trait CudfUnaryExpression extends GpuUnaryExpression {
   }
 }
 
-trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
+trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
 
   def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector
   def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector
@@ -378,7 +379,7 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
   }
 }
 
-trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
+trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
 
   def doColumnar(
       val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): ColumnVector

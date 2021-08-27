@@ -66,6 +66,9 @@ IS_SPARK_311_OR_LATER=0
 export SPARK_TASK_MAXFAILURES=1
 [[ "$IS_SPARK_311_OR_LATER" -eq "0" ]] && SPARK_TASK_MAXFAILURES=4
 
+IS_SPARK_311=0
+[[ "$SPARK_VER" == "3.1.1" ]] && IS_SPARK_311=1
+
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 
 #stop and restart SPARK ETL
@@ -171,8 +174,9 @@ else
 fi
 # cudf_udf_test
 run_test cudf_udf_test
-# only run cache tests with our serializer in nightly test for Spark version >= 3.1.1
-if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
+
+# Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
+if [[ "$IS_SPARK_311" -eq "1" ]]; then
   run_test cache_serializer
 fi
 
