@@ -145,9 +145,9 @@ had to estimate it, it means the event log was missing the application finished 
 or sql execution time we find as the end time used to calculate the duration.
 
 `Complex Types and Unsupported Nested Complex Types` looks at the Read Schema and reports if there are any complex types(array, struct or maps)
-in the schema. Nested complex types are types complex types which contain other complex types(Example: array<struct<string,string>>).
-Note that it can read all the schemas for DataSource V1. If it is DataSource V2 reader, then the read schema will be incomplete in the
-event log. It will be appended with ... if the read schema is very large. We read until ... and report if there are any complex types and
+in the schema. Nested complex types are complex types which contain other complex types (Example: array<struct<string,string>>).
+Note that it can read all the schemas for DataSource V1. The Data Source V2 truncates the schema, so if you see ...,
+then the full schema is not available. For such schemas we read until ... and report if there are any complex types and
 nested complex types in that.
 
 Note that SQL queries that contain failed jobs are not included.

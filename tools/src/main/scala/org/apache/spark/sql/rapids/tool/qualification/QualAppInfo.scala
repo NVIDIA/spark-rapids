@@ -185,7 +185,7 @@ class QualAppInfo(
     }.getOrElse(1.0)
   }
 
-  def reportComplexTypes(): (String, String) = {
+  def reportComplexTypes: (String, String) = {
     if (dataSourceInfo.size != 0) {
       val schema = dataSourceInfo.map { ds => ds.schema }
       parseReadSchemaForNestedTypes(schema)
@@ -194,7 +194,7 @@ class QualAppInfo(
     }
   }
 
-  def parseReadSchemaForNestedTypes(schema: ArrayBuffer[String]): (String, String) = {
+  private def parseReadSchemaForNestedTypes(schema: ArrayBuffer[String]): (String, String) = {
     val tempStringBuilder = new StringBuilder()
     val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
     var angleBracketsCount = 0
@@ -327,7 +327,7 @@ class QualAppInfo(
   def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
     // Filter unsupported write data format
     val unSupportedWriteFormat = pluginTypeChecker.map { checker =>
-      checker.writeDataFormat(writeFormat)
+      checker.isWriteFormatsupported(writeFormat)
     }.getOrElse(ArrayBuffer[String]())
 
     unSupportedWriteFormat.distinct.mkString(";").toUpperCase

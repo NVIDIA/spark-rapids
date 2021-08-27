@@ -47,7 +47,7 @@ class PluginTypeChecker {
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    val (readFormatsAndTypesTest, writeFormatsTest) = supportedFormatsAndTypesForPlugin(source)
+    val (readFormatsAndTypesTest, writeFormatsTest) = readSupportedTypesForPlugin(source)
     readFormatsAndTypes = readFormatsAndTypesTest
     writeFormats = writeFormatsTest
   }
@@ -55,14 +55,14 @@ class PluginTypeChecker {
   private def readSupportedTypesForPlugin: (
       Map[String, Map[String, Seq[String]]], ArrayBuffer[String]) = {
     val source = Source.fromResource(DEFAULT_DS_FILE)
-    supportedFormatsAndTypesForPlugin(source)
+    readSupportedTypesForPlugin(source)
   }
 
   // file format should be like this:
   // Format,Direction,BOOLEAN,BYTE,SHORT,INT,LONG,FLOAT,DOUBLE,DATE,...
   // CSV,read,S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
   // Parquet,write,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
-  private def supportedFormatsAndTypesForPlugin(
+  private def readSupportedTypesForPlugin(
       source: BufferedSource): (Map[String, Map[String, Seq[String]]], ArrayBuffer[String]) = {
     // get the types the Rapids Plugin supports
     val allSupportedReadSources = HashMap.empty[String, Map[String, Seq[String]]]
@@ -150,7 +150,7 @@ class PluginTypeChecker {
     score
   }
 
-  def writeDataFormat(writeFormat: ArrayBuffer[String]) = {
+  def isWriteFormatsupported(writeFormat: ArrayBuffer[String]): ArrayBuffer[String] = {
     writeFormat.map(x => x.toLowerCase.trim).filterNot(
       writeFormats.map(x => x.trim).contains(_))
   }

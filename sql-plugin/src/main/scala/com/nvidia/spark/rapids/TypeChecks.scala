@@ -2019,7 +2019,7 @@ object SupportedOpsForTools {
     val conf = new RapidsConf(Map.empty[String, String])
     val types = TypeEnum.values.toSeq
     val header = Seq("Format", "Direction") ++ types
-    val writeOps: Array[String] = Array.fill(18)("NA")
+    val writeOps: Array[String] = Array.fill(types.size)("NA")
     println(header.mkString(","))
     GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
       case (format, ioMap) =>
