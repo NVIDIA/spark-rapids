@@ -1123,19 +1123,26 @@ abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
   def aggBufferAttribute: AttributeReference
 
   /**
-   * Returns a buffer converter who can generate a Expression to transform the aggregation
-   * buffer of wrapped function from CPU format to GPU format.
+   * Returns a buffer converter who can generate a Expression to transform the aggregation buffer
+   * of wrapped function from CPU format to GPU format. The conversion occurs on the CPU, so the
+   * generated expression should be a CPU Expression executed by row.
    */
   def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
-    throw new NotImplementedError("")
+    throw new NotImplementedError("The method should be implemented by specific functions")
 
   /**
-   * Returns a buffer converter who can generate a Expression to transform the aggregation
-   * buffer of wrapped function from GPU format to CPU format.
+   * Returns a buffer converter who can generate a Expression to transform the aggregation buffer
+   * of wrapped function from GPU format to CPU format. The conversion occurs on the CPU, so the
+   * generated expression should be a CPU Expression executed by row.
    */
   def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
-    throw new NotImplementedError("")
+    throw new NotImplementedError("The method should be implemented by specific functions")
 
+  /**
+   * Whether buffers of current Aggregate is able to be converted from CPU to GPU format and
+   * reversely in runtime. If true, it assumes both createCpuToGpuBufferConverter and
+   * createGpuToCpuBufferConverter are implemented.
+   */
   val supportBufferConversion: Boolean = false
 }
 

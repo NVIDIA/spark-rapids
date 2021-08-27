@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
-import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
