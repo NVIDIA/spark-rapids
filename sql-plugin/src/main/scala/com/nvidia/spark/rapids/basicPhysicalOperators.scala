@@ -22,9 +22,9 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
-
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

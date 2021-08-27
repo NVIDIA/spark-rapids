@@ -17,12 +17,11 @@
 package com.nvidia.spark.rapids
 
 import java.util
-
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
-
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 import org.apache.spark.TaskContext
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute

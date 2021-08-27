@@ -20,6 +20,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.downstream.Spark30XShims
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
@@ -63,7 +64,7 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 /**
  * Base Shim for Spark 3.1.1 that can be used by other 3.1.x versions and to easily diff
  */
-abstract class SparkBaseShims extends SparkShims {
+abstract class SparkBaseShims extends Spark30XShims {
 
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key

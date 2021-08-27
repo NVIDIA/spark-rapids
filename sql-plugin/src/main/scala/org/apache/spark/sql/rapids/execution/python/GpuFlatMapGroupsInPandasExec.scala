@@ -18,9 +18,9 @@ package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
-
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 import org.apache.spark.TaskContext
+
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._

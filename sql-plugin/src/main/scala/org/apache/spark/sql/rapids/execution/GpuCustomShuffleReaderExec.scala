@@ -16,7 +16,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric, ShimLoader}
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

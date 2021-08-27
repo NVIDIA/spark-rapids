@@ -19,9 +19,9 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
-
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 import org.apache.spark.TaskContext
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator}

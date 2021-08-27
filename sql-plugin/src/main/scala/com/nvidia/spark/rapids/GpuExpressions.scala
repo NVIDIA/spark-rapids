@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.sql.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.upstream.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._

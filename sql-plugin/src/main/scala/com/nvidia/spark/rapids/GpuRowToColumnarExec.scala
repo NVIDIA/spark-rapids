@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
-
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 import org.apache.spark.TaskContext
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD

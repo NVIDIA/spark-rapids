@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.sql.{ShimUnaryCommand, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.upstream.{ShimUnaryCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.rdd.RDD
