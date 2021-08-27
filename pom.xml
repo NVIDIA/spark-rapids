@@ -381,6 +381,7 @@
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark301.version}</spark.version>
         <spark.test.version>${spark301.version}</spark.test.version>
+        <spark.version.classifier></spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>21.10.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
