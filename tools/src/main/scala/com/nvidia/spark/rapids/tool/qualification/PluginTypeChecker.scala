@@ -42,12 +42,14 @@ class PluginTypeChecker {
   // Write formats contains only the formats that are supported. Types cannot be determined
   // from event logs for write formats.
   // var for testing purposes
-  private val (readFormatsAndTypes, writeFormats) = readSupportedTypesForPlugin
+  private var (readFormatsAndTypes, writeFormats) = readSupportedTypesForPlugin
 
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    var (readFormatsAndTypes, writeFormats) = supportedFormatsAndTypesForPlugin(source)
+    val (readFormatsAndTypesTest, writeFormatsTest) = supportedFormatsAndTypesForPlugin(source)
+    readFormatsAndTypes = readFormatsAndTypesTest
+    writeFormats = writeFormatsTest
   }
 
   private def readSupportedTypesForPlugin: (
