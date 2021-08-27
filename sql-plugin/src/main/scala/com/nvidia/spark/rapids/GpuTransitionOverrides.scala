@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.lang.reflect.Method
 
+import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, NamedExpression, Projection, SortOrder}
@@ -588,7 +590,7 @@ object GpuTransitionOverrides {
  *
  * @param child The plan to execute
  */
-case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode with GpuExec {
+case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")

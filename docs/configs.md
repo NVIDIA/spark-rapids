@@ -146,6 +146,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.And"></a>spark.rapids.sql.expression.And|`and`|Logical AND|true|None|
 <a name="sql.expression.AnsiCast"></a>spark.rapids.sql.expression.AnsiCast| |Convert a column of one type of data into another type|true|None|
 <a name="sql.expression.ArrayContains"></a>spark.rapids.sql.expression.ArrayContains|`array_contains`|Returns a boolean if the array contains the passed in key|true|None|
+<a name="sql.expression.ArrayTransform"></a>spark.rapids.sql.expression.ArrayTransform|`transform`|Transform elements in an array using the transform function. This is similar to a `map` in functional programming.|true|None|
 <a name="sql.expression.Asin"></a>spark.rapids.sql.expression.Asin|`asin`|Inverse sine|true|None|
 <a name="sql.expression.Asinh"></a>spark.rapids.sql.expression.Asinh|`asinh`|Inverse hyperbolic sine|true|None|
 <a name="sql.expression.AtLeastNNonNulls"></a>spark.rapids.sql.expression.AtLeastNNonNulls| |Checks if number of non null/Nan values is greater than a given value|true|None|
@@ -169,7 +170,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Cos"></a>spark.rapids.sql.expression.Cos|`cos`|Cosine|true|None|
 <a name="sql.expression.Cosh"></a>spark.rapids.sql.expression.Cosh|`cosh`|Hyperbolic cosine|true|None|
 <a name="sql.expression.Cot"></a>spark.rapids.sql.expression.Cot|`cot`|Cotangent|true|None|
-<a name="sql.expression.CreateArray"></a>spark.rapids.sql.expression.CreateArray|`array`| Returns an array with the given elements|true|None|
+<a name="sql.expression.CreateArray"></a>spark.rapids.sql.expression.CreateArray|`array`|Returns an array with the given elements|true|None|
 <a name="sql.expression.CreateMap"></a>spark.rapids.sql.expression.CreateMap|`map`|Create a map|true|None|
 <a name="sql.expression.CreateNamedStruct"></a>spark.rapids.sql.expression.CreateNamedStruct|`named_struct`, `struct`|Creates a struct with the given field names and values|true|None|
 <a name="sql.expression.CurrentRow$"></a>spark.rapids.sql.expression.CurrentRow$| |Special boundary for a window frame, indicating stopping at the current row|true|None|
@@ -215,6 +216,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized| |Tag to prevent redundant normalization|true|None|
 <a name="sql.expression.KnownNotNull"></a>spark.rapids.sql.expression.KnownNotNull| |Tag an expression as known to not be null|true|None|
 <a name="sql.expression.Lag"></a>spark.rapids.sql.expression.Lag|`lag`|Window function that returns N entries behind this one|true|None|
+<a name="sql.expression.LambdaFunction"></a>spark.rapids.sql.expression.LambdaFunction| |Holds a higher order SQL function|true|None|
 <a name="sql.expression.LastDay"></a>spark.rapids.sql.expression.LastDay|`last_day`|Returns the last day of the month which the date belongs to|true|None|
 <a name="sql.expression.Lead"></a>spark.rapids.sql.expression.Lead|`lead`|Window function that returns N entries ahead of this one|true|None|
 <a name="sql.expression.Least"></a>spark.rapids.sql.expression.Least|`least`|Returns the least value of all parameters, skipping null values|true|None|
@@ -237,6 +239,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Multiply"></a>spark.rapids.sql.expression.Multiply|`*`|Multiplication|true|None|
 <a name="sql.expression.Murmur3Hash"></a>spark.rapids.sql.expression.Murmur3Hash|`hash`|Murmur3 hash operator|true|None|
 <a name="sql.expression.NaNvl"></a>spark.rapids.sql.expression.NaNvl|`nanvl`|Evaluates to `left` iff left is not NaN, `right` otherwise|true|None|
+<a name="sql.expression.NamedLambdaVariable"></a>spark.rapids.sql.expression.NamedLambdaVariable| |A parameter to a higher order SQL function|true|None|
 <a name="sql.expression.Not"></a>spark.rapids.sql.expression.Not|`!`, `not`|Boolean not operator|true|None|
 <a name="sql.expression.Or"></a>spark.rapids.sql.expression.Or|`or`|Logical OR|true|None|
 <a name="sql.expression.Pmod"></a>spark.rapids.sql.expression.Pmod|`pmod`|Pmod|true|None|

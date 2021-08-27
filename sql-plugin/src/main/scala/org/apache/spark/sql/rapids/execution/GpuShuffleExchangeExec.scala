@@ -255,7 +255,8 @@ object GpuShuffleExchangeExec {
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
       val shim = ShimLoader.getSparkShims
       val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
-        shim.sortOrder(GpuBoundReference(index, attr.dataType, attr.nullable), Ascending)
+        shim.sortOrder(GpuBoundReference(index, attr.dataType,
+          attr.nullable)(attr.exprId, attr.name), Ascending)
         // Force the sequence to materialize so we don't have issues with serializing too much
       }.toArray.toSeq
       val sorter = new GpuSorter(boundReferences, outputAttributes)

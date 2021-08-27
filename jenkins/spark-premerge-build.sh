@@ -36,7 +36,7 @@ mvn_verify() {
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
-    # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'unit_test()' respectively.
+    # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
         -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=5 -Dcuda.version=$CUDA_CLASSIFIER
 
@@ -92,9 +92,8 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/stop-master.sh
 }
 
-unit_test() {
-    # TODO: this function should be named as 'integration_test()' but it would break backward compatibility. Need find a way to fix this.
-    echo "Run integration testings..."
+ci_2() {
+    echo "Run premerge ci 2 testings..."
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
     TEST_TAGS="not premerge_ci_1" TEST_TYPE="pre-commit" TEST_PARALLEL=4 ./integration_tests/run_pyspark_from_build.sh
 }
@@ -132,15 +131,15 @@ case $BUILD_TYPE in
     all)
         echo "Run all testings..."
         mvn_verify
-        unit_test
+        ci_2
         ;;
 
     mvn_verify)
         mvn_verify
         ;;
 
-    ut | unit_test)
-        unit_test
+    ci_2 )
+        ci_2
         ;;
 
     *)

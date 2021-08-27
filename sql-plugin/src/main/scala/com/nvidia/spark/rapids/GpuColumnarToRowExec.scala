@@ -21,13 +21,14 @@ import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
+import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -268,7 +269,7 @@ object CudfRowTransitions {
 abstract class GpuColumnarToRowExecParent(child: SparkPlan,
     val exportColumnarRdd: Boolean,
     val postProjection: Seq[NamedExpression])
-    extends UnaryExecNode with GpuExec {
+    extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false

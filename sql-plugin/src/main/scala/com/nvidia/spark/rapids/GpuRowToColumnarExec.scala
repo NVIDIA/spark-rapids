@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -27,7 +28,7 @@ import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, SpecializedGetters, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -799,7 +800,7 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 case class GpuRowToColumnarExec(child: SparkPlan,
     goal: CoalesceSizeGoal,
     preProcessing: Seq[NamedExpression] = Seq.empty)
-  extends UnaryExecNode with GpuExec {
+  extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   override def output: Seq[Attribute] = preProcessing match {

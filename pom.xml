@@ -85,6 +85,15 @@
 
     <profiles>
        <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+           <properties>
+               <spark.version.classifier/>
+           </properties>
+       </profile>
+       <profile>
             <id>release301</id>
             <activation>
                 <property>
@@ -93,7 +102,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark301</spark.version.classifier>
                 <spark.version>${spark301.version}</spark.version>
                 <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
@@ -107,7 +115,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark302</spark.version.classifier>
                 <spark.version>${spark302.version}</spark.version>
                 <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
@@ -121,7 +128,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark301emr</spark.version.classifier>
                 <spark.version>${spark301emr.version}</spark.version>
                 <spark.test.version>${spark301emr.version}</spark.test.version>
             </properties>
@@ -135,7 +141,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark303</spark.version.classifier>
                 <spark.version>${spark303.version}</spark.version>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
@@ -149,7 +154,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark304</spark.version.classifier>
                 <spark.version>${spark304.version}</spark.version>
                 <spark.test.version>${spark304.version}</spark.test.version>
             </properties>
@@ -163,7 +167,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark311</spark.version.classifier>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
             </properties>
@@ -177,7 +180,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark312</spark.version.classifier>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
@@ -191,10 +193,42 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark313</spark.version.classifier>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
+        </profile>
+        <profile>
+            <id>release320</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>320</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version>${spark320.version}</spark.version>
+                <spark.test.version>${spark320.version}</spark.test.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark${buildver}/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>release311cdh</id>
@@ -205,7 +239,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark311cdh</spark.version.classifier>
                 <spark.version>${spark311cdh.version}</spark.version>
                 <spark.test.version>${spark311cdh.version}</spark.test.version>
             </properties>
@@ -246,7 +279,7 @@
                             </execution>
                         </executions>
                         <configuration>
-                            <additionalparam>-Xdoclint:none</additionalparam>
+                            <doclint>none</doclint>
                         </configuration>
                     </plugin>
                 </plugins>
@@ -346,7 +379,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark301.version}</spark.version>
-        <spark.version.classifier></spark.version.classifier>
+        <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <spark.test.version>${spark301.version}</spark.test.version>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>21.10.0-SNAPSHOT</cudf.version>
@@ -364,6 +397,7 @@
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
         <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
         <pytest.TEST_TYPE>developer</pytest.TEST_TYPE>
@@ -388,6 +422,7 @@
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
+        <guava.cdh.version>30.0-jre</guava.cdh.version>
     </properties>
 
     <dependencyManagement>
@@ -552,6 +587,23 @@
         <pluginManagement>
             <plugins>
                 <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>3.2.0</version>
+                    <executions>
+                        <execution>
+                            <id>add-profile-src</id>
+                            <goals><goal>add-source</goal></goals>
+                            <phase>generate-sources</phase>
+                            <configuration>
+                                <sources>
+                                    <source>${project.basedir}/src/main/spark301/scala</source>
+                                </sources>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>1.8</version>
@@ -604,7 +656,6 @@
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
                         <recompileMode>incremental</recompileMode>
-                        <useZincServer>true</useZincServer>
                         <args>
                             <arg>-unchecked</arg>
                             <arg>-deprecation</arg>

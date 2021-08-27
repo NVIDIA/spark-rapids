@@ -22,7 +22,7 @@ import java.time.ZoneId
 import ai.rapids.cudf.DType
 import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, Literal, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
 
@@ -997,7 +997,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  */
 object CaseWhenCheck extends ExprChecks {
   val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-    TypeSig.ARRAY + TypeSig.STRUCT).nested()
+    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
 
   val sparkSig: TypeSig = TypeSig.all
 
@@ -1308,8 +1308,7 @@ class CastChecks extends ExprChecks {
     val cast = meta.wrapped.asInstanceOf[UnaryExpression]
     val from = cast.child.dataType
     val to = cast.dataType
-    val (checks, _) = getChecksAndSigs(from)
-    if (!checks.isSupportedByPlugin(to, meta.conf.decimalTypeEnabled)) {
+    if (!gpuCanCast(from, to, meta.conf.decimalTypeEnabled)) {
       willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
     }
   }

@@ -10,9 +10,9 @@ nav_order: 11
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.1.1 or 3.1.2 of Apache
-Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to be
-internal the code for those plans can change even between bug fix releases. As a part of our
+The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.0.3, 3.1.1, or 3.1.2 of
+Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
+be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
@@ -30,15 +30,15 @@ to set up testing and validation on their distributions.
 
 ### What CUDA versions are supported?
 
-CUDA 11.0 and 11.2 are currently supported.  Please look [here](download.md) for download links for
-the latest release.
+CUDA 11.x is currently supported.  Please look [here](download.md) for download links for the latest
+release.
 
 ### What hardware is supported? 
 
 The plugin is tested and supported on V100, T4, A10, A30 and A100 datacenter GPUs.  It is possible
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
-does not support [CUDA enhanced
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases),
+does not support [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
 and will need CUDA 11.2 installed. If not, the following error will be displayed:
 
 ```
@@ -46,6 +46,9 @@ ai.rapids.cudf.CudaException: forward compatibility was attempted on non support
         at ai.rapids.cudf.Cuda.getDeviceCount(Native Method)
         at com.nvidia.spark.rapids.GpuDeviceManager$.findGpuAndAcquire(GpuDeviceManager.scala:78)
 ```
+
+More information about cards that support forward compatibility can be found
+[here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#faq).
 
 ### How can I check if the RAPIDS Accelerator is installed and which version is running?
 
