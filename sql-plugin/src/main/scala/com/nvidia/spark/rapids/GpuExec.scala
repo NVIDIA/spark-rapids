@@ -193,7 +193,7 @@ object GpuExec {
   }
 }
 
-trait GpuExec extends ShimSparkPlan with Arm {
+trait GpuExec extends SparkPlan with Arm {
   import GpuMetric._
   def sparkSession: SparkSession = {
     ShimLoader.getSparkShims.sessionFromPlan(this)

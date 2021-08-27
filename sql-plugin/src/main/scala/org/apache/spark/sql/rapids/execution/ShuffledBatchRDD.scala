@@ -150,6 +150,7 @@ class ShuffledBatchRDD(
 
       case PartialMapperPartitionSpec(mapIndex, _, _) =>
         tracker.getMapLocation(dependency, mapIndex, mapIndex + 1)
+      // TODO shim CoalescedMapperPartitionSpec
     }
   }
 
