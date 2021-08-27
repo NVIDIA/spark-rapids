@@ -85,15 +85,6 @@
 
     <profiles>
        <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-           <properties>
-               <spark.version.classifier/>
-           </properties>
-       </profile>
-       <profile>
             <id>release301</id>
             <activation>
                 <property>
@@ -102,6 +93,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark301</spark.version.classifier>
                 <spark.version>${spark301.version}</spark.version>
                 <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
@@ -115,6 +107,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark302</spark.version.classifier>
                 <spark.version>${spark302.version}</spark.version>
                 <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
@@ -128,6 +121,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark301emr</spark.version.classifier>
                 <spark.version>${spark301emr.version}</spark.version>
                 <spark.test.version>${spark301emr.version}</spark.test.version>
             </properties>
@@ -141,6 +135,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark303</spark.version.classifier>
                 <spark.version>${spark303.version}</spark.version>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
@@ -154,6 +149,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark304</spark.version.classifier>
                 <spark.version>${spark304.version}</spark.version>
                 <spark.test.version>${spark304.version}</spark.test.version>
             </properties>
@@ -167,6 +163,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark311</spark.version.classifier>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
             </properties>
@@ -180,6 +177,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark312</spark.version.classifier>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
@@ -193,6 +191,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark313</spark.version.classifier>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
@@ -206,6 +205,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark320</spark.version.classifier>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
             </properties>
@@ -239,6 +239,7 @@
                 </property>
             </activation>
             <properties>
+                <spark.version.classifier>spark311cdh</spark.version.classifier>
                 <spark.version>${spark311cdh.version}</spark.version>
                 <spark.test.version>${spark311cdh.version}</spark.test.version>
             </properties>
@@ -379,8 +380,8 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark301.version}</spark.version>
-        <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <spark.test.version>${spark301.version}</spark.test.version>
+        <spark.version.classifier></spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>21.10.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
