@@ -148,6 +148,8 @@ if [[ -z $INSTALL_DEPS_ONLY ]]
 then
 
 # this install pom file from Spache Spark 3.1.1, whereas new build doesn't
+mvn dependency:get  -DgroupId=org.apache.spark -DartifactId=spark-core_$SCALA_VERSION -Dversion=$BASE_SPARK_VERSION
+
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$COREJAR \
