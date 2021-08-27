@@ -849,6 +849,6 @@ abstract class SparkBaseShims extends SparkShims {
     fileCatalog.allFiles().map(_.toFileStatus)
   }
 
-  def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
+  override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows, TaskContext.get.taskMemoryManager())
 }
