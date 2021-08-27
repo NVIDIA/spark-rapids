@@ -19,92 +19,46 @@ package com.nvidia.spark.rapids.shims.downstream
 import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuDataSourceRDD, GpuExec, GpuOverrides, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
-import org.apache.spark.SparkContext
 
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReaderFactory}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, CustomShuffleReaderExec, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AQEShuffleReadExec, QueryStageExec}
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec}
 
 /**
-* Shim base class that can be compiled with every supported 3.0.x
+* Shim base class that can be compiled with every supported 3.2.x
 */
-trait Spark30XShims extends SparkShims {
+trait Spark32XShims extends SparkShims {
   override def parquetRebaseReadKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
+    SQLConf.PARQUET_REBASE_MODE_IN_READ.key
   override def parquetRebaseWriteKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key
+    SQLConf.PARQUET_REBASE_MODE_IN_WRITE.key
   override def avroRebaseReadKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_READ.key
+    SQLConf.AVRO_REBASE_MODE_IN_READ.key
   override def avroRebaseWriteKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_WRITE.key
+    SQLConf.AVRO_REBASE_MODE_IN_WRITE.key
   override def parquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
+    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_READ)
   override def parquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
+    conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
 
-  override def createGpuDataSourceRDD(
-      sparkContext: SparkContext,
-      partitions: Seq[InputPartition],
-      readerFactory: PartitionReaderFactory
-  ): RDD[InternalRow] = new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
-
-  override def sessionFromPlan(plan: SparkPlan): SparkSession = {
-    plan.sqlContext.sparkSession
-  }
-
-  override def filesFromFileIndex(
-      fileIndex: PartitioningAwareFileIndex
-  ): Seq[FileStatus] = {
-    fileIndex.allFiles()
-  }
-
-  def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
-    mode.transform(rows)
-
-  override def getDateFormatter(): DateFormatter = {
-    DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
-  }
-
-  override def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
-    // if the child query stage already executed on GPU then we need to keep the
-    // next operator on GPU in these cases
-    SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
-      case _: CustomShuffleReaderExec
-           | _: ShuffledHashJoinExec
-           | _: BroadcastHashJoinExec
-           | _: BroadcastExchangeExec
-           | _: BroadcastNestedLoopJoinExec => true
-      case _ => false
-    })
-  }
-
-  override def isAqePlan(p: SparkPlan): Boolean = p match {
-    case _: AdaptiveSparkPlanExec |
-         _: QueryStageExec |
-         _: CustomShuffleReaderExec => true
-    case _ => false
-  }
-
-  override def isCustomReaderExec(x: SparkPlan): Boolean = x match {
-    case _: GpuCustomShuffleReaderExec | _: CustomShuffleReaderExec => true
-  }
-
-  override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[CustomShuffleReaderExec](
+  override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) =>
-      new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
+      new SparkPlanMeta[AQEShuffleReadExec](exec, conf, p, r) {
         override def tagPlanForGpu(): Unit = {
           if (!exec.child.supportsColumnar) {
             willNotWorkOnGpu(

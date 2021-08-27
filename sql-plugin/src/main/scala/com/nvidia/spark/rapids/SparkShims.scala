@@ -18,16 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.net.URI
 import java.nio.ByteBuffer
-import java.util.Optional
 
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
@@ -259,4 +257,6 @@ trait SparkShims {
   ): RDD[InternalRow]
 
   def isCustomReaderExec(x: SparkPlan): Boolean
+
+  def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 }

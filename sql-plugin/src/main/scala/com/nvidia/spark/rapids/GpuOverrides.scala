@@ -22,6 +22,7 @@ import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.GpuOverrides.exec
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -34,7 +35,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand}
@@ -456,7 +457,7 @@ object GpuOverrides {
   }
 
   // this listener mechanism is global and is intended for use by unit tests only
-  private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
+  private lazy val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
 
   def addListener(listener: GpuOverridesListener): Unit = {
     listeners += listener
@@ -756,7 +757,7 @@ object GpuOverrides {
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
 
-  val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
+  lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes,
       cudfWrite = TypeSig.none,
@@ -3240,24 +3241,7 @@ object GpuOverrides {
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),
-    exec[CustomShuffleReaderExec](
-      "A wrapper of shuffle query stage",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-        TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
-      (exec, conf, p, r) =>
-      new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
-        override def tagPlanForGpu(): Unit = {
-          if (!exec.child.supportsColumnar) {
-            willNotWorkOnGpu(
-              "Unable to replace CustomShuffleReader due to child not being columnar")
-          }
-        }
-
-        override def convertToGpu(): GpuExec = {
-          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
-            exec.partitionSpecs)
-        }
-      }),
+    ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",
@@ -3287,7 +3271,7 @@ object GpuOverrides {
     neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
     neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+  lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
 
   def getTimeParserPolicy: TimeParserPolicy = {
@@ -3298,7 +3282,6 @@ object GpuOverrides {
       case "CORRECTED" => CorrectedTimeParserPolicy
     }
   }
-
 }
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
