@@ -20,8 +20,8 @@ import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuDataSourceRDD, GpuExec,
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
-import org.apache.spark.SparkContext
 
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -74,6 +74,10 @@ trait Spark32XShims extends SparkShims {
         }
       })
 
+  override def sessionFromPlan(plan: SparkPlan): SparkSession = {
+    plan.session
+  }
+
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
@@ -85,5 +89,34 @@ trait Spark32XShims extends SparkShims {
       datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+  }
+
+  override def filesFromFileIndex(
+      fileIndex: PartitioningAwareFileIndex
+  ): Seq[FileStatus] = {
+    fileIndex.allFiles()
+  }
+
+  def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
+    mode.transform(rows)
+
+  override def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
+    // if the child query stage already executed on GPU then we need to keep the
+    // next operator on GPU in these cases
+    SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
+      case _: AQEShuffleReadExec
+           | _: ShuffledHashJoinExec
+           | _: BroadcastHashJoinExec
+           | _: BroadcastExchangeExec
+           | _: BroadcastNestedLoopJoinExec => true
+      case _ => false
+    })
+  }
+
+  override def isAqePlan(p: SparkPlan): Boolean = p match {
+    case _: AdaptiveSparkPlanExec |
+         _: QueryStageExec |
+         _: AQEShuffleReadExec => true
+    case _ => false
   }
 }

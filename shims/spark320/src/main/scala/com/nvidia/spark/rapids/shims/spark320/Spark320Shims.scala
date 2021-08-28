@@ -30,4 +30,8 @@ import org.apache.spark.sql.internal.SQLConf
 
 class Spark320Shims extends Spark32XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
+
+  override def getRapidsShuffleManagerClass: String = {
+    classOf[RapidsShuffleManager].getCanonicalName
+  }
 }
