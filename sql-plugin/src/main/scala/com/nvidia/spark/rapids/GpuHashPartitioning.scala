@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{DType, NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{ClusteredDistribution, Distribution, HashClusteredDistribution}
 import org.apache.spark.sql.rapids.GpuMurmur3Hash
@@ -26,7 +26,7 @@ import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
-  extends GpuExpression with GpuPartitioning {
+  extends GpuExpression with ShimExpression with GpuPartitioning {
 
   override def children: Seq[Expression] = expressions
   override def nullable: Boolean = false

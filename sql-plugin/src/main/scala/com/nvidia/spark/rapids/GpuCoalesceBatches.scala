@@ -20,9 +20,9 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
-import org.apache.spark.TaskContext
+import com.nvidia.spark.rapids.shims.upstream.{ShimExpression, ShimUnaryExecNode}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -140,7 +140,7 @@ object CoalesceGoal {
 /**
  * Provides a goal for batching of data.
  */
-sealed abstract class CoalesceGoal extends GpuUnevaluable {
+sealed abstract class CoalesceGoal extends GpuUnevaluable with ShimExpression {
   override def nullable: Boolean = false
 
   override def dataType: DataType = NullType

@@ -35,7 +35,7 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  * Helper trait which defines methods that are shared by both
  * [[GpuLocalLimitExec]] and [[GpuGlobalLimitExec]].
  */
-trait GpuBaseLimitExec extends LimitExec with GpuExec {
+trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)

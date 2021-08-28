@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.{ColumnVector, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FUNC_ALIAS
@@ -29,7 +30,7 @@ import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, Meta
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
-    extends GpuExpression {
+    extends GpuExpression with ShimExpression {
 
   def this(children: Seq[Expression]) = {
     this(children, SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
@@ -83,7 +84,7 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
 }
 
 case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
-    extends GpuExpression {
+    extends GpuExpression with ShimExpression {
 
   private val valueIndices: Seq[Int] = children.indices.filter(_ % 2 != 0)
   private val keyIndices: Seq[Int] = children.indices.filter(_ % 2 == 0)
@@ -134,7 +135,8 @@ object GpuCreateMap {
   }
 }
 
-case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression {
+case class GpuCreateNamedStruct(children: Seq[Expression]) extends GpuExpression
+  with ShimExpression {
   lazy val (nameExprs, valExprs) = children.grouped(2).map {
     case Seq(name, value) => (name, value)
   }.toList.unzip

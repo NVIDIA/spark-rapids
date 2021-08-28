@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType}
 import com.nvidia.spark.rapids.{Arm, GpuCast, GpuColumnVector, GpuExpression, GpuIf, GpuIsNan, GpuLiteral, GpuProjectExec, GpuUnaryExpression, GpuUnscaledValue}
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.types._
@@ -45,7 +46,8 @@ object GpuMurmur3Hash extends Arm {
   }
 }
 
-case class GpuMurmur3Hash(children: Seq[Expression], seed: Int) extends GpuExpression {
+case class GpuMurmur3Hash(children: Seq[Expression], seed: Int) extends GpuExpression
+  with ShimExpression {
   override def dataType: DataType = IntegerType
 
   override def toString: String = s"hash($children)"

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.Random
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.{DataType, IntegerType}
@@ -32,7 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * DataFrame.repartition() operator.
  */
 case class GpuRoundRobinPartitioning(numPartitions: Int)
-  extends GpuExpression with GpuPartitioning {
+  extends GpuExpression with ShimExpression with GpuPartitioning {
   override def children: Seq[GpuExpression] = Nil
 
   override def nullable: Boolean = false

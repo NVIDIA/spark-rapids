@@ -17,13 +17,15 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
 import org.apache.spark.sql.types.{BooleanType, DataType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuConditionalExpression extends ComplexTypeMergingExpression with GpuExpression
+    with ShimExpression {
 
   protected def computeIfElse(
       batch: ColumnarBatch,

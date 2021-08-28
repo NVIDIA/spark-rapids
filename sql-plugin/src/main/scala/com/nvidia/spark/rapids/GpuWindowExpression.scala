@@ -21,8 +21,9 @@ import java.util.concurrent.TimeUnit
 import scala.language.{existentials, implicitConversions}
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -163,7 +164,7 @@ class GpuWindowExpressionMeta(
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
-  extends GpuUnevaluable {
+  extends GpuUnevaluable with ShimExpression {
 
   override def children: Seq[Expression] = windowFunction :: windowSpec :: Nil
 
@@ -272,7 +273,7 @@ case class GpuWindowSpecDefinition(
     partitionSpec: Seq[Expression],
     orderSpec: Seq[SortOrder],
     frameSpecification: GpuWindowFrame)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression with ShimExpression with GpuUnevaluable {
 
   override def children: Seq[Expression] = partitionSpec ++ orderSpec :+ frameSpecification
 
@@ -450,7 +451,7 @@ class GpuSpecifiedWindowFrameMeta(
   }
 }
 
-trait GpuWindowFrame extends GpuExpression with GpuUnevaluable {
+trait GpuWindowFrame extends GpuExpression with GpuUnevaluable with ShimExpression {
   override def children: Seq[Expression] = Nil
 
   override def dataType: DataType = {
@@ -573,7 +574,7 @@ case class GpuSpecifiedWindowFrame(
 }
 
 case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression with ShimExpression with GpuUnevaluable {
   override def children : Seq[Expression] = Nil
   override def dataType: DataType = NullType
   override def foldable: Boolean = false
@@ -607,7 +608,7 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 
 // This is here for now just to tag an expression as being a GpuWindowFunction and match
 // Spark. This may expand in the future if other types of window functions show up.
-trait GpuWindowFunction extends GpuUnevaluable
+trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
 
 /**
  * GPU Counterpart of `AggregateWindowFunction`.
@@ -1171,7 +1172,7 @@ object DenseRankFixer extends Arm {
  * @note this is a running window only operator.
  */
 case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
-    with GpuBatchedRunningWindowWithFixer {
+    with GpuBatchedRunningWindowWithFixer with ShimExpression {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 

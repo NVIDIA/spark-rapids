@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ast
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, SortOrder}
@@ -129,7 +130,7 @@ object GpuBindReferences extends Logging {
 
 case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
     (val exprId: ExprId, val name: String)
-  extends GpuLeafExpression {
+  extends GpuLeafExpression with ShimExpression {
 
   override def toString: String =
     s"input[$ordinal, ${dataType.simpleString}, $nullable]($name#${exprId.id})"

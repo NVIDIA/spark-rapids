@@ -22,6 +22,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.shims.upstream.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.types.{ArrayType, DataType, Metadata}
@@ -67,7 +68,7 @@ case class GpuLambdaFunction(
     function: Expression,
     arguments: Seq[NamedExpression],
     hidden: Boolean = false)
-    extends GpuExpression {
+    extends GpuExpression with ShimExpression {
 
   override def children: Seq[Expression] = function +: arguments
   override def dataType: DataType = function.dataType
@@ -81,7 +82,7 @@ case class GpuLambdaFunction(
  * A higher order function takes one or more (lambda) functions and applies these to some objects.
  * The function produces a number of variables which can be consumed by some lambda function.
  */
-trait GpuHigherOrderFunction extends GpuExpression {
+trait GpuHigherOrderFunction extends GpuExpression with ShimExpression {
 
   override def nullable: Boolean = arguments.exists(_.nullable)
 
