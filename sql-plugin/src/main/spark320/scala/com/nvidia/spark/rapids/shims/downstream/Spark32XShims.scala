@@ -16,46 +16,41 @@
 
 package com.nvidia.spark.rapids.shims.downstream
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuDataSourceRDD, GpuExec, GpuOverrides, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.SparkContext
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
-import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
-import org.apache.spark.sql.connector.read.{InputPartition, PartitionReaderFactory}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AQEShuffleReadExec, QueryStageExec}
-import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec}
+import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 
 /**
 * Shim base class that can be compiled with every supported 3.2.x
 */
 trait Spark32XShims extends SparkShims {
-  override def parquetRebaseReadKey: String =
+  override final def parquetRebaseReadKey: String =
     SQLConf.PARQUET_REBASE_MODE_IN_READ.key
-  override def parquetRebaseWriteKey: String =
+  override final def parquetRebaseWriteKey: String =
     SQLConf.PARQUET_REBASE_MODE_IN_WRITE.key
-  override def avroRebaseReadKey: String =
+  override final def avroRebaseReadKey: String =
     SQLConf.AVRO_REBASE_MODE_IN_READ.key
-  override def avroRebaseWriteKey: String =
+  override final def avroRebaseWriteKey: String =
     SQLConf.AVRO_REBASE_MODE_IN_WRITE.key
-  override def parquetRebaseRead(conf: SQLConf): String =
+  override final def parquetRebaseRead(conf: SQLConf): String =
     conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_READ)
-  override def parquetRebaseWrite(conf: SQLConf): String =
+  override final def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
 
-  override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
+  override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
@@ -74,11 +69,11 @@ trait Spark32XShims extends SparkShims {
         }
       })
 
-  override def sessionFromPlan(plan: SparkPlan): SparkSession = {
+  override final def sessionFromPlan(plan: SparkPlan): SparkSession = {
     plan.session
   }
 
-  override def getParquetFilters(
+  override final def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
       pushDownTimestamp: Boolean,
@@ -91,16 +86,16 @@ trait Spark32XShims extends SparkShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-  override def filesFromFileIndex(
+  override final def filesFromFileIndex(
       fileIndex: PartitioningAwareFileIndex
   ): Seq[FileStatus] = {
     fileIndex.allFiles()
   }
 
-  def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
+  override final def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
 
-  override def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
+  override final def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the
     // next operator on GPU in these cases
     SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
@@ -113,7 +108,7 @@ trait Spark32XShims extends SparkShims {
     })
   }
 
-  override def isAqePlan(p: SparkPlan): Boolean = p match {
+  override final def isAqePlan(p: SparkPlan): Boolean = p match {
     case _: AdaptiveSparkPlanExec |
          _: QueryStageExec |
          _: AQEShuffleReadExec => true
