@@ -16,17 +16,14 @@
 
 package com.nvidia.spark.rapids.shims.downstream
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuDataSourceRDD, GpuExec, GpuOverrides, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
-import org.apache.spark.SparkContext
 
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
-import org.apache.spark.sql.connector.read.{InputPartition, PartitionReaderFactory}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, CustomShuffleReaderExec, QueryStageExec}
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
@@ -51,12 +48,6 @@ trait Spark30XShims extends SparkShims {
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
   override def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
-
-  override def createGpuDataSourceRDD(
-      sparkContext: SparkContext,
-      partitions: Seq[InputPartition],
-      readerFactory: PartitionReaderFactory
-  ): RDD[InternalRow] = new GpuDataSourceRDD(sparkContext, partitions, readerFactory)
 
   override def sessionFromPlan(plan: SparkPlan): SparkSession = {
     plan.sqlContext.sparkSession

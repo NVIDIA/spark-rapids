@@ -29,6 +29,7 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.shims.upstream.GpuShuffleBlockResolver
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -275,7 +276,11 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       throw new IllegalStateException("The ShuffleBufferCatalog is not initialized but the " +
           "RapidsShuffleManager is configured"))
 
-  protected def resolver: ShuffleBlockResolver
+  protected lazy val resolver = if (shouldFallThroughOnEverything) {
+    wrapped.shuffleBlockResolver
+  } else {
+    new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, getCatalogOrThrow)
+  }
 
   private[this] lazy val transport: Option[RapidsShuffleTransport] = {
     if (rapidsConf.shuffleTransportEnabled && !isDriver) {

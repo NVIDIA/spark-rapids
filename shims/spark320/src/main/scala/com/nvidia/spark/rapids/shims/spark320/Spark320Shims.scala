@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark320
 
 import com.nvidia.spark.rapids.ShimVersion
-import com.nvidia.spark.rapids.shims.spark311.Spark311Shims
+import com.nvidia.spark.rapids.shims.downstream.Spark32XShims
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.TableIdentifier

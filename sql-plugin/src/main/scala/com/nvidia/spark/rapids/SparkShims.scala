@@ -24,7 +24,6 @@ import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -36,7 +35,7 @@ import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
-import org.apache.spark.sql.connector.read.{InputPartition, PartitionReaderFactory, Scan}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.command.RunnableCommand
@@ -250,13 +249,16 @@ trait SparkShims {
 
   def sessionFromPlan(plan: SparkPlan): SparkSession
 
-  def createGpuDataSourceRDD(
-      sparkContext: SparkContext,
-      partitions: Seq[InputPartition],
-      readerFactory: PartitionReaderFactory
-  ): RDD[InternalRow]
-
   def isCustomReaderExec(x: SparkPlan): Boolean
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
+}
+
+abstract class SparkCommonShims extends SparkShims {
+  override def alias(child: Expression, name: String)(
+      exprId: ExprId,
+      qualifier: Seq[String],
+      explicitMetadata: Option[Metadata]): Alias = {
+    Alias(child, name)(exprId, qualifier, explicitMetadata)
+  }
 }

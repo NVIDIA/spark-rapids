@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.spark320
+package org.apache.spark.sql.rapids.shims.upstream
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
+import com.nvidia.spark.rapids.ShuffleBufferCatalog
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends RapidsShuffleInternalManagerBase(conf, isDriver) {
-}
+import org.apache.spark.network.buffer.ManagedBuffer
+import org.apache.spark.shuffle.IndexShuffleBlockResolver
+import org.apache.spark.sql.rapids.GpuShuffleBlockResolverBase
+import org.apache.spark.storage.ShuffleBlockId
+
+class GpuShuffleBlockResolver(resolver: IndexShuffleBlockResolver, catalog: ShuffleBufferCatalog)
+    extends GpuShuffleBlockResolverBase(resolver, catalog)
