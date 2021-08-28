@@ -32,8 +32,8 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
-import org.apache.spark.{SparkEnv, TaskContext}
 
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.rapids.api.python.ShimBasePythonRunner
 import org.apache.spark.rdd.RDD
@@ -266,7 +266,8 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
       releasedOrClosed: AtomicBoolean,
       context: TaskContext
   ): Iterator[ColumnarBatch] = {
-    newReaderIterator(stream, writerThread, startTime, env, None, worker, releasedOrClosed, context)
+    newReaderIterator(stream, writerThread, startTime, env, worker, None, releasedOrClosed,
+      context)
   }
 
   protected def newReaderIterator(
@@ -274,8 +275,8 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
       writerThread: WriterThread,
       startTime: Long,
       env: SparkEnv,
-      pid: Option[Int],
       worker: Socket,
+      pid: Option[Int],
       releasedOrClosed: AtomicBoolean,
       context: TaskContext): Iterator[ColumnarBatch] = {
 

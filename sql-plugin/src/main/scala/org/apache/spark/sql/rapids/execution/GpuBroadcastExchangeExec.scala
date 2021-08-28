@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -251,7 +252,7 @@ abstract class GpuBroadcastExchangeExecBaseWithFuture(
  */
 abstract class GpuBroadcastExchangeExecBase(
     val mode: BroadcastMode,
-    child: SparkPlan) extends Exchange with GpuExec {
+    child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL

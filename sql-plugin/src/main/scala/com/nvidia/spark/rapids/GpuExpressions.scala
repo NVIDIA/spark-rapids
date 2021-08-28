@@ -435,6 +435,7 @@ trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
   }
 }
 
-trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression
+    with GpuExpression with ShimExpression {
   def columnarEval(batch: ColumnarBatch): Any
 }
