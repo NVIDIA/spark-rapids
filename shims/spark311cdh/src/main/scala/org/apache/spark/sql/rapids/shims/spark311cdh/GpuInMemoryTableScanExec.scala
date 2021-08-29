@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark311cdh
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
-import com.nvidia.spark.rapids.shims.spark311cdh.ParquetCachedBatchSerializer
+import com.nvidia.spark.rapids.{GpuExec, GpuMetric, ParquetCachedBatchSerializer}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

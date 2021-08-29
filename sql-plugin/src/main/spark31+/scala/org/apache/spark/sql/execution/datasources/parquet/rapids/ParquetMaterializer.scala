@@ -43,6 +43,7 @@ class ParquetRecordMaterializer(
     convertTz,
     datetimeRebaseMode,
     LegacyBehaviorPolicy.EXCEPTION,
+    false,
     NoopUpdater)
 
   override def getCurrentRecord: InternalRow = rootConverter.currentRecord

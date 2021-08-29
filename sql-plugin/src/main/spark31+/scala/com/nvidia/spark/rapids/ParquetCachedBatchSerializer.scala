@@ -52,7 +52,7 @@ import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjectio
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, SparkToParquetSchemaConverter, VectorizedColumnReader}
-import org.apache.spark.sql.execution.datasources.parquet.rapids.ParquetRecordMaterializer
+import org.apache.spark.sql.execution.datasources.parquet.rapids.{ParquetRecordMaterializer, ShimVectorizedColumnReader}
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
@@ -944,7 +944,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         }
 
         (totalRowCount, columnsRequested, cacheSchemaToReqSchemaMap, missingColumns,
-            columnsInCache, typesInCache)
+            x, typesInCache)
       }
 
       @throws[IOException]
@@ -960,9 +960,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
           if (!missingColumns(i)) {
             columnReaders(i) =
                 new ShimVectorizedColumnReader(
-                  columnsInCache.get(i),
-                  typesInCache.get(i).getOriginalType,
-                  pages.getPageReader(columnsInCache.get(i)),
+                  i,
+                  columnsInCache,
+                  typesInCache,
+                  pages,
                   null /*convertTz*/ ,
                   LegacyBehaviorPolicy.CORRECTED.toString,
                   LegacyBehaviorPolicy.EXCEPTION.toString, false)
