@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.datasources.parquet.rapids.shims.spark311cdh
+package org.apache.spark.sql.execution.datasources.parquet.rapids
 
 import java.time.ZoneId
 
@@ -22,7 +22,7 @@ import org.apache.parquet.io.api.{GroupConverter, RecordMaterializer}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.parquet.{NoopUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter}
+import org.apache.spark.sql.execution.datasources.parquet.{NoopUpdater, ParquetToSparkSchemaConverter}
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 
@@ -36,14 +36,13 @@ class ParquetRecordMaterializer(
    convertTz: Option[ZoneId],
    datetimeRebaseMode: LegacyBehaviorPolicy.Value) extends RecordMaterializer[InternalRow] {
 
-  private val rootConverter = new ParquetRowConverter(
+  private val rootConverter = new ShimParquetRowConverter(
     schemaConverter,
     parquetSchema,
     catalystSchema,
     convertTz,
     datetimeRebaseMode,
     LegacyBehaviorPolicy.EXCEPTION,
-    false,
     NoopUpdater)
 
   override def getCurrentRecord: InternalRow = rootConverter.currentRecord
