@@ -457,7 +457,8 @@ object GpuOverrides {
   }
 
   // this listener mechanism is global and is intended for use by unit tests only
-  private lazy val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
+  private lazy val listeners: ListBuffer[GpuOverridesListener] =
+    new ListBuffer[GpuOverridesListener]()
 
   def addListener(listener: GpuOverridesListener): Unit = {
     listeners += listener
