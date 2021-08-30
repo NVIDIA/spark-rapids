@@ -18,6 +18,12 @@ Compare to Spark SQL Macros project we previously investigated, "udf-compiler" h
 
 The feature set of the "udf-compiler" solution is still less than the Macros solution, but the "udf-compiler" is still being actively developed, the feature gaps might be filled in the future. 
 
+The Spark UDF Compiler solution has following advantages:
+- It is a fully automated solution
+- It doesn't require users to change their Spark UDF implementation
+- It supports all forms of UDF registration/definitions, including defining UDF as a variable or register UDF to the Spark UDF registry
+- It doesn't have the scope issue as Spark SQL Macros (Macros requires UDF/UDM definition to include all function definitions in one function body)
+
 The feature gap examples of the "udf-compiler" solution are listed as follows:
 - It doesn't support tuple, map and collections
 - It has less DateTime support than the Macros solution: monthsBetween, getDayInYear, getDayOfWeek etc.
@@ -55,14 +61,15 @@ root@ubuntu1804:/home/ubuntu/openinfralabs/caerus-spark-udf-compiler-from-rapids
 ```
  spark-shell
   --driver-library-path path-to-udf-compiler-jar\rapids-4-spark-udf_2.12-21.10.0-SNAPSHOT.jar \
-  --config "spark.sql.extensions"="com.nvidia.spark.udf.Plugin"
+  --conf "spark.sql.extensions"="com.nvidia.spark.udf.Plugin"
 ```
 - ide (e.g. Intellij)
 For easy debugging, a main application scala class can be put under udf-compiler/src/main/scala/Main.Scala, inside main class, it will have spark.sql.extensions and a UDF definition, after compile and run (debugging), the physical plan of a sql that calling udf should show different than it was not using UDF compiler (see below result example).
 
 ## Result Example
 ```
-root@ubuntu1804:/home/ubuntu/openinfralabs/caerus-spark-udf-compiler-from-rapids# spark-shell --driver-class-path  udf-compiler/target/rapids-4-spark-udf_2.12-21.10.0-SNAPSHOT.jar --conf "spark.sql.extensions"="com.nvidia.spark.udf.Plugin"
+root@ubuntu1804:/home/ubuntu/openinfralabs/caerus-spark-udf-compiler-from-rapids# 
+spark-shell --driver-class-path  udf-compiler/target/rapids-4-spark-udf_2.12-21.10.0-SNAPSHOT.jar --conf "spark.sql.extensions"="com.nvidia.spark.udf.Plugin"
 SLF4J: Class path contains multiple SLF4J bindings.
 ...
 Spark context Web UI available at http://10.124.62.103:4040
@@ -125,8 +132,42 @@ Filter (isnotnull(age#1) AND ((age#1 + 2) > 15))
 PushedFilters: [IsNotNull(age)], 
 ReadSchema: struct<name:string,age:int>
 
+scala> val plusOne = udf((x: Int) => x + 1)
+plusOne: org.apache.spark.sql.expressions.UserDefinedFunction = SparkUserDefinedFunction($Lambda$2699/631385759@38c2bbd3,IntegerType,List(Some(class[value[0]: int])),Some(class[value[0]: int]),None,false,true)
+scala> df_with_schema.filter(plusOne($"age")>19).explain()
+21/08/30 08:57:39 INFO FileSourceStrategy: Pushed Filters: IsNotNull(age)
+21/08/30 08:57:39 INFO FileSourceStrategy: Post-Scan Filters: isnotnull(age#1),((age#1 + 1) > 19)
+21/08/30 08:57:39 INFO FileSourceStrategy: Output Data Schema: struct<name: string, age: int>
+== Physical Plan ==
+*(1) Filter (isnotnull(age#1) AND ((age#1 + 1) > 19))
++- FileScan json [name#0,age#1] Batched: false, DataFilters: [isnotnull(age#1), ((age#1 + 1) > 19)], Format: JSON, Location: InMemoryFileIndex[file:/data/source/people.json], PartitionFilters: [], PushedFilters: [IsNotNull(age)], ReadSchema: struct<name:string,age:int>
+
+
+
+scala> df_with_schema.filter(plusOne($"age")>19).explain(true)
+21/08/30 08:57:44 INFO FileSourceStrategy: Pushed Filters: IsNotNull(age)
+21/08/30 08:57:44 INFO FileSourceStrategy: Post-Scan Filters: isnotnull(age#1),((age#1 + 1) > 19)
+21/08/30 08:57:44 INFO FileSourceStrategy: Output Data Schema: struct<name: string, age: int>
+== Parsed Logical Plan ==
+'Filter (UDF('age) > 19)
++- Relation[name#0,age#1] json
+
+== Analyzed Logical Plan ==
+name: string, age: int
+Filter ((age#1 + 1) > 19)
++- Relation[name#0,age#1] json
+
+== Optimized Logical Plan ==
+Filter (isnotnull(age#1) AND ((age#1 + 1) > 19))
++- Relation[name#0,age#1] json
+
+== Physical Plan ==
+*(1) Filter (isnotnull(age#1) AND ((age#1 + 1) > 19))
++- FileScan json [name#0,age#1] Batched: false, DataFilters: [isnotnull(age#1), ((age#1 + 1) > 19)], Format: JSON, Location: InMemoryFileIndex[file:/data/source/people.json], PartitionFilters: [], PushedFilters: [IsNotNull(age)], ReadSchema: struct<name:string,age:int>
+
 
 scala> 
+
 
 ```
 
