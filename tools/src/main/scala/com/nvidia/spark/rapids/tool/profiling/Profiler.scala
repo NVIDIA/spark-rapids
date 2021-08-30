@@ -137,8 +137,16 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       def run: Unit = {
         val appOpt = createApp(path, numOutputRows, index, hadoopConf)
         appOpt.foreach { app =>
-          val (sum, _) = processApps(Seq(app), false, null)
-          allApps.add(sum)
+          val sum = try {
+            val (s, _) = processApps(Seq(app), false, null)
+            Some(s)
+          } catch {
+            case e: Exception =>
+              logError("exception thrown: ", e)
+              None
+
+          }
+          sum.foreach(allApps.add(_))
         }
       }
     }
