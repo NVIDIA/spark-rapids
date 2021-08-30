@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
