@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-package org.apache.spark.shuffle
+package org.apache.spark.shuffle.rapids
 
+import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.storage.BlockManagerId
 
 class RapidsShuffleFetchFailedException(
