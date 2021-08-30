@@ -129,7 +129,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
   }
 
   private def createAppsAndSummarize(allPaths: Seq[EventLogInfo],
-      printPlans: Boolean, profileOutputWriter: ProfileOutputWriter): Seq[ApplicationSummaryInfo] = {
+      printPlans: Boolean,
+      profileOutputWriter: ProfileOutputWriter): Seq[ApplicationSummaryInfo] = {
     var errorCodes = ArrayBuffer[Int]()
     val allApps = new ConcurrentLinkedQueue[ApplicationSummaryInfo]()
 
@@ -142,7 +143,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
             Some(s)
           } catch {
             case e: Exception =>
-              logError("exception thrown: ", e)
+              logWarning(s"Unexpected exception thrown ${path.eventLog.toString}, skipping! ", e)
               None
 
           }
