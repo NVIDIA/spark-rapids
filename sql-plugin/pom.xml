@@ -132,25 +132,6 @@
                 </dependency>
             </dependencies>
         </profile>
-	<!--
-        <profile>
-            <id>release301db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301db</value>
-                </property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-	    </dependencies>
-        </profile>
--->
         <profile>
             <id>release311db</id>
             <activation>
