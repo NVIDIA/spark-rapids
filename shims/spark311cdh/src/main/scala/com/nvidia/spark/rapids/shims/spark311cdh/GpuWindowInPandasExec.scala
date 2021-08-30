@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.spark311cdh
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecBase
+import org.apache.spark.sql.rapids.execution.python.shims.spark311cdh.GpuWindowInPandasExecBase
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /*

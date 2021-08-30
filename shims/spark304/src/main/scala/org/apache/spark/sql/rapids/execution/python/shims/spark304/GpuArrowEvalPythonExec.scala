@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.execution.python
+package org.apache.spark.sql.rapids.execution.python.shims.spark304
 
 import java.io.{DataInputStream, DataOutputStream}
 import java.net.Socket
@@ -31,16 +31,16 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -472,7 +472,7 @@ case class GpuArrowEvalPythonExec(
     udfs: Seq[GpuPythonUDF],
     resultAttrs: Seq[Attribute],
     child: SparkPlan,
-    evalType: Int) extends ShimUnaryExecNode with GpuExec {
+    evalType: Int) extends UnaryExecNode with GpuExec {
 
   // We split the input batch up into small pieces when sending to python for compatibility reasons
   override def coalesceAfter: Boolean = true
