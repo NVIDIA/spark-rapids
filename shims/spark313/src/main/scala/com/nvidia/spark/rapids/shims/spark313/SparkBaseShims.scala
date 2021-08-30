@@ -24,7 +24,6 @@ import com.nvidia.spark.rapids.shims.downstream.Spark30XShims
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
-import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
@@ -56,6 +55,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.spark313._
+import org.apache.spark.sql.rapids.shims.{GpuSchemaUtils, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}

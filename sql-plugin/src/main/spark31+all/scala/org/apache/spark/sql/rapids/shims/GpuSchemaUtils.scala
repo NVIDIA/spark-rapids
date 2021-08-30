@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark301
+package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.types.StructType
@@ -26,6 +26,6 @@ object GpuSchemaUtils {
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit = {
-    SchemaUtils.checkColumnNameDuplication(schema.map(_.name), colType, resolver)
+    SchemaUtils.checkSchemaColumnNameDuplication(schema, colType, resolver)
   }
 }

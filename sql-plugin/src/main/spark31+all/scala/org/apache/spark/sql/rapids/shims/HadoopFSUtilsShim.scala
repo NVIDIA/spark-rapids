@@ -14,18 +14,12 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark303
+package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.catalyst.analysis.Resolver
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.util.SchemaUtils
+import org.apache.spark.util.HadoopFSUtils
 
-object GpuSchemaUtils {
+object HadoopFSUtilsShim {
 
-  def checkColumnNameDuplication(
-      schema: StructType,
-      colType: String,
-      resolver: Resolver): Unit = {
-    SchemaUtils.checkColumnNameDuplication(schema.map(_.name), colType, resolver)
-  }
+  def shouldIgnorePath(path: String) = HadoopFSUtils.shouldFilterOutPathName(path)
+
 }
