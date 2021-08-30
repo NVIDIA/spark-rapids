@@ -19,8 +19,8 @@ package org.apache.spark.sql.execution.datasources.parquet.rapids
 import java.time.ZoneId
 
 import org.apache.parquet.column.ColumnDescriptor
-import org.apache.parquet.column.page.PageReader
-import org.apache.parquet.schema.{GroupType, OriginalType}
+import org.apache.parquet.column.page.PageReadStore
+import org.apache.parquet.schema.{GroupType, Type}
 
 import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
@@ -42,22 +42,21 @@ class ShimParquetRowConverter(
       convertTz,
       datetimeRebaseMode,
       int96RebaseMode,
-      int96CDPHive3Compatibility,
       updater)
 
 class ShimVectorizedColumnReader(
-    descriptor: ColumnDescriptor,
-    originalType: OriginalType,
-    pageReader: PageReader,
+    index: Int,
+    columns: java.util.List[ColumnDescriptor],
+    types: java.util.List[Type],
+    pageReadStore: PageReadStore,
     convertTz: ZoneId,
     datetimeRebaseMode: String,
     int96RebaseMode: String,
     int96CDPHive3Compatibility: Boolean
 ) extends VectorizedColumnReader(
-      descriptor,
-      originalType,
-      pageReader,
+      columns.get(index),
+      types.get(index).getOriginalType,
+      pageReadStore.getPageReader(columns.get(index)),
       convertTz,
       datetimeRebaseMode,
-      int96RebaseMode,
-      int96CDPHive3Compatibility)
+      int96RebaseMode)

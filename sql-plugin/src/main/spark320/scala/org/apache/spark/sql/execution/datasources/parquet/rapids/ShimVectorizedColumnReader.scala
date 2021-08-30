@@ -20,8 +20,8 @@ import java.time.ZoneId
 import java.util.PrimitiveIterator
 
 import org.apache.parquet.column.ColumnDescriptor
-import org.apache.parquet.column.page.PageReader
-import org.apache.parquet.schema.{GroupType, LogicalTypeAnnotation, OriginalType}
+import org.apache.parquet.column.page.{PageReader, PageReadStore}
+import org.apache.parquet.schema.{GroupType, LogicalTypeAnnotation, OriginalType, Type}
 
 import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
@@ -46,20 +46,19 @@ class ShimParquetRowConverter(
       updater)
 
 class ShimVectorizedColumnReader(
-    descriptor: ColumnDescriptor,
-    originalType: OriginalType,
-    logicalTypeAnnotation: LogicalTypeAnnotation,
-    pageReader: PageReader,
-    rowIndexes: PrimitiveIterator.OfLong,
+    index: Int,
+    columns: java.util.List[ColumnDescriptor],
+    types: java.util.List[Type],
+    pageReadStore: PageReadStore,
     convertTz: ZoneId,
     datetimeRebaseMode: String,
     int96RebaseMode: String,
     int96CDPHive3Compatibility: Boolean
 ) extends VectorizedColumnReader(
-      descriptor,
-      logicalTypeAnnotation,
-      pageReader,
-      rowIndexes,
+      columns.get(index),
+      types.get(index).getLogicalTypeAnnotation,
+      pageReadStore.getPageReader(columns.get(index)),
+      pageReadStore.getRowIndexes().orElse(null),
       convertTz,
       datetimeRebaseMode,
       int96RebaseMode)

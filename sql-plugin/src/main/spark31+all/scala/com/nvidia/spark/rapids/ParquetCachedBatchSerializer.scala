@@ -944,7 +944,7 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         }
 
         (totalRowCount, columnsRequested, cacheSchemaToReqSchemaMap, missingColumns,
-            x, typesInCache)
+            columnsInCache, typesInCache)
       }
 
       @throws[IOException]
