@@ -18,13 +18,14 @@ package org.apache.spark.sql.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, Scalar}
+import ai.rapids.cudf
+import ai.rapids.cudf.{ColumnView, GroupByAggregation, GroupByOptions, Scalar}
 import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuListUtils, GpuLiteral, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, RowOrdering}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, RowOrdering}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -52,25 +53,25 @@ case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExp
   }
 
   private def stringConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(ArrayBuffer.empty[ColumnVector]) { buffer =>
+    withResource(ArrayBuffer.empty[cudf.ColumnVector]) { buffer =>
       // build input buffer
       children.foreach {
         buffer += columnarEvalToColumn(_, batch).getBase
       }
       // run string concatenate
       GpuColumnVector.from(
-        ColumnVector.stringConcatenate(buffer.toArray[ColumnView]), StringType)
+        cudf.ColumnVector.stringConcatenate(buffer.toArray[ColumnView]), StringType)
     }
   }
 
   private def listConcat(batch: ColumnarBatch): GpuColumnVector = {
-    withResource(ArrayBuffer[ColumnVector]()) { buffer =>
+    withResource(ArrayBuffer[cudf.ColumnVector]()) { buffer =>
       // build input buffer
       children.foreach {
         buffer += columnarEvalToColumn(_, batch).getBase
       }
       // run list concatenate
-      GpuColumnVector.from(ColumnVector.listConcatenateByRow(buffer: _*), dataType)
+      GpuColumnVector.from(cudf.ColumnVector.listConcatenateByRow(buffer: _*), dataType)
     }
   }
 }
@@ -118,13 +119,13 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
   // GetArrayItemUtil.computeNullabilityFromArray
   override def nullable: Boolean = true
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): cudf.ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): cudf.ColumnVector =
     throw new IllegalStateException("This is not supported yet")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     lhs.dataType match {
       case _: ArrayType =>
         if (rhs.isValid) {
@@ -179,7 +180,7 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
     }
   }
 
-  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector =
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector =
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
@@ -196,7 +197,7 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   override def dataType: DataType = IntegerType
   override def nullable: Boolean = if (legacySizeOfNull) false else super.nullable
 
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
 
     // Compute sizes of cuDF.ListType to get sizes of each ArrayData or MapData, considering
     // MapData is represented as List of Struct in terms of cuDF.
@@ -223,7 +224,7 @@ case class GpuMapKeys(child: Expression)
 
   override def prettyName: String = "map_keys"
 
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     val base = input.getBase
     withResource(base.getChildColumnView(0)) { structView =>
       withResource(structView.getChildColumnView(0)) { keyView =>
@@ -247,7 +248,7 @@ case class GpuMapValues(child: Expression)
 
   override def prettyName: String = "map_values"
 
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     val base = input.getBase
     withResource(base.getChildColumnView(0)) { structView =>
       withResource(structView.getChildColumnView(1)) { valueView =>
@@ -276,7 +277,7 @@ case class GpuMapEntries(child: Expression) extends GpuUnaryExpression with Expe
 
   override def prettyName: String = "map_entries"
 
-  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     // Internally the format for a list of key/value structs is the same, so just
     // return the same thing, and let Spark think it is a different type.
     input.getBase.incRefCount()
@@ -312,20 +313,20 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
       TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
   }
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): cudf.ColumnVector =
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
         "the sort_array operator to work")
 
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): cudf.ColumnVector =
     throw new IllegalArgumentException("lhs has to be a vector and rhs has to be a scalar for " +
         "the sort_array operator to work")
 
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
     lhs.getBase.listSortRows(isDescending, true)
   }
 
-  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { cv =>
       cv.getBase.listSortRows(isDescending, true)
@@ -336,4 +337,69 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
     case ascending: Boolean => !ascending
     case invalidValue => throw new IllegalArgumentException(s"invalid value $invalidValue")
   }
+}
+
+trait GpuBaseArrayAgg extends GpuUnaryExpression {
+
+  protected def agg: GroupByAggregation
+
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    val baseInput = input.getBase
+    // TODO we should switch over to array aggregations once
+    //  https://github.com/rapidsai/cudf/issues/9135 is done
+    val inputTab = withResource(Scalar.fromInt(0)) { zero =>
+      withResource(cudf.ColumnVector.sequence(zero, input.getRowCount.toInt)) { rowNums =>
+        new cudf.Table(rowNums, baseInput)
+      }
+    }
+
+    val explodedTab = withResource(inputTab) { inputTab =>
+      inputTab.explodeOuter(1)
+    }
+
+    val retTab = withResource(explodedTab) { explodedTab =>
+      explodedTab.groupBy(GroupByOptions.builder()
+          .withKeysSorted(true)
+          .withIgnoreNullKeys(true)
+          .build(), 0)
+          .aggregate(agg.onColumn(1))
+    }
+
+    withResource(retTab) { retTab =>
+      assert(retTab.getRowCount == baseInput.getRowCount)
+      retTab.getColumn(1).incRefCount()
+    }
+  }
+}
+
+case class GpuArrayMin(child: Expression) extends GpuBaseArrayAgg with ImplicitCastInputTypes {
+
+  override def nullable: Boolean = true
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType)
+
+  @transient override lazy val dataType: DataType = child.dataType match {
+    case ArrayType(dt, _) => dt
+    case _ => throw new IllegalStateException(s"$prettyName accepts only arrays.")
+  }
+
+  override def prettyName: String = "array_min"
+
+  override protected def agg: GroupByAggregation = GroupByAggregation.min()
+}
+
+case class GpuArrayMax(child: Expression) extends GpuBaseArrayAgg with ImplicitCastInputTypes {
+
+  override def nullable: Boolean = true
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType)
+
+  @transient override lazy val dataType: DataType = child.dataType match {
+    case ArrayType(dt, _) => dt
+    case _ => throw new IllegalStateException(s"$prettyName accepts only arrays.")
+  }
+
+  override def prettyName: String = "array_max"
+
+  override protected def agg: GroupByAggregation = GroupByAggregation.max()
 }

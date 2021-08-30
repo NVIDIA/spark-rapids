@@ -198,3 +198,22 @@ def test_array_transform(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it, 
             conf=allow_negative_scale_of_decimal_conf)
 
+@pytest.mark.parametrize('data_gen', single_level_array_gens_no_nan, ids=idfn)
+def test_array_min(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'array_min(a)'),
+            conf={
+                'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                'spark.rapids.sql.hasNans': 'false'})
+
+@pytest.mark.parametrize('data_gen', single_level_array_gens_no_nan, ids=idfn)
+def test_array_max(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'array_max(a)'),
+            conf={
+                'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                'spark.rapids.sql.hasNans': 'false'})

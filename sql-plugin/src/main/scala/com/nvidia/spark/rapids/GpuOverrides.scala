@@ -680,6 +680,29 @@ object GpuOverrides {
   def isAnyStringLit(expressions: Seq[Expression]): Boolean =
     expressions.exists(isStringLit)
 
+  def anyOf(dataType: DataType, fn: DataType => Boolean): Boolean = {
+    if (fn(dataType)) {
+      return true
+    }
+    dataType match {
+      case ArrayType(elementType, _) =>
+        anyOf(elementType, fn)
+      case MapType(keyType, valueType, _) =>
+        anyOf(keyType, fn) || anyOf(valueType, fn)
+      case StructType(fields) =>
+        fields.foreach { field =>
+          if (anyOf(field.dataType, fn)) {
+            return true
+          }
+        }
+      case _ => //Ignored we already checked it
+    }
+    false
+  }
+
+  def isOrContainsFloatingPoint(dataType: DataType): Boolean =
+    anyOf(dataType, dt => dt == FloatType || dt == DoubleType)
+
   def expr[INPUT <: Expression](
       desc: String,
       pluginChecks: ExprChecks,
@@ -2002,12 +2025,10 @@ object GpuOverrides {
           TypeSig.all))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (conf.hasNans &&
-            (pivot.pivotColumn.dataType.equals(FloatType) ||
-              pivot.pivotColumn.dataType.equals(DoubleType))) {
+          if (conf.hasNans && isOrContainsFloatingPoint(pivot.pivotColumn.dataType)) {
             willNotWorkOnGpu("Pivot expressions over floating point columns " +
-              "that may contain NaN is disabled. You can bypass this by setting " +
-              s"${RapidsConf.HAS_NANS}=false")
+                "that may contain NaN is disabled. You can bypass this by setting " +
+                s"${RapidsConf.HAS_NANS}=false")
           }
           // If pivotColumnValues doesn't have distinct values, fall back to CPU
           if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
@@ -2479,6 +2500,62 @@ object GpuOverrides {
       (in, conf, p, r) => new UnaryExprMeta[MapEntries](in, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuMapEntries(child)
+      }),
+    expr[ArrayMin](
+      "Returns the minimum value in the array",
+      ExprChecks.unaryProject(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+        TypeSig.orderable,
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.orderable)),
+      (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (isOrContainsFloatingPoint(in.dataType)) {
+            if (!conf.isFloatAggEnabled) {
+              willNotWorkOnGpu("the GPU will aggregate floating point values in" +
+                  " parallel and the result is not always identical each time. This can cause" +
+                  " some Spark queries to produce an incorrect answer if the value is computed" +
+                  " more than once as part of the same query.  To enable this anyways set" +
+                  s" ${RapidsConf.ENABLE_FLOAT_AGG} to true.")
+            }
+            if (conf.hasNans) {
+              willNotWorkOnGpu("Min aggregation on floating point columns that can contain NaNs" +
+                  " will compute incorrect results. If it is known that there are no NaNs, set" +
+                  s" ${RapidsConf.HAS_NANS} to false.")
+            }
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuArrayMin(child)
+      }),
+    expr[ArrayMax](
+      "Returns the maximum value in the array",
+      ExprChecks.unaryProject(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+        TypeSig.orderable,
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.orderable)),
+      (in, conf, p, r) => new UnaryExprMeta[ArrayMax](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (isOrContainsFloatingPoint(in.dataType)) {
+            if (!conf.isFloatAggEnabled) {
+              willNotWorkOnGpu("the GPU will aggregate floating point values in" +
+                  " parallel and the result is not always identical each time. This can cause" +
+                  " some Spark queries to produce an incorrect answer if the value is computed" +
+                  " more than once as part of the same query.  To enable this anyways set" +
+                  s" ${RapidsConf.ENABLE_FLOAT_AGG} to true.")
+            }
+            if (conf.hasNans) {
+              willNotWorkOnGpu("Max aggregation on floating point columns that can contain NaNs" +
+                  " will compute incorrect results. If it is known that there are no NaNs, set" +
+                  s" ${RapidsConf.HAS_NANS} to false.")
+            }
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuArrayMax(child)
       }),
     expr[CreateNamedStruct](
       "Creates a struct with the given field names and values",
