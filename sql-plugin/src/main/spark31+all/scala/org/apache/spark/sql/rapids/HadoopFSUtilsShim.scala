@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark311
+package org.apache.spark.sql.rapids
 
 import org.apache.spark.util.HadoopFSUtils
 
