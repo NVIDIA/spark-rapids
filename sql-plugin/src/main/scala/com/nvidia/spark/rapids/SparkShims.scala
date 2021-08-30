@@ -90,24 +90,21 @@ trait SparkShims {
   def parquetRebaseRead(conf: SQLConf): String
   def parquetRebaseWrite(conf: SQLConf): String
   def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
+
   def int96ParquetRebaseRead(conf: SQLConf): String = {
-    throw new IllegalArgumentException("int96ParquetRebaseRead conf doesn't exist prior to Spark " +
-        "version 3.1.0")
+    parquetRebaseRead(conf)
   }
 
   def int96ParquetRebaseWrite(conf: SQLConf): String = {
-    throw new IllegalArgumentException("int96ParquetRebaseWrite conf doesn't exist prior to " +
-        "Spark version 3.1.0")
+    parquetRebaseWrite(conf)
   }
 
   def int96ParquetRebaseReadKey: String = {
-    throw new IllegalArgumentException("int96ParquetRebaseReadKey doesn't exist prior to " +
-        "Spark version 3.1.0")
+    parquetRebaseReadKey
   }
 
   def int96ParquetRebaseWriteKey: String = {
-    throw new IllegalArgumentException("int96ParquetRebaseWriteKey doesn't exist prior to " +
-        "Spark version 3.1.0")
+    parquetRebaseWriteKey
   }
 
   def getParquetFilters(

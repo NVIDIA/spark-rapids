@@ -170,24 +170,19 @@ object GpuParquetScanBase {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
 
-    ShimLoader.getSparkShims.getSparkShimVersion.toString() match {
-      // int96RebaseMode wasn't introduced in Apached Spark until 3.1.0
-      case "3.0.1" | "3.0.2" | "3.0.3" => // noop
-      case _ =>
-        sqlConf.get(ShimLoader.getSparkShims.int96ParquetRebaseReadKey) match {
-          case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
-            meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-                s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is EXCEPTION")
-          }
-          case "CORRECTED" => // Good
-          case "LEGACY" => // really is EXCEPTION for us...
-            if (schemaMightNeedNestedRebase) {
-              meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
-                  s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is LEGACY")
-            }
-          case other =>
-            meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
+    sqlConf.get(ShimLoader.getSparkShims.int96ParquetRebaseReadKey) match {
+      case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
+        meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
+            s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is EXCEPTION")
+      }
+      case "CORRECTED" => // Good
+      case "LEGACY" => // really is EXCEPTION for us...
+        if (schemaMightNeedNestedRebase) {
+          meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
+              s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is LEGACY")
         }
+      case other =>
+        meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
 
     sqlConf.get(ShimLoader.getSparkShims.parquetRebaseReadKey) match {
@@ -288,13 +283,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
   private val rebaseMode = ShimLoader.getSparkShims.parquetRebaseRead(sqlConf)
   private val isCorrectedRebase = "CORRECTED" == rebaseMode
-  val int96RebaseMode = ShimLoader.getSparkShims.getSparkShimVersion.toString() match {
-      // int96RebaseMode wasn't introduced in Apached Spark until 3.1.0
-      // we are returning CORRECTED for versions that don't support int96RebaseMode so we
-      // don't check for LEGACY values unless the dateTimeRebaseMode is not CORRECTED
-      case "3.0.1" | "3.0.2" | "3.0.3" => "CORRECTED"
-      case _ => ShimLoader.getSparkShims.int96ParquetRebaseRead(sqlConf)
-    }
+  val int96RebaseMode = ShimLoader.getSparkShims.int96ParquetRebaseRead(sqlConf)
+
 
   def filterBlocks(
       file: PartitionedFile,

@@ -87,20 +87,16 @@ object GpuParquetFileFormat {
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
     }
 
-    ShimLoader.getSparkShims.getSparkShimVersion.toString() match {
-      // int96RebaseMode wasn't introduced in Apached Spark until 3.1.0
-      case "3.0.1" |"3.0.2" |"3.0.3" => // noop
-      case _ =>
-        ShimLoader.getSparkShims.int96ParquetRebaseWrite(sqlConf) match {
-          case "EXCEPTION" =>
-          case "CORRECTED" =>
-          case "LEGACY" =>
-            if (schemaHasTimestamps) {
-              meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
-            }
-          case other =>
-            meta.willNotWorkOnGpu(s"$other is not a supported rebase mode for int96")
+
+    ShimLoader.getSparkShims.int96ParquetRebaseWrite(sqlConf) match {
+      case "EXCEPTION" =>
+      case "CORRECTED" =>
+      case "LEGACY" =>
+        if (schemaHasTimestamps) {
+          meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
         }
+      case other =>
+        meta.willNotWorkOnGpu(s"$other is not a supported rebase mode for int96")
     }
 
     ShimLoader.getSparkShims.parquetRebaseWrite(sqlConf) match {
@@ -223,13 +219,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
         sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
     val int96RebaseException =
       outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
-          (ShimLoader.getSparkShims.getSparkShimVersion.toString() match {
-            // int96RebaseMode wasn't introduced in Apached Spark until 3.1.0
-            case "3.0.1" | "3.0.2" | "3.0.3" => false
-            case _ =>
-              "EXCEPTION".equals(sparkSession.sqlContext
-                  .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey))
-          })
+          "EXCEPTION".equals(sparkSession.sqlContext
+              .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey))
 
     val committerClass =
       conf.getClass(

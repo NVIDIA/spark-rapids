@@ -831,4 +831,13 @@ abstract class SparkBaseShims extends SparkShims {
   }
 
   override def hasAliasQuoteFix: Boolean = false
+
+  override def int96ParquetRebaseReadKey: String =
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
+  override def int96ParquetRebaseWriteKey: String =
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+  override def int96ParquetRebaseRead(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
+  override def int96ParquetRebaseWrite(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
 }
