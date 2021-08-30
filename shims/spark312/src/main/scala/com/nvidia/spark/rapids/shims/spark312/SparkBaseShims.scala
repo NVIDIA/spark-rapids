@@ -831,5 +831,4 @@ abstract class SparkBaseShims extends SparkShims {
   }
 
   override def hasAliasQuoteFix: Boolean = false
-
 }
