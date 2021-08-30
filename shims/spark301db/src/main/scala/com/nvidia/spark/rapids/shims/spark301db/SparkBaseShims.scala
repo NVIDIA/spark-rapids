@@ -27,7 +27,6 @@ import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
-import org.apache.spark.rapids.shims.spark301db.TaskContextTrampoline
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -52,6 +51,7 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.execution.python.shims.spark301db._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
@@ -680,5 +680,5 @@ abstract class SparkBaseShims extends SparkShims {
   }
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
-    mode.transform(rows, TaskContextTrampoline.getTaskMemoryManager())
+    mode.transform(rows, TrampolineUtil.getTaskMemoryManager())
 }
