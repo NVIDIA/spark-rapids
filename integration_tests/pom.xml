@@ -205,25 +205,25 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.arrow</groupId>
-		    <artifactId>arrow-format</artifactId>
+		            <artifactId>arrow-format</artifactId>
                     <version>${spark.version}</version>
                     <scope>compile</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.arrow</groupId>
-		    <artifactId>arrow-memory</artifactId>
+		            <artifactId>arrow-memory</artifactId>
                     <version>${spark.version}</version>
                     <scope>compile</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.arrow</groupId>
-		    <artifactId>arrow-memory</artifactId>
+		            <artifactId>arrow-memory</artifactId>
                     <version>${spark.version}</version>
                     <scope>compile</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.arrow</groupId>
-		    <artifactId>arrow-vector</artifactId>
+		            <artifactId>arrow-vector</artifactId>
                     <version>${spark.version}</version>
                     <scope>compile</scope>
                 </dependency>

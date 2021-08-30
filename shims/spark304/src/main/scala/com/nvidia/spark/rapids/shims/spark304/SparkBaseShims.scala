@@ -53,7 +53,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub, ShuffleManagerShimBase}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
-import org.apache.spark.sql.rapids.execution.python.shims.spark303._
+import org.apache.spark.sql.rapids.execution.python.shims.spark304._
 import org.apache.spark.sql.rapids.shims.spark304.{GpuSchemaUtils, ShuffleManagerShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
