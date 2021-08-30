@@ -21,8 +21,9 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-
+import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
@@ -121,7 +122,7 @@ abstract class GpuShuffleExchangeExecBaseWithMetrics(
  */
 abstract class GpuShuffleExchangeExecBase(
     override val outputPartitioning: Partitioning,
-    child: SparkPlan) extends Exchange with GpuExec {
+    child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   private lazy val useRapidsShuffle = {

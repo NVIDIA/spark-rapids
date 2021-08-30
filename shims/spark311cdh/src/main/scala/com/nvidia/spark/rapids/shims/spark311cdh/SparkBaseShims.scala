@@ -56,7 +56,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.{GpuInMemoryTableScanExec, GpuSchemaUtils, HadoopFSUtilsShim}
+import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.rapids.shims.spark311cdh._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -644,7 +644,7 @@ abstract class SparkBaseShims extends Spark30XShims {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {
-      org.apache.spark.sql.rapids.shims.spark311cdh.GpuColumnarToRowTransitionExec(plan)
+      GpuColumnarToRowTransitionExec(plan)
     } else {
       GpuColumnarToRowExec(plan)
     }

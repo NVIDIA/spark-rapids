@@ -91,11 +91,11 @@ case class GpuInMemoryTableScanExec(
   override def outputOrdering: Seq[SortOrder] =
     relation.cachedPlan.outputOrdering.map(updateAttribute(_).asInstanceOf[SortOrder])
 
-  lazy val enableAccumulatorsForTest: Boolean = sqlContext.conf.inMemoryTableScanStatisticsEnabled
+  lazy val enableAccumulatorsForTest: Boolean = sparkSession.sqlContext.conf.inMemoryTableScanStatisticsEnabled
 
   // Accumulators used for testing purposes
-  lazy val readPartitions = sparkContext.longAccumulator
-  lazy val readBatches = sparkContext.longAccumulator
+  lazy val readPartitions = sparkSession.sparkContext.longAccumulator
+  lazy val readBatches = sparkSession.sparkContext.longAccumulator
 
   private def filteredCachedBatches() = {
     // Right now just return the batch without filtering

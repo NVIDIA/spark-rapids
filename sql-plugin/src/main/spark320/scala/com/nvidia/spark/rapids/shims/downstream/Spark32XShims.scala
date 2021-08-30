@@ -16,20 +16,25 @@
 
 package com.nvidia.spark.rapids.shims.downstream
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.shims._
+
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
+import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AQEShuffleReadExec, QueryStageExec}
+import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
+import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 
@@ -113,5 +118,39 @@ trait Spark32XShims extends SparkShims {
          _: QueryStageExec |
          _: AQEShuffleReadExec => true
     case _ => false
+  }
+
+  override def getBuildSide(join: HashJoin): GpuBuildSide = {
+    GpuJoinUtils.getGpuBuildSide(join.buildSide)
+  }
+
+  override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
+    GpuJoinUtils.getGpuBuildSide(join.buildSide)
+  }
+
+  override def getDateFormatter(): DateFormatter = {
+    // TODO verify
+    DateFormatter()
+  }
+
+  override def isCustomReaderExec(x: SparkPlan): Boolean = x match {
+    case _: GpuCustomShuffleReaderExec | _: AQEShuffleReadExec => true
+  }
+
+  override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
+    RepairTableCommand(tableName,
+      // These match the one place that this is called, if we start to call this in more places
+      // we will need to change the API to pass these values in.
+      enableAddPartitions = true,
+      enableDropPartitions = false)
+}
+
+object GpuJoinUtils {
+  def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
+    buildSide match {
+      case BuildRight => GpuBuildRight
+      case BuildLeft => GpuBuildLeft
+      case _ => throw new Exception("unknown buildSide Type")
+    }
   }
 }

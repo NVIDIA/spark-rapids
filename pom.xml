@@ -106,8 +106,8 @@
                                <phase>generate-sources</phase>
                                <configuration>
                                    <sources>
-                                       <source>${project.basedir}/src/main/spark301/scala</source>
-                                       <source>${project.basedir}/src/main/spark301/java</source>
+                                       <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                       <source>${project.basedir}/src/main/spark30+all/java</source>
                                    </sources>
                                </configuration>
                            </execution>
@@ -183,7 +183,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -216,7 +216,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -249,7 +249,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -282,7 +282,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -315,7 +315,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                         <source>${project.basedir}/src/main/spark31+all/scala</source>
                                         <source>${project.basedir}/src/main/spark31+apache/scala</source>
                                     </sources>
@@ -350,7 +350,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                         <source>${project.basedir}/src/main/spark31+all/scala</source>
                                         <source>${project.basedir}/src/main/spark31+apache/scala</source>
                                     </sources>
@@ -385,7 +385,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                         <source>${project.basedir}/src/main/spark31+all/scala</source>
                                         <source>${project.basedir}/src/main/spark31+apache/scala</source>
                                     </sources>
@@ -453,7 +453,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark301/scala</source>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
                                         <source>${project.basedir}/src/main/spark31+all/scala</source>
                                     </sources>
                                 </configuration>
