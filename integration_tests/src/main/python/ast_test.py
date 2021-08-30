@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import approximate_float
+from spark_session import with_cpu_session
 import pyspark.sql.functions as f
 
 # Each descriptor contains a list of data generators and a corresponding boolean
@@ -68,6 +69,16 @@ def assert_unary_ast(data_descr, func, conf={}):
 def assert_binary_ast(data_descr, func, conf={}):
     (data_gen, is_supported) = data_descr
     assert_gpu_ast(is_supported, lambda spark: func(binary_op_df(spark, data_gen)), conf=conf)
+
+@pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen], ids=idfn)
+def test_literal(spark_tmp_path, data_gen):
+    # Write data to Parquet so Spark generates a plan using just the count of the data.
+    data_path = spark_tmp_path + '/AST_TEST_DATA'
+    with_cpu_session(lambda spark: gen_df(spark, [("a", IntegerGen())]).write.parquet(data_path))
+    # AST does not support null literals until https://github.com/rapidsai/cudf/pull/9117
+    scalar = gen_scalar(data_gen, force_no_nulls=True)
+    assert_gpu_ast(is_supported=True,
+                   func=lambda spark: spark.read.parquet(data_path).select(scalar))
 
 @pytest.mark.parametrize('data_descr', ast_integral_descrs, ids=idfn)
 def test_bitwise_not(data_descr):

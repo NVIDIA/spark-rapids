@@ -72,7 +72,8 @@ case class GpuWindowInPandasExec(
     val allExpressions = windowFramesWithExpressions.map(_._2).flatten
     val references = allExpressions.zipWithIndex.map { case (e, i) =>
       // Results of window expressions will be on the right side of child's output
-      GpuBoundReference(child.output.size + i, e.dataType, e.nullable)
+      GpuBoundReference(child.output.size + i, e.dataType,
+        e.nullable)(NamedExpression.newExprId, s"gpu_win_$i")
     }
     val unboundToRefMap = allExpressions.zip(references).toMap
     // Bound the project list for GPU
