@@ -109,6 +109,7 @@ HIVESTORAGE=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apac
 ARROWFORMATJAR=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__0.15.1.jar
 ARROWMEMORYJAR=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory--org.apache.arrow__arrow-memory__0.15.1.jar
 ARROWVECTORJAR=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__0.15.1.jar
+HIVEEXECJAR=----workspace_spark_3_0--patched-hive-with-glue--hive-exec-core_shaded.jar
 else
 JSON4S=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.json4s--json4s-ast_2.12--org.json4s__json4s-ast_2.12__3.7.0-M5.jar
 APACHECOMMONSLANG3=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.commons--commons-lang3--org.apache.commons__commons-lang3__3.10.jar
@@ -175,20 +176,20 @@ if [[ $BASE_SPARK_VERSION == "3.1.1" ]]
 then
     mvn -B install:install-file \
        -Dmaven.repo.local=$M2DIR \
-       -Dfile=$JARDIR/$HIVEEXECJAR \
-       -DgroupId=org.apache.hive \
-       -DartifactId=hive-exec \
-       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-       -Dpackaging=jar
-
-    mvn -B install:install-file \
-       -Dmaven.repo.local=$M2DIR \
        -Dfile=$JARDIR/$ARROWMEMORYNETTYJAR \
        -DgroupId=org.apache.arrow \
        -DartifactId=arrow-memory-netty \
        -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
        -Dpackaging=jar
 fi
+
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$HIVEEXECJAR \
+       -DgroupId=org.apache.hive \
+       -DartifactId=hive-exec \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
     mvn -B install:install-file \
        -Dmaven.repo.local=$M2DIR \
@@ -329,8 +330,8 @@ fi
     mvn -B install:install-file \
        -Dmaven.repo.local=$M2DIR \
        -Dfile=$JARDIR/$PARQUETFORMATJAR \
-       -DgroupId=org.apache.spark \
-       -DartifactId=spark-parquet-format-db_$SCALA_VERSION \
+       -DgroupId=org.apache.parquet \
+       -DartifactId=parquet-format \
        -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
        -Dpackaging=jar
 

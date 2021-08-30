@@ -105,11 +105,10 @@
         </dependencies>
     </profile>
    <profile>
-        <id>release311db</id>
+        <id>releasedb</id>
         <activation>
             <property>
-                <name>buildver</name>
-                <value>311db</value>
+                <name>databricks</name>
             </property>
         </activation>
         <dependencies>
@@ -121,25 +120,25 @@
             <dependency>
                 <groupId>org.apache.hive</groupId>
 		<artifactId>hive-exec</artifactId>
-                <version>${spark311db.version}</version>
+                <version>${spark.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
                 <groupId>org.apache.hive</groupId>
 		<artifactId>hive-serde</artifactId>
-                <version>${spark311db.version}</version>
+                <version>${spark.version}</version>
                 <scope>provided</scope>
            </dependency>
            <dependency>
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-io</artifactId>
-                <version>${spark311db.version}</version>
+                <version>${spark.version}</version>
                 <scope>provided</scope>
            </dependency>
            <dependency>
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-common</artifactId>
-                <version>${spark311db.version}</version>
+                <version>${spark.version}</version>
                 <scope>provided</scope>
            </dependency>
         </dependencies>
