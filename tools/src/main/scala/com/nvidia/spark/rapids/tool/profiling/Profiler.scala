@@ -227,9 +227,9 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
   }
 
   /**
-   * Function to process ApplicationInfo. If it is in compare mode, then all the eventlogs are
-   * evaluated at once and the output is one row per application. Else each eventlog is parsed one
-   * at a time.
+   * Function to process ApplicationInfo. Collects all the application information
+   * and returns the summary information. The summary information is much smaller than
+   * the ApplicationInfo because it has processed and combined many of the raw events.
    */
   private def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean,
       profileOutputWriter: ProfileOutputWriter): (ApplicationSummaryInfo,
@@ -306,6 +306,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       comparedRes: Option[CompareSummaryInfo] = None): Unit = {
 
     val sums = if (outputCombined) {
+      // the properties table here has the column names as the app indexes so we have to
+      // handle special
       def combineProps(sums: Seq[ApplicationSummaryInfo]): Seq[RapidsPropertyProfileResult] = {
         var numApps = 0
         val props = HashMap[String, ArrayBuffer[String]]()
@@ -362,6 +364,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         Some("Rapids 4 Spark Jars"))
       profileOutputWriter.write("SQL Plan Metrics for Application", app.sqlMetrics,
         Some("SQL Plan Metrics"))
+
       comparedRes.foreach { compareSum =>
         val matchingSqlIds = compareSum.matchingSqlIds
         val matchingStageIds = compareSum.matchingStageIds
@@ -392,7 +395,6 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Unsupported SQL Plan", app.unsupportedOps,
         Some("Unsupported SQL Ops"))
     }
-
   }
 }
 
