@@ -327,16 +327,18 @@ The profiling tool generates information which can be used for debugging and pro
 ### Profiling tool functions
 
 Below is the information the profiling tool reports, see [Profile tool Detailed Output and Examples](#profile-tool-detailed-output-and-examples) for more information
-and examples. It has 2 main modes of operation: collection and compare.  Collection mode is when no other options are specified it simply collects information
-on each application individually and outputs a file per application. Compare mode will combine all the applications information in the same tables into a single file.
-It can optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.  It can also optionally output
+and examples. It has 3 modes of operation: collection, combined, and compare.  Collection mode is when no other options are specified it simply collects information
+on each application individually and outputs a file per application. Combined mode is collection mode but them combines all the applications into single tables
+and you get one file for all application.  Compare mode will combine all the applications information in the same tables into a single file and also adds in 
+tables to compare stages and sql ids across all of those applications. The Compare mode will use more memory if comparing lots of applications.
+It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.  It can also optionally output
 CSV files for each table.
 
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
 - Application information
 - Datasource information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
@@ -386,6 +388,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 
+      --combined                  Collect mode but combine all applications into
+                                  the same tables.
   -c, --compare                   Compare Applications (Note this may require
                                   more memory if comparing a large number of
                                   applications). Default is false.
@@ -434,6 +438,8 @@ The default output location is the current directory. The output location can be
 The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
 If running in normal collect mode, it processes event log individually and outputs files for each application under
 a directory named `rapids_4_spark_profile/{APPLICATION_ID}`. It creates a summary text file named `profile.log`.
+If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summary
+text file named `rapids_4_spark_tools_combined.log`.
 If running compare mode the output is put under a directory named `rapids_4_spark_profile/compare/` and creates a summary
 text file named `rapids_4_spark_tools_compare.log`.
 The output will go into your default filesystem, it supports local filesystem or HDFS.
@@ -460,7 +466,7 @@ All the metrics definitions can be found in the [executor task metrics doc](http
 - Application information
 - Data Source information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
