@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.execution.python
+package org.apache.spark.sql.rapids.execution.python.shims.spark302
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -22,15 +22,15 @@ import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.AggregateInPandasExec
+import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -82,7 +82,7 @@ case class GpuAggregateInPandasExec(
     udfExpressions: Seq[GpuPythonUDF],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan)
-  extends ShimUnaryExecNode with GpuPythonExecBase {
+  extends UnaryExecNode with GpuPythonExecBase {
 
   override val output: Seq[Attribute] = resultExpressions.map(_.toAttribute)
 

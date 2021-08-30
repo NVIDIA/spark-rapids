@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.execution.python
+package org.apache.spark.sql.rapids.execution.python.shims.spark311cdh
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
-import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.shims.spark311cdh.BatchGroupUtils._
 import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -80,7 +80,7 @@ case class GpuFlatMapGroupsInPandasExec(
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan)
-  extends SparkPlan with ShimUnaryExecNode with GpuPythonExecBase {
+  extends SparkPlan with UnaryExecNode with GpuPythonExecBase {
 
   override def producedAttributes: AttributeSet = AttributeSet(output)
 

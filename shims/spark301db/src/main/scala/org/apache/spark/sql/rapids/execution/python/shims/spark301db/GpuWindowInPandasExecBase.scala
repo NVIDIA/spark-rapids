@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.execution.python
+package org.apache.spark.sql.rapids.execution.python.shims.spark301db
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -33,7 +32,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
+import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
@@ -174,7 +175,7 @@ class GroupingIterator(
  * The base class of GpuWindowInPandasExec in different shim layers
  *
  */
-trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
+trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
   def windowExpression: Seq[Expression]
   def partitionSpec: Seq[Expression]
