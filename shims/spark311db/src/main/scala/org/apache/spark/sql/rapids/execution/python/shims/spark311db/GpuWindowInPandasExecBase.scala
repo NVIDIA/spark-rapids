@@ -34,8 +34,8 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.python._
-import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
+import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch

@@ -367,36 +367,24 @@
             <properties>
                 <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>spark302tests</id>
             <properties>
                 <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>spark303tests</id>
             <properties>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>spark304tests</id>
             <properties>
                 <spark.test.version>${spark304.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>spark311tests</id>
@@ -405,7 +393,6 @@
             </properties>
             <modules>
                 <module>tests-spark310+</module>
-                <module>tests</module>
             </modules>
         </profile>
         <profile>
@@ -413,36 +400,24 @@
             <properties>
                 <spark.test.version>${spark311cdh.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>spark312tests</id>
             <properties>
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>spark313tests</id>
             <properties>
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>spark320tests</id>
             <properties>
                 <spark.test.version>${spark320.version}</spark.test.version>
             </properties>
-            <modules>
-                <module>tests</module>
-            </modules>
         </profile>
         <profile>
             <id>cuda11</id>
@@ -519,6 +494,7 @@
               <groupId>org.slf4j</groupId>
               <artifactId>jul-to-slf4j</artifactId>
               <version>${slf4j.version}</version>
+              <!-- runtime scope is appropriate, but causes SBT build problems -->
             </dependency>
             <dependency>
               <groupId>org.slf4j</groupId>
