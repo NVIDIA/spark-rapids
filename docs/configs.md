@@ -333,7 +333,7 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.SortExec"></a>spark.rapids.sql.exec.SortExec|The backend for the sort operator|true|None|
 <a name="sql.exec.TakeOrderedAndProjectExec"></a>spark.rapids.sql.exec.TakeOrderedAndProjectExec|Take the first limit elements as defined by the sortOrder, and do projection if needed.|true|None|
 <a name="sql.exec.UnionExec"></a>spark.rapids.sql.exec.UnionExec|The backend for the union operator|true|None|
-<a name="sql.exec.CustomShuffleReaderExec"></a>spark.rapids.sql.exec.CustomShuffleReaderExec|A wrapper of shuffle query stage|true|None|
+<a name="sql.exec.AQEShuffleReadExec"></a>spark.rapids.sql.exec.AQEShuffleReadExec|A wrapper of shuffle query stage|true|None|
 <a name="sql.exec.HashAggregateExec"></a>spark.rapids.sql.exec.HashAggregateExec|The backend for hash based aggregations|true|None|
 <a name="sql.exec.ObjectHashAggregateExec"></a>spark.rapids.sql.exec.ObjectHashAggregateExec|The backend for hash based aggregations supporting TypedImperativeAggregate functions|true|None|
 <a name="sql.exec.SortAggregateExec"></a>spark.rapids.sql.exec.SortAggregateExec|The backend for sort based aggregations|true|None|
