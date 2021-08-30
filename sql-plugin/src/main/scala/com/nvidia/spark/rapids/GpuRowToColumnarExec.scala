@@ -25,7 +25,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, SpecializedGetters, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, SpecializedGetters, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
@@ -797,11 +797,16 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
 /**
  * GPU version of row to columnar transition.
  */
-case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
+case class GpuRowToColumnarExec(child: SparkPlan,
+    goal: CoalesceSizeGoal,
+    preProcessing: Seq[NamedExpression] = Seq.empty)
   extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
-  override def output: Seq[Attribute] = child.output
+  override def output: Seq[Attribute] = preProcessing match {
+    case expressions if expressions.isEmpty => child.output
+    case expressions => expressions.map(_.toAttribute)
+  }
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
@@ -834,7 +839,16 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     val gpuOpTime = gpuLongMetric(GPU_OP_TIME)
     val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
-    val rowBased = child.execute()
+    val rowBased = preProcessing match {
+      case transformations if transformations.nonEmpty =>
+        child.execute().mapPartitionsWithIndex { case (index, iterator) =>
+          val projection = UnsafeProjection.create(transformations, child.output)
+          projection.initialize(index)
+          iterator.map(projection)
+        }
+      case _ =>
+        child.execute()
+    }
 
     // cache in a local to avoid serializing the plan
     val localSchema = schema
