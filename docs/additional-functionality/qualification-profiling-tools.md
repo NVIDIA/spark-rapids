@@ -366,6 +366,10 @@ in the local filesystem, HDFS, S3 or mixed. Note that if you are on an HDFS clus
 the default filesystem is likely HDFS for both the input and output so if you want to
 point to the local filesystem be sure to include `file:` in the path
 
+Please note, if processing a lot of event logs using combined or compare mode you may
+need to increase the java heap size using `-Xmx` option.  For instance, to specify
+30 GB heap size `java -Xmx30g ...`
+
 ```bash
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
@@ -636,9 +640,9 @@ SQL Plan Metrics for Application:
 ```
 
 - Print SQL Plans (-p option):
-Prints the SQL plan as a text string to a file ends with `-planDescriptions.log`.
+Prints the SQL plan as a text string to a file named `planDescriptions.log`.
 For example if your application id is app-20210507103057-0000, then the
-filename will be `app-20210507103057-0000-planDescriptions.log`
+filename will be `planDescriptions.log`
 
 - Generate DOT graph for each SQL (-g option):
 
