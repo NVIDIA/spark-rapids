@@ -331,6 +331,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/spark301/scala</source>
                                         <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -365,6 +366,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/spark301/scala</source>
                                         <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>

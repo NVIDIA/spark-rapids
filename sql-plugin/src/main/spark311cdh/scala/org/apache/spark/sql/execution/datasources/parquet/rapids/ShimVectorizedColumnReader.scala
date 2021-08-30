@@ -19,8 +19,8 @@ package org.apache.spark.sql.execution.datasources.parquet.rapids
 import java.time.ZoneId
 
 import org.apache.parquet.column.ColumnDescriptor
-import org.apache.parquet.column.page.{PageReader, PageReadStore}
-import org.apache.parquet.schema.{GroupType, OriginalType, Type}
+import org.apache.parquet.column.page.PageReadStore
+import org.apache.parquet.schema.{GroupType, Type}
 
 import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
