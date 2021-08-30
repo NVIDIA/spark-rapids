@@ -19,6 +19,7 @@ from data_gen import *
 from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_311
 from pyspark.sql.types import *
+from pyspark.sql.types import IntegralType
 import pyspark.sql.functions as f
 
 basic_struct_gen = StructGen([
@@ -138,3 +139,39 @@ def test_map_element_at_ansi_not_fail(data_gen):
                 'element_at(a, "NOT_FOUND")'),
                 conf={'spark.sql.ansi.enabled':True,
                       'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_transform_values(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                'transform_values(a, (key, value) -> value) as ident',
+                'transform_values(a, (key, value) -> null) as n',
+                'transform_values(a, (key, value) -> 1) as one',
+                'transform_values(a, (key, value) -> key) as indexed',
+                'transform_values(a, (key, value) -> b) as b_val']
+        value_type = data_gen.data_type.valueType
+        # decimal types can grow too large so we are avoiding those here for now
+        if isinstance(value_type, IntegralType):
+            columns.extend([
+                'transform_values(a, (key, value) -> value + 1) as add',
+                'transform_values(a, (key, value) -> value + value) as mul',
+                'transform_values(a, (key, value) -> value + b) as all_add'])
+
+        if isinstance(value_type, StringType):
+            columns.extend(['transform_values(a, (key, value) -> concat(value, "-test")) as con'])
+
+        if isinstance(value_type, ArrayType):
+            columns.extend([
+                'transform_values(a, (key, value) -> transform(value, sub_entry -> 1)) as sub_one',
+                'transform_values(a, (key, value) -> transform(value, (sub_entry, sub_index) -> sub_index)) as sub_index',
+                'transform_values(a, (key, value) -> transform(value, (sub_entry, sub_index) -> sub_index + b)) as add_indexes'])
+
+        if isinstance(value_type, MapType):
+            columns.extend([
+                'transform_values(a, (key, value) -> transform_values(value, (sub_key, sub_value) -> 1)) as sub_one'])
+
+        return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, 
+            conf=allow_negative_scale_of_decimal_conf)
+
