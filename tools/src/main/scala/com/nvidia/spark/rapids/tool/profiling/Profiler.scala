@@ -285,7 +285,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
 
     if (appArgs.generateTimeline()) {
-      if (appArgs.compare()) {
+      if (appArgs.compare() || appArgs.combined()) {
         logWarning("Timeline graph does not compare or combine apps")
       }
       apps.foreach { app =>
