@@ -25,8 +25,8 @@ import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
-import org.apache.spark.SparkEnv
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -42,7 +42,7 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExecMeta, GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuPythonUDF, GpuWindowInPandasExecMetaBase}
-import org.apache.spark.sql.rapids.shims.{GpuSchemaUtils, HadoopFSUtilsShim}
+import org.apache.spark.sql.rapids.shims.{GpuInMemoryTableScanExec, GpuSchemaUtils, HadoopFSUtilsShim}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder

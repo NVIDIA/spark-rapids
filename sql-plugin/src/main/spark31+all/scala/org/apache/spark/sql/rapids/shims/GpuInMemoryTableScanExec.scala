@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims.spark311cdh
+package org.apache.spark.sql.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric, ParquetCachedBatchSerializer}
+import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
+import com.nvidia.spark.rapids.ParquetCachedBatchSerializer
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

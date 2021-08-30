@@ -26,6 +26,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.shims.spark311cdh._
+import org.apache.spark.sql.rapids.shims.GpuInMemoryTableScanExec
 import org.apache.spark.sql.sources.BaseRelation
 
 class Spark311CDHShims extends SparkBaseShims {
