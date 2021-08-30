@@ -16,12 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.Optional
-
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnView, DType}
+import ai.rapids.cudf.DType
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.types.{ArrayType, DataType, Metadata}
@@ -266,21 +264,6 @@ case class GpuArrayTransform(
     }
   }
 
-  private[this] def makeListFrom(
-      dataCol: cudf.ColumnVector,
-      listCol: cudf.ColumnVector,
-      resultType: DataType): GpuColumnVector = {
-    withResource(listCol.getOffsets) { offsets =>
-      withResource(listCol.getValid) { validity =>
-        withResource(new ColumnView(DType.LIST, listCol.getRowCount,
-          Optional.of[java.lang.Long](listCol.getNullCount), validity, offsets,
-          Array[ColumnView](dataCol))) { view =>
-          GpuColumnVector.from(view.copyToColumnVector(), resultType)
-        }
-      }
-    }
-  }
-
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
       val dataCol = withResource(
@@ -288,7 +271,9 @@ case class GpuArrayTransform(
         GpuExpressionsUtils.columnarEvalToColumn(function, cb)
       }
       withResource(dataCol) { dataCol =>
-        makeListFrom(dataCol.getBase, arg.getBase, dataType)
+        withResource(GpuListUtils.replaceListDataColumn(arg.getBase, dataCol.getBase)) { retView =>
+          GpuColumnVector.from(retView.copyToColumnVector(), dataType)
+        }
       }
     }
   }
