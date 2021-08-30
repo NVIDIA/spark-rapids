@@ -165,7 +165,7 @@
             </dependencies>
         </profile>
         <profile>
-            <id>releasedb</id>
+            <id>dbdeps</id>
             <activation>
                 <property>
                     <name>databricks</name>

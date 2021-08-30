@@ -193,6 +193,7 @@
             </modules>
         </profile>
         <profile>
+            <!-- Note databricks requires 2 properties -Ddatabricks and -Dbuildver=[301db,311db] -->
             <id>release301db</id>
             <activation>
                 <property>
@@ -211,6 +212,7 @@
             </properties>
         </profile>
         <profile>
+            <!-- Note databricks requires 2 properties -Ddatabricks and -Dbuildver=[301db,311db] -->
             <id>release311db</id>
             <activation>
                 <property>
