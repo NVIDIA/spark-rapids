@@ -20,9 +20,11 @@ import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
 import ai.rapids.cudf.DType
+import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
+
 
 /**
  * The level of support that the plugin has for a given type.  Used for documentation generation.
@@ -176,6 +178,14 @@ final class TypeSig private(
     new TypeSig(it, maxAllowedDecimalPrecision, nt, lt, nts)
   }
 
+  def intersect(other: TypeSig): TypeSig = {
+    val it = initialTypes & other.initialTypes
+    val nt = nestedTypes & other.nestedTypes
+    val lt = litOnlyTypes & other.initialTypes
+    val nts = notes.filterKeys(other.initialTypes)
+    new TypeSig(it, maxAllowedDecimalPrecision, nt, lt, nts)
+  }
+
   /**
    * Add nested types to this type signature. Note that these do not stack so if nesting has
    * nested types too they are ignored.
@@ -215,7 +225,11 @@ final class TypeSig private(
    * @param exprMeta the meta of expression to check against.
    * @param name     the name of the expression (typically a parameter name)
    */
-  def tagExprParam(meta: RapidsMeta[_, _, _], exprMeta: BaseExprMeta[_], name: String): Unit = {
+  def tagExprParam(
+      meta: RapidsMeta[_, _, _],
+      exprMeta: BaseExprMeta[_],
+      name: String,
+      willNotWork: String => Unit): Unit = {
     val typeMeta = exprMeta.typeMeta
     // This is for a parameter so skip it if there is no data type for the expression
     typeMeta.dataType.foreach { dt =>
@@ -223,10 +237,10 @@ final class TypeSig private(
       val allowDecimal = meta.conf.decimalTypeEnabled
 
       if (!isSupportedByPlugin(dt, allowDecimal)) {
-        meta.willNotWorkOnGpu(s"$name expression ${expr.getClass.getSimpleName} $expr " +
+        willNotWork(s"$name expression ${expr.getClass.getSimpleName} $expr " +
             reasonNotSupported(dt, allowDecimal).mkString("(", ", ", ")"))
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
-        meta.willNotWorkOnGpu(s"$name only supports $dt if it is a literal value")
+        willNotWork(s"$name only supports $dt if it is a literal value")
       }
       if (typeMeta.typeConverted) {
         meta.addConvertedDataType(expr, typeMeta)
@@ -620,7 +634,13 @@ object TypeSig {
     (commonCudfTypes + BINARY + DECIMAL_64 + NULL + ARRAY + MAP).nested() + STRUCT
 
   /** All types that can appear in AST expressions */
-  val astTypes = BOOLEAN + integral + fp + TIMESTAMP
+  val astTypes: TypeSig = BOOLEAN + integral + fp + TIMESTAMP
+
+  /** All AST types that work for comparisons */
+  val comparisonAstTypes: TypeSig = astTypes - fp
+
+  /** All types that can appear in an implicit cast AST expression */
+  val implicitCastsAstTypes: TypeSig = astTypes - BYTE - SHORT
 
   def getDataType(expr: Expression): Option[DataType] = {
     try {
@@ -663,13 +683,18 @@ abstract class TypeChecks[RET] {
 }
 
 /**
- * Checks a single parameter TypeSig
+ * Checks a set of named inputs to an SparkPlan node against a TypeSig
+ */
+case class InputCheck(cudf: TypeSig, spark: TypeSig, notes: List[String] = List.empty)
+
+/**
+ * Checks a single parameter by position against a TypeSig
  */
 case class ParamCheck(name: String, cudf: TypeSig, spark: TypeSig)
 
 /**
  * Checks the type signature for a parameter that repeats (Can only be used at the end of a list
- * of parameters)
+ * of position parameters)
  */
 case class RepeatingParamCheck(name: String, cudf: TypeSig, spark: TypeSig)
 
@@ -685,13 +710,21 @@ case class ContextChecks(
     repeatingParamCheck: Option[RepeatingParamCheck] = None)
     extends TypeChecks[Map[String, SupportLevel]] {
 
+  def tagAst(exprMeta: BaseExprMeta[_]): Unit = {
+    tagBase(exprMeta, exprMeta.willNotWorkInAst)
+  }
+
   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
+    tagBase(rapidsMeta, rapidsMeta.willNotWorkOnGpu)
+  }
+
+  private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
     val meta = rapidsMeta.asInstanceOf[BaseExprMeta[_]]
     val expr = meta.wrapped.asInstanceOf[Expression]
     meta.typeMeta.dataType match {
       case Some(dt: DataType) =>
         if (!outputCheck.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
-          meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
+          willNotWork(s"expression ${expr.getClass.getSimpleName} $expr " +
               s"produces an unsupported type $dt")
         }
         if (meta.typeMeta.typeConverted) {
@@ -699,7 +732,7 @@ case class ContextChecks(
         }
       case None =>
         if (!meta.ignoreUnsetDataTypes) {
-          meta.willNotWorkOnGpu(s"expression ${expr.getClass.getSimpleName} $expr " +
+          willNotWork(s"expression ${expr.getClass.getSimpleName} $expr " +
               s" does not have a corresponding dataType.")
         }
     }
@@ -710,7 +743,7 @@ case class ContextChecks(
       s"${expr.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
           s"found ${children.length}")
     fixedChecks.zipWithIndex.foreach { case (check, i) =>
-      check.cudf.tagExprParam(meta, children(i), check.name)
+      check.cudf.tagExprParam(meta, children(i), check.name, willNotWork)
     }
     if (repeatingParamCheck.isEmpty) {
       assert(fixedChecks.length == children.length,
@@ -719,7 +752,7 @@ case class ContextChecks(
     } else {
       val check = repeatingParamCheck.get
       (fixedChecks.length until children.length).foreach { i =>
-        check.cudf.tagExprParam(meta, children(i), check.name)
+        check.cudf.tagExprParam(meta, children(i), check.name, willNotWork)
       }
     }
   }
@@ -790,12 +823,15 @@ object FileFormatChecks {
 /**
  * Checks the input and output types supported by a SparkPlan node. We don't currently separate
  * input checks from output checks.  We can add this in if something needs it.
+ *
+ * The namedChecks map can be used to provide checks for specific groups of expressions.
  */
 class ExecChecks private(
     check: TypeSig,
     sparkSig: TypeSig,
+    val namedChecks: Map[String, InputCheck],
     override val shown: Boolean = true)
-    extends TypeChecks[SupportLevel] {
+    extends TypeChecks[Map[String, SupportLevel]] {
 
   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
     val meta = rapidsMeta.asInstanceOf[SparkPlanMeta[_]]
@@ -810,19 +846,59 @@ class ExecChecks private(
     tagUnsupportedTypes(meta, check, allowDecimal,
       meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
       "unsupported data types in input: %s")
+
+    val namedChildExprs = meta.namedChildExprs
+
+    val missing = namedChildExprs.keys.filterNot(namedChecks.contains)
+    if (missing.nonEmpty) {
+      throw new IllegalStateException(s"${meta.getClass.getSimpleName} " +
+        s"is missing ExecChecks for ${missing.mkString(",")}")
+    }
+
+    namedChecks.foreach {
+      case (fieldName, pc) =>
+        val fieldMeta = namedChildExprs(fieldName)
+          .flatMap(_.typeMeta.dataType)
+          .zipWithIndex
+          .map(t => StructField(s"c${t._2}", t._1))
+        tagUnsupportedTypes(meta, pc.cudf, allowDecimal, fieldMeta,
+          s"unsupported data types in '$fieldName': %s")
+    }
   }
 
-  override def support(dataType: TypeEnum.Value): SupportLevel =
-    check.getSupportLevel(dataType, sparkSig)
+  override def support(dataType: TypeEnum.Value): Map[String, SupportLevel] = {
+    val groups = namedChecks.map { case (name, pc) =>
+      (name, pc.cudf.getSupportLevel(dataType, pc.spark))
+    }
+    groups ++ Map("Input/Output" -> check.getSupportLevel(dataType, sparkSig))
+  }
+
+  def supportNotes: Map[String, List[String]] = {
+    namedChecks.map { case (name, pc) =>
+      (name, pc.notes)
+    }.filter {
+      case (_, notes) => notes.nonEmpty
+    }
+  }
 }
 
 /**
  * gives users an API to create ExecChecks.
  */
 object ExecChecks {
-  def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = new ExecChecks(check, sparkSig)
+  def apply(check: TypeSig, sparkSig: TypeSig) : ExecChecks = {
+    new ExecChecks(check, sparkSig, Map.empty)
+  }
 
-  def hiddenHack() = new ExecChecks(TypeSig.all, TypeSig.all, shown = false)
+  def apply(check: TypeSig,
+      sparkSig: TypeSig,
+      namedChecks: Map[String, InputCheck]): ExecChecks = {
+    new ExecChecks(check, sparkSig, namedChecks)
+  }
+
+  def hiddenHack(): ExecChecks = {
+    new ExecChecks(TypeSig.all, TypeSig.all, Map.empty, shown = false)
+  }
 }
 
 /**
@@ -844,7 +920,7 @@ case class PartChecksImpl(
       s"${part.getClass.getSimpleName} expected at least ${fixedChecks.length} but " +
           s"found ${children.length}")
     fixedChecks.zipWithIndex.foreach { case (check, i) =>
-      check.cudf.tagExprParam(meta, children(i), check.name)
+      check.cudf.tagExprParam(meta, children(i), check.name, meta.willNotWorkOnGpu)
     }
     if (repeatingParamCheck.isEmpty) {
       assert(fixedChecks.length == children.length,
@@ -853,7 +929,7 @@ case class PartChecksImpl(
     } else {
       val check = repeatingParamCheck.get
       (fixedChecks.length until children.length).foreach { i =>
-        check.cudf.tagExprParam(meta, children(i), check.name)
+        check.cudf.tagExprParam(meta, children(i), check.name, meta.willNotWorkOnGpu)
       }
     }
   }
@@ -878,7 +954,12 @@ object PartChecks {
 /**
  * Base class all Expression checks must follow.
  */
-abstract class ExprChecks extends TypeChecks[Map[ExpressionContext, Map[String, SupportLevel]]]
+abstract class ExprChecks extends TypeChecks[Map[ExpressionContext, Map[String, SupportLevel]]] {
+  /**
+   * Tag this for AST or not.
+   */
+  def tagAst(meta: BaseExprMeta[_]): Unit
+}
 
 case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
     extends ExprChecks {
@@ -900,6 +981,15 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
         (expContext, check.support(dataType))
     }
   }
+
+  override def tagAst(exprMeta: BaseExprMeta[_]): Unit = {
+    val checks = contexts.get(AstExprContext)
+    if (checks.isEmpty) {
+      exprMeta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+    } else {
+      checks.get.tagAst(exprMeta)
+    }
+  }
 }
 
 /**
@@ -907,9 +997,14 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  */
 object CaseWhenCheck extends ExprChecks {
   val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-    TypeSig.ARRAY + TypeSig.STRUCT).nested()
+    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
 
   val sparkSig: TypeSig = TypeSig.all
+
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+    // when this supports AST tagBase(exprMeta, meta.willNotWorkInAst)
+  }
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
@@ -917,36 +1012,33 @@ object CaseWhenCheck extends ExprChecks {
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
-      // children of CaseWhen: branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue (Optional)
-      //
-      // The length of children will be odd if elseValue is not None, which means we can detect
-      // both branch pair and possible elseValue via a size 2 grouped iterator.
-      exprMeta.childExprs.grouped(2).foreach {
-        case Seq(pred, value) =>
-          TypeSig.BOOLEAN.tagExprParam(meta, pred, "predicate")
-          check.tagExprParam(meta, value, "value")
-        case Seq(elseValue) =>
-          check.tagExprParam(meta, elseValue, "else")
-      }
+      tagBase(exprMeta, meta.willNotWorkOnGpu)
+    }
+  }
+
+  private[this] def tagBase(exprMeta: BaseExprMeta[_], willNotWork: String => Unit): Unit = {
+    // children of CaseWhen: branches.flatMap(b => b._1 :: b._2 :: Nil) ++ elseValue (Optional)
+    //
+    // The length of children will be odd if elseValue is not None, which means we can detect
+    // both branch pair and possible elseValue via a size 2 grouped iterator.
+    exprMeta.childExprs.grouped(2).foreach {
+      case Seq(pred, value) =>
+        TypeSig.BOOLEAN.tagExprParam(exprMeta, pred, "predicate", willNotWork)
+        check.tagExprParam(exprMeta, value, "value", willNotWork)
+      case Seq(elseValue) =>
+        check.tagExprParam(exprMeta, elseValue, "else", willNotWork)
     }
   }
 
   override def support(dataType: TypeEnum.Value):
     Map[ExpressionContext, Map[String, SupportLevel]] = {
     val projectSupport = check.getSupportLevel(dataType, sparkSig)
-    val lambdaSupport = TypeSig.none.getSupportLevel(dataType, sparkSig)
     val projectPredSupport = TypeSig.BOOLEAN.getSupportLevel(dataType, TypeSig.BOOLEAN)
-    val lambdaPredSupport = TypeSig.none.getSupportLevel(dataType, TypeSig.BOOLEAN)
     Map((ProjectExprContext,
         Map(
           ("predicate", projectPredSupport),
           ("value", projectSupport),
-          ("result", projectSupport))),
-      (LambdaExprContext,
-          Map(
-            ("predicate", lambdaPredSupport),
-            ("value", lambdaSupport),
-            ("result", lambdaSupport))))
+          ("result", projectSupport))))
   }
 }
 
@@ -959,20 +1051,30 @@ object WindowSpecCheck extends ExprChecks {
       TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
   val sparkSig: TypeSig = TypeSig.all
 
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+    // when this supports AST tagBase(exprMeta, meta.willNotWorkInAst)
+  }
+
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
     val context = exprMeta.context
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
-      val win = meta.wrapped.asInstanceOf[WindowSpecDefinition]
-      // children of WindowSpecDefinition: partitionSpec ++ orderSpec :+ frameSpecification
-      win.partitionSpec.indices.foreach(i =>
-        check.tagExprParam(meta, exprMeta.childExprs(i), "partition"))
-      val partSize = win.partitionSpec.length
-      win.orderSpec.indices.foreach(i =>
-        check.tagExprParam(meta, exprMeta.childExprs(i + partSize), "order"))
+      tagBase(exprMeta, meta.willNotWorkOnGpu)
     }
+  }
+
+  private [this] def tagBase(exprMeta: BaseExprMeta[_], willNotWork: String => Unit): Unit = {
+    val win = exprMeta.wrapped.asInstanceOf[WindowSpecDefinition]
+    // children of WindowSpecDefinition: partitionSpec ++ orderSpec :+ frameSpecification
+    win.partitionSpec.indices.foreach(i =>
+      check.tagExprParam(exprMeta, exprMeta.childExprs(i), "partition", willNotWork))
+    val partSize = win.partitionSpec.length
+    win.orderSpec.indices.foreach(i =>
+      check.tagExprParam(exprMeta, exprMeta.childExprs(i + partSize), "order",
+        willNotWork))
   }
 
   override def support(dataType: TypeEnum.Value):
@@ -985,6 +1087,59 @@ object WindowSpecCheck extends ExprChecks {
           ("result", projectSupport))))
   }
 }
+
+object CreateMapCheck extends ExprChecks {
+
+  // Spark supports all types except for Map for key (Map is not supported
+  // even in nested types)
+  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+    TypeSig.ARRAY + TypeSig.STRUCT).nested()
+
+  private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+    TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst("CreateMap is not supported by AST")
+  }
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
+    val context = exprMeta.context
+    if (context != ProjectExprContext) {
+      meta.willNotWorkOnGpu(s"this is not supported in the $context context")
+    } else {
+      // if there are more than two key-value pairs then there is the possibility of duplicate keys
+      if (meta.childExprs.length > 2) {
+        // check for duplicate keys if the keys are literal values
+        val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
+        val litKeys = keyExprs.map(e => GpuOverrides.extractLit(e.wrapped.asInstanceOf[Expression]))
+        if (litKeys.forall(_.isDefined)) {
+          val keys = litKeys.map(_.get.value)
+          val uniqueKeys = new mutable.HashSet[Any]()
+          for (key <- keys) {
+            if (!uniqueKeys.add(key)) {
+              meta.willNotWorkOnGpu("CreateMap with duplicate literal keys is not supported")
+            }
+          }
+        } else if (!meta.conf.isCreateMapEnabled) {
+          meta.willNotWorkOnGpu("CreateMap is not enabled by default when there are " +
+            "multiple key-value pairs and where the keys are not literal values because handling " +
+            "of duplicate keys is not compatible with Spark. " +
+            s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
+        }
+      }
+    }
+  }
+
+  override def support(
+      dataType: TypeEnum.Value): Map[ExpressionContext, Map[String, SupportLevel]] = {
+    Map((ProjectExprContext,
+      Map(
+        ("key", keySig.getSupportLevel(dataType, keySig)),
+        ("value", valueSig.getSupportLevel(dataType, valueSig)))))
+  }
+}
+
 
 /**
  * A check for CreateNamedStruct.  The parameter values alternate between one type and another.
@@ -999,21 +1154,30 @@ object CreateNamedStructCheck extends ExprChecks {
   val resultSig: TypeSig = TypeSig.STRUCT.nested(valueSig)
   val sparkResultSig: TypeSig = TypeSig.STRUCT.nested(sparkValueSig)
 
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+    // when this supports AST tagBase(exprMeta, meta.willNotWorkInAst)
+  }
+
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
     val context = exprMeta.context
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
-      exprMeta.childExprs.grouped(2).foreach {
-        case Seq(nameMeta, valueMeta) =>
-          nameSig.tagExprParam(meta, nameMeta, "name")
-          valueSig.tagExprParam(meta, valueMeta, "value")
-      }
-      exprMeta.typeMeta.dataType.foreach { dt =>
-        if (!resultSig.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
-          meta.willNotWorkOnGpu(s"unsupported data type in output: $dt")
-        }
+      tagBase(exprMeta, meta.willNotWorkOnGpu)
+    }
+  }
+
+  private[this] def tagBase(exprMeta: BaseExprMeta[_], willNotWork: String => Unit): Unit = {
+    exprMeta.childExprs.grouped(2).foreach {
+      case Seq(nameMeta, valueMeta) =>
+        nameSig.tagExprParam(exprMeta, nameMeta, "name", willNotWork)
+        valueSig.tagExprParam(exprMeta, valueMeta, "value", willNotWork)
+    }
+    exprMeta.typeMeta.dataType.foreach { dt =>
+      if (!resultSig.isSupportedByPlugin(dt, exprMeta.conf.decimalTypeEnabled)) {
+        willNotWork(s"unsupported data type in output: $dt")
       }
     }
   }
@@ -1021,21 +1185,13 @@ object CreateNamedStructCheck extends ExprChecks {
   override def support(dataType: TypeEnum.Value):
   Map[ExpressionContext, Map[String, SupportLevel]] = {
     val nameProjectSupport = nameSig.getSupportLevel(dataType, sparkNameSig)
-    val nameLambdaSupport = TypeSig.none.getSupportLevel(dataType, sparkNameSig)
     val valueProjectSupport = valueSig.getSupportLevel(dataType, sparkValueSig)
-    val valueLambdaSupport = TypeSig.none.getSupportLevel(dataType, sparkValueSig)
     val resultProjectSupport = resultSig.getSupportLevel(dataType, sparkResultSig)
-    val resultLambdaSupport = TypeSig.none.getSupportLevel(dataType, sparkResultSig)
     Map((ProjectExprContext,
         Map(
           ("name", nameProjectSupport),
           ("value", valueProjectSupport),
-          ("result", resultProjectSupport))),
-      (LambdaExprContext,
-          Map(
-            ("name", nameLambdaSupport),
-            ("value", valueLambdaSupport),
-            ("result", resultLambdaSupport))))
+          ("result", resultProjectSupport))))
   }
 }
 
@@ -1133,20 +1289,27 @@ class CastChecks extends ExprChecks {
     case TypeEnum.UDT => (udtChecks, sparkUdtSig)
   }
 
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+    // when this supports AST tagBase(meta, meta.willNotWorkInAst)
+  }
+
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
     val context = exprMeta.context
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
     } else {
-      val cast = meta.wrapped.asInstanceOf[UnaryExpression]
-      val from = cast.child.dataType
-      val to = cast.dataType
-      val (checks, _) = getChecksAndSigs(from)
-      if (!checks.isSupportedByPlugin(to, meta.conf.decimalTypeEnabled)) {
-        meta.willNotWorkOnGpu(
-          s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
-      }
+      tagBase(meta, meta.willNotWorkOnGpu)
+    }
+  }
+
+  private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
+    val cast = meta.wrapped.asInstanceOf[UnaryExpression]
+    val from = cast.child.dataType
+    val to = cast.dataType
+    if (!gpuCanCast(from, to, meta.conf.decimalTypeEnabled)) {
+      willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
     }
   }
 
@@ -1173,7 +1336,7 @@ class CastChecks extends ExprChecks {
 
 object ExprChecks {
   /**
-   * A check for an expression that only supports project, both in Spark and in the plugin.
+   * A check for an expression that only supports project.
    */
   def projectOnly(
       outputCheck: TypeSig,
@@ -1185,7 +1348,31 @@ object ExprChecks {
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
   /**
-   * A check for a unary expression that only support project both in Spark and the plugin.
+   * A check for an expression that supports project and as much of AST as it can.
+   */
+  def projectAndAst(
+      allowedAstTypes: TypeSig,
+      outputCheck: TypeSig,
+      sparkOutputSig: TypeSig,
+      paramCheck: Seq[ParamCheck] = Seq.empty,
+      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
+    val astOutputCheck = outputCheck.intersect(allowedAstTypes)
+    val astParamCheck = paramCheck.map { pc =>
+      ParamCheck(pc.name, pc.cudf.intersect(allowedAstTypes), pc.spark)
+    }
+    val astRepeatingParamCheck = repeatingParamCheck.map { rpc =>
+      RepeatingParamCheck(rpc.name, rpc.cudf.intersect(allowedAstTypes), rpc.spark)
+    }
+    ExprChecksImpl(Map(
+      ProjectExprContext ->
+          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck),
+      AstExprContext ->
+          ContextChecks(astOutputCheck, sparkOutputSig, astParamCheck, astRepeatingParamCheck)
+    ))
+  }
+
+  /**
+   * A check for a unary expression that only support project.
    */
   def unaryProject(
       outputCheck: TypeSig,
@@ -1196,58 +1383,67 @@ object ExprChecks {
       Seq(ParamCheck("input", inputCheck, sparkInputSig)))
 
   /**
-   * A check for an expression that only supports project in the plugin, but Spark also supports
-   * this expression in lambda.
+   * A check for a unary expression that supports project and as much AST as it can.
    */
-  def projectNotLambda(
-      outputCheck: TypeSig,
-      sparkOutputSig: TypeSig,
-      paramCheck: Seq[ParamCheck] = Seq.empty,
-      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
-    val project = ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)
-    val lambdaParams = paramCheck.map(pc => ParamCheck(pc.name, TypeSig.none, pc.spark))
-    val lambdaRepeat = repeatingParamCheck.map(pc =>
-      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark))
-    val lambda = ContextChecks(TypeSig.none, sparkOutputSig, lambdaParams, lambdaRepeat)
-    ExprChecksImpl(Map((ProjectExprContext, project), (LambdaExprContext, lambda)))
-  }
-
-  /**
-   * A check for a unary expression that only support project, but Spark also supports this
-   * expression in lambda.
-   */
-  def unaryProjectNotLambda(
+  def unaryProjectAndAst(
+      allowedAstTypes: TypeSig,
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
       inputCheck: TypeSig,
       sparkInputSig: TypeSig): ExprChecks =
-    projectNotLambda(outputCheck, sparkOutputSig,
+    projectAndAst(allowedAstTypes, outputCheck, sparkOutputSig,
       Seq(ParamCheck("input", inputCheck, sparkInputSig)))
 
   /**
-   * Unary expression checks for project where the input matches the output, but Spark also
-   * supports this expression in lambda mode.
+   * Unary expression checks for project where the input matches the output.
    */
-  def unaryProjectNotLambdaInputMatchesOutput(check: TypeSig, sparkSig: TypeSig): ExprChecks =
-    unaryProjectNotLambda(check, sparkSig, check, sparkSig)
+  def unaryProjectInputMatchesOutput(check: TypeSig, sparkSig: TypeSig): ExprChecks =
+    unaryProject(check, sparkSig, check, sparkSig)
 
   /**
-   * Math unary checks where input and output are both DoubleType. Spark supports these for
-   * both project and lambda, but the plugin only support project.
+   * Unary expression checks for project where the input matches the output and it also
+   * supports as much of AST as it can.
    */
-  val mathUnary: ExprChecks = unaryProjectNotLambdaInputMatchesOutput(
-    TypeSig.DOUBLE, TypeSig.DOUBLE)
+  def unaryProjectAndAstInputMatchesOutput(
+      allowedAstTypes: TypeSig,
+      check: TypeSig,
+      sparkSig: TypeSig): ExprChecks =
+    unaryProjectAndAst(allowedAstTypes, check, sparkSig, check, sparkSig)
 
   /**
-   * Helper function for a binary expression where the plugin only supports project but Spark
-   * support lambda too.
+   * Math unary checks where input and output are both DoubleType.
    */
-  def binaryProjectNotLambda(
+  val mathUnary: ExprChecks = unaryProjectInputMatchesOutput(TypeSig.DOUBLE, TypeSig.DOUBLE)
+
+  /**
+   * Math unary checks where input and output are both DoubleType and AST is supported.
+   */
+  val mathUnaryWithAst: ExprChecks =
+    unaryProjectAndAstInputMatchesOutput(
+      TypeSig.implicitCastsAstTypes, TypeSig.DOUBLE, TypeSig.DOUBLE)
+
+  /**
+   * Helper function for a binary expression where the plugin only supports project.
+   */
+  def binaryProject(
       outputCheck: TypeSig,
       sparkOutputSig: TypeSig,
       param1: (String, TypeSig, TypeSig),
       param2: (String, TypeSig, TypeSig)): ExprChecks =
-    projectNotLambda(outputCheck, sparkOutputSig,
+    projectOnly(outputCheck, sparkOutputSig,
+      Seq(ParamCheck(param1._1, param1._2, param1._3),
+        ParamCheck(param2._1, param2._2, param2._3)))
+
+  /**
+   * Helper function for a binary expression where the plugin supports project and AST.
+   */
+  def binaryProjectAndAst(
+      allowedAstTypes: TypeSig,
+      outputCheck: TypeSig,
+      sparkOutputSig: TypeSig,
+      param1: (String, TypeSig, TypeSig),
+      param2: (String, TypeSig, TypeSig)): ExprChecks =
+    projectAndAst(allowedAstTypes, outputCheck, sparkOutputSig,
       Seq(ParamCheck(param1._1, param1._2, param1._3),
         ParamCheck(param2._1, param2._2, param2._3)))
 
@@ -1372,6 +1568,7 @@ object SupportedOpsDocs {
     println("<th>Executor</th>")
     println("<th>Description</th>")
     println("<th>Notes</th>")
+    println("<th>Param(s)</th>")
     TypeEnum.values.foreach { t =>
       println(s"<th>$t</th>")
     }
@@ -1537,21 +1734,37 @@ object SupportedOpsDocs {
           nextOutputAt = totalCount + headerEveryNLines
         }
         println("<tr>")
-        println(s"<td>${rule.tag.runtimeClass.getSimpleName}</td>")
-        println(s"<td>${rule.description}</td>")
-        println(s"<td>${rule.notes().getOrElse("None")}</td>")
-        if (checks.isDefined) {
-          val exprChecks = checks.get.asInstanceOf[ExecChecks]
+        val execChecks = checks.get.asInstanceOf[ExecChecks]
+        val allData = TypeEnum.values.map { t =>
+          (t, execChecks.support(t))
+        }.toMap
+
+        val notes = execChecks.supportNotes
+        // Now we should get the same keys for each type, so we are only going to look at the first
+        // type for now
+        val totalSpan = allData.values.head.size
+        val inputs = allData.values.head.keys
+
+        println(s"""<td rowspan="$totalSpan">${rule.tag.runtimeClass.getSimpleName}</td>""")
+        println(s"""<td rowspan="$totalSpan">${rule.description}</td>""")
+        println(s"""<td rowspan="$totalSpan">${rule.notes().getOrElse("None")}</td>""")
+        var count = 0
+        inputs.foreach { input =>
+          val named = notes.get(input)
+              .map(l => input + "<br/>(" + l.mkString(";<br/>") + ")")
+              .getOrElse(input)
+          println(s"<td>$named</td>")
           TypeEnum.values.foreach { t =>
-            println(exprChecks.support(t).htmlTag)
+            println(allData(t)(input).htmlTag)
           }
-        } else {
-          TypeEnum.values.foreach { _ =>
-            println("<td><b>TODO</b></td>")
+          println("</tr>")
+          count += 1
+          if (count < totalSpan) {
+            println("<tr>")
           }
         }
-        println("</tr>")
-        totalCount += 1
+
+        totalCount += totalSpan
       }
     }
     println("</table>")
@@ -1575,9 +1788,21 @@ object SupportedOpsDocs {
     println("grouping the data by one or more keys. `reduction` is when there is no group by and")
     println("there is a single result for an entire column. `window` is for window operations.")
     println()
-    println("The final expression context is `lambda` which happens primarily for higher order")
-    println("functions in SQL.")
-    println("Accelerator support is described below.")
+    println("The final expression context is `AST` or Abstract Syntax Tree.")
+    println("Before explaining AST we first need to explain in detail how project context operations")
+    println("work. Generally for a project context operation the plan Spark developed is read")
+    println("on the CPU and an appropriate set of GPU kernels are selected to do those")
+    println("operations. For example `a >= b + 1`. Would result in calling a GPU kernel to add")
+    println("`1` to `b`, followed by another kernel that is called to compare `a` to that result.")
+    println("The interpretation is happening on the CPU, and the GPU is used to do the processing.")
+    println("For AST the interpretation for some reason cannot happen on the CPU and instead must")
+    println("be done in the GPU kernel itself. An example of this is conditional joins. If you")
+    println("want to join on `A.a >= B.b + 1` where `A` and `B` are separate tables or data")
+    println("frames, the `+` and `>=` operations cannot run as separate independent kernels")
+    println("because it is done on a combination of rows in both `A` and `B`. Instead part of the")
+    println("plan that Spark developed is turned into an abstract syntax tree and sent to the GPU")
+    println("where it can be interpreted. The number and types of operations supported in this")
+    println("are limited.")
     println("<table>")
     exprChecksHeaderLine()
     totalCount = 0

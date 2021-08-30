@@ -18,17 +18,19 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 
+import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
-import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
@@ -38,15 +40,23 @@ class GpuProjectExecMeta(
     proj: ProjectExec,
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
-    r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r) {
+    r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
+    with Logging {
   override def convertToGpu(): GpuExec = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     val gpuExprs = childExprs.map(_.convertToGpu()).toList
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
-      childExprs.foreach(_.tagForAst())
       if (childExprs.forall(_.canThisBeAst)) {
         return GpuProjectAstExec(gpuExprs, gpuChild)
+      }
+      // explain AST because this is optional and it is sometimes hard to debug
+      if (conf.shouldExplain) {
+        val explain = childExprs.map(_.explainAst(conf.shouldExplainAll))
+            .filter(_.nonEmpty)
+        if (explain.nonEmpty) {
+          logWarning(s"AST PROJECT\n$explain")
+        }
       }
     }
     GpuProjectExec(gpuExprs, gpuChild)
@@ -111,7 +121,7 @@ case class GpuProjectExec(
    //   immutable/List.scala#L516
    projectList: List[Expression],
    child: SparkPlan
- ) extends UnaryExecNode with GpuExec {
+ ) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -156,7 +166,7 @@ case class GpuProjectAstExec(
     //   immutable/List.scala#L516
     projectList: List[Expression],
     child: SparkPlan
-) extends UnaryExecNode with GpuExec {
+) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -185,11 +195,7 @@ case class GpuProjectAstExec(
           withResource(new NvtxWithMetrics("Compile ASTs", NvtxColor.ORANGE, opTime)) { _ =>
             boundProjectList.safeMap { expr =>
               // Use intmax for the left table column count since there's only one input table here.
-              val astExpr = expr.convertToAst(Int.MaxValue) match {
-                case e: ast.Expression => e
-                case e => new ast.UnaryExpression(ast.UnaryOperator.IDENTITY, e)
-              }
-              astExpr.compile()
+              expr.convertToAst(Int.MaxValue).compile()
             }
           }
 
@@ -209,7 +215,7 @@ case class GpuProjectAstExec(
             withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
               numOutputBatches += 1
               numOutputRows += cb.numRows()
-              val projectedTable = withResource(GpuColumnVector.from(cb)) { table =>
+              val projectedTable = withResource(tableFromBatch(cb)) { table =>
                 withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
                   new Table(projectedColumns:_*)
                 }
@@ -224,6 +230,20 @@ case class GpuProjectAstExec(
         override def close(): Unit = {
           compiledAstExprs.safeClose()
           compiledAstExprs = Nil
+        }
+
+        private def tableFromBatch(cb: ColumnarBatch): Table = {
+          if (cb.numCols != 0) {
+            GpuColumnVector.from(cb)
+          } else {
+            // Count-only batch but cudf Table cannot be created with no columns.
+            // Create the cheapest table we can to evaluate the AST expression.
+            withResource(Scalar.fromBool(false)) { falseScalar =>
+              withResource(cudf.ColumnVector.fromScalar(falseScalar, cb.numRows())) { falseColumn =>
+                new Table(falseColumn)
+              }
+            }
+          }
         }
       }
     }
@@ -291,7 +311,7 @@ object GpuFilter extends Arm {
 }
 
 case class GpuFilterExec(condition: Expression, child: SparkPlan)
-    extends UnaryExecNode with GpuPredicateHelper with GpuExec {
+    extends ShimUnaryExecNode with GpuPredicateHelper with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -523,7 +543,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
 }
 
 case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
-    extends UnaryExecNode with GpuExec {
+    extends ShimUnaryExecNode with GpuExec {
 
   // This operator does not record any metrics
   override lazy val allMetrics: Map[String, GpuMetric] = Map.empty

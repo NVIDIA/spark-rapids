@@ -47,8 +47,13 @@ class CastExprMeta[INPUT <: CastBase](
 
   private def recursiveTagExprForGpuCheck(
       fromDataType: DataType = fromType,
-      toDataType: DataType = toType)
-  : Unit = {
+      toDataType: DataType = toType,
+      depth: Int = 0): Unit = {
+    val checks = rule.getChecks.get.asInstanceOf[CastChecks]
+    if (depth > 0 &&
+        !checks.gpuCanCast(fromDataType, toDataType, allowDecimal = conf.decimalTypeEnabled)) {
+      willNotWorkOnGpu(s"Casting child type $fromDataType to $toDataType is not supported")
+    }
     (fromDataType, toDataType) match {
       case (_: FloatType | _: DoubleType, _: DecimalType) if !conf.isCastFloatToDecimalEnabled =>
         willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
@@ -86,19 +91,19 @@ class CastExprMeta[INPUT <: CastBase](
             s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
-          recursiveTagExprForGpuCheck(field.dataType, StringType)
+          recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
         }
       case (fromStructType: StructType, toStructType: StructType) =>
         fromStructType.zip(toStructType).foreach {
           case (fromChild, toChild) =>
-            recursiveTagExprForGpuCheck(fromChild.dataType, toChild.dataType)
+            recursiveTagExprForGpuCheck(fromChild.dataType, toChild.dataType, depth + 1)
         }
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
-        recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
+        recursiveTagExprForGpuCheck(nestedFrom, nestedTo, depth + 1)
 
       case (MapType(keyFrom, valueFrom, _), MapType(keyTo, valueTo, _)) =>
-        recursiveTagExprForGpuCheck(keyFrom, keyTo)
-        recursiveTagExprForGpuCheck(valueFrom, valueTo)
+        recursiveTagExprForGpuCheck(keyFrom, keyTo, depth + 1)
+        recursiveTagExprForGpuCheck(valueFrom, valueTo, depth + 1)
 
       case _ =>
     }
@@ -243,21 +248,21 @@ object GpuCast extends Arm {
       }
     }
 
-    if (ansiEnabled) {
-      // ansi mode only supports simple integers, so no exponents or decimal places
-      val regex = "^[+\\-]?[0-9]+$"
-      withResource(sanitized.matchesRe(regex)) { isInt =>
-        withResource(isInt.all()) { allInts =>
-          // Check that all non-null values are valid integers.
-          if (allInts.isValid && !allInts.getBoolean) {
-            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+    withResource(sanitized) { _ =>
+      if (ansiEnabled) {
+        // ansi mode only supports simple integers, so no exponents or decimal places
+        val regex = "^[+\\-]?[0-9]+$"
+        withResource(sanitized.matchesRe(regex)) { isInt =>
+          withResource(isInt.all()) { allInts =>
+            // Check that all non-null values are valid integers.
+            if (allInts.isValid && !allInts.getBoolean) {
+              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
           }
+          sanitized.incRefCount()
         }
-        sanitized
-      }
-    } else {
-      // truncate strings that represent decimals, so that we just look at the string before the dot
-      withResource(sanitized) { _ =>
+      } else {
+        // truncate strings that represent decimals to just look at the string before the dot
         withResource(Scalar.fromString(".")) { dot =>
           withResource(sanitized.stringContains(dot)) { hasDot =>
             // only do the decimal sanitization if any strings do contain dot
@@ -477,19 +482,6 @@ object GpuCast extends Arm {
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
-
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castIntegralsToDecimal(inputVector, dt, ansiMode)
-        }
-
-      case (FloatType | DoubleType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castFloatsToDecimal(inputVector, dt, ansiMode)
-        }
-
-      case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.copyToColumnVector(), from, to, ansiMode)
 
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)

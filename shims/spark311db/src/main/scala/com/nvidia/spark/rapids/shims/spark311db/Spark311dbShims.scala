@@ -43,7 +43,7 @@ import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPy
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python.{GpuPythonUDF, GpuWindowInPandasExecMetaBase}
 import org.apache.spark.sql.rapids.execution.python.shims.spark311db.{GpuAggregateInPandasExecMeta, GpuArrowEvalPythonExec, GpuFlatMapGroupsInPandasExecMeta, GpuMapInPandasExecMeta, GpuWindowInPandasExec}
 import org.apache.spark.sql.types._
@@ -124,12 +124,13 @@ class Spark311dbShims extends Spark311Shims {
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-              TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested() +
-              TypeSig.psNote(TypeEnum.MAP, "Not supported as a partition by key") +
-              TypeSig.psNote(TypeEnum.STRUCT, "Not supported as a partition by key") +
-              TypeSig.psNote(TypeEnum.ARRAY, "Not supported as a partition by key"),
-            TypeSig.all),
-          (runningWindowFunctionExec, conf, p, r) => new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.all,
+          Map("partitionSpec" ->
+              InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+                TypeSig.all))),
+          (runningWindowFunctionExec, conf, p, r) =>
+            new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       ),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
@@ -184,34 +185,15 @@ class Spark311dbShims extends Spark311Shims {
         }),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP)
-          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
-          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
-          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
-          TypeSig.DECIMAL_64), TypeSig.all),
+        JoinTypeChecks.equiJoinExecChecks,
         (join, conf, p, r) => new GpuSortMergeJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[BroadcastHashJoinExec](
         "Implementation of join using broadcast data",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP)
-          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
-          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
-          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT +
-          TypeSig.DECIMAL_64)
-          , TypeSig.all),
+        JoinTypeChecks.equiJoinExecChecks,
         (join, conf, p, r) => new GpuBroadcastHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ShuffledHashJoinExec](
         "Implementation of join using hashed shuffled data",
-         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP)
-          .withPsNote(TypeEnum.ARRAY, "Cannot be used as join key")
-          .withPsNote(TypeEnum.STRUCT, "Cannot be used as join key")
-          .withPsNote(TypeEnum.MAP, "Cannot be used as join key")
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL_64), TypeSig.all),
+        JoinTypeChecks.equiJoinExecChecks,
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +

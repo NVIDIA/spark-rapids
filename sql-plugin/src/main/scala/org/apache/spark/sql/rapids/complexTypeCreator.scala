@@ -18,14 +18,14 @@ package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry.FUNC_ALIAS
-import org.apache.spark.sql.catalyst.expressions.{EmptyRow, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{CreateMap, EmptyRow, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, DataType, Metadata, NullType, StringType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, Metadata, NullType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
@@ -79,6 +79,58 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
       // or `ArrayType(StringType)`.
       GpuColumnVector.from(ColumnVector.makeList(numRows, elementDType, columns: _*), dataType)
     }
+  }
+}
+
+case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boolean)
+    extends GpuExpression {
+
+  private val valueIndices: Seq[Int] = children.indices.filter(_ % 2 != 0)
+  private val keyIndices: Seq[Int] = children.indices.filter(_ % 2 == 0)
+
+  lazy val keys: Seq[Expression] = keyIndices.map(children)
+  lazy val values: Seq[Expression] = valueIndices.map(children)
+
+  private val defaultElementType: DataType = {
+    if (useStringTypeWhenEmpty) {
+      StringType
+    } else {
+      NullType
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(new Array[ColumnVector](children.size)) { columns =>
+      val numRows = batch.numRows()
+      children.indices.foreach { index =>
+        columns(index) = GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
+      }
+      val structs = Range(0, columns.length, 2)
+        .safeMap(i => ColumnVector.makeStruct(columns(i), columns(i + 1)))
+      withResource(structs) { _ =>
+        GpuColumnVector.from(ColumnVector.makeList(numRows, DType.STRUCT, structs: _*), dataType)
+      }
+    }
+  }
+
+  override def nullable: Boolean = false
+
+  override def foldable: Boolean = children.forall(_.foldable)
+
+  override lazy val dataType: MapType = {
+    MapType(
+      keyType = TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(keys.map(_.dataType))
+        .getOrElse(defaultElementType),
+      valueType = TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(values.map(_.dataType))
+        .getOrElse(defaultElementType),
+      valueContainsNull = values.exists(_.nullable))
+  }
+}
+
+object GpuCreateMap {
+  def apply(children: Seq[Expression]): GpuCreateMap = {
+    new GpuCreateMap(children,
+      SQLConf.get.getConf(SQLConf.LEGACY_CREATE_EMPTY_COLLECTION_USING_STRING_TYPE))
   }
 }
 

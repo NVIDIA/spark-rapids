@@ -19,9 +19,23 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.ast
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, SortOrder}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+/**
+ * A trait that allows an Expression to control how it and its child expressions are bound. This
+ * should be used with a lot of caution as binding can be really hard to debug if you get it wrong.
+ * The output of bind should have all instances of AttributeReference replaced with
+ * GpuBoundReference.
+ */
+trait GpuBind {
+  /**
+   * Returns a modified version of `this` with at a minimum all AttributeReferences in the child
+   * expressions replaced with GpuBoundReference instances.
+   */
+  def bind(input: AttributeSeq): GpuExpression
+}
 
 object GpuBindReferences extends Logging {
 
@@ -35,25 +49,46 @@ object GpuBindReferences extends Logging {
           case _: SortOrder =>
           case other =>
             throw new IllegalArgumentException(
-              s"Bound an expression that shouldn't be here ${other.getClass}")
+              s"Found an expression that shouldn't be here ${other.getClass}")
         }
       }
     }
   }
 
-  // Mostly copied from BoundAttribute.scala so we can do columnar processing
-  private[this] def bindRefInternal[A <: Expression, R <: Expression](
+  /**
+   * An alternative to `Expression.transformDown`, but when a result is returned by `rule` it is
+   * assumed that it handled processing exp and all of its children, so rule will not be called on
+   * the children of that result recursively.
+   */
+  def transformNoRecursionOnReplacement(exp: Expression)
+      (rule: PartialFunction[Expression, Expression]): Expression = {
+    rule.lift(exp) match {
+      case None =>
+        exp.mapChildren(c => transformNoRecursionOnReplacement(c)(rule))
+      case Some(e) =>
+        e
+    }
+  }
+
+  // Mostly copied from BoundAttribute.scala but with a few big changes so we can do columnar
+  // processing. Use with Caution
+  def bindRefInternal[A <: Expression, R <: Expression](
       expression: A,
-      input: AttributeSeq): R = {
-    val ret = expression.transform {
+      input: AttributeSeq,
+      partial: PartialFunction[Expression, Expression] = PartialFunction.empty): R = {
+    val regularMatch: PartialFunction[Expression, Expression] = {
+      case bind: GpuBind =>
+        bind.bind(input)
       case a: AttributeReference =>
         val ordinal = input.indexOf(a.exprId)
         if (ordinal == -1) {
           sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
         } else {
-          GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)
+          GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)(a.exprId, a.name)
         }
-    }.asInstanceOf[R]
+    }
+    val matchFunc = regularMatch.orElse(partial)
+    val ret = transformNoRecursionOnReplacement(expression)(matchFunc).asInstanceOf[R]
     postBindCheck(ret)
     ret
   }
@@ -93,9 +128,11 @@ object GpuBindReferences extends Logging {
 }
 
 case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
+    (val exprId: ExprId, val name: String)
   extends GpuLeafExpression {
 
-  override def toString: String = s"input[$ordinal, ${dataType.simpleString}, $nullable]"
+  override def toString: String =
+    s"input[$ordinal, ${dataType.simpleString}, $nullable]($name#${exprId.id})"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     batch.column(ordinal) match {
@@ -109,7 +146,7 @@ case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean
     }
   }
 
-  override def convertToAst(numFirstTableColumns: Int): ast.AstNode = {
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
     // Spark treats all inputs as a single sequence of columns. For example, a join will put all
     // the columns of the left table followed by all the columns of the right table. cudf AST
     // instead uses explicit table references to distinguish which table is being indexed by a

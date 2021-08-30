@@ -208,6 +208,7 @@ _grpkey_small_decimals = [
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
 
+@shuffle_test
 @approximate_float
 @ignore_order
 @incompat
@@ -472,47 +473,41 @@ def test_hash_groupby_single_distinct_collect(data_gen):
         df_fun=lambda spark: gen_df(spark, data_gen, length=100),
         table_name="tbl", sql=sql)
 
-# Queries with multiple distinct aggregations will fallback to CPU if they also contain
-# collect aggregations. Because Spark optimizer will insert expressions like `If` and `First`
-# when rewriting distinct aggregates, while `GpuFirst` doesn't support the datatype of collect
-# aggregations (ArrayType).
-# TODO: support GPUFirst on ArrayType https://github.com/NVIDIA/spark-rapids/issues/3097
 @approximate_float
 @ignore_order(local=True)
-@allow_non_gpu('SortAggregateExec',
-               'SortArray', 'Alias', 'Literal', 'First', 'If', 'EqualTo', 'Count', 'Coalesce',
-               'CollectList', 'CollectSet', 'AggregateExpression')
-@incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-def test_hash_groupby_collect_with_multi_distinct_fallback(data_gen):
+def test_hash_groupby_collect_with_multi_distinct(data_gen):
     def spark_fn(spark_session):
         return gen_df(spark_session, data_gen, length=100).groupby('a').agg(
             f.sort_array(f.collect_list('b')),
             f.sort_array(f.collect_set('b')),
             f.countDistinct('b'),
             f.countDistinct('c'))
-    assert_gpu_fallback_collect(func=spark_fn, cpu_fallback_class_name='SortAggregateExec')
+    assert_gpu_and_cpu_are_equal_collect(spark_fn)
 
 @approximate_float
 @ignore_order(local=True)
-@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
-               'HashPartitioning', 'SortArray', 'Alias', 'Literal',
-               'Count', 'CollectList', 'CollectSet', 'AggregateExpression')
-@incompat
+@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
+               'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
+               'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
+               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
+               'AggregateExpression')
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
-@pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
-def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled):
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled, use_obj_hash_agg):
     local_conf = conf.copy()
-    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
+    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled,
+                       'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg})
     # test without Distinct
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
-        exist_classes='CollectList,CollectSet',
-        non_exist_classes='GpuCollectList,GpuCollectSet',
+        exist_classes='CollectList,CollectSet,GpuCollectList,GpuCollectSet',
         conf=local_conf)
+
     # test with single Distinct
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -521,39 +516,37 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabl
                  f.sort_array(f.collect_set('b')),
                  f.countDistinct('c'),
                  f.count('c')),
-        exist_classes='CollectList,CollectSet',
-        non_exist_classes='GpuCollectList,GpuCollectSet',
+        exist_classes='CollectList,CollectSet,GpuCollectList,GpuCollectSet',
+        conf=local_conf)
+
+    # test with Distinct Collect
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: gen_df(spark, data_gen, length=100),
+        table_name='table',
+        exist_classes='CollectList,CollectSet,GpuCollectList,GpuCollectSet',
+        sql="""
+    select a,
+        sort_array(collect_list(distinct c)),
+        sort_array(collect_set(b)),
+        count(distinct c),
+        count(c)
+    from table
+    group by a""",
         conf=local_conf)
 
 @ignore_order(local=True)
-@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec', 'HashAggregateExec',
-               'HashPartitioning', 'SortArray', 'Alias', 'Literal',
-               'CollectList', 'CollectSet', 'Max', 'AggregateExpression')
-@pytest.mark.parametrize('conf', [_nans_float_conf_final, _nans_float_conf_partial], ids=idfn)
-@pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
-def test_hash_groupby_collect_partial_replace_fallback_with_other_agg(conf, aqe_enabled):
-    # This test is to ensure "associated fallback" will not affect another Aggregate plans.
-    local_conf = conf.copy()
-    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled})
-
+@allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
+               'HashAggregateExec', 'HashPartitioning',
+               'ApproximatePercentile', 'Alias', 'Literal', 'AggregateExpression')
+def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback():
     assert_cpu_and_gpu_are_equal_sql_with_capture(
-        lambda spark: gen_df(spark, [('k1', RepeatSeqGen(LongGen(), length=20)),
-                                     ('k2', RepeatSeqGen(LongGen(), length=20)),
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', LongRangeGen())], length=100),
-        exist_classes='GpuMax,Max,CollectList,CollectSet',
-        non_exist_classes='GpuObjectHashAggregateExec,GpuCollectList,GpuCollectSet',
+        exist_classes='ApproximatePercentile,ObjectHashAggregateExec',
+        non_exist_classes='GpuApproximatePercentile,GpuObjectHashAggregateExec',
         table_name='table',
-        sql="""
-    select k1,
-        sort_array(collect_set(k2)),
-        sort_array(collect_list(max_v))
-    from
-        (select k1, k2,
-            max(v) as max_v
-        from table group by k1, k2
-        )t
-    group by k1""",
-        conf=local_conf)
+        sql="""select k,
+        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""")
 
 @approximate_float
 @ignore_order
@@ -706,7 +699,6 @@ def test_count_distinct_with_nan_floats(data_gen):
         _no_nans_float_conf)
 
 # TODO: Literal tests
-# TODO: First and Last tests
 
 # REDUCTIONS
 
@@ -716,6 +708,7 @@ non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
+_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_first_last_reductions_extra_types(data_gen):
@@ -727,6 +720,19 @@ def test_first_last_reductions_extra_types(data_gen):
                 'first(a)',
                 'last(a)'),
             conf = allow_negative_scale_of_decimal_conf)
+
+# TODO: https://github.com/NVIDIA/spark-rapids/issues/3221
+@allow_non_gpu('HashAggregateExec', 'SortAggregateExec',
+               'ShuffleExchangeExec', 'HashPartitioning',
+               'AggregateExpression', 'Alias', 'First', 'Last')
+@pytest.mark.parametrize('data_gen', _nested_gens, ids=idfn)
+def test_first_last_reductions_nested_types_fallback(data_gen):
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: unary_op_df(spark, data_gen, num_slices=1)\
+                    .selectExpr('first(a)', 'last(a)', 'first(a, True)', 'last(a, True)'),
+            exist_classes='First,Last',
+            non_exist_classes='GpuFirst,GpuLast',
+            conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
@@ -782,6 +788,18 @@ def test_arithmetic_reductions(data_gen):
                 'sum(a)',
                 'avg(a)'),
             conf = _no_nans_float_conf)
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
+def test_groupby_first_last(data_gen):
+    gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
+    agg_fn = lambda df: df.groupBy('a').agg(
+        f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
+    assert_gpu_and_cpu_are_equal_collect(
+        # First and last are not deterministic when they are run in a real distributed setup.
+        # We set parallelism 1 to prevent nondeterministic results because of distributed setup.
+        lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
+        conf=allow_negative_scale_of_decimal_conf)
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
