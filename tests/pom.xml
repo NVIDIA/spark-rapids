@@ -228,25 +228,25 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.arrow</groupId>
-		            <artifactId>arrow-memory</artifactId>
+                    <artifactId>arrow-memory</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.arrow</groupId>
-		            <artifactId>arrow-vector</artifactId>
+                    <artifactId>arrow-vector</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.parquet</groupId>
-		            <artifactId>parquet-hadoop</artifactId>
+                    <artifactId>parquet-hadoop</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.parquet</groupId>
-		            <artifactId>parquet-column</artifactId>
+                    <artifactId>parquet-column</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
