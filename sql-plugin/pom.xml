@@ -137,7 +137,7 @@
             <activation>
                 <property>
                     <name>buildver</name>
-                    <value>311db</value>
+		    <value>[311db, 301db]</value>
                 </property>
             </activation>
             <dependencies>

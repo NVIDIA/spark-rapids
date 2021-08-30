@@ -179,6 +179,24 @@
             </modules>
         </profile>
         <profile>
+            <id>release301db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>301db</value>
+                </property>
+            </activation>
+            <properties>
+                <shim.module.name>spark301db</shim.module.name>
+                <spark.version.classifier>spark301-databricks</spark.version.classifier>
+                <spark.version>${spark301db.version}</spark.version>
+                <spark.test.version>${spark301db.version}</spark.test.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <hive.storage.api.version>${spark301db.version}</hive.storage.api.version>
+                <protobuf.java.version>${spark301db.version}</protobuf.java.version>
+            </properties>
+        </profile>
+        <profile>
             <id>release311db</id>
             <activation>
                 <property>
