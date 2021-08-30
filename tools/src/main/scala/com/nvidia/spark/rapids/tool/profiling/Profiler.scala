@@ -393,23 +393,19 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.writeText("\n### B. Analysis ###\n")
       profileOutputWriter.write("Job + Stage level aggregated task metrics", app.jsMetAgg,
         Some("Job/Stage Metrics"))
-
       profileOutputWriter.write("SQL level aggregated task metrics", app.sqlTaskAggMetrics,
         Some("SQL Metrics"))
       profileOutputWriter.write("SQL Duration and Executor CPU Time Percent", app.durAndCpuMet)
       val skewHeader = "Shuffle Skew Check" // +
-    val skewTableDesc = "(When task's Shuffle Read Size > 3 * Avg Stage-level size)"
+      val skewTableDesc = "(When task's Shuffle Read Size > 3 * Avg Stage-level size)"
       profileOutputWriter.write(skewHeader, app.skewInfo, tableDesc = Some(skewTableDesc))
 
       profileOutputWriter.writeText("\n### C. Health Check###\n")
       profileOutputWriter.write("Failed Tasks", app.failedTasks)
       profileOutputWriter.write("Failed Stages", app.failedStages)
-
       profileOutputWriter.write("Failed Jobs", app.failedJobs)
-
       profileOutputWriter.write("Removed BlockManagers", app.removedBMs)
       profileOutputWriter.write("Removed Executors", app.removedExecutors)
-
       profileOutputWriter.write("Unsupported SQL Plan", app.unsupportedOps,
         Some("Unsupported SQL Ops"))
     }
