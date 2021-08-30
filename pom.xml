@@ -110,6 +110,20 @@
             </modules>
         </profile>
         <profile>
+            <id>release301emr</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>301emr</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version.classifier>spark301emr</spark.version.classifier>
+                <spark.version>${spark301emr.version}</spark.version>
+                <spark.test.version>${spark301emr.version}</spark.test.version>
+            </properties>
+        </profile>
+        <profile>
             <id>release302</id>
             <activation>
                 <property>

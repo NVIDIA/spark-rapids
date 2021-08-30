@@ -119,6 +119,12 @@
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-spark301emr_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-shims-spark301_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
                     <scope>compile</scope>
@@ -173,6 +179,12 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-spark301emr_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>compile</scope>
+                </dependency>
                 <dependency>
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-shims-spark301_${scala.binary.version}</artifactId>
