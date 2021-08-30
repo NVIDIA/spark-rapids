@@ -218,56 +218,56 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive-exec-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.hive</groupId>
+		    <artifactId>hive-exec</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-hadoop-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.parquet</groupId>
+		    <artifactId>parquet-hadoop</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-common-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.parquet</groupId>
+		    <artifactId>parquet-common</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-column-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.parquet</groupId>
+		    <artifactId>parquet-column</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-format-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.parquet</groupId>
+		    <artifactId>parquet-format</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-format-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-format</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-memory-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-memory</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-memory-netty-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-memory-netty</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-vector-db_${scala.binary.version}</artifactId>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-vector</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>

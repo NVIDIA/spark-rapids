@@ -119,14 +119,14 @@
                 <scope>provided</scope>
             </dependency>
             <dependency>
-                <groupId>org.apache.spark</groupId>
-                <artifactId>spark-hive-exec-db_${scala.binary.version}</artifactId>
+                <groupId>org.apache.hive</groupId>
+		<artifactId>hive-exec</artifactId>
                 <version>${spark311db.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
-                <groupId>org.apache.spark</groupId>
-                <artifactId>spark-hive-serde-db_${scala.binary.version}</artifactId>
+                <groupId>org.apache.hive</groupId>
+		<artifactId>hive-serde</artifactId>
                 <version>${spark311db.version}</version>
                 <scope>provided</scope>
            </dependency>

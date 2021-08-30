@@ -187,24 +187,6 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-network-common_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-launcher_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
                     <artifactId>spark-annotation_${scala.binary.version}</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
@@ -216,80 +198,14 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-io</artifactId>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
                     <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.scala-lang</groupId>
-                    <artifactId>scala-reflect</artifactId>
-                    <version>${scala.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-lang3</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>com.esotericsoftware.kryo</groupId>
-                    <artifactId>kryo-shaded-db</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive-exec-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-hadoop-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-common-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-column-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-parquet-format-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-format-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-memory-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-memory-netty-db_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-arrow-vector-db_${scala.binary.version}</artifactId>
+                    <artifactId>commons-io</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
@@ -302,6 +218,50 @@
                 <dependency>
                     <groupId>org.apache.hadoop</groupId>
                     <artifactId>hadoop-mapreduce-client</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.esotericsoftware.kryo</groupId>
+                    <artifactId>kryo-shaded-db</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+		<!--
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-format</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-memory-netty</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+		-->
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-memory</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-vector</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+		    <artifactId>parquet-hadoop</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+		    <artifactId>parquet-column</artifactId>
                     <version>${spark311db.version}</version>
                     <scope>provided</scope>
                 </dependency>
