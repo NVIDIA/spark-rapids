@@ -272,8 +272,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
 
     if (appArgs.generateDot()) {
-      if (appArgs.compare()) {
-        logWarning("Dot graph does not compare apps")
+      if (appArgs.compare() || appArgs.combined()) {
+        logWarning("Dot graph does not compare or combine apps")
       }
       apps.foreach { app =>
         val start = System.nanoTime()
@@ -286,7 +286,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
     if (appArgs.generateTimeline()) {
       if (appArgs.compare()) {
-        logWarning("Timeline graph does not compare apps")
+        logWarning("Timeline graph does not compare or combine apps")
       }
       apps.foreach { app =>
         val start = System.nanoTime()
