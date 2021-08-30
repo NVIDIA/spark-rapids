@@ -72,9 +72,9 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       }
     } else if (outputCombined) {
       // same as collection but combine the output so all apps are in single tables
-      val sums = createAppsAndSummarize(eventLogInfos, false)
       val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/combined",
         Profiler.COMBINED_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
+      val sums = createAppsAndSummarize(eventLogInfos, false, profileOutputWriter)
       try {
         writeOutput(profileOutputWriter, sums, outputCombined)
       } finally {
@@ -129,7 +129,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
   }
 
   private def createAppsAndSummarize(allPaths: Seq[EventLogInfo],
-      printPlans: Boolean): Seq[ApplicationSummaryInfo] = {
+      printPlans: Boolean, profileOutputWriter: ProfileOutputWriter): Seq[ApplicationSummaryInfo] = {
     var errorCodes = ArrayBuffer[Int]()
     val allApps = new ConcurrentLinkedQueue[ApplicationSummaryInfo]()
 
@@ -138,7 +138,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         val appOpt = createApp(path, numOutputRows, index, hadoopConf)
         appOpt.foreach { app =>
           val sum = try {
-            val (s, _) = processApps(Seq(app), false, null)
+            val (s, _) = processApps(Seq(app), false, profileOutputWriter)
             Some(s)
           } catch {
             case e: Exception =>
