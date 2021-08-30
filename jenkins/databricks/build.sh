@@ -147,219 +147,219 @@ mvn -B install:install-file \
 if [[ -z $INSTALL_DEPS_ONLY ]]
 then
 
-# this install pom file from Spache Spark 3.1.1, whereas new build doesn't
-mvn dependency:get  -DgroupId=org.apache.spark -DartifactId=spark-core_$SCALA_VERSION -Dversion=$BASE_SPARK_VERSION
+    # this install pom file from Spache Spark 3.1.1, whereas new build doesn't
+    mvn dependency:get  -DgroupId=org.apache.spark -DartifactId=spark-core_$SCALA_VERSION -Dversion=$BASE_SPARK_VERSION
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$COREJAR \
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-core_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar \
-   -DpomFile=$COREPOMPATH/$COREPOM
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$COREJAR \
+       -DgroupId=org.apache.spark \
+       -DartifactId=spark-core_$SCALA_VERSION \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar \
+       -DpomFile=$COREPOMPATH/$COREPOM
 
 else
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$COREJAR \
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-core_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$COREJAR \
+       -DgroupId=org.apache.spark \
+       -DartifactId=spark-core_$SCALA_VERSION \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$JACKSONCORE\
-   -DgroupId=com.fasterxml.jackson.core \
-   -DartifactId=jackson-core \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$JACKSONCORE\
+       -DgroupId=com.fasterxml.jackson.core \
+       -DartifactId=jackson-core \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$PROTOBUFJAVA \
-   -DgroupId=com.google.protobuf \
-   -DartifactId=protobuf-java \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$PROTOBUFJAVA \
+       -DgroupId=com.google.protobuf \
+       -DartifactId=protobuf-java \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$JAVAASSIST\
-   -DgroupId=org.javaassist\
-   -DartifactId=javaassist \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$JAVAASSIST\
+       -DgroupId=org.javaassist\
+       -DartifactId=javaassist \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$JSON4S \
-   -DgroupId=org.json4s \
-   -DartifactId=JsonAST \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$JSON4S \
+       -DgroupId=org.json4s \
+       -DartifactId=JsonAST \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$APACHECOMMONSLANG3 \
-   -DgroupId=org.apache.commons \
-   -DartifactId=commons-lang3 \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$APACHECOMMONSLANG3 \
+       -DgroupId=org.apache.commons \
+       -DartifactId=commons-lang3 \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$APACHECOMMONS \
-   -DgroupId=org.apache.commons \
-   -DartifactId=commons-io \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$APACHECOMMONS \
+       -DgroupId=org.apache.commons \
+       -DartifactId=commons-io \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$KRYO \
-   -DgroupId=com.esotericsoftware.kryo \
-   -DartifactId=kryo-shaded-db \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$KRYO \
+       -DgroupId=com.esotericsoftware.kryo \
+       -DartifactId=kryo-shaded-db \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$LAUNCHER \
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-launcher_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$LAUNCHER \
+       -DgroupId=org.apache.spark \
+       -DartifactId=spark-launcher_$SCALA_VERSION \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$NETWORKCOMMON \
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-network-common_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$NETWORKCOMMON \
+       -DgroupId=org.apache.spark \
+       -DartifactId=spark-network-common_$SCALA_VERSION \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$COMMONUNSAFE\
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-unsafe_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$COMMONUNSAFE\
+       -DgroupId=org.apache.spark \
+       -DartifactId=spark-unsafe_$SCALA_VERSION \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HIVESTORAGE \
-   -DgroupId=org.apache.hive \
-   -DartifactId=hive-storage-api \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$HIVESTORAGE \
+       -DgroupId=org.apache.hive \
+       -DartifactId=hive-storage-api \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HIVEJAR\
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-hive_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$HIVEJAR\
+       -DgroupId=org.apache.spark \
+       -DartifactId=spark-hive_$SCALA_VERSION \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HIVEEXECJAR \
-   -DgroupId=org.apache.hive \
-   -DartifactId=hive-exec \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$HIVEEXECJAR \
+       -DgroupId=org.apache.hive \
+       -DartifactId=hive-exec \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HIVESERDEJAR \
-   -DgroupId=org.apache.hive \
-   -DartifactId=hive-serde \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$HIVESERDEJAR \
+       -DgroupId=org.apache.hive \
+       -DartifactId=hive-serde \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$PARQUETHADOOPJAR \
-   -DgroupId=org.apache.parquet \
-   -DartifactId=parquet-hadoop \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$PARQUETHADOOPJAR \
+       -DgroupId=org.apache.parquet \
+       -DartifactId=parquet-hadoop \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$PARQUETCOMMONJAR \
-   -DgroupId=org.apache.parquet \
-   -DartifactId=parquet-common \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$PARQUETCOMMONJAR \
+       -DgroupId=org.apache.parquet \
+       -DartifactId=parquet-common \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$PARQUETCOLUMNJAR \
-   -DgroupId=org.apache.parquet \
-   -DartifactId=parquet-column \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$PARQUETCOLUMNJAR \
+       -DgroupId=org.apache.parquet \
+       -DartifactId=parquet-column \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$PARQUETFORMATJAR \
-   -DgroupId=org.apache.spark \
-   -DartifactId=spark-parquet-format-db_$SCALA_VERSION \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$PARQUETFORMATJAR \
+       -DgroupId=org.apache.spark \
+       -DartifactId=spark-parquet-format-db_$SCALA_VERSION \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$ARROWFORMATJAR \
-   -DgroupId=org.apache.arrow \
-   -DartifactId=arrow-format \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$ARROWFORMATJAR \
+       -DgroupId=org.apache.arrow \
+       -DartifactId=arrow-format \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$ARROWMEMORYJAR \
-   -DgroupId=org.apache.arrow \
-   -DartifactId=arrow-memory \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$ARROWMEMORYJAR \
+       -DgroupId=org.apache.arrow \
+       -DartifactId=arrow-memory \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$ARROWMEMORYNETTYJAR \
-   -DgroupId=org.apache.arrow \
-   -DartifactId=arrow-memory-netty \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$ARROWMEMORYNETTYJAR \
+       -DgroupId=org.apache.arrow \
+       -DartifactId=arrow-memory-netty \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$ARROWVECTORJAR \
-   -DgroupId=org.apache.arrow \
-   -DartifactId=arrow-vector \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$ARROWVECTORJAR \
+       -DgroupId=org.apache.arrow \
+       -DartifactId=arrow-vector \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HADOOPCOMMON \
-   -DgroupId=org.apache.hadoop \
-   -DartifactId=hadoop-common \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$HADOOPCOMMON \
+       -DgroupId=org.apache.hadoop \
+       -DartifactId=hadoop-common \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 
-mvn -B install:install-file \
-   -Dmaven.repo.local=$M2DIR \
-   -Dfile=$JARDIR/$HADOOPMAPRED \
-   -DgroupId=org.apache.hadoop \
-   -DartifactId=hadoop-mapreduce-client \
-   -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-   -Dpackaging=jar
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$HADOOPMAPRED \
+       -DgroupId=org.apache.hadoop \
+       -DartifactId=hadoop-mapreduce-client \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
 fi
 
 if [[ -z $INSTALL_DEPS_ONLY ]]

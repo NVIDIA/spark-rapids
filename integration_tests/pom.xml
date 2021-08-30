@@ -165,7 +165,7 @@
                 </dependency>
             </dependencies>
         </profile>
-    <profile>
+        <profile>
             <id>release311db</id>
             <activation>
                 <property>
