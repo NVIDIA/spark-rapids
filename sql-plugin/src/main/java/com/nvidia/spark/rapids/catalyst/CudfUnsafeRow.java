@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.catalyst;
+package com.nvidia.spark.rapids.catalyst;
 
 import com.nvidia.spark.rapids.GpuColumnVector;
+import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.SpecializedGettersReader;
 import org.apache.spark.sql.catalyst.util.ArrayData;

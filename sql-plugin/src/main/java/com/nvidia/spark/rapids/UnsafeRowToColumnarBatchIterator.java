@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids;
 
+import com.nvidia.spark.rapids.catalyst.CudfUnsafeRow;
+
 import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;
@@ -25,7 +27,6 @@ import ai.rapids.cudf.NvtxColor;
 import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Table;
 import org.apache.spark.TaskContext;
-import org.apache.spark.sql.catalyst.CudfUnsafeRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
 import org.apache.spark.sql.types.DataType;
