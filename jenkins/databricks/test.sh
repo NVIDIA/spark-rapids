@@ -64,11 +64,12 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
     ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the denpedency repo
     LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE
 
+    # Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
     ## Run cache tests
-    if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
-      PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
-       LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
-    fi
+    #if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
+    #  PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
+    #   LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
+    #fi
 
     ## Run cudf-udf tests
     CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls $LOCAL_JAR_PATH/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
@@ -79,11 +80,12 @@ else
     ## Run tests with jars building from the spark-rapids source code
     bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
 
+    # Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
     ## Run cache tests
-    if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
-      PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
-       bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
-    fi
+    #if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
+    #  PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
+    #   bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
+    #fi
 
     ## Run cudf-udf tests
     CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark_*.jar | grep -v 'tests.jar'`"

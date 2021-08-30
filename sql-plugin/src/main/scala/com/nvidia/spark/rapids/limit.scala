@@ -21,13 +21,14 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
@@ -261,7 +262,7 @@ case class GpuTopN(
     limit: Int,
     sortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan) extends GpuExec with UnaryExecNode {
+    child: SparkPlan) extends GpuExec with ShimUnaryExecNode {
 
   override def output: Seq[Attribute] = {
     projectList.map(_.toAttribute)
