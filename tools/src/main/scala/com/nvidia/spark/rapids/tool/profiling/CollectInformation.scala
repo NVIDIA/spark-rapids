@@ -145,31 +145,7 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
         key.startsWith("spark.rapids") || key.startsWith("spark.executorEnv.UCX") ||
           key.startsWith("spark.shuffle.manager") || key.equals("spark.shuffle.service.enabled")
       }
-      val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
-      val existDiff = props.keys.toSeq.diff(inter)
-      val newDiff = rapidsRelated.keys.toSeq.diff(inter)
-
-      // first update intersecting
-      inter.foreach { k =>
-        val appVals = props.getOrElse(k, ArrayBuffer[String]())
-        appVals += rapidsRelated.getOrElse(k, "null")
-      }
-
-      // this app doesn't contain a key that was in another app
-      existDiff.foreach { k =>
-        val appVals = props.getOrElse(k, ArrayBuffer[String]())
-        appVals += "null"
-      }
-
-      // this app contains a key not in other apps
-      newDiff.foreach { k =>
-        // we need to fill if some apps didn't have it
-        val appVals = ArrayBuffer[String]()
-        appVals ++= Seq.fill(numApps - 1)("null")
-        appVals += rapidsRelated.getOrElse(k, "null")
-
-        props.put(k, appVals)
-      }
+      CollectInformation.addNewProps(rapidsRelated, props, numApps)
     }
     val allRows = props.map { case (k, v) => Seq(k) ++ v }.toSeq
     if (allRows.size > 0) {
@@ -262,6 +238,38 @@ object CollectInformation extends Logging {
       } finally {
         planFileWriter.close()
       }
+    }
+  }
+
+  // updated processed properties hashmap based on the new rapids related
+  // properties passed in
+  def addNewProps(newRapidsRelated: Map[String, String],
+      processedProps: HashMap[String, ArrayBuffer[String]],
+      numApps: Int): Unit = {
+    val inter = processedProps.keys.toSeq.intersect(newRapidsRelated.keys.toSeq)
+    val existDiff = processedProps.keys.toSeq.diff(inter)
+    val newDiff = newRapidsRelated.keys.toSeq.diff(inter)
+
+    // first update intersecting
+    inter.foreach { k =>
+      val appVals = processedProps.getOrElse(k, ArrayBuffer[String]())
+      appVals += newRapidsRelated.getOrElse(k, "null")
+    }
+
+    // this app doesn't contain a key that was in another app
+    existDiff.foreach { k =>
+      val appVals = processedProps.getOrElse(k, ArrayBuffer[String]())
+      appVals += "null"
+    }
+
+    // this app contains a key not in other apps
+    newDiff.foreach { k =>
+      // we need to fill if some apps didn't have it
+      val appVals = ArrayBuffer[String]()
+      appVals ++= Seq.fill(numApps - 1)("null")
+      appVals += newRapidsRelated.getOrElse(k, "null")
+
+      processedProps.put(k, appVals)
     }
   }
 }

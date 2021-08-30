@@ -310,7 +310,6 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         var numApps = 0
         val props = HashMap[String, ArrayBuffer[String]]()
         val outputHeaders = ArrayBuffer("propertyName")
-        // TODO - commonize this code.
         sums.foreach { app =>
           if (app.rapidsProps.nonEmpty) {
             numApps += 1
@@ -319,31 +318,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
             }.toMap
 
             outputHeaders += app.rapidsProps.head.outputHeaders(1)
-            val inter = props.keys.toSeq.intersect(rapidsRelated.keys.toSeq)
-            val existDiff = props.keys.toSeq.diff(inter)
-            val newDiff = rapidsRelated.keys.toSeq.diff(inter)
-
-            // first update intersecting
-            inter.foreach { k =>
-              val appVals = props.getOrElse(k, ArrayBuffer[String]())
-              appVals += rapidsRelated.getOrElse(k, "null")
-            }
-
-            // this app doesn't contain a key that was in another app
-            existDiff.foreach { k =>
-              val appVals = props.getOrElse(k, ArrayBuffer[String]())
-              appVals += "null"
-            }
-
-            // this app contains a key not in other apps
-            newDiff.foreach { k =>
-              // we need to fill if some apps didn't have it
-              val appVals = ArrayBuffer[String]()
-              appVals ++= Seq.fill(numApps - 1)("null")
-              appVals += rapidsRelated.getOrElse(k, "null")
-
-              props.put(k, appVals)
-            }
+            CollectInformation.addNewProps(rapidsRelated, props, numApps)
           }
         }
         val allRows = props.map { case (k, v) => Seq(k) ++ v }.toSeq
