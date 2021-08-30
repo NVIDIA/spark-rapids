@@ -441,6 +441,7 @@
          please update the snapshot-shims profile as well so it is accurate -->
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
+        <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <spark302.version>3.0.2</spark302.version>
         <spark303.version>3.0.3</spark303.version>
         <spark304.version>3.0.4-SNAPSHOT</spark304.version>
