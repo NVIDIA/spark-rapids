@@ -322,9 +322,18 @@ class GpuParquetWriter(
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
   override def scanTableBeforeWrite(table: Table): Unit = {
-    if (dateTimeRebaseException || int96RebaseException) {
-      (0 until table.getNumberOfColumns).foreach { i =>
-        if (RebaseHelper.isDateTimeRebaseNeededWrite(table.getColumn(i))) {
+    (0 until table.getNumberOfColumns).foreach { i =>
+      val col = table.getColumn(i)
+      // if col is a day
+      if (dateTimeRebaseException && col.getType == DType.TIMESTAMP_DAYS) {
+        if (RebaseHelper.isDateRebaseNeeded(col)) {
+          throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
+        }
+      }
+      // if col is a time
+      else if (col.getType.hasTimeResolution && (int96RebaseException ||
+          outputTimestampType != ParquetOutputTimestampType.INT96 && dateTimeRebaseException)) {
+        if (RebaseHelper.isTimeRebaseNeeded(col)) {
           throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
         }
       }

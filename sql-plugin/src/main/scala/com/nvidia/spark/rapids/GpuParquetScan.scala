@@ -52,7 +52,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
@@ -944,10 +944,19 @@ class MultiFileParquetPartitionReader(
     }
 
     closeOnExcept(table) { _ =>
-      if (!extraInfo.isCorrectedRebaseMode || !extraInfo.isCorrectedInt96RebaseMode) {
-        (0 until table.getNumberOfColumns).foreach { i =>
-          if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
-            throw RebaseHelper.newRebaseExceptionInRead("Parquet")
+      (0 until table.getNumberOfColumns).foreach { i =>
+        val col = table.getColumn(i)
+        // if col is a day
+        if (!extraInfo.isCorrectedRebaseMode && col.getType == DType.TIMESTAMP_DAYS) {
+          if (RebaseHelper.isDateRebaseNeeded(col)) {
+            throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+          }
+        }
+        // if col is a time
+        else if (col.getType.hasTimeResolution &&
+            (!extraInfo.isCorrectedInt96RebaseMode || !extraInfo.isCorrectedRebaseMode)) {
+          if (RebaseHelper.isTimeRebaseNeeded(col)) {
+            throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
           }
         }
       }
@@ -1199,10 +1208,19 @@ class MultiFileCloudParquetPartitionReader(
         Table.readParquet(parseOpts, hostBuffer, 0, dataSize)
       }
       closeOnExcept(table) { _ =>
-        if (!isCorrectRebaseMode || !isCorrectInt96RebaseMode) {
-          (0 until table.getNumberOfColumns).foreach { i =>
-            if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
-              throw RebaseHelper.newRebaseExceptionInRead("Parquet")
+        (0 until table.getNumberOfColumns).foreach { i =>
+          val col = table.getColumn(i)
+          // if col is a day
+          if (!isCorrectRebaseMode && col.getType == DType.TIMESTAMP_DAYS) {
+            if (RebaseHelper.isDateRebaseNeeded(col)) {
+              throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+            }
+          }
+          // if col is a time
+          else if (col.getType.hasTimeResolution &&
+              (!isCorrectInt96RebaseMode || !isCorrectRebaseMode)) {
+            if (RebaseHelper.isTimeRebaseNeeded(col)) {
+              throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
             }
           }
         }
@@ -1342,10 +1360,19 @@ class ParquetPartitionReader(
           Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         }
         closeOnExcept(table) { _ =>
-          if (!isCorrectedRebaseMode || (!isCorrectedInt96RebaseMode)) {
-            (0 until table.getNumberOfColumns).foreach { i =>
-              if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
-                throw RebaseHelper.newRebaseExceptionInRead("Parquet")
+          (0 until table.getNumberOfColumns).foreach { i =>
+            val col = table.getColumn(i)
+            // if col is a day
+            if (!isCorrectedRebaseMode && col.getType == DType.TIMESTAMP_DAYS) {
+              if (RebaseHelper.isDateRebaseNeeded(col)) {
+                throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+              }
+            }
+            // if col is a time
+            else if (col.getType.hasTimeResolution &&
+                (!isCorrectedInt96RebaseMode || !isCorrectedRebaseMode)) {
+              if (RebaseHelper.isTimeRebaseNeeded(col)) {
+                throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
               }
             }
           }

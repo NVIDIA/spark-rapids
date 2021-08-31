@@ -23,9 +23,9 @@ import org.apache.spark.sql.catalyst.util.RebaseDateTime
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper extends Arm {
-  private[this] def isDateTimeRebaseNeeded(column: ColumnVector,
-                                                startDay: Int,
-                                                startTs: Long): Boolean = {
+  private[this] def isDateRebaseNeeded(column: ColumnVector,
+      startDay: Int,
+      startTs: Long): Boolean = {
     // TODO update this for nested column checks
     //  https://github.com/NVIDIA/spark-rapids/issues/1126
     val dtype = column.getType
@@ -37,7 +37,16 @@ object RebaseHelper extends Arm {
           }
         }
       }
-    } else if (dtype.isTimestampType) {
+    } else {
+      false
+    }
+  }
+
+  private[this] def isTimeRebaseNeeded(column: ColumnVector,
+      startDay: Int,
+      startTs: Long): Boolean = {
+    val dtype = column.getType
+    if (dtype.isTimestampType) {
       // TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to properly handle
       // TIMESTAMP_MILLIS, for use require so we fail if that happens
       require(dtype == DType.TIMESTAMP_MICROSECONDS)
@@ -54,15 +63,15 @@ object RebaseHelper extends Arm {
     }
   }
 
-  def isDateTimeRebaseNeededWrite(column: ColumnVector): Boolean =
-    isDateTimeRebaseNeeded(column,
-      RebaseDateTime.lastSwitchGregorianDay,
+  def isDateRebaseNeeded(column: ColumnVector): Boolean =
+    isDateRebaseNeeded(column,
+      RebaseDateTime.lastSwitchJulianDay,
       RebaseDateTime.lastSwitchGregorianTs)
 
-  def isDateTimeRebaseNeededRead(column: ColumnVector): Boolean =
-    isDateTimeRebaseNeeded(column,
+  def isTimeRebaseNeeded(column: ColumnVector): Boolean =
+    isTimeRebaseNeeded(column,
       RebaseDateTime.lastSwitchJulianDay,
-      RebaseDateTime.lastSwitchJulianTs)
+      RebaseDateTime.lastSwitchGregorianTs)
 
   def newRebaseExceptionInRead(format: String): Exception = {
     val config = if (format == "Parquet") {

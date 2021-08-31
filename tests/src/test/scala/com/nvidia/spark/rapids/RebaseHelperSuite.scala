@@ -23,15 +23,13 @@ import org.scalatest.FunSuite
 class RebaseHelperSuite extends FunSuite with Arm {
   test("all null timestamp days column rebase check") {
     withResource(ColumnVector.timestampDaysFromBoxedInts(null, null, null)) { c =>
-      assertResult(false)(RebaseHelper.isDateTimeRebaseNeededWrite(c))
-      assertResult(false)(RebaseHelper.isDateTimeRebaseNeededRead(c))
+      assertResult(false)(RebaseHelper.isDateRebaseNeeded(c))
     }
   }
 
   test("all null timestamp microseconds column rebase check") {
     withResource(ColumnVector.timestampMicroSecondsFromBoxedLongs(null, null, null)) { c =>
-      assertResult(false)(RebaseHelper.isDateTimeRebaseNeededWrite(c))
-      assertResult(false)(RebaseHelper.isDateTimeRebaseNeededRead(c))
+      assertResult(false)(RebaseHelper.isTimeRebaseNeeded(c))
     }
   }
 }
