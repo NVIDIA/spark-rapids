@@ -95,7 +95,12 @@ rapids_shuffle_smoke_test() {
 ci_2() {
     echo "Run premerge ci 2 testings..."
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
-    TEST_TAGS="not premerge_ci_1" TEST_TYPE="pre-commit" TEST_PARALLEL=4 ./integration_tests/run_pyspark_from_build.sh
+    export TEST_TAGS="not premerge_ci_1"
+    export TEST_TYPE="pre-commit"
+    export TEST_PARALLEL=5
+    # separate process to avoid OOM kill
+    TEST='not cache_test and not generate_expr_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='cache_test or generate_expr_test' ./integration_tests/run_pyspark_from_build.sh
 }
 
 
