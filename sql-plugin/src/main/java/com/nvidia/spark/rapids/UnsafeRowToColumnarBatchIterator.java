@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids;
 
-import com.nvidia.spark.rapids.catalyst.CudfUnsafeRow;
-
 import ai.rapids.cudf.ColumnVector;
 import ai.rapids.cudf.DType;
 import ai.rapids.cudf.HostColumnVector;

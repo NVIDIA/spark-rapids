@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.catalyst.CudfUnsafeRow
 import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
