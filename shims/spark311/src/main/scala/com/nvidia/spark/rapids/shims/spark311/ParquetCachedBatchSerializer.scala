@@ -41,7 +41,7 @@ import org.apache.parquet.hadoop.ParquetFileWriter.Mode
 import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.metadata.CompressionCodecName
 import org.apache.parquet.io.{DelegatingPositionOutputStream, DelegatingSeekableInputStream, InputFile, OutputFile, PositionOutputStream, SeekableInputStream}
-import org.apache.parquet.schema.Type
+import org.apache.parquet.schema.{MessageType, Type}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -53,7 +53,6 @@ import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjectio
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, SparkToParquetSchemaConverter, VectorizedColumnReader}
-import org.apache.spark.sql.execution.datasources.parquet.rapids.ShimVectorizedColumnReader
 import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.spark311.ParquetRecordMaterializer
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
 import org.apache.spark.sql.internal.SQLConf
@@ -961,14 +960,13 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
         for (i <- 0 until columnsRequested.size) {
           if (!missingColumns(i)) {
             columnReaders(i) =
-                new ShimVectorizedColumnReader(
-                  i,
-                  columnsInCache,
-                  typesInCache,
-                  pages,
+                new VectorizedColumnReader(
+                  columnsInCache.get(i),
+                  typesInCache.get(i).getOriginalType,
+                  pages.getPageReader(columnsInCache.get(i)),
                   null /*convertTz*/ ,
                   LegacyBehaviorPolicy.CORRECTED.toString,
-                  LegacyBehaviorPolicy.EXCEPTION.toString, false)
+                  LegacyBehaviorPolicy.EXCEPTION.toString)
           }
         }
         totalCountLoadedSoFar += pages.getRowCount

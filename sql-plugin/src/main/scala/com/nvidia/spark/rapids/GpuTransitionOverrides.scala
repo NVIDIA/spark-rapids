@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.lang.reflect.Method
 
-import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow

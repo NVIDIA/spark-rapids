@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuExpression, GpuScalar}
-import com.nvidia.spark.rapids.shims.upstream.ShimExpression
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression}

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.udf
 
-import com.nvidia.spark.rapids.shims.upstream.ShimExpression
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging

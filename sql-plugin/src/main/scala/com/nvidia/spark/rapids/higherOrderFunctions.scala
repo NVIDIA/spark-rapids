@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnView, DType}
-import com.nvidia.spark.rapids.shims.upstream.ShimExpression
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.types.{ArrayType, DataType, Metadata}

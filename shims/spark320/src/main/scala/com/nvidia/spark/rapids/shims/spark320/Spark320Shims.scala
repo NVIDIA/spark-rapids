@@ -20,7 +20,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.downstream.Spark32XShims
+import com.nvidia.spark.rapids.shims.v2._
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -54,8 +54,7 @@ import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims._
-import org.apache.spark.sql.rapids.shims.spark320.GpuColumnarToRowTransitionExec
+import org.apache.spark.sql.rapids.shims.v2._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}

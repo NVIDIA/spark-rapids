@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
-import com.nvidia.spark.rapids.shims.upstream.ShimSparkPlan
+import com.nvidia.spark.rapids.shims.v2.ShimSparkPlan
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession

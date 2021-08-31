@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
-import com.nvidia.spark.rapids.shims.upstream.ShimUnaryExpression
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.AnalysisException

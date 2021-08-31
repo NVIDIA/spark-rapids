@@ -20,7 +20,7 @@ import java.util.Random
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.upstream.ShimExpression
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.{DataType, IntegerType}

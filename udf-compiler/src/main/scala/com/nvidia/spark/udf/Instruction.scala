@@ -18,7 +18,7 @@ package com.nvidia.spark.udf
 
 import java.nio.charset.Charset
 
-import com.nvidia.spark.rapids.shims.upstream.ShimExpression
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 import com.nvidia.spark.udf.CatalystExpressionBuilder.simplify
 import javassist.bytecode.{CodeIterator, Opcode}
 
