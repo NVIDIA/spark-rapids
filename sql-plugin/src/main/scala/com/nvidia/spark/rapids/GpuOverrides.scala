@@ -2795,12 +2795,16 @@ object GpuOverrides {
     expr[ApproximatePercentile](
       "Approximate percentile",
       ExprChecks.fullAggAndProject(
-        TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.DECIMAL_64),
+        // note that output can be single number or array depending on whether percentiles param
+        // is a single number or an array
+        TypeSig.numeric + TypeSig.DECIMAL_64 +
+          TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.DECIMAL_64),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(
           ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64, TypeSig.all),
           ParamCheck("percentage",
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+              TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
             TypeSig.all),
           ParamCheck("accuracy", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64, TypeSig.all)
         )),

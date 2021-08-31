@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable
 import scala.util.Random
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -27,69 +28,85 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   val DEFAULT_PERCENTILES = Array(0.05, 0.25, 0.5, 0.75, 0.95)
 
-  testSparkResultsAreEqual("Approx percentile with grouping, ints, delta 100",
-    spark => salaries(spark, DataTypes.IntegerType)) {
-    doTest(DEFAULT_PERCENTILES, 100)
+  test("250 rows per group, default delta, doubles") {
+    doTest(DataTypes.DoubleType, 250, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
   }
 
-  testSparkResultsAreEqual("Approx percentile with grouping, ints, delta 1000",
-    spark => salaries(spark, DataTypes.IntegerType)) {
-    doTest(DEFAULT_PERCENTILES, 1000)
+  ignore("250 rows per group, delta 100, doubles") {
+    doTest(DataTypes.DoubleType, 250, 100)
   }
 
-  test("Real percentile with grouping, ints, delta 1000") {
-    withCpuSparkSession { spark =>
-      val df = doTest(DEFAULT_PERCENTILES, 1000, func = "percentile")(
-        salaries(spark, DataTypes.IntegerType))
-      df.collect().foreach(println)
+  private def doTest(dataType: DataType, rowsPerDept: Int, delta: Int) {
+
+    val percentiles = withCpuSparkSession { spark =>
+      calcPercentiles(spark, dataType, rowsPerDept, DEFAULT_PERCENTILES, delta, approximate = false)
     }
 
+    val approxPercentilesCpu = withCpuSparkSession { spark =>
+      calcPercentiles(spark, dataType, rowsPerDept, DEFAULT_PERCENTILES, delta, approximate = true)
+    }
+
+    val approxPercentilesGpu = withGpuSparkSession { spark =>
+      calcPercentiles(spark, dataType, rowsPerDept, DEFAULT_PERCENTILES, delta, approximate = true)
+    }
+
+    val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet
+
+    for (key <- keys) {
+      val cpuDiff = percentiles(key).zip(approxPercentilesCpu(key)).map {
+        case (p, ap) => (p - ap).abs
+      }
+      val gpuDiff = percentiles(key).zip(approxPercentilesGpu(key)).map {
+        case (p, ap) => (p - ap).abs
+      }
+      val gpuAtLeastAsAccurate = cpuDiff.zip(gpuDiff).forall {
+        case (cpu, gpu) => gpu <= cpu
+      }
+      if (!gpuAtLeastAsAccurate) {
+        fail("GPU was less accurate than CPU:\n\n" +
+          s"Percentiles: ${percentiles(key).mkString(", ")}\n\n" +
+          s"CPU Approx Percentiles: ${approxPercentilesCpu(key).mkString(", ")}\n\n" +
+          s"GPU Approx Percentiles: ${approxPercentilesGpu(key).mkString(", ")}"
+        )
+      }
+    }
   }
 
-  testSparkResultsAreEqual("Approx percentile with grouping, single percentile, delta 1000",
-    spark => salaries(spark, DataTypes.LongType)) {
-    doTest(Array(0.25), 1000)
-  }
-
-  testSparkResultsAreEqual("Approx percentile with grouping, ints, default delta",
-    spark => salaries(spark, DataTypes.IntegerType)) {
-    doTest(DEFAULT_PERCENTILES, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
-  }
-
-  testSparkResultsAreEqual("Approx percentile with grouping, doubles, delta 100",
-    spark => salaries(spark, DataTypes.DoubleType)) {
-    doTest(DEFAULT_PERCENTILES, 100)
-  }
-
-  testSparkResultsAreEqual("Approx percentile with grouping, doubles, delta 1000",
-    spark => salaries(spark, DataTypes.DoubleType)) {
-    doTest(DEFAULT_PERCENTILES, 1000)
-  }
-
-  testSparkResultsAreEqual("Approx percentile with grouping, doubles, default delta",
-    spark => salaries(spark, DataTypes.DoubleType)) {
-    doTest(DEFAULT_PERCENTILES, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
-  }
-
-
-  private def doTest(
+  private def calcPercentiles(
+      spark: SparkSession,
+      dataType: DataType,
+      rowsPerDept: Int,
       percentiles: Array[Double],
       delta: Int,
-      func: String = "approx_percentile"): DataFrame => DataFrame = {
-    df => {
-      val percentileArg = if (percentiles.length > 1) {
-        s"array(${percentiles.mkString(", ")})"
-      } else {
-        s"${percentiles.head}"
-      }
-      df.groupBy(col("dept"))
-        .agg(expr(s"$func(salary, $percentileArg, $delta)")
-          .as("approx_percentiles"))
-        .orderBy("dept")
+      approximate: Boolean): Map[String, Array[Double]] = {
+
+    val df = salaries(spark, dataType, rowsPerDept)
+
+    val percentileArg = if (percentiles.length > 1) {
+      s"array(${percentiles.mkString(", ")})"
+    } else {
+      s"${percentiles.head}"
     }
+
+    val func = if (approximate) "approx_percentile" else "percentile"
+
+    val df2 = df.groupBy(col("dept"))
+      .agg(expr(s"$func(salary, $percentileArg, $delta)")
+        .as("approx_percentiles"))
+      .orderBy("dept")
+
+    val rows = df2.collect()
+
+    rows.map(row => {
+      val dept = row.getString(0)
+      val percentiles = row.getAs[mutable.WrappedArray[Double]](1)
+      dept -> percentiles.map(d => d).toArray
+    }).toMap
   }
 
-  private def salaries(spark: SparkSession, salaryDataType: DataType): DataFrame = {
+  private def salaries(
+      spark: SparkSession,
+      salaryDataType: DataType, rowsPerDept: Int): DataFrame = {
     import spark.implicits._
     val rand = new Random(0)
     val base = salaryDataType match {
@@ -97,7 +114,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       case DataTypes.IntegerType => 1
       case DataTypes.LongType => 1L
     }
-    Range(0, 250).flatMap(_ => Seq(
+    Range(0, rowsPerDept).flatMap(_ => Seq(
       ("a", 1000 * base + rand.nextInt(1000)),
       ("b", 10000 * base + rand.nextInt(10000)),
       ("c", 100000 * base + rand.nextInt(100000)),

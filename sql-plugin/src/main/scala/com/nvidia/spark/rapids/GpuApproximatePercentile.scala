@@ -120,15 +120,15 @@ case class ApproxPercentileFromTDigestExpr(
     val expr = child.asInstanceOf[GpuExpression]
     withResource(expr.columnarEval(batch).asInstanceOf[GpuColumnVector]) { cv =>
       withResource(cv.getBase.approxPercentile(percentiles)) { percentiles =>
-        if (child.dataType == DataTypes.DoubleType) {
-          GpuColumnVector.from(percentiles, dataType)
+        if (finalDataType == DataTypes.DoubleType) {
+          GpuColumnVector.from(percentiles.incRefCount(), dataType)
         } else {
-          // cast cuDF Array[Double] to Array[child.dataType]
+          // cast cuDF Array[Double] to Array[finalDataType]
           withResource(percentiles.getChildColumnView(0)) { childView =>
             withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
                 ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false)) { childCv =>
               withResource(percentiles.replaceListChild(childCv)) { x =>
-                GpuColumnVector.from(x.copyToColumnVector(), ArrayType(finalDataType))
+                GpuColumnVector.from(x.copyToColumnVector(), dataType)
               }
             }
           }
@@ -137,6 +137,6 @@ case class ApproxPercentileFromTDigestExpr(
     }
   }
   override def nullable: Boolean = false
-  override def dataType: DataType = new ArrayType(child.dataType, false)
+  override def dataType: DataType = new ArrayType(finalDataType, false)
   override def children: Seq[Expression] = Seq(child)
 }

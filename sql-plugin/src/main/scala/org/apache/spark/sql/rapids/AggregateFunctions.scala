@@ -268,9 +268,9 @@ class CudfTDigest(
   override val updateAggregate: GroupByAggregation = GroupByAggregation.createTDigest(accuracy)
   override val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeTDigest(accuracy)
   override def toString(): String = "CudfTDigest"
-  override def dataType: DataType = ArrayType(new StructType(Array(
-    StructField("a", DataTypes.DoubleType),
-    StructField("b", DataTypes.DoubleType)
+  override def dataType: DataType = ArrayType(StructType(Array(
+    StructField("centroid", DataTypes.DoubleType),
+    StructField("weight", DataTypes.DoubleType)
   )), containsNull = false)
 
   override def nullable: Boolean = false
