@@ -202,6 +202,8 @@
                 </property>
             </activation>
             <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark301db</shim.module.name>
                 <spark.version.classifier>spark301-databricks</spark.version.classifier>
                 <spark.version>${spark301db.version}</spark.version>
@@ -221,6 +223,8 @@
                 </property>
             </activation>
             <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark311db</shim.module.name>
                 <spark.version.classifier>spark311-databricks</spark.version.classifier>
                 <spark.version>${spark311db.version}</spark.version>
