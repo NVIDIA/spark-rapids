@@ -20,9 +20,6 @@ from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = pytest.mark.premerge_ci_1
-
 all_gens = all_gen + [NullGen()]
 all_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
