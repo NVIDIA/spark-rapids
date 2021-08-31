@@ -97,10 +97,9 @@ ci_2() {
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    TEST_PARALLEL=4
     # separate process to avoid OOM kill
-    TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST='not conditionals_test and not window_function_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST_PARALLEL=3 TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST_PARALLEL=4 TEST='not conditionals_test and not window_function_test' ./integration_tests/run_pyspark_from_build.sh
 }
 
 
