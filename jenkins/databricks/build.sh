@@ -132,6 +132,9 @@ JACKSONANNOTATION=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive
 HADOOPCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-common--org.apache.hadoop__hadoop-common__2.7.4.jar
 HADOOPMAPRED=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-mapreduce-client-core--org.apache.hadoop__hadoop-mapreduce-client-core__2.7.4.jar
 
+# Please note we are installing all of these dependencies using the Spark version (SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS) to make it easier
+# to specify the dependencies in the pom files
+
 mvn -B install:install-file \
    -Dmaven.repo.local=$M2DIR \
    -Dfile=$JARDIR/$CATALYSTJAR \

@@ -133,6 +133,12 @@
             </dependencies>
         </profile>
         <profile>
+            <!--
+                 Note that we are using the Spark version for all of the Databricks dependencies as well.
+                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                 This is to make it easier and not have to change version numbers for each individual dependency
+                 and deal with differences between Databricks versions
+            -->
             <id>dbdeps</id>
             <activation>
                 <property>

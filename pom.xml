@@ -206,6 +206,12 @@
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark301db</shim.module.name>
                 <spark.version.classifier>spark301-databricks</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
                 <spark.version>${spark301db.version}</spark.version>
                 <spark.test.version>${spark301db.version}</spark.test.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
@@ -227,6 +233,12 @@
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark311db</shim.module.name>
                 <spark.version.classifier>spark311-databricks</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
                 <spark.version>${spark311db.version}</spark.version>
                 <spark.test.version>${spark311db.version}</spark.test.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
