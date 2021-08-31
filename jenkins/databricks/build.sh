@@ -22,8 +22,8 @@ SPARKSRCTGZ=$1
 BASE_SPARK_VERSION=$2
 BUILD_PROFILES=$3
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$4
-BUILD_PROFILES=${BUILD_PROFILES:-'databricks301,!snapshot-shims'}
-BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.0.1'}
+BUILD_PROFILES=${BUILD_PROFILES:-'databricks311,!snapshot-shims'}
+BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.1'}
 # set this to anything (true) to skip building with mvn and it will only install the dependencies into .m2
 INSTALL_DEPS_ONLY=""
 # the version of Spark used when we install the Databricks jars in .m2
@@ -110,12 +110,12 @@ APACHECOMMONS=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3
 if [[ $BASE_SPARK_VERSION == "3.0.1" ]]
 then
     JSON4S=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.json4s--json4s-ast_2.12--org.json4s__json4s-ast_2.12__3.6.6.jar
-    APACHECOMMONSLANG3=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.commons--commons-lang3--org.apache.commons__commons-lang3__3.9.jar
-    HIVESTORAGE=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.1.jar
-    ARROWFORMATJAR=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__0.15.1.jar
-    ARROWMEMORYJAR=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory--org.apache.arrow__arrow-memory__0.15.1.jar
-    ARROWVECTORJAR=----workspace_spark_3_0--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__0.15.1.jar
-    HIVEEXECJAR=----workspace_spark_3_0--patched-hive-with-glue--hive-exec-core_shaded.jar
+    APACHECOMMONSLANG3=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.commons--commons-lang3--org.apache.commons__commons-lang3__3.9.jar
+    HIVESTORAGE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__2.7.1.jar
+    ARROWFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__0.15.1.jar
+    ARROWMEMORYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory--org.apache.arrow__arrow-memory__0.15.1.jar
+    ARROWVECTORJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__0.15.1.jar
+    HIVEEXECJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--patched-hive-with-glue--hive-exec-core_shaded.jar
 else
     JSON4S=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.json4s--json4s-ast_2.12--org.json4s__json4s-ast_2.12__3.7.0-M5.jar
     APACHECOMMONSLANG3=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.commons--commons-lang3--org.apache.commons__commons-lang3__3.10.jar
@@ -178,16 +178,16 @@ then
 
 else
 
-if [[ $BASE_SPARK_VERSION == "3.1.1" ]]
-then
-    mvn -B install:install-file \
-       -Dmaven.repo.local=$M2DIR \
-       -Dfile=$JARDIR/$ARROWMEMORYNETTYJAR \
-       -DgroupId=org.apache.arrow \
-       -DartifactId=arrow-memory-netty \
-       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-       -Dpackaging=jar
-fi
+    if [[ $BASE_SPARK_VERSION == "3.1.1" ]]
+    then
+        mvn -B install:install-file \
+           -Dmaven.repo.local=$M2DIR \
+           -Dfile=$JARDIR/$ARROWMEMORYNETTYJAR \
+           -DgroupId=org.apache.arrow \
+           -DartifactId=arrow-memory-netty \
+           -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+           -Dpackaging=jar
+    fi
 
     mvn -B install:install-file \
        -Dmaven.repo.local=$M2DIR \
