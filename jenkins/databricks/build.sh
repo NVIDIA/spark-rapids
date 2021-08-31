@@ -94,11 +94,6 @@ PARQUETCOMMONJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-
 PARQUETCOLUMNJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-column--org.apache.parquet__parquet-column__1.10.1-databricks6.jar
 PARQUETFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.parquet--parquet-format--org.apache.parquet__parquet-format__2.4.0.jar
 
-ARROWFORMATJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__2.0.0.jar
-ARROWMEMORYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory-core--org.apache.arrow__arrow-memory-core__2.0.0.jar
-ARROWMEMORYNETTYJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-memory-netty--org.apache.arrow__arrow-memory-netty__2.0.0.jar
-ARROWVECTORJAR=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__2.0.0.jar
-
 NETWORKCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--network-common--network-common-hive-2.3__hadoop-2.7_2.12_deploy.jar
 COMMONUNSAFE=----workspace_${SPARK_MAJOR_VERSION_STRING}--common--unsafe--unsafe-hive-2.3__hadoop-2.7_2.12_deploy.jar
 LAUNCHER=----workspace_${SPARK_MAJOR_VERSION_STRING}--launcher--launcher-hive-2.3__hadoop-2.7_2.12_deploy.jar
@@ -132,6 +127,7 @@ JAVAASSIST=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__h
 PROTOBUFJAVA=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.google.protobuf--protobuf-java--com.google.protobuf__protobuf-java__2.6.1.jar
 
 JACKSONCORE=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__2.10.0.jar
+JACKSONANNOTATION=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__2.10.0.jar
 
 HADOOPCOMMON=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-common--org.apache.hadoop__hadoop-common__2.7.4.jar
 HADOOPMAPRED=----workspace_${SPARK_MAJOR_VERSION_STRING}--maven-trees--hive-2.3__hadoop-2.7--org.apache.hadoop--hadoop-mapreduce-client-core--org.apache.hadoop__hadoop-mapreduce-client-core__2.7.4.jar
@@ -178,17 +174,6 @@ then
 
 else
 
-    if [[ $BASE_SPARK_VERSION == "3.1.1" ]]
-    then
-        mvn -B install:install-file \
-           -Dmaven.repo.local=$M2DIR \
-           -Dfile=$JARDIR/$ARROWMEMORYNETTYJAR \
-           -DgroupId=org.apache.arrow \
-           -DartifactId=arrow-memory-netty \
-           -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
-           -Dpackaging=jar
-    fi
-
     mvn -B install:install-file \
        -Dmaven.repo.local=$M2DIR \
        -Dfile=$JARDIR/$HIVEEXECJAR \
@@ -210,6 +195,14 @@ else
        -Dfile=$JARDIR/$JACKSONCORE\
        -DgroupId=com.fasterxml.jackson.core \
        -DartifactId=jackson-core \
+       -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
+       -Dpackaging=jar
+
+    mvn -B install:install-file \
+       -Dmaven.repo.local=$M2DIR \
+       -Dfile=$JARDIR/$JACKSONANNOTATION\
+       -DgroupId=com.fasterxml.jackson.core \
+       -DartifactId=jackson-annotations \
        -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
        -Dpackaging=jar
 

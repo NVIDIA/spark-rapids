@@ -239,6 +239,12 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-annotations</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.parquet</groupId>
                     <artifactId>parquet-hadoop</artifactId>
                     <version>${spark.version}</version>
