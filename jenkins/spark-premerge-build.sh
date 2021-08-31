@@ -99,8 +99,8 @@ ci_2() {
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=5
     # separate process to avoid OOM kill
-    TEST='not cache_test and not generate_expr_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST='cache_test or generate_expr_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='cache_test or conditionals_test or hash_aggregate_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='not cache_test and not conditionals_test and not hash_aggregate_test' ./integration_tests/run_pyspark_from_build.sh
 }
 
 
