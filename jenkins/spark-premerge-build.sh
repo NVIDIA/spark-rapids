@@ -99,8 +99,8 @@ ci_2() {
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=5
     # separate process to avoid OOM kill
-    TEST='cache_test or conditionals_test or hash_aggregate_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST='not cache_test and not conditionals_test and not hash_aggregate_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='conditionals_test or hash_aggregate_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='not conditionals_test and not hash_aggregate_test and not window_function_test' ./integration_tests/run_pyspark_from_build.sh
 }
 
 
@@ -119,7 +119,7 @@ rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 # Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
 M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
 if [ -s "$M2_CACHE_TAR" ] ; then
-    tar xvf $M2_CACHE_TAR -C ~/
+    tar xf $M2_CACHE_TAR -C ~/
 fi
 
 # Download a full version of spark
