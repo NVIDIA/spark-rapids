@@ -281,7 +281,9 @@
         <profile>
             <id>with-classifier</id>
             <activation>
-                <property><name>buildver</name></property>
+                <property>
+                    <name>buildver</name>
+                </property>
             </activation>
             <dependencies>
                 <dependency>
