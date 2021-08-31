@@ -56,7 +56,6 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.{GpuInMemoryTableScanExec, GpuSchemaUtils, HadoopFSUtilsShim}
 import org.apache.spark.sql.rapids.shims.spark312._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
