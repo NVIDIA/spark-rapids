@@ -23,8 +23,8 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
 
-import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.{SparkConf, SparkException}
+import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 
