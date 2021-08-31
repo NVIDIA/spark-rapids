@@ -22,6 +22,9 @@ from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
 
+# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
+pytestmark = pytest.mark.premerge_ci_1
+
 def meta_idfn(meta):
     def tmp(something):
         return meta + idfn(something)
