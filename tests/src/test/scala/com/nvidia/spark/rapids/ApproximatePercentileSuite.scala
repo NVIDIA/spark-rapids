@@ -28,6 +28,10 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   val DEFAULT_PERCENTILES = Array(0.05, 0.25, 0.5, 0.75, 0.95)
 
+  ignore("5 rows per group, delta 100, doubles") {
+    doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = 100)
+  }
+
   test("250 rows per group, default delta, doubles") {
     doTest(DataTypes.DoubleType, 250, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
   }
@@ -36,18 +40,18 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     doTest(DataTypes.DoubleType, 250, 100)
   }
 
-  private def doTest(dataType: DataType, rowsPerDept: Int, delta: Int) {
+  private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Int) {
 
     val percentiles = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerDept, DEFAULT_PERCENTILES, delta, approximate = false)
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = false)
     }
 
     val approxPercentilesCpu = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerDept, DEFAULT_PERCENTILES, delta, approximate = true)
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
     }
 
     val approxPercentilesGpu = withGpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerDept, DEFAULT_PERCENTILES, delta, approximate = true)
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
     }
 
     val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet
@@ -78,7 +82,8 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       rowsPerDept: Int,
       percentiles: Array[Double],
       delta: Int,
-      approximate: Boolean): Map[String, Array[Double]] = {
+      approx: Boolean
+    ): Map[String, Array[Double]] = {
 
     val df = salaries(spark, dataType, rowsPerDept)
 
@@ -88,7 +93,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       s"${percentiles.head}"
     }
 
-    val func = if (approximate) "approx_percentile" else "percentile"
+    val func = if (approx) "approx_percentile" else "percentile"
 
     val df2 = df.groupBy(col("dept"))
       .agg(expr(s"$func(salary, $percentileArg, $delta)")

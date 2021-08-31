@@ -268,16 +268,18 @@ class CudfTDigest(
   override val updateAggregate: GroupByAggregation = GroupByAggregation.createTDigest(accuracy)
   override val mergeAggregate: GroupByAggregation = GroupByAggregation.mergeTDigest(accuracy)
   override def toString(): String = "CudfTDigest"
-  override def dataType: DataType = ArrayType(StructType(Array(
-    StructField("centroid", DataTypes.DoubleType),
-    StructField("weight", DataTypes.DoubleType)
-  )), containsNull = false)
-
+  override def dataType: DataType = CudfTDigest.dataType
   override def nullable: Boolean = false
   override def children: Seq[Expression] = Seq(ref)
   override protected def otherCopyArgs: Seq[AnyRef] = Seq(percentileExpr, accuracyExpression)
 }
 
+object CudfTDigest {
+  val dataType: DataType = ArrayType(StructType(Array(
+    StructField("centroid", DataTypes.DoubleType),
+    StructField("weight", DataTypes.DoubleType)
+  )), containsNull = false)
+}
 class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {
   override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("CollectList is not yet supported in reduction")

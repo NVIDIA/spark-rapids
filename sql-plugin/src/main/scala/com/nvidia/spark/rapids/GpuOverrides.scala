@@ -2801,7 +2801,7 @@ object GpuOverrides {
           TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.DECIMAL_64),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(
-          ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64, TypeSig.all),
+          ParamCheck("input", TypeSig.all, TypeSig.all),
           ParamCheck("percentage",
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
               TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
@@ -2820,7 +2820,7 @@ object GpuOverrides {
         }
         override def aggBufferAttribute: AttributeReference = {
           val aggBuffer = c.aggBufferAttributes.head
-          aggBuffer.copy(dataType = c.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+          aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
       }),
     expr[GetJsonObject](
@@ -3174,7 +3174,7 @@ object GpuOverrides {
       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+          TypeSig.MAP + TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.DOUBLE) + TypeSig.STRUCT)
             .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
