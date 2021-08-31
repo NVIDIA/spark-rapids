@@ -3208,7 +3208,8 @@ object GpuOverrides {
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+            .withPsNote(TypeEnum.STRUCT,
+              "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[ObjectHashAggregateExec](
@@ -3219,7 +3220,8 @@ object GpuOverrides {
             .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+            .withPsNote(TypeEnum.STRUCT,
+              "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
@@ -3230,7 +3232,8 @@ object GpuOverrides {
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+            .withPsNote(TypeEnum.STRUCT,
+              "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuSortAggregateExecMeta(agg, conf, p, r)),
     exec[SortExec](
