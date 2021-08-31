@@ -35,13 +35,23 @@ nav_order: 2
   should not be used.  Using the serializer with negative decimal scales will generate
   an error at runtime.
 
-  To use this serializer please run Spark with the following conf.
-  ```
-  spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
-  ```
+  Make sure to use the right package corresponding to the spark version you are using. To use
+  this serializer with Spark 3.1.1 please run Spark with the following conf.
+   ```
+   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
+   ```
+  See the below table for all the names of the serializers corresponding to the Spark
+  versions
+  
+  | Spark version | Serializer name |
+  | ------ | -----|
+  | 3.1.1 | com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer |
+  | 3.1.1 (cloudera) | com.nvidia.spark.rapids.shims.spark311cdh.ParquetCachedBatchSerializer |
+  | 3.1.2 | com.nvidia.spark.rapids.shims.spark312.ParquetCachedBatchSerializer |
+  | 3.1.3 | com.nvidia.spark.rapids.shims.spark313.ParquetCachedBatchSerializer |
 
  
-##          Supported Types                       
+## Supported Types                       
  
  All types are supported on the CPU, on the GPU, ArrayType, MapType and BinaryType are not
  supported. If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall 

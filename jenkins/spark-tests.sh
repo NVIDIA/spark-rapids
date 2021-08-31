@@ -131,8 +131,11 @@ run_test() {
         ;;
 
       cache_serializer)
+        # Until https://github.com/NVIDIA/spark-rapids/issues/3314 is fixed we need a shim specific
+        # version of the Cache Serializer
+        SHIM_PACKAGE=$(echo ${SPARK_VER} | sed 's/\.//g' | sed 's/-SNAPSHOT//')
         SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
-        --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer" \
+        --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark${SHIM_PACKAGE}.ParquetCachedBatchSerializer" \
           ./run_pyspark_from_build.sh -k cache_test
         ;;
 
