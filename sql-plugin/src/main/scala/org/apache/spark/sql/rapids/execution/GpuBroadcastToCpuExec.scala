@@ -23,7 +23,7 @@ import scala.collection.mutable.ListBuffer
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor}
-import com.nvidia.spark.rapids.{GpuMetric, MetricRange, NvtxWithMetrics, RapidsHostColumnVector}
+import com.nvidia.spark.rapids.{GpuMetric, MetricRange, NvtxWithMetrics, RapidsHostColumnVector, ShimLoader}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 
 import org.apache.spark.SparkException
@@ -112,7 +112,8 @@ case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkP
                 "broadcast build", NvtxColor.DARK_GREEN, buildTime)) { _ =>
                 val toUnsafe = UnsafeProjection.create(output, output)
                 val unsafeRows = rows.iterator.map(toUnsafe)
-                val relation = mode.transform(unsafeRows.toArray)
+                 val relation = ShimLoader.getSparkShims
+                    .broadcastModeTransform(mode, unsafeRows.toArray)
 
                 val dataSize = relation match {
                   case map: KnownSizeEstimation =>

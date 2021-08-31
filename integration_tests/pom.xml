@@ -162,7 +162,71 @@
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>release311db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311db</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
                     <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-core_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.scala-lang</groupId>
+                    <artifactId>scala-reflect</artifactId>
+                    <version>${scala.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-format</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-memory</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-memory</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+		    <artifactId>arrow-vector</artifactId>
+                    <version>${spark311db.version}</version>
+                    <scope>compile</scope>
                 </dependency>
             </dependencies>
         </profile>
