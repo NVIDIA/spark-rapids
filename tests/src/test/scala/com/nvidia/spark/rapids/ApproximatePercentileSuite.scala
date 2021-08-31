@@ -37,6 +37,20 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     doTest(DEFAULT_PERCENTILES, 1000)
   }
 
+  test("Real percentile with grouping, ints, delta 1000") {
+    withCpuSparkSession { spark =>
+      val df = doTest(DEFAULT_PERCENTILES, 1000, func = "percentile")(
+        salaries(spark, DataTypes.IntegerType))
+      df.collect().foreach(println)
+    }
+
+  }
+
+  testSparkResultsAreEqual("Approx percentile with grouping, single percentile, delta 1000",
+    spark => salaries(spark, DataTypes.LongType)) {
+    doTest(Array(0.25), 1000)
+  }
+
   testSparkResultsAreEqual("Approx percentile with grouping, ints, default delta",
     spark => salaries(spark, DataTypes.IntegerType)) {
     doTest(DEFAULT_PERCENTILES, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
@@ -57,11 +71,22 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     doTest(DEFAULT_PERCENTILES, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
   }
 
-  private def doTest(percentiles: Array[Double], delta: Int): DataFrame => DataFrame = {
-    _.groupBy(col("dept"))
-      .agg(expr(s"approx_percentile(salary, array(${percentiles.mkString(", ")}), $delta)")
-        .as("approx_percentiles"))
-      .orderBy("dept")
+
+  private def doTest(
+      percentiles: Array[Double],
+      delta: Int,
+      func: String = "approx_percentile"): DataFrame => DataFrame = {
+    df => {
+      val percentileArg = if (percentiles.length > 1) {
+        s"array(${percentiles.mkString(", ")})"
+      } else {
+        s"${percentiles.head}"
+      }
+      df.groupBy(col("dept"))
+        .agg(expr(s"$func(salary, $percentileArg, $delta)")
+          .as("approx_percentiles"))
+        .orderBy("dept")
+    }
   }
 
   private def salaries(spark: SparkSession, salaryDataType: DataType): DataFrame = {
@@ -70,13 +95,14 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     val base = salaryDataType match {
       case DataTypes.DoubleType => 1d
       case DataTypes.IntegerType => 1
+      case DataTypes.LongType => 1L
     }
     Range(0, 250).flatMap(_ => Seq(
       ("a", 1000 * base + rand.nextInt(1000)),
       ("b", 10000 * base + rand.nextInt(10000)),
       ("c", 100000 * base + rand.nextInt(100000)),
       ("d", 1000000 * base + rand.nextInt(1000000))))
-      .toDF("dept", "salary").repartition(2)
+      .toDF("dept", "salary").repartition(4)
   }
 
 }
