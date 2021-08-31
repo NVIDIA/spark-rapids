@@ -844,7 +844,7 @@
                         <exclude>dependency-reduced-pom.xml</exclude>
                         <exclude>**/.*/**</exclude>
                         <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
-                        <exclude>src/main/resources/supportedDataSource.csv</exclude>
+                        <exclude>**/*.csv</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
