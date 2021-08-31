@@ -128,24 +128,29 @@
             </build>
         </profile>
        <profile>
-            <id>release311db</id>
+            <!--
+                 Note that we are using the Spark version for all of the Databricks dependencies as well.
+                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                 This is to make it easier and not have to change version numbers for each individual dependency
+                 and deal with differences between Databricks versions
+            -->
+            <id>dbdeps</id>
             <activation>
                 <property>
-                    <name>buildver</name>
-                    <value>311db</value>
+                    <name>databricks</name>
                 </property>
             </activation>
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
+                    <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-core_${scala.binary.version}</artifactId>
-                    <version>${spark311db.version}</version>
+                    <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
