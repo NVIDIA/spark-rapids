@@ -97,7 +97,7 @@ ci_2() {
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
+    TEST_PARALLEL=4
     # separate process to avoid OOM kill
     TEST='conditionals_test or hash_aggregate_test' ./integration_tests/run_pyspark_from_build.sh
     TEST='not conditionals_test and not hash_aggregate_test' ./integration_tests/run_pyspark_from_build.sh
