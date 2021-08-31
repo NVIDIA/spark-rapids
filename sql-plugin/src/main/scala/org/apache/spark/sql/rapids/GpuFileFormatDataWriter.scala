@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ContiguousTable, OrderByArg, Table}
-import com.nvidia.spark.Utils
+import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.Path
@@ -78,7 +78,7 @@ abstract class GpuFileFormatDataWriter(
    */
   override def commit(): WriteTaskResult = {
     releaseResources()
-    val (taskCommitMessage, taskCommitTime) = Utils.timeTakenMs {
+    val (taskCommitMessage, taskCommitTime) = TimingUtils.timeTakenMs {
       committer.commitTask(taskAttemptContext)
     }
     val summary = ExecutedWriteSummary(

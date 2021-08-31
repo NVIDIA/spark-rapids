@@ -18,8 +18,7 @@ package com.nvidia.spark
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-/** Utilities derived from Apache Spark's Utils class */
-object Utils {
+object TimingUtils {
   /** Records the duration of running `body`. */
   def timeTakenMs[T](body: => T): (T, Long) = {
     val startTime = System.nanoTime()

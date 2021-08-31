@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.{Date, UUID}
 
 import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -246,7 +247,7 @@ object GpuFileFormatWriter extends Logging {
 
       val commitMsgs = ret.map(_.commitMsg)
 
-      val (_, duration) = Utils.timeTakenMs { committer.commitJob(job, commitMsgs) }
+      val (_, duration) = TimingUtils.timeTakenMs { committer.commitJob(job, commitMsgs) }
       logInfo(s"Write Job ${description.uuid} committed. Elapsed time: $duration ms.")
 
       processStats(description.statsTrackers, ret.map(_.summary.stats), duration)
