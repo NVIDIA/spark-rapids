@@ -43,7 +43,20 @@ nested_struct = StructGen([
 map_gens = [simple_string_to_string_map_gen,
             MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
             MapGen(BooleanGen(nullable=False), boolean_gen, max_length=2),
-            MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+            MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+            MapGen(
+                LongGen(nullable=False),
+                ArrayGen(
+                    MapGen(
+                        DecimalGen(7, 2, nullable=False),
+                        StructGen([
+                            ['child0', byte_gen],
+                            ['child1', simple_string_to_string_map_gen]
+                        ]),
+                        max_length=3),
+                    max_length=7),
+                max_length=5)]
+
 struct_of_maps = StructGen([['child0', BooleanGen()]] + [
     ['child%d' % (i + 1), gen] for i, gen in enumerate(map_gens)])
 
@@ -75,7 +88,7 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -83,9 +96,10 @@ def test_union_struct_missing_children(data_gen):
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_union(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)))
+            lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -93,9 +107,10 @@ def test_union(data_gen):
 # This tests union of two DFs of two cols each. The types of the left col and right col is the same
 def test_unionAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)))
+            lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)),
+            conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
                                       pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]]), marks=nested_scalar_mark),
@@ -109,16 +124,18 @@ def test_unionAll(data_gen):
 def test_union_by_missing_col_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
-                                .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True))
+                                .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True),
+        conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens +
+@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
                                       struct_of_maps], ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
+            lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)),
+            conf=allow_negative_scale_of_decimal_conf)
 
 
 @pytest.mark.parametrize('data_gen', [
