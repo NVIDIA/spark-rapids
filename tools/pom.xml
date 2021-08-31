@@ -28,7 +28,7 @@
     <artifactId>rapids-4-spark-tools_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark tools</name>
     <description>RAPIDS Accelerator for Apache Spark tools</description>
-    <version>21.08.0</version>
+    <version>21.08.1</version>
     <packaging>jar</packaging>
 
     <properties>
