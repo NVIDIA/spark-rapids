@@ -67,7 +67,7 @@
                 </property>
             </activation>
             <modules>
-                <module>${spark.version.classifier}</module>
+                <module>${shim.module.name}</module>
             </modules>
         </profile>
         <profile>

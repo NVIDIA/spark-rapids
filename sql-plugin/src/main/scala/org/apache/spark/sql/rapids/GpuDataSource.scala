@@ -163,7 +163,7 @@ case class GpuDataSource(
       format.inferSchema(
         sparkSession,
         caseInsensitiveOptions - "path",
-        tempFileIndex.allFiles())
+        ShimLoader.getSparkShims.filesFromFileIndex(tempFileIndex))
     }.getOrElse {
       throw new AnalysisException(
         s"Unable to infer schema for $format. It must be specified manually.")
@@ -234,7 +234,7 @@ case class GpuDataSource(
           format.inferSchema(
             sparkSession,
             caseInsensitiveOptions - "path",
-            fileCatalog.allFiles())
+            ShimLoader.getSparkShims.filesFromFileIndex(fileCatalog))
         }.getOrElse {
           throw new AnalysisException(
             s"Unable to infer schema for $format at ${fileCatalog.allFiles().mkString(",")}. " +
