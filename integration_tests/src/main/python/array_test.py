@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from functools import reduce
 from spark_session import is_before_spark_311
@@ -198,22 +198,40 @@ def test_array_transform(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it, 
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', single_level_array_gens_no_nan, ids=idfn)
+# TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
+array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
+        boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
+
+@pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_min(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
                 'array_min(a)'),
             conf={
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-                'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                 'spark.rapids.sql.hasNans': 'false'})
 
-@pytest.mark.parametrize('data_gen', single_level_array_gens_no_nan, ids=idfn)
+@allow_non_gpu("ProjectExec", "ArrayMin", "Alias")
+@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
+def test_array_min_fallback(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_min(a)'),
+            "ArrayMin")
+
+@pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
                 'array_max(a)'),
             conf={
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
-                'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                 'spark.rapids.sql.hasNans': 'false'})
+
+@allow_non_gpu("ProjectExec", "ArrayMax", "Alias")
+@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
+def test_array_max_fallback(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_max(a)'),
+            "ArrayMax")

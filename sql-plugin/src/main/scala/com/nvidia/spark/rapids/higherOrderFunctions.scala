@@ -285,8 +285,9 @@ case class GpuArrayTransform(
         GpuExpressionsUtils.columnarEvalToColumn(function, cb)
       }
       withResource(dataCol) { dataCol =>
-        withResource(GpuListUtils.replaceListDataColumn(arg.getBase, dataCol.getBase)) { retView =>
-          GpuColumnVector.from(retView.copyToColumnVector(), dataType)
+        withResource(GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)) {
+          retView =>
+            GpuColumnVector.from(retView.copyToColumnVector(), dataType)
         }
       }
     }

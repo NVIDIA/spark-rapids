@@ -31,16 +31,17 @@ object GpuListUtils extends Arm {
    * @param listCol the list column to use as a template
    * @param newDataCol the new data column.
    * @return a new ColumnView.
-   * @throws IllegalArgumentException if data column does not match the original data column in
-   *                                  size.
+   * @throws scala.IllegalArgumentException if data column does not match the original data column
+   *                                        in size.
    */
-  def replaceListDataColumn(
+  def replaceListDataColumnAsView(
       listCol: ColumnView,
       newDataCol: ColumnView): ColumnView = {
     assert(DType.LIST.equals(listCol.getType))
     withResource(listCol.getChildColumnView(0)) { dataCol =>
       if (dataCol.getRowCount != newDataCol.getRowCount) {
-        throw new IllegalArgumentException("Mismatch in the number of rows in the data columns")
+        throw new scala.IllegalArgumentException(
+          "Mismatch in the number of rows in the data columns")
       }
     }
     withResource(listCol.getOffsets) { offsets =>

@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnView, GroupByAggregation, GroupByOptions, Scalar}
+import ai.rapids.cudf.{ColumnView, CudfException, GroupByAggregation, GroupByOptions, ParquetColumnWriterOptions, ParquetWriterOptions, Scalar}
 import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuListUtils, GpuLiteral, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -228,7 +228,7 @@ case class GpuMapKeys(child: Expression)
     val base = input.getBase
     withResource(base.getChildColumnView(0)) { structView =>
       withResource(structView.getChildColumnView(0)) { keyView =>
-        withResource(GpuListUtils.replaceListDataColumn(base, keyView)) { retView =>
+        withResource(GpuListUtils.replaceListDataColumnAsView(base, keyView)) { retView =>
           retView.copyToColumnVector()
         }
       }
@@ -252,7 +252,7 @@ case class GpuMapValues(child: Expression)
     val base = input.getBase
     withResource(base.getChildColumnView(0)) { structView =>
       withResource(structView.getChildColumnView(1)) { valueView =>
-        withResource(GpuListUtils.replaceListDataColumn(base, valueView)) { retView =>
+        withResource(GpuListUtils.replaceListDataColumnAsView(base, valueView)) { retView =>
           retView.copyToColumnVector()
         }
       }
@@ -345,7 +345,7 @@ trait GpuBaseArrayAgg extends GpuUnaryExpression {
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     val baseInput = input.getBase
-    // TODO we should switch over to array aggregations once
+    // TODO switch over to array aggregations once
     //  https://github.com/rapidsai/cudf/issues/9135 is done
     val inputTab = withResource(Scalar.fromInt(0)) { zero =>
       withResource(cudf.ColumnVector.sequence(zero, input.getRowCount.toInt)) { rowNums =>
