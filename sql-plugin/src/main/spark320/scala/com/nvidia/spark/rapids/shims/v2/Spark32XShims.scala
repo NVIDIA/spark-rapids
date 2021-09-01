@@ -133,6 +133,7 @@ trait Spark32XShims extends SparkShims {
       enableDropPartitions = false)
 }
 
+// TODO dedupe utils inside shims
 object GpuJoinUtils {
   def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
     buildSide match {

@@ -1419,15 +1419,15 @@ case class GpuCast(
    * from substituting non-GPU expressions.
    */
   // TODO SPARK-35742 canonicalize
-//  override def semanticEquals(other: Expression): Boolean = other match {
-//    case g: GpuExpression =>
-//      if (this == g) {
-//        true
-//      } else {
-//        super.semanticEquals(g)
-//      }
-//    case _ => false
-//  }
+  //  override def semanticEquals(other: Expression): Boolean = other match {
+  //    case g: GpuExpression =>
+  //      if (this == g) {
+  //        true
+  //      } else {
+  //        super.semanticEquals(g)
+  //      }
+  //    case _ => false
+  //  }
 
   // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
   // Otherwise behave like Expression.resolved.
