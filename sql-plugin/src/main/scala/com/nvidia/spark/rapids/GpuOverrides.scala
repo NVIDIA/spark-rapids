@@ -2810,25 +2810,17 @@ object GpuOverrides {
         )),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (childExprs.length < 2 || childExprs.length > 3) {
-            willNotWorkOnGpu("wrong number of arguments")
-          } else if (!childExprs.tail.forall(_.wrapped.isInstanceOf[Literal])) {
+          if (!childExprs.tail.forall(_.wrapped.isInstanceOf[Literal])) {
             willNotWorkOnGpu("approx_percentile on GPU only supports literal expressions for " +
               "percentiles and accuracy")
           }
         }
 
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          // approx_percentile can take 2 or 3 args because accuracy is optional
-          // approx_percentile(expr, percentiles, [accuracy])
-          childExprs.length match {
-            case 2 => GpuApproximatePercentile(childExprs.head,
-              childExprs(1).asInstanceOf[GpuLiteral])
-            case 3 => GpuApproximatePercentile(childExprs.head,
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuApproximatePercentile(childExprs.head,
               childExprs(1).asInstanceOf[GpuLiteral],
               childExprs(2).asInstanceOf[GpuLiteral])
-          }
-        }
+
         override def aggBufferAttribute: AttributeReference = {
           // Spark's ApproxPercentile has an aggregation buffer named "buf" with type "BinaryType"
           // so we need to replace that here with the GPU aggregation buffer reference, which is

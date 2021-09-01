@@ -54,7 +54,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuApproximatePercentile (
     child: Expression,
     percentageExpression: GpuLiteral,
-    accuracyExpression: GpuLiteral)
+    accuracyExpression: GpuLiteral = GpuLiteral(ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY))
   extends GpuAggregateFunction {
 
   override val inputProjection: Seq[Expression] = Seq(child)
@@ -115,13 +115,6 @@ case class GpuApproximatePercentile (
   override def dataType: DataType = internalDataType
 
   override def children: Seq[Expression] = Seq(child, percentageExpression, accuracyExpression)
-}
-
-object GpuApproximatePercentile {
-  def apply(child: Expression, percentageExpression: GpuLiteral): GpuApproximatePercentile = {
-    GpuApproximatePercentile(child, percentageExpression,
-      GpuLiteral(ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY))
-  }
 }
 
 case class ApproxPercentileFromTDigestExpr(

@@ -31,23 +31,23 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
   //TODO: ai.rapids.cudf.CudfException: reduce_by_key: failed to synchronize:
   // cudaErrorIllegalAddress: an illegal memory access was encountered
   ignore("5 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = 100)
+    doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = Some(100))
   }
 
   test("250 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, 250, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
+    doTest(DataTypes.DoubleType, 250, None)
   }
 
   test("250 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, 250, 100)
+    doTest(DataTypes.DoubleType, 250, Some(100))
   }
 
   //TODO: CPU is more accurate
   ignore("2500 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, 2500, 100)
+    doTest(DataTypes.DoubleType, 2500, Some(100))
   }
 
-  private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Int) {
+  private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Option[Int]) {
 
     val percentiles = withCpuSparkSession { spark =>
       calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta,
@@ -89,7 +89,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       dataType: DataType,
       rowsPerDept: Int,
       percentiles: Array[Double],
-      delta: Int,
+      delta: Option[Int],
       approx: Boolean
     ): Map[String, Array[Double]] = {
 
@@ -103,9 +103,14 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
     val func = if (approx) "approx_percentile" else "percentile"
 
-    val df2 = df.groupBy(col("dept"))
-      .agg(expr(s"$func(salary, $percentileArg, $delta)")
-        .as("approx_percentiles"))
+    val groupBy = df.groupBy(col("dept"))
+
+    val aggrExpr = delta match {
+      case None => expr(s"$func(salary, $percentileArg)")
+      case Some(n) => expr(s"$func(salary, $percentileArg, $n)")
+    }
+
+    val df2 = groupBy.agg(aggrExpr.as("approx_percentiles"))
       .orderBy("dept")
 
     val rows = df2.collect()
