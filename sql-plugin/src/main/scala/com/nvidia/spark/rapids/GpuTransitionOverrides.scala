@@ -559,10 +559,18 @@ object GpuTransitionOverrides {
    */
   def getNonQueryStagePlan(plan: SparkPlan): SparkPlan = {
     plan match {
-      case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case BroadcastQueryStageExec(_, plan) => plan
-      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case ShuffleQueryStageExec(_, plan) => plan
+      case bqse: BroadcastQueryStageExec =>
+        if (bqse.plan.isInstanceOf[ReusedExchangeExec]) {
+          bqse.plan.asInstanceOf[ReusedExchangeExec].child
+        } else {
+          bqse.plan
+        }
+      case sqse: ShuffleQueryStageExec =>
+        if (sqse.plan.isInstanceOf[ReusedExchangeExec]) {
+          sqse.plan.asInstanceOf[ReusedExchangeExec].child
+        } else {
+          sqse.plan
+        }
       case _ => plan
     }
   }

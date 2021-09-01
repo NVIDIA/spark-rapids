@@ -71,19 +71,27 @@
     </developers>
 
     <modules>
-        <module>api_validation</module>
         <module>dist</module>
         <module>integration_tests</module>
         <module>shims</module>
         <module>shuffle-plugin</module>
         <module>sql-plugin</module>
         <module>tests</module>
-        <module>tools</module>
         <module>udf-compiler</module>
         <module>udf-examples</module>
     </modules>
 
     <profiles>
+        <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <modules>
+                <module>api_validation</module>
+                <module>tools</module>
+            </modules>
+       </profile>
        <profile>
             <id>release301</id>
             <activation>
@@ -97,20 +105,9 @@
                 <spark.version>${spark301.version}</spark.version>
                 <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
-        </profile>
-        <profile>
-            <id>release302</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>302</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark302</spark.version.classifier>
-                <spark.version>${spark302.version}</spark.version>
-                <spark.test.version>${spark302.version}</spark.test.version>
-            </properties>
+            <modules>
+                <module>api_validation</module>
+            </modules>
         </profile>
         <profile>
             <id>release301emr</id>
@@ -127,6 +124,23 @@
             </properties>
         </profile>
         <profile>
+            <id>release302</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>302</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version.classifier>spark302</spark.version.classifier>
+                <spark.version>${spark302.version}</spark.version>
+                <spark.test.version>${spark302.version}</spark.test.version>
+            </properties>
+            <modules>
+                <module>api_validation</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release303</id>
             <activation>
                 <property>
@@ -139,6 +153,9 @@
                 <spark.version>${spark303.version}</spark.version>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>api_validation</module>
+            </modules>
         </profile>
         <profile>
             <id>release304</id>
@@ -153,6 +170,9 @@
                 <spark.version>${spark304.version}</spark.version>
                 <spark.test.version>${spark304.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>api_validation</module>
+            </modules>
         </profile>
         <profile>
             <id>release311</id>
@@ -166,6 +186,64 @@
                 <spark.version.classifier>spark311</spark.version.classifier>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
+            </properties>
+            <modules>
+                <module>api_validation</module>
+                <module>tools</module>
+            </modules>
+        </profile>
+        <profile>
+            <!-- Note databricks requires 2 properties -Ddatabricks and -Dbuildver=[301db,311db] -->
+            <id>release301db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>301db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <shim.module.name>spark301db</shim.module.name>
+                <spark.version.classifier>spark301-databricks</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
+                <spark.version>${spark301db.version}</spark.version>
+                <spark.test.version>${spark301db.version}</spark.test.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <hive.storage.api.version>${spark301db.version}</hive.storage.api.version>
+                <protobuf.java.version>${spark301db.version}</protobuf.java.version>
+            </properties>
+        </profile>
+        <profile>
+            <!-- Note databricks requires 2 properties -Ddatabricks and -Dbuildver=[301db,311db] -->
+            <id>release311db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <shim.module.name>spark311db</shim.module.name>
+                <spark.version.classifier>spark311-databricks</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
+                <spark.version>${spark311db.version}</spark.version>
+                <spark.test.version>${spark311db.version}</spark.test.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <hive.storage.api.version>${spark311db.version}</hive.storage.api.version>
+                <protobuf.java.version>${spark311db.version}</protobuf.java.version>
             </properties>
         </profile>
         <profile>
@@ -181,6 +259,9 @@
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>api_validation</module>
+            </modules>
         </profile>
         <profile>
             <id>release313</id>
@@ -195,6 +276,9 @@
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
+            <modules>
+                <module>api_validation</module>
+            </modules>
         </profile>
         <profile>
             <id>release320</id>
@@ -367,7 +451,6 @@
                 <spark.test.version>${spark320.version}</spark.test.version>
             </properties>
         </profile>
-
         <profile>
             <id>cuda11</id>
             <properties>
@@ -403,7 +486,6 @@
         <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
         <pytest.TEST_TYPE>developer</pytest.TEST_TYPE>
         <rat.consoleOutput>false</rat.consoleOutput>
-        <slf4j.version>1.7.30</slf4j.version>
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
@@ -424,38 +506,45 @@
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
         <guava.cdh.version>30.0-jre</guava.cdh.version>
+        <shim.module.name>${spark.version.classifier}</shim.module.name>
+        <slf4j.version>1.7.30</slf4j.version>
+        <hive.storage.api.version>2.6.0</hive.storage.api.version>
+        <protobuf.java.version>2.5.0</protobuf.java.version>
+        <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>ai.rapids</groupId>
-                <artifactId>cudf</artifactId>
-                <version>${cudf.version}</version>
-                <classifier>${cuda.version}</classifier>
-                <scope>provided</scope>
+              <groupId>ai.rapids</groupId>
+              <artifactId>cudf</artifactId>
+              <version>${cudf.version}</version>
+              <classifier>${cuda.version}</classifier>
+              <scope>provided</scope>
             </dependency>
             <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>jul-to-slf4j</artifactId>
-                <version>${slf4j.version}</version>
+              <groupId>org.slf4j</groupId>
+              <artifactId>jul-to-slf4j</artifactId>
+              <version>${slf4j.version}</version>
+              <!-- runtime scope is appropriate, but causes SBT build problems -->
             </dependency>
             <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>jcl-over-slf4j</artifactId>
-                <version>${slf4j.version}</version>
-                <!-- runtime scope is appropriate, but causes SBT build problems -->
+              <groupId>org.slf4j</groupId>
+              <artifactId>jcl-over-slf4j</artifactId>
+              <version>${slf4j.version}</version>
+              <!-- runtime scope is appropriate, but causes SBT build problems -->
             </dependency>
             <dependency>
-                <groupId>org.scala-lang</groupId>
-                <artifactId>scala-library</artifactId>
-                <version>${scala.version}</version>
-                <scope>provided</scope>
+              <groupId>org.scala-lang</groupId>
+              <artifactId>scala-library</artifactId>
+              <version>${scala.version}</version>
+              <scope>provided</scope>
             </dependency>
             <dependency>
-                <groupId>org.apache.spark</groupId>
-                <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                <version>${spark.version}</version>
+              <groupId>org.apache.spark</groupId>
+              <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+              <version>${spark.version}</version>
+              <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
@@ -468,13 +557,6 @@
               <artifactId>spark-sql_${scala.binary.version}</artifactId>
               <version>${spark.version}</version>
               <scope>provided</scope>
-            </dependency>
-            <dependency>
-              <groupId>org.apache.spark</groupId>
-              <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-              <version>${spark.version}</version>
-              <type>test-jar</type>
-              <scope>test</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.orc</groupId>
@@ -546,28 +628,28 @@
             <dependency>
               <groupId>org.apache.hive</groupId>
               <artifactId>hive-storage-api</artifactId>
-              <version>2.6.0</version>
+              <version>${hive.storage.api.version}</version>
             </dependency>
             <dependency>
               <groupId>com.google.protobuf</groupId>
               <artifactId>protobuf-java</artifactId>
-              <version>2.5.0</version>
+              <version>${protobuf.java.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.google.flatbuffers</groupId>
-                <artifactId>flatbuffers-java</artifactId>
-                <version>1.11.0</version>
+              <groupId>com.google.flatbuffers</groupId>
+              <artifactId>flatbuffers-java</artifactId>
+              <version>${flatbuffers.java.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.rogach</groupId>
-                <artifactId>scallop_${scala.binary.version}</artifactId>
-                <version>3.5.1</version>
+              <groupId>org.rogach</groupId>
+              <artifactId>scallop_${scala.binary.version}</artifactId>
+              <version>3.5.1</version>
             </dependency>
             <dependency>
-                <groupId>org.scalatest</groupId>
-                <artifactId>scalatest_${scala.binary.version}</artifactId>
-                <version>3.0.5</version>
-                <scope>test</scope>
+              <groupId>org.scalatest</groupId>
+              <artifactId>scalatest_${scala.binary.version}</artifactId>
+              <version>3.0.5</version>
+              <scope>test</scope>
             </dependency>
             <dependency>
               <groupId>org.junit.jupiter</groupId>
@@ -798,7 +880,7 @@
                         <exclude>dependency-reduced-pom.xml</exclude>
                         <exclude>**/.*/**</exclude>
                         <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
-                        <exclude>src/main/resources/supportedDataSource.csv</exclude>
+                        <exclude>**/*.csv</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>

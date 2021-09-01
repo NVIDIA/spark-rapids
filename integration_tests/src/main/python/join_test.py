@@ -350,6 +350,7 @@ def test_broadcast_nested_loop_join_special_case_group_by(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/9044')
 @pytest.mark.parametrize('data_gen', ast_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross'], ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
@@ -368,6 +369,7 @@ def test_right_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.xfail(reason='https://github.com/rapidsai/cudf/issues/9044')
 @pytest.mark.parametrize('data_gen', ast_gen, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_left_broadcast_nested_loop_join_with_ast_condition(data_gen, batch_size):

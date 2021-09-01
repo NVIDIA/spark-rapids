@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.{Arm, RapidsBuffer, RapidsConf, ShuffleMetadata}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.shuffle.RapidsShuffleSendPrepareException
+import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
 
