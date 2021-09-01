@@ -20,7 +20,6 @@ import scala.collection.mutable
 import scala.util.Random
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.functions.{col, expr}
 import org.apache.spark.sql.types.{DataType, DataTypes}
 
@@ -45,6 +44,10 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
   //TODO: CPU is more accurate
   ignore("2500 rows per group, delta 100, doubles") {
     doTest(DataTypes.DoubleType, 2500, Some(100))
+  }
+
+  test("empty input set") {
+    doTest(DataTypes.DoubleType, 0, None)
   }
 
   private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Option[Int]) {

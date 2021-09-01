@@ -2797,18 +2797,14 @@ object GpuOverrides {
       ExprChecks.fullAggAndProject(
         // note that output can be single number or array depending on whether percentiles param
         // is a single number or an array
-        TypeSig.numeric + TypeSig.DECIMAL_64 +
-          TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.DECIMAL_64),
-        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.gpuNumeric + TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
+        TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
         Seq(
-          ParamCheck("input", TypeSig.all, TypeSig.all),
-          ParamCheck("percentage",
-            TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
-              TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
-            TypeSig.all),
-          ParamCheck("accuracy", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64, TypeSig.all)
-        )),
+          ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+          ParamCheck("percentage", TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE), TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
+          ParamCheck("accuracy", TypeSig.INT, TypeSig.INT))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
+
         override def tagExprForGpu(): Unit = {
           if (!childExprs.tail.forall(_.wrapped match {
             case lit: Literal => lit.value != null
