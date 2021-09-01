@@ -22,6 +22,7 @@ from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session
 import pyspark.sql.functions as f
 import random
+from spark_session import is_before_spark_311
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
@@ -327,6 +328,7 @@ def test_write_map_nullable(spark_tmp_path):
 
 @pytest.mark.parametrize('ts_write_data_gen', [('INT96', limited_int96()), ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('rebase', ["CORRECTED","EXCEPTION"])
+@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 def test_ts_write_fails_int96_exception(spark_tmp_path, ts_write_data_gen, spark_tmp_table_factory, rebase):
     ts_write, gen = ts_write_data_gen
     data_path = spark_tmp_path + '/PARQUET_DATA'
