@@ -262,8 +262,8 @@ class CudfTDigest(
   // map Spark delta to cuDF delta - this is experimental for now and
   // will not guarantee that we have better results than Spark although
   // it did help with one of the tests
-  private lazy val accuracy = accuracyExpression.value.toString.toInt match {
-    case delta if delta >= 10000 => 10000
+  private lazy val accuracy = accuracyExpression.value match {
+    case delta: Int if delta >= 10000 => 10000
     case _ => 1000
   }
 

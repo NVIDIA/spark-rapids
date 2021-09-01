@@ -2810,9 +2810,12 @@ object GpuOverrides {
         )),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (!childExprs.tail.forall(_.wrapped.isInstanceOf[Literal])) {
-            willNotWorkOnGpu("approx_percentile on GPU only supports literal expressions for " +
-              "percentiles and accuracy")
+          if (!childExprs.tail.forall(_.wrapped match {
+            case lit: Literal => lit.value != null
+            case _ => false
+          })) {
+            willNotWorkOnGpu("approx_percentile on GPU only supports non-null literal " +
+              "expressions for percentiles and accuracy")
           }
         }
 
