@@ -2819,6 +2819,7 @@ object GpuOverrides {
           }
         }
         override def aggBufferAttribute: AttributeReference = {
+          // the aggregation buffer is a t-digest map (list of structs)
           val aggBuffer = c.aggBufferAttributes.head
           aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
