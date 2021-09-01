@@ -16,17 +16,22 @@
 
 package org.apache.spark.sql.rapids
 
+import java.io.{ByteArrayInputStream, ObjectInputStream}
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnaryExpression, UnsafeArrayData, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.util.TypeUtils
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
+import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.Platform
 
 trait GpuAggregateFunction extends GpuExpression
     with ShimExpression
@@ -895,4 +900,68 @@ case class GpuCollectSet(
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.collectSet().onColumn(inputs.head._2)
+}
+
+trait CpuToGpuAggregateBufferConverter {
+  def createExpression(child: Expression): CpuToGpuBufferTransition
+}
+
+trait GpuToCpuAggregateBufferConverter {
+  def createExpression(child: Expression): GpuToCpuBufferTransition
+}
+
+trait CpuToGpuBufferTransition extends UnaryExpression with CodegenFallback
+
+trait GpuToCpuBufferTransition extends UnaryExpression with CodegenFallback {
+  override def dataType: DataType = BinaryType
+}
+
+class CpuToGpuCollectBufferConverter(
+    elementType: DataType) extends CpuToGpuAggregateBufferConverter {
+  def createExpression(child: Expression): CpuToGpuBufferTransition = {
+    CpuToGpuCollectBufferTransition(child, elementType)
+  }
+}
+
+case class CpuToGpuCollectBufferTransition(
+    override val child: Expression,
+    private val elementType: DataType) extends CpuToGpuBufferTransition {
+
+  private lazy val row = new UnsafeRow(1)
+
+  override def dataType: DataType = ArrayType(elementType, containsNull = false)
+
+  override protected def nullSafeEval(input: Any): ArrayData = {
+    // Converts binary buffer into UnSafeArrayData, according to the deserialize method of Collect.
+    // The input binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. Since array of elements exactly matches the GPU format, we
+    // don't need to do any conversion in memory level. Instead, we simply bind the binary data to
+    // a reused UnsafeRow. Then, fetch the only field as ArrayData.
+    val bytes = input.asInstanceOf[Array[Byte]]
+    row.pointTo(bytes, bytes.length)
+    row.getArray(0).copy()
+  }
+}
+
+class GpuToCpuCollectBufferConverter extends GpuToCpuAggregateBufferConverter {
+  def createExpression(child: Expression): GpuToCpuBufferTransition = {
+    GpuToCpuCollectBufferTransition(child)
+  }
+}
+
+case class GpuToCpuCollectBufferTransition(
+    override val child: Expression) extends GpuToCpuBufferTransition {
+
+  private lazy val projection = UnsafeProjection.create(Array(child.dataType))
+
+  override protected def nullSafeEval(input: Any): Array[Byte] = {
+    // Converts UnSafeArrayData into binary buffer, according to the serialize method of Collect.
+    // The binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. As Collect.serialize, we create an UnsafeProjection to
+    // transform ArrayData to binary view of the single field UnsafeRow. Unlike Collect.serialize,
+    // we don't have to build ArrayData from on-heap array, since the input is already formatted
+    // in ArrayData(UnsafeArrayData).
+    val arrayData = input.asInstanceOf[ArrayData]
+    projection.apply(InternalRow.apply(arrayData)).getBytes
+  }
 }

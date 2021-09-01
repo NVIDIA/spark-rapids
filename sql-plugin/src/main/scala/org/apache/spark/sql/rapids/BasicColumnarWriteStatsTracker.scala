@@ -26,6 +26,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -46,7 +47,9 @@ case class BasicColumnarWriteTaskStats(
  * This is the columnar version of
  * `org.apache.spark.sql.execution.datasources.BasicWriteTaskStatsTracker`.
  */
-class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
+class BasicColumnarWriteTaskStatsTracker(
+    hadoopConf: Configuration,
+    taskCommitTimeMetric: Option[SQLMetric])
     extends ColumnarWriteTaskStatsTracker with Logging {
   private[this] var numPartitions: Int = 0
   private[this] var numFiles: Int = 0
@@ -102,7 +105,7 @@ class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
     numRows += batch.numRows
   }
 
-  override def getFinalStats(): WriteTaskStats = {
+  override def getFinalStats(taskCommitTime: Long): WriteTaskStats = {
     statCurrentFile()
 
     // Reports bytesWritten and recordsWritten to the Spark output metrics.
@@ -116,6 +119,7 @@ class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
         "This could be due to the output format not writing empty files, " +
         "or files being not immediately visible in the filesystem.")
     }
+    taskCommitTimeMetric.foreach(_ += taskCommitTime)
     BasicColumnarWriteTaskStats(numPartitions, numFiles, numBytes, numRows)
   }
 }
@@ -123,20 +127,27 @@ class BasicColumnarWriteTaskStatsTracker(hadoopConf: Configuration)
 
 /**
  * Simple [[ColumnarWriteJobStatsTracker]] implementation that's serializable,
- * capable ofinstantiating [[BasicColumnarWriteTaskStatsTracker]] on executors and processing the
+ * capable of instantiating [[BasicColumnarWriteTaskStatsTracker]] on executors and processing the
  * `BasicColumnarWriteTaskStats` they produce by aggregating the metrics and posting them
  * as DriverMetricUpdates.
  */
 class BasicColumnarWriteJobStatsTracker(
     serializableHadoopConf: SerializableConfiguration,
-    @transient val metrics: Map[String, SQLMetric])
+    @transient val driverSideMetrics: Map[String, SQLMetric],
+    taskCommitTimeMetric: SQLMetric)
   extends ColumnarWriteJobStatsTracker {
 
-  override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
-    new BasicColumnarWriteTaskStatsTracker(serializableHadoopConf.value)
+  def this(
+      serializableHadoopConf: SerializableConfiguration,
+      metrics: Map[String, SQLMetric]) = {
+    this(serializableHadoopConf, metrics - TASK_COMMIT_TIME, metrics(TASK_COMMIT_TIME))
   }
 
-  override def processStats(stats: Seq[WriteTaskStats]): Unit = {
+  override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
+    new BasicColumnarWriteTaskStatsTracker(serializableHadoopConf.value, Some(taskCommitTimeMetric))
+  }
+
+  override def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit = {
     val sparkContext = SparkContext.getActive.get
     var numPartitions: Long = 0L
     var numFiles: Long = 0L
@@ -152,13 +163,14 @@ class BasicColumnarWriteJobStatsTracker(
       totalNumOutput += summary.numRows
     }
 
-    metrics(BasicColumnarWriteJobStatsTracker.NUM_FILES_KEY).add(numFiles)
-    metrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_BYTES_KEY).add(totalNumBytes)
-    metrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_ROWS_KEY).add(totalNumOutput)
-    metrics(BasicColumnarWriteJobStatsTracker.NUM_PARTS_KEY).add(numPartitions)
+    driverSideMetrics(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME).add(jobCommitTime)
+    driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_FILES_KEY).add(numFiles)
+    driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_BYTES_KEY).add(totalNumBytes)
+    driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_OUTPUT_ROWS_KEY).add(totalNumOutput)
+    driverSideMetrics(BasicColumnarWriteJobStatsTracker.NUM_PARTS_KEY).add(numPartitions)
 
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
-    SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toList)
+    SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, driverSideMetrics.values.toList)
   }
 }
 
@@ -167,6 +179,8 @@ object BasicColumnarWriteJobStatsTracker {
   private val NUM_OUTPUT_BYTES_KEY = "numOutputBytes"
   private val NUM_OUTPUT_ROWS_KEY = "numOutputRows"
   private val NUM_PARTS_KEY = "numParts"
+  val TASK_COMMIT_TIME = "taskCommitTime"
+  val JOB_COMMIT_TIME = "jobCommitTime"
 
   def metrics: Map[String, SQLMetric] = {
     val sparkContext = SparkContext.getActive.get
@@ -174,7 +188,9 @@ object BasicColumnarWriteJobStatsTracker {
       NUM_FILES_KEY -> SQLMetrics.createMetric(sparkContext, "number of written files"),
       NUM_OUTPUT_BYTES_KEY -> SQLMetrics.createSizeMetric(sparkContext, "written output"),
       NUM_OUTPUT_ROWS_KEY -> SQLMetrics.createMetric(sparkContext, "number of output rows"),
-      NUM_PARTS_KEY -> SQLMetrics.createMetric(sparkContext, "number of dynamic part")
+      NUM_PARTS_KEY -> SQLMetrics.createMetric(sparkContext, "number of dynamic part"),
+      TASK_COMMIT_TIME -> SQLMetrics.createTimingMetric(sparkContext, "task commit time"),
+      JOB_COMMIT_TIME -> SQLMetrics.createTimingMetric(sparkContext, "job commit time")
     )
   }
 }

@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.shuffle.RapidsShuffleSendPrepareException
+import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
 
 /**
  * A helper case class to maintain the server side state in response to a transfer
@@ -155,7 +155,7 @@ class BufferSendState(
    * Prepares and returns a `MemoryBuffer` that can be used in a send.
    * @return - a memory buffer slice backed by either a host or device bounce buffer, depending on
    *         the tier location for buffers we are sending.
-   * @throws org.apache.spark.shuffle.RapidsShuffleSendPrepareException when copies to the
+   * @throws org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException when copies to the
    *                                                                    bounce buffer fail.
    */
   def getBufferToSend(): MemoryBuffer = synchronized {

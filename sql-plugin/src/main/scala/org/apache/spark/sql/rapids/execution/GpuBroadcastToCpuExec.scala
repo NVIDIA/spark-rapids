@@ -112,8 +112,9 @@ case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkP
                 "broadcast build", NvtxColor.DARK_GREEN, buildTime)) { _ =>
                 val toUnsafe = UnsafeProjection.create(output, output)
                 val unsafeRows = rows.iterator.map(toUnsafe)
-                val relation = ShimLoader.getSparkShims
+                 val relation = ShimLoader.getSparkShims
                     .broadcastModeTransform(mode, unsafeRows.toArray)
+
                 val dataSize = relation match {
                   case map: KnownSizeEstimation =>
                     map.estimatedSize
