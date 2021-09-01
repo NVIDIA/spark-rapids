@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, LongType, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, LongType, MapType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 object AggregateUtils {
@@ -900,17 +900,11 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       willNotWorkOnGpu("result expressions is empty")
     }
     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
-    // we need to traverse through all child types of structs via DFS.
-    val stack = mutable.Stack(agg.groupingExpressions.map(_.dataType): _*)
-    var canWorkOnGPU = true
-    while (stack.nonEmpty && canWorkOnGPU) {
-      stack.pop() match {
-        case _@(ArrayType(_, _) | MapType(_, _, _)) => canWorkOnGPU = false
-        case _@StructType(children: Array[StructField]) => stack.pushAll(children.map(_.dataType))
-        case _ =>
-      }
-    }
-    if (!canWorkOnGPU) {
+    // we need to run recursive type check on the structs.
+    val allTypesAreSupported = agg.groupingExpressions.forall(e =>
+      !TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+        dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
+    if (!allTypesAreSupported) {
       willNotWorkOnGpu("ArrayTypes or MayTypes in grouping expressions are not supported")
     }
 
