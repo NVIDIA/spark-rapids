@@ -896,15 +896,16 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
         resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    agg.groupingExpressions
-      .find(_.dataType match {
-        case _@(ArrayType(_, _) | MapType(_, _, _)) | _@StructType(_) => true
-        case _ => false
-      })
-      .foreach(_ =>
-        willNotWorkOnGpu("Nested types in grouping expressions are not supported"))
     if (agg.resultExpressions.isEmpty) {
       willNotWorkOnGpu("result expressions is empty")
+    }
+    // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
+    // we need to run recursive type check on the structs.
+    val allTypesAreSupported = agg.groupingExpressions.forall(e =>
+      !TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+        dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
+    if (!allTypesAreSupported) {
+      willNotWorkOnGpu("ArrayTypes or MayTypes in grouping expressions are not supported")
     }
 
     tagForReplaceMode()
