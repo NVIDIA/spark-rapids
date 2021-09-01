@@ -35,29 +35,34 @@ case class GpuApproximatePercentile (
 
   override val inputProjection: Seq[Expression] = Seq(child)
 
-  /** Attributes of fields in aggBufferSchema. */
+  // Attributes of fields in the aggregation buffer.
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
   // Mark as lazy to avoid being initialized when creating a GpuApproximatePercentile.
   override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException
 
+  // the update expression will create a t-digest (List[Struct[[Double, Double]])
   override lazy val updateExpressions: Seq[Expression] =
     new CudfTDigest(inputBuf,
       percentageExpression,
       accuracyExpression) :: Nil
 
+  // the merge expression will merge t-digests
   override lazy val mergeExpressions: Seq[GpuExpression] =
     new CudfTDigest(outputBuf,
       percentageExpression,
       accuracyExpression) :: Nil
 
+  // the evaluate expression will compute percentiles based on a t-digest
   override lazy val evaluateExpression: Expression = {
     ApproxPercentileFromTDigestExpr(outputBuf, percentiles, child.dataType)
   }
 
+  // inputBuf represents the initial aggregation buffer
   protected final lazy val inputBuf: AttributeReference =
     AttributeReference("inputBuf", child.dataType)()
 
+  // outputBuf represents the final output of the approx_percentile with type List[Double]
   protected final lazy val outputBuf: AttributeReference =
     inputBuf.copy("outputBuf", dataType)(inputBuf.exprId, inputBuf.qualifier)
 

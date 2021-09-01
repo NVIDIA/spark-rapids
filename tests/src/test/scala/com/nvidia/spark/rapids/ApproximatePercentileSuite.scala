@@ -29,29 +29,35 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
   val DEFAULT_PERCENTILES = Array(0.05, 0.25, 0.5, 0.75, 0.95)
 
   ignore("5 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = 100)
+    doTest(DataTypes.DoubleType, rowsPerGroup = 5, sparkDelta = 100)
   }
 
   test("250 rows per group, default delta, doubles") {
     doTest(DataTypes.DoubleType, 250, ApproximatePercentile.DEFAULT_PERCENTILE_ACCURACY)
   }
 
-  ignore("250 rows per group, delta 100, doubles") {
+  test("250 rows per group, delta 100, doubles") {
     doTest(DataTypes.DoubleType, 250, 100)
   }
 
-  private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Int) {
+  private def doTest(dataType: DataType, rowsPerGroup: Int, sparkDelta: Int) {
 
     val percentiles = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = false)
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, sparkDelta,
+        approx = false)
     }
 
     val approxPercentilesCpu = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, sparkDelta, approx = true)
+    }
+
+    val gpuDelta = sparkDelta match {
+      case _ if sparkDelta >= 10000 => 10000
+      case _ => 1000
     }
 
     val approxPercentilesGpu = withGpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, gpuDelta, approx = true)
     }
 
     val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet
