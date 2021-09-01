@@ -667,11 +667,4 @@ class LiteralExprMeta(
       super.print(append, depth, all)
     }
   }
-
-  override protected def tagSelfForAst(): Unit = {
-    // Preclude null literals until https://github.com/rapidsai/cudf/issues/8831 is fixed.
-    if (lit.value == null) {
-      willNotWorkInAst("null literals are not supported")
-    }
-  }
 }
