@@ -990,3 +990,24 @@ def test_agg_nested_map():
         df = two_col_df(spark, StringGen('k{1,5}'), ArrayGen(MapGen(StringGen('a{1,5}', nullable=False), StringGen('[ab]{1,5}'))))
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_repeated_keys():
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
+                                     ('v', LongRangeGen())], length=100),
+        table_name='table',
+        sql="""select k,
+        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""",
+        debug=True)
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile():
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', LongRangeGen())], length=100),
+        table_name='table',
+        sql="""select k,
+        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""",
+        debug=True)
+
