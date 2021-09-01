@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, RollingAggregationOnColumn}
 import com.nvidia.spark.rapids.GpuCast.{recursiveDoColumnar}
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
@@ -27,11 +26,36 @@ import org.apache.spark.sql.rapids.{CudfTDigest, GpuAggregateFunction}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * The ApproximatePercentile function returns the approximate percentile(s) of a column at the given
+ * percentage(s). A percentile is a watermark value below which a given percentage of the column
+ * values fall. For example, the percentile of column `col` at percentage 50% is the median of
+ * column `col`.
+ *
+ * This function supports partial aggregation.
+ *
+ * The GPU implementation uses t-digest to perform the initial aggregation (see
+ * `updateExpressions` / `mergeExpressions`) and then applies the ApproxPercentileFromTDigestExpr`
+ * expression to compute percentiles from the final t-digest (see `evaluateExpression`).
+ *
+ * There are two different data types involved here. The t-digests are a map of centroids
+ * (`Map[mean: Double -> weight: Double]`) represented as `List[Struct[Double, Double]]` and
+ * the final output is either a single double or an array of doubles, depending on whether
+ * the `percentageExpression` parameter is a single value or an array.
+ *
+ * @param child child expression that can produce column value with `child.eval()`
+ * @param percentageExpression Expression that represents a single percentage value or
+ *                             an array of percentage values. Each percentage value must be between
+ *                             0.0 and 1.0.
+ * @param accuracyExpression Integer literal expression of approximation accuracy. Higher value
+ *                           yields better accuracy, the default value is
+ *                           DEFAULT_PERCENTILE_ACCURACY.
+ */
 case class GpuApproximatePercentile (
     child: Expression,
     percentageExpression: GpuLiteral,
     accuracyExpression: GpuLiteral)
-  extends GpuAggregateFunction with GpuAggregateWindowFunction {
+  extends GpuAggregateFunction {
 
   override val inputProjection: Seq[Expression] = Seq(child)
 
@@ -41,7 +65,7 @@ case class GpuApproximatePercentile (
   // Mark as lazy to avoid being initialized when creating a GpuApproximatePercentile.
   override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException
 
-  // the update expression will create a t-digest (List[Struct[[Double, Double]])
+  // the update expression will create a t-digest (List[Struct[Double, Double])
   override lazy val updateExpressions: Seq[Expression] =
     new CudfTDigest(inputBuf,
       percentageExpression,
@@ -66,21 +90,6 @@ case class GpuApproximatePercentile (
   protected final lazy val outputBuf: AttributeReference =
     inputBuf.copy("outputBuf", CudfTDigest.dataType)(inputBuf.exprId, inputBuf.qualifier)
 
-  /**
-   * Using child references, define the shape of the vectors sent to the window operations
-   */
-  override val windowInputProjection: Seq[Expression] = Seq.empty
-
-  /**
-   * Create the aggregation operation to perform for Windowing. The input to this method
-   * is a sequence of (index, ColumnVector) that corresponds one to one with what was
-   * returned by [[windowInputProjection]].  The index is the index into the Table for the
-   * corresponding ColumnVector. Some aggregations need extra values.
-   */
-  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
-    throw new UnsupportedOperationException()
-  }
-
   override def nullable: Boolean = false
 
   // Mark as lazy so that percentageExpression is not evaluated during tree transformation.
@@ -96,7 +105,6 @@ case class GpuApproximatePercentile (
     case num: Double => (false, Array(num))
     case arrayData: ArrayData => (true, arrayData.toDoubleArray())
   }
-
 
   // The result type is the same as the input type.
   private lazy val internalDataType: DataType = {
