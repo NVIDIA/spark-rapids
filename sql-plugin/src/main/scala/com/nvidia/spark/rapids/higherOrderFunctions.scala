@@ -22,6 +22,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnView, DType}
+import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
@@ -279,21 +280,6 @@ case class GpuArrayTransform(
     }
   }
 
-  private[this] def makeListFrom(
-      dataCol: cudf.ColumnVector,
-      listCol: cudf.ColumnVector,
-      resultType: DataType): GpuColumnVector = {
-    withResource(listCol.getOffsets) { offsets =>
-      withResource(listCol.getValid) { validity =>
-        withResource(new ColumnView(DType.LIST, listCol.getRowCount,
-          Optional.of[java.lang.Long](listCol.getNullCount), validity, offsets,
-          Array[ColumnView](dataCol))) { view =>
-          GpuColumnVector.from(view.copyToColumnVector(), resultType)
-        }
-      }
-    }
-  }
-
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
       val dataCol = withResource(
@@ -301,7 +287,10 @@ case class GpuArrayTransform(
         GpuExpressionsUtils.columnarEvalToColumn(function, cb)
       }
       withResource(dataCol) { dataCol =>
-        makeListFrom(dataCol.getBase, arg.getBase, dataType)
+        withResource(GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)) {
+          retView =>
+            GpuColumnVector.from(retView.copyToColumnVector(), dataType)
+        }
       }
     }
   }
@@ -382,14 +371,14 @@ case class GpuTransformValues(
     withResource(mapCol.getChildColumnView(0)) { keyValueView =>
       withResource(keyValueView.getValid) { keyValueValidity =>
         withResource(keyValueView.getChildColumnView(0)) { keyView =>
-          withResource(new ColumnView(DType.STRUCT, keyValueView.getRowCount,
+          withResource(new cudf.ColumnView(DType.STRUCT, keyValueView.getRowCount,
             Optional.empty[java.lang.Long](), keyValueValidity, null,
-            Array[ColumnView](keyView, valueCol))) { updatedKeyValueView =>
+            Array[cudf.ColumnView](keyView, valueCol))) { updatedKeyValueView =>
             withResource(mapCol.getOffsets) { mapOffsets =>
               withResource(mapCol.getValid) { mapValid =>
-                withResource(new ColumnView(DType.LIST, mapCol.getRowCount,
+                withResource(new cudf.ColumnView(DType.LIST, mapCol.getRowCount,
                   Optional.of[java.lang.Long](mapCol.getNullCount), mapValid, mapOffsets,
-                  Array[ColumnView](updatedKeyValueView))) { updatedMapView =>
+                  Array[cudf.ColumnView](updatedKeyValueView))) { updatedMapView =>
                   GpuColumnVector.from(updatedMapView.copyToColumnVector(), resultType)
                 }
               }

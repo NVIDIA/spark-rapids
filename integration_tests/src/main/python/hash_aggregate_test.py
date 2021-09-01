@@ -86,6 +86,35 @@ _grpkey_strings_with_extra_nulls = [
     ('a', RepeatSeqGen(StringGen(pattern='[0-9]{0,30}'), length= 20)),
     ('b', IntegerGen()),
     ('c', NullGen())]
+# grouping single-level structs
+_grpkey_structs_with_non_nested_children = [
+    ('a', RepeatSeqGen(StructGen([
+        ['aa', IntegerGen()],
+        ['ab', StringGen(pattern='[0-9]{0,30}')],
+        ['ac', DecimalGen()]]), length=20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]
+# grouping multiple-level structs
+_grpkey_nested_structs = [
+    ('a', RepeatSeqGen(StructGen([
+        ['aa', IntegerGen()],
+        ['ab', StringGen(pattern='[0-9]{0,30}')],
+        ['ac', StructGen([['aca', LongGen()],
+                          ['acb', BooleanGen()],
+                          ['acc', StructGen([['acca', StringGen()]])]])]]),
+        length=20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]
+# grouping multiple-level structs with arrays in children
+_grpkey_nested_structs_with_array_child = [
+    ('a', RepeatSeqGen(StructGen([
+        ['aa', IntegerGen()],
+        ['ab', ArrayGen(IntegerGen())],
+        ['ac', ArrayGen(StructGen([['aca', LongGen()]]))]]),
+        length=20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]
+
 # grouping NullType
 _grpkey_nulls = [
     ('a', NullGen()),
@@ -686,6 +715,51 @@ def test_hash_agg_with_nan_keys(data_gen, parameterless):
         'avg(c) as average_seas '
         'from hash_agg_table group by a',
         _no_nans_float_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_gen',  [_grpkey_structs_with_non_nested_children,
+                                       _grpkey_nested_structs], ids=idfn)
+def test_hash_agg_with_struct_keys(data_gen):
+    conf = _no_nans_float_conf.copy()
+    conf.update({'spark.sql.legacy.allowParameterlessCount': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=1024),
+        "hash_agg_table",
+        'select a, '
+        'count(*) as count_stars, '
+        'count() as count_parameterless, '
+        'count(b) as count_bees, '
+        'sum(b) as sum_of_bees, '
+        'max(c) as max_seas, '
+        'min(c) as min_seas, '
+        'count(distinct c) as count_distinct_cees, '
+        'avg(c) as average_seas '
+        'from hash_agg_table group by a',
+        conf)
+
+@ignore_order(local=True)
+@allow_non_gpu('HashAggregateExec', 'Avg', 'Count', 'Max', 'Min', 'Sum', 'Average',
+               'Cast', 'Literal', 'Alias', 'AggregateExpression',
+               'ShuffleExchangeExec', 'HashPartitioning')
+@pytest.mark.parametrize('data_gen',  [_grpkey_nested_structs_with_array_child], ids=idfn)
+def test_hash_agg_with_struct_of_array_fallback(data_gen):
+    conf = _no_nans_float_conf.copy()
+    conf.update({'spark.sql.legacy.allowParameterlessCount': 'true'})
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark : gen_df(spark, data_gen, length=100),
+        'select a, '
+        'count(*) as count_stars, '
+        'count() as count_parameterless, '
+        'count(b) as count_bees, '
+        'sum(b) as sum_of_bees, '
+        'max(c) as max_seas, '
+        'min(c) as min_seas, '
+        'avg(c) as average_seas '
+        'from hash_agg_table group by a',
+        "hash_agg_table",
+        exist_classes='HashAggregateExec',
+        non_exist_classes='GpuHashAggregateExec',
+        conf=conf)
 
 
 @approximate_float

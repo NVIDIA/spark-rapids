@@ -31,6 +31,36 @@ basic_struct_gen = StructGen([
                                    BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
     nullable=False)
 
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_map_keys(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                # Technically the order of the keys could change, and be different and still correct
+                # but it works this way for now so lets see if we can maintain it.
+                # Good thing too, because we cannot support sorting all of the types that could be
+                # in here yet, and would need some special case code for checking equality
+                'map_keys(a)'))
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_map_values(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                # Technically the order of the values could change, and be different and still correct
+                # but it works this way for now so lets see if we can maintain it.
+                # Good thing too, because we cannot support sorting all of the types that could be
+                # in here yet, and would need some special case code for checking equality
+                'map_values(a)'))
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_map_entries(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                # Technically the order of the values could change, and be different and still correct
+                # but it works this way for now so lets see if we can maintain it.
+                # Good thing too, because we cannot support sorting all of the types that could be
+                # in here yet, and would need some special case code for checking equality
+                'map_entries(a)'))
+
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
