@@ -865,6 +865,9 @@ decimal_gens = [decimal_gen_neg_scale] + decimal_gens_no_neg
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -887,6 +890,8 @@ date_n_time_gens = [date_gen, timestamp_gen]
 boolean_gens = [boolean_gen]
 
 single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens]
+
+single_level_array_gens_no_nan = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_nan + decimal_gens]
 
 single_level_array_gens_no_decimal = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
 

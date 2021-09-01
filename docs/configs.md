@@ -146,6 +146,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.And"></a>spark.rapids.sql.expression.And|`and`|Logical AND|true|None|
 <a name="sql.expression.AnsiCast"></a>spark.rapids.sql.expression.AnsiCast| |Convert a column of one type of data into another type|true|None|
 <a name="sql.expression.ArrayContains"></a>spark.rapids.sql.expression.ArrayContains|`array_contains`|Returns a boolean if the array contains the passed in key|true|None|
+<a name="sql.expression.ArrayMax"></a>spark.rapids.sql.expression.ArrayMax|`array_max`|Returns the maximum value in the array|true|None|
+<a name="sql.expression.ArrayMin"></a>spark.rapids.sql.expression.ArrayMin|`array_min`|Returns the minimum value in the array|true|None|
 <a name="sql.expression.ArrayTransform"></a>spark.rapids.sql.expression.ArrayTransform|`transform`|Transform elements in an array using the transform function. This is similar to a `map` in functional programming|true|None|
 <a name="sql.expression.Asin"></a>spark.rapids.sql.expression.Asin|`asin`|Inverse sine|true|None|
 <a name="sql.expression.Asinh"></a>spark.rapids.sql.expression.Asinh|`asinh`|Inverse hyperbolic sine|true|None|
@@ -232,6 +234,9 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Logarithm"></a>spark.rapids.sql.expression.Logarithm|`log`|Log variable base|true|None|
 <a name="sql.expression.Lower"></a>spark.rapids.sql.expression.Lower|`lower`, `lcase`|String lowercase operator|false|This is not 100% compatible with the Spark version because the Unicode version used by cuDF and the JVM may differ, resulting in some corner-case characters not changing case correctly.|
 <a name="sql.expression.MakeDecimal"></a>spark.rapids.sql.expression.MakeDecimal| |Create a Decimal from an unscaled long value for some aggregation optimizations|true|None|
+<a name="sql.expression.MapEntries"></a>spark.rapids.sql.expression.MapEntries|`map_entries`|Returns an unordered array of all entries in the given map|true|None|
+<a name="sql.expression.MapKeys"></a>spark.rapids.sql.expression.MapKeys|`map_keys`|Returns an unordered array containing the keys of the map|true|None|
+<a name="sql.expression.MapValues"></a>spark.rapids.sql.expression.MapValues|`map_values`|Returns an unordered array containing the values of the map|true|None|
 <a name="sql.expression.Md5"></a>spark.rapids.sql.expression.Md5|`md5`|MD5 hash operator|true|None|
 <a name="sql.expression.Minute"></a>spark.rapids.sql.expression.Minute|`minute`|Returns the minute component of the string/timestamp|true|None|
 <a name="sql.expression.MonotonicallyIncreasingID"></a>spark.rapids.sql.expression.MonotonicallyIncreasingID|`monotonically_increasing_id`|Returns monotonically increasing 64-bit integers|true|None|

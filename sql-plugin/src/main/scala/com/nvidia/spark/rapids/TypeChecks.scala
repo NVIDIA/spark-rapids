@@ -600,10 +600,10 @@ object TypeSig {
   val numericAndInterval: TypeSig = numeric + CALENDAR
 
   /**
-   * All types that Spark supports sorting/ordering on (really everything but MAP) FOR GPU
+   * All types that CUDF supports sorting/ordering on.
    */
   val gpuOrderable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
-      TIMESTAMP + STRING + DECIMAL_64 + NULL + BINARY + CALENDAR + ARRAY + STRUCT + UDT).nested()
+      TIMESTAMP + STRING + DECIMAL_64 + NULL + STRUCT).nested()
 
   /**
    * All types that Spark supports sorting/ordering on (really everything but MAP)
