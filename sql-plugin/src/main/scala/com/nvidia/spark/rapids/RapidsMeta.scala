@@ -156,6 +156,12 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
   }
 
+  final def inputFilePreventsRunningOnGpu(): Unit = {
+    if (canThisBeReplaced) {
+      willNotWorkOnGpu("Removed by InputFileBlockRule")
+    }
+  }
+
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
    * @param because why it should not be replaced.
