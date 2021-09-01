@@ -802,7 +802,7 @@ class Spark320Shims extends Spark32XShims {
     identity(f)
   }
 
-  override def hasAliasQuoteFix: Boolean = false
+  override def hasAliasQuoteFix: Boolean = true
 
-  override def hasCastFloatTimestampUpcast: Boolean = false
+  override def hasCastFloatTimestampUpcast: Boolean = true
 }
