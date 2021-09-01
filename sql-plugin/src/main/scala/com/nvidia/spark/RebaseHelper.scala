@@ -46,7 +46,7 @@ object RebaseHelper extends Arm {
       startDay: Int,
       startTs: Long): Boolean = {
     val dtype = column.getType
-    if (dtype.isTimestampType) {
+    if (dtype.hasTimeResolution) {
       // TODO - https://github.com/NVIDIA/spark-rapids/issues/1130 to properly handle
       // TIMESTAMP_MILLIS, for use require so we fail if that happens
       require(dtype == DType.TIMESTAMP_MICROSECONDS)

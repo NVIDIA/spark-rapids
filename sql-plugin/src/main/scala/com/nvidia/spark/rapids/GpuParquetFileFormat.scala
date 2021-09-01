@@ -216,11 +216,12 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
     val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
     val dateTimeRebaseException = "EXCEPTION".equals(
-        sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
-    val int96RebaseException =
+      sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
+    val timestampRebaseException =
       outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
           "EXCEPTION".equals(sparkSession.sqlContext
-              .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey))
+              .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey)) ||
+          !outputTimestampType.equals(ParquetOutputTimestampType.INT96) && dateTimeRebaseException
 
     val committerClass =
       conf.getClass(
@@ -300,7 +301,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException,
-          int96RebaseException, context)
+          timestampRebaseException, context)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -315,7 +316,7 @@ class GpuParquetWriter(
     dataSchema: StructType,
     compressionType: CompressionType,
     dateTimeRebaseException: Boolean,
-    int96RebaseException: Boolean,
+    timestampRebaseException: Boolean,
     context: TaskAttemptContext)
   extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
 
@@ -325,17 +326,12 @@ class GpuParquetWriter(
     (0 until table.getNumberOfColumns).foreach { i =>
       val col = table.getColumn(i)
       // if col is a day
-      if (dateTimeRebaseException && col.getType == DType.TIMESTAMP_DAYS) {
-        if (RebaseHelper.isDateRebaseNeeded(col)) {
-          throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
-        }
+      if (dateTimeRebaseException && RebaseHelper.isDateRebaseNeeded(col)) {
+        throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
       // if col is a time
-      else if (col.getType.hasTimeResolution && (int96RebaseException ||
-          outputTimestampType != ParquetOutputTimestampType.INT96 && dateTimeRebaseException)) {
-        if (RebaseHelper.isTimeRebaseNeeded(col)) {
-          throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
-        }
+      else if (timestampRebaseException && RebaseHelper.isTimeRebaseNeeded(col)) {
+        throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }
   }

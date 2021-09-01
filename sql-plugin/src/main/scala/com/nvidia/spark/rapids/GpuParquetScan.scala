@@ -114,6 +114,25 @@ object GpuParquetScanBase {
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
+  def throwIfNeeded(
+      table: Table,
+      isCorrectedInt96Rebase: Boolean,
+      isCorrectedDateTimeRebase: Boolean): Unit = {
+    (0 until table.getNumberOfColumns).foreach { i =>
+      val col = table.getColumn(i)
+      // if col is a day
+      if (!isCorrectedDateTimeRebase && RebaseHelper.isDateRebaseNeeded(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+      }
+      // if col is a time
+      else if (!isCorrectedInt96Rebase || !isCorrectedDateTimeRebase) {
+        if (RebaseHelper.isTimeRebaseNeeded(col)) {
+          throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+        }
+      }
+    }
+  }
+
   def tagSupport(
       sparkSession: SparkSession,
       readSchema: StructType,
@@ -250,7 +269,13 @@ object GpuParquetPartitionReaderFactoryBase {
       // rebase the INT96 timestamp values.
       // Files written by Spark 3.1 and latter may also need the rebase if they were written with
       // the "LEGACY" rebase mode.
-      version >= "3.1.0" && lookupFileMeta(SPARK_LEGACY_INT96) == null
+      if (version >= "3.1.0") {
+        lookupFileMeta(SPARK_LEGACY_INT96) == null
+      } else if (version >= "3.0.0") {
+        lookupFileMeta(SPARK_LEGACY_DATETIME) == null
+      } else {
+        false
+      }
     }.getOrElse(isCorrectedModeConfig)
   }
 
@@ -944,22 +969,10 @@ class MultiFileParquetPartitionReader(
     }
 
     closeOnExcept(table) { _ =>
-      (0 until table.getNumberOfColumns).foreach { i =>
-        val col = table.getColumn(i)
-        // if col is a day
-        if (!extraInfo.isCorrectedRebaseMode && col.getType == DType.TIMESTAMP_DAYS) {
-          if (RebaseHelper.isDateRebaseNeeded(col)) {
-            throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-          }
-        }
-        // if col is a time
-        else if (col.getType.hasTimeResolution &&
-            (!extraInfo.isCorrectedInt96RebaseMode || !extraInfo.isCorrectedRebaseMode)) {
-          if (RebaseHelper.isTimeRebaseNeeded(col)) {
-            throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-          }
-        }
-      }
+      GpuParquetScanBase.throwIfNeeded(
+        table,
+        extraInfo.isCorrectedInt96RebaseMode,
+        extraInfo.isCorrectedRebaseMode)
     }
     evolveSchemaIfNeededAndClose(table, splits.mkString(","), clippedSchema)
   }
@@ -1175,6 +1188,7 @@ class MultiFileCloudParquetPartitionReader(
     }
   }
 
+
   private def readBufferToTable(
       isCorrectRebaseMode: Boolean,
       isCorrectInt96RebaseMode: Boolean,
@@ -1208,26 +1222,11 @@ class MultiFileCloudParquetPartitionReader(
         Table.readParquet(parseOpts, hostBuffer, 0, dataSize)
       }
       closeOnExcept(table) { _ =>
-        (0 until table.getNumberOfColumns).foreach { i =>
-          val col = table.getColumn(i)
-          // if col is a day
-          if (!isCorrectRebaseMode && col.getType == DType.TIMESTAMP_DAYS) {
-            if (RebaseHelper.isDateRebaseNeeded(col)) {
-              throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-            }
-          }
-          // if col is a time
-          else if (col.getType.hasTimeResolution &&
-              (!isCorrectInt96RebaseMode || !isCorrectRebaseMode)) {
-            if (RebaseHelper.isTimeRebaseNeeded(col)) {
-              throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-            }
-          }
-        }
+        GpuParquetScanBase.throwIfNeeded(table, isCorrectInt96RebaseMode, isCorrectRebaseMode)
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
-            s"but read ${table.getNumberOfColumns} from $fileName")
+              s"but read ${table.getNumberOfColumns} from $fileName")
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
@@ -1360,22 +1359,7 @@ class ParquetPartitionReader(
           Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         }
         closeOnExcept(table) { _ =>
-          (0 until table.getNumberOfColumns).foreach { i =>
-            val col = table.getColumn(i)
-            // if col is a day
-            if (!isCorrectedRebaseMode && col.getType == DType.TIMESTAMP_DAYS) {
-              if (RebaseHelper.isDateRebaseNeeded(col)) {
-                throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-              }
-            }
-            // if col is a time
-            else if (col.getType.hasTimeResolution &&
-                (!isCorrectedInt96RebaseMode || !isCorrectedRebaseMode)) {
-              if (RebaseHelper.isTimeRebaseNeeded(col)) {
-                throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
-              }
-            }
-          }
+          GpuParquetScanBase.throwIfNeeded(table, isCorrectedInt96RebaseMode, isCorrectedRebaseMode)
           maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
           if (readDataSchema.length < table.getNumberOfColumns) {
             throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
