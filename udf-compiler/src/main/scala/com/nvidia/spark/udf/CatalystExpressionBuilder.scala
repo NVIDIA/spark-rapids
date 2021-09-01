@@ -419,8 +419,8 @@ object CatalystExpressionBuilder extends Logging {
           ce.child match {
             case If(c, t, f) =>
           simplifyExpr(If(simplifyExpr(c),
-                simplifyExpr(Cast(t, BooleanType, ce.timeZoneId)),
-                simplifyExpr(Cast(f, BooleanType, ce.timeZoneId))))
+            simplifyExpr(Cast(t, BooleanType, ce.timeZoneId)),
+            simplifyExpr(Cast(f, BooleanType, ce.timeZoneId))))
           }
         case If(c, Repr.ArrayBuffer(t), Repr.ArrayBuffer(f)) => Repr.ArrayBuffer(If(c, t, f))
         case If(c, Repr.StringBuilder(t), Repr.StringBuilder(f)) => Repr.StringBuilder(If(c, t, f))

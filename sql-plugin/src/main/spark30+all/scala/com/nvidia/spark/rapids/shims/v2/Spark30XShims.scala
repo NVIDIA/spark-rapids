@@ -88,6 +88,7 @@ trait Spark30XShims extends SparkShims {
 
   override def isCustomReaderExec(x: SparkPlan): Boolean = x match {
     case _: GpuCustomShuffleReaderExec | _: CustomShuffleReaderExec => true
+    case _ => false
   }
 
   override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[CustomShuffleReaderExec](

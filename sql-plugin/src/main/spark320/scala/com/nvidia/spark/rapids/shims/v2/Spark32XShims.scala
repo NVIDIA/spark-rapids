@@ -122,6 +122,7 @@ trait Spark32XShims extends SparkShims {
 
   override def isCustomReaderExec(x: SparkPlan): Boolean = x match {
     case _: GpuCustomShuffleReaderExec | _: AQEShuffleReadExec => true
+    case _: => false
   }
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =

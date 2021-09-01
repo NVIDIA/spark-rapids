@@ -32,7 +32,11 @@
 
     <profiles>
         <profile>
-            <id>default</id>
+            <!--
+                enables Shim class consolidation without breaking the existing build,
+                to be removed when the build architecture swap is complete
+            -->
+            <id>no-buildver-default</id>
             <activation>
                 <property>
                     <name>!buildver</name>
