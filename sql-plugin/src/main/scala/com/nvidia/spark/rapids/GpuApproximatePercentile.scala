@@ -60,11 +60,11 @@ case class GpuApproximatePercentile (
 
   // inputBuf represents the initial aggregation buffer
   protected final lazy val inputBuf: AttributeReference =
-    AttributeReference("inputBuf", child.dataType)()
+    AttributeReference("inputBuf", CudfTDigest.dataType)()
 
-  // outputBuf represents the final output of the approx_percentile with type List[Double]
+  // outputBuf represents the merged aggregation buffer
   protected final lazy val outputBuf: AttributeReference =
-    inputBuf.copy("outputBuf", dataType)(inputBuf.exprId, inputBuf.qualifier)
+    inputBuf.copy("outputBuf", CudfTDigest.dataType)(inputBuf.exprId, inputBuf.qualifier)
 
   /**
    * Using child references, define the shape of the vectors sent to the window operations
