@@ -387,9 +387,10 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExecBase = broadcast match {
-    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExecBase) => gpu
-    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
-      reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] =>
+      bqse.plan.asInstanceOf[GpuBroadcastExchangeExecBase]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
+      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExecBase]
     case gpu: GpuBroadcastExchangeExecBase => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
   }
@@ -489,9 +490,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           }
         case LeftAnti =>
           // degenerate case, no rows are returned.
-          left.executeColumnar().mapPartitions { _ =>
-            Iterator.single(new ColumnarBatch(Array(), 0))
-          }
+          val childRDD = left.executeColumnar()
+          new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, childRDD.getNumPartitions)
         case _ =>
           // Everything else is treated like an unconditional cross join
           val buildSide = getGpuBuildSide

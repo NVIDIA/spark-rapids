@@ -22,6 +22,9 @@ from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_spark_session
 from parquet_test import _nested_pruning_schemas
 
+# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
+pytestmark = pytest.mark.premerge_ci_1
+
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
 
