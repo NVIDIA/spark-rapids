@@ -328,8 +328,8 @@ The profiling tool generates information which can be used for debugging and pro
 
 Below is the information the profiling tool reports, see [Profile tool Detailed Output and Examples](#profile-tool-detailed-output-and-examples) for more information
 and examples. It has 3 modes of operation: collection, combined, and compare.  Collection mode is when no other options are specified it simply collects information
-on each application individually and outputs a file per application. Combined mode is collection mode but them combines all the applications into single tables
-and you get one file for all application.  Compare mode will combine all the applications information in the same tables into a single file and also adds in 
+on each application individually and outputs a file per application. Combined mode is collection mode but then combines all the applications together
+and you get one file for all applications. Compare mode will combine all the applications information in the same tables into a single file and also adds in 
 tables to compare stages and sql ids across all of those applications. The Compare mode will use more memory if comparing lots of applications.
 It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.  It can also optionally output
 CSV files for each table.

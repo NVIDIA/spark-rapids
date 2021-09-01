@@ -134,6 +134,9 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
   }
 
   // Print Rapids related Spark Properties
+  // This table is inverse of the other tables where the row keys are
+  // property keys and the columns are the application values. So
+  // column1 would be all the key values for app index 1.
   def getRapidsProperties: Seq[RapidsPropertyProfileResult] = {
     val outputHeaders = ArrayBuffer("propertyName")
     val props = HashMap[String, ArrayBuffer[String]]()
@@ -241,17 +244,25 @@ object CollectInformation extends Logging {
     }
   }
 
-  // updated processed properties hashmap based on the new rapids related
-  // properties passed in
+  // Update processed properties hashmap based on the new rapids related
+  // properties for a new application passed in. This will updated the
+  // processedProps hashmap in place to make sure each key in the hashmap
+  // has the same number of elements in the ArrayBuffer.
+  // It handles 3 cases:
+  // 1) key in newRapidsRelated already existed in processedProps
+  // 2) this app doesn't contain a key in newRapidsRelated that other apps had
+  // 3) new key in newRapidsRelated that wasn't in processedProps for the apps already processed
   def addNewProps(newRapidsRelated: Map[String, String],
       processedProps: HashMap[String, ArrayBuffer[String]],
       numApps: Int): Unit = {
+
     val inter = processedProps.keys.toSeq.intersect(newRapidsRelated.keys.toSeq)
     val existDiff = processedProps.keys.toSeq.diff(inter)
     val newDiff = newRapidsRelated.keys.toSeq.diff(inter)
 
     // first update intersecting
     inter.foreach { k =>
+      // note, this actually updates processProps as it goes
       val appVals = processedProps.getOrElse(k, ArrayBuffer[String]())
       appVals += newRapidsRelated.getOrElse(k, "null")
     }
