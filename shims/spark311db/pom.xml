@@ -105,7 +105,7 @@
             </activation>
             <properties>
                 <parquet.version>1.10.1</parquet.version>
-                <arrow.version>0.15.1</arrow.version>
+                <arrow.version>2.0.0</arrow.version>
             </properties>
             <dependencies>
                 <dependency>
