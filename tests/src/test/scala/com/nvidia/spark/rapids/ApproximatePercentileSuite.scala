@@ -28,8 +28,10 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   val DEFAULT_PERCENTILES = Array(0.05, 0.25, 0.5, 0.75, 0.95)
 
+  //TODO: ai.rapids.cudf.CudfException: reduce_by_key: failed to synchronize:
+  // cudaErrorIllegalAddress: an illegal memory access was encountered
   ignore("5 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, rowsPerGroup = 5, sparkDelta = 100)
+    doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = 100)
   }
 
   test("250 rows per group, default delta, doubles") {
@@ -40,24 +42,24 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     doTest(DataTypes.DoubleType, 250, 100)
   }
 
-  private def doTest(dataType: DataType, rowsPerGroup: Int, sparkDelta: Int) {
+  //TODO: CPU is more accurate
+  ignore("2500 rows per group, delta 100, doubles") {
+    doTest(DataTypes.DoubleType, 2500, 100)
+  }
+
+  private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Int) {
 
     val percentiles = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, sparkDelta,
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta,
         approx = false)
     }
 
     val approxPercentilesCpu = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, sparkDelta, approx = true)
-    }
-
-    val gpuDelta = sparkDelta match {
-      case _ if sparkDelta >= 10000 => 10000
-      case _ => 1000
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
     }
 
     val approxPercentilesGpu = withGpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, gpuDelta, approx = true)
+      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
     }
 
     val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet

@@ -258,8 +258,14 @@ class CudfTDigest(
     percentileExpr: GpuLiteral,
     accuracyExpression: GpuLiteral)
   extends CudfAggregate(ref) {
-  // Mark as lazy so that accuracyExpression is not evaluated during tree transformation.
-  private lazy val accuracy = accuracyExpression.value.toString.toInt
+
+  // map Spark delta to cuDF delta - this is experimental for now and
+  // will not guarantee that we have better results than Spark although
+  // it did help with one of the tests
+  private lazy val accuracy = accuracyExpression.value.toString.toInt match {
+    case delta if delta >= 10000 => 10000
+    case _ => 1000
+  }
 
   override lazy val updateReductionAggregate: ColumnVector => Scalar =
     throw new UnsupportedOperationException()
@@ -270,16 +276,16 @@ class CudfTDigest(
   override def toString(): String = "CudfTDigest"
   override def dataType: DataType = CudfTDigest.dataType
   override def nullable: Boolean = false
-  override def children: Seq[Expression] = Seq(ref)
   override protected def otherCopyArgs: Seq[AnyRef] = Seq(percentileExpr, accuracyExpression)
 }
 
 object CudfTDigest {
   val dataType: DataType = ArrayType(StructType(Array(
-    StructField("centroid", DataTypes.DoubleType),
+    StructField("mean", DataTypes.DoubleType),
     StructField("weight", DataTypes.DoubleType)
   )), containsNull = false)
 }
+
 class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {
   override lazy val updateReductionAggregate: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("CollectList is not yet supported in reduction")
