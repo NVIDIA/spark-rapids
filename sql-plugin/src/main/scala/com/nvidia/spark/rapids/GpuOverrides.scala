@@ -3179,8 +3179,9 @@ object GpuOverrides {
       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-          TypeSig.MAP + TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.DOUBLE) + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+              TypeSig.ARRAY + TypeSig.STRUCT)
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
