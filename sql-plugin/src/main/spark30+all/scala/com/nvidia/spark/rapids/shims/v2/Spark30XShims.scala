@@ -94,18 +94,5 @@ trait Spark30XShims extends SparkShims {
     "A wrapper of shuffle query stage",
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
-    (exec, conf, p, r) =>
-      new SparkPlanMeta[CustomShuffleReaderExec](exec, conf, p, r) {
-        override def tagPlanForGpu(): Unit = {
-          if (!exec.child.supportsColumnar) {
-            willNotWorkOnGpu(
-              "Unable to replace CustomShuffleReader due to child not being columnar")
-          }
-        }
-
-        override def convertToGpu(): GpuExec = {
-          GpuCustomShuffleReaderExec(childPlans.head.convertIfNeeded(),
-            exec.partitionSpecs)
-        }
-      })
+    (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 }

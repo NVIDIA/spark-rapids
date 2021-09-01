@@ -21,7 +21,7 @@ import java.io.{ByteArrayInputStream, ObjectInputStream}
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.rapids.shims.v2._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -591,7 +591,7 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
-  // counts are Long
+  // counts are GpuToCpuBufferTransitionLong
   private lazy val cudfCount = AttributeReference("count", LongType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(children.head)
@@ -910,9 +910,9 @@ trait GpuToCpuAggregateBufferConverter {
   def createExpression(child: Expression): GpuToCpuBufferTransition
 }
 
-trait CpuToGpuBufferTransition extends UnaryExpression with CodegenFallback
+trait CpuToGpuBufferTransition extends ShimUnaryExpression with CodegenFallback
 
-trait GpuToCpuBufferTransition extends UnaryExpression with CodegenFallback {
+trait GpuToCpuBufferTransition extends ShimUnaryExpression with CodegenFallback {
   override def dataType: DataType = BinaryType
 }
 
