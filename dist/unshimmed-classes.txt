@@ -1,0 +1,16 @@
+com/nvidia/spark/SQLPlugin*
+com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
+com/nvidia/spark/rapids/PlanUtils*
+com/nvidia/spark/rapids/SQLExecPlugin*
+com/nvidia/spark/rapids/ShimLoader*
+com/nvidia/spark/rapids/SparkShimServiceProvider*
+com/nvidia/spark/rapids/SparkShims*
+com/nvidia/spark/rapids/ShimVersion*
+com/nvidia/spark/rapids/SparkShimVersion*
+com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
+com/nvidia/spark/rapids/RapidsExecutorStartupMsg*
+com/nvidia/spark/rapids/RapidsExecutorUpdateMsg*
+com/nvidia/spark/rapids/*/RapidsShuffleManager*
+org/apache/spark/sql/rapids/shims/*/ProxyRapidsShuffleInternalManager*
+org/apache/spark/sql/rapids/VisibleShuffleManager*
+com/nvidia/spark/udf/Plugin*
