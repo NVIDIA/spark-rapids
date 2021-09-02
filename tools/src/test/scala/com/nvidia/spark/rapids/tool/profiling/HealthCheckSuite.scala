@@ -55,9 +55,9 @@ class HealthCheckSuite extends FunSuite {
     }
     assert(apps.size == 1)
 
-    val healthCheck = new HealthCheck(apps, None, 1000)
+    val healthCheck = new HealthCheck(apps)
     for (app <- apps) {
-      val failedTasks = healthCheck.listFailedTasks()
+      val failedTasks = healthCheck.getFailedTasks
       import sparkSession.implicits._
       val taskAccums = failedTasks.toDF
       val tasksResultExpectation =
@@ -66,7 +66,7 @@ class HealthCheckSuite extends FunSuite {
         ToolTestUtils.readExpectationCSV(sparkSession, tasksResultExpectation.getPath())
       ToolTestUtils.compareDataFrames(taskAccums, tasksDfExpect)
 
-      val failedStages = healthCheck.listFailedStages()
+      val failedStages = healthCheck.getFailedStages
       val stageAccums = failedStages.toDF
       val stagesResultExpectation =
         new File(expRoot, "stages_failure_eventlog_expectation.csv")
@@ -74,7 +74,7 @@ class HealthCheckSuite extends FunSuite {
         ToolTestUtils.readExpectationCSV(sparkSession, stagesResultExpectation.getPath())
       ToolTestUtils.compareDataFrames(stageAccums, stagesDfExpect)
 
-      val failedJobs = healthCheck.listFailedJobs()
+      val failedJobs = healthCheck.getFailedJobs
       val jobsAccums = failedJobs.toDF
       val jobsResultExpectation =
         new File(expRoot, "jobs_failure_eventlog_expectation.csv")
@@ -97,9 +97,9 @@ class HealthCheckSuite extends FunSuite {
       index += 1
     }
     assert(apps.size == 1)
-    val healthCheck = new HealthCheck(apps, None, 1000)
+    val healthCheck = new HealthCheck(apps)
     for (app <- apps) {
-      val removedBMs = healthCheck.listRemovedBlockManager()
+      val removedBMs = healthCheck.getRemovedBlockManager
       import sparkSession.implicits._
       val blockManagersAccums = removedBMs.toDF
       val blockManagersResultExpectation =
@@ -108,7 +108,7 @@ class HealthCheckSuite extends FunSuite {
         ToolTestUtils.readExpectationCSV(sparkSession, blockManagersResultExpectation.getPath())
       ToolTestUtils.compareDataFrames(blockManagersAccums, blockManagersDfExpect)
 
-      val removedExecs = healthCheck.listRemovedExecutors()
+      val removedExecs = healthCheck.getRemovedExecutors
       val executorRemovedAccums = removedExecs.toDF
       val executorRemovedResultExpectation =
         new File(expRoot, "executors_removed_eventlog_expectation.csv")
@@ -133,9 +133,9 @@ class HealthCheckSuite extends FunSuite {
     }
     assert(apps.size == 1)
 
-    val healthCheck = new HealthCheck(apps, None, 1000)
+    val healthCheck = new HealthCheck(apps)
     for (app <- apps) {
-      val unsupported = healthCheck.listPossibleUnsupportedSQLPlan()
+      val unsupported = healthCheck.getPossibleUnsupportedSQLPlan
       import sparkSession.implicits._
       val unsupportedPlanAccums = unsupported.toDF
       val unSupportedPlanExpectation =

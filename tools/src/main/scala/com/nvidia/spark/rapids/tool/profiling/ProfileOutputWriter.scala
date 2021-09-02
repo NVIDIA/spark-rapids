@@ -15,11 +15,80 @@
  */
 package com.nvidia.spark.rapids.tool.profiling
 
+import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import org.apache.commons.lang3.StringUtils
 
-import org.apache.spark.internal.Logging
+class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: Int,
+    outputCSV: Boolean = false) {
 
-object ProfileOutputWriter extends Logging {
+  private val textFileWriter = new ToolTextFileWriter(outputDir,
+    s"$filePrefix.log", "Profile summary")
+
+  def writeText(strToWrite: String): Unit = {
+    textFileWriter.write(strToWrite)
+  }
+
+  private def writeTextTable(messageHeader: String, outRows: Seq[ProfileResult],
+      emptyText: Option[String], tableDesc: Option[String]): Unit = {
+    val headerText = tableDesc match {
+      case Some(desc) => s"$messageHeader: $desc"
+      case None => s"$messageHeader:"
+    }
+    textFileWriter.write(s"\n$headerText\n")
+
+    if (outRows.nonEmpty) {
+      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
+        outRows.head.outputHeaders, outRows.map(_.convertToSeq))
+      textFileWriter.write(outStr)
+    } else {
+      val finalEmptyText = emptyText match {
+        case Some(text) => text
+        case None => messageHeader
+      }
+      textFileWriter.write(s"No $finalEmptyText Found!\n")
+    }
+  }
+
+  private def stringIfempty(str: String): String = {
+    if (str == null || str.isEmpty) "\"\"" else str
+  }
+
+  private def writeCSVTable(header: String, outRows: Seq[ProfileResult]): Unit = {
+    if (outRows.nonEmpty) {
+      if (outputCSV) {
+        // need to have separate CSV file per table, use header text
+        // with spaces as _ and lowercase as filename
+        val suffix = header.replace(" ", "_").toLowerCase
+        val csvWriter = new ToolTextFileWriter(outputDir,
+          s"${suffix}.csv", s"$header CSV:")
+        try {
+          val headerString = outRows.head.outputHeaders.mkString(",")
+          csvWriter.write(headerString + "\n")
+          val rows = outRows.map(_.convertToSeq)
+          rows.foreach { row =>
+            val formattedRow = row.map(stringIfempty(_))
+            val outStr = formattedRow.mkString(",")
+            csvWriter.write(outStr + "\n")
+          }
+        } finally {
+          csvWriter.close()
+        }
+      }
+    }
+  }
+
+  def write(headerText: String, outRows: Seq[ProfileResult],
+      emptyTableText: Option[String] = None, tableDesc: Option[String] = None): Unit = {
+    writeTextTable(headerText, outRows, emptyTableText, tableDesc)
+    writeCSVTable(headerText, outRows)
+  }
+
+  def close(): Unit = {
+    textFileWriter.close()
+  }
+}
+
+object ProfileOutputWriter {
 
   /**
    * Regular expression matching full width characters.
