@@ -46,14 +46,12 @@ map_gens = [simple_string_to_string_map_gen,
             MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
             MapGen(
                 LongGen(nullable=False),
-                ArrayGen(
+                MapGen(
+                    DecimalGen(7, 2, nullable=False),
                     MapGen(
-                        DecimalGen(7, 2, nullable=False),
-                        StructGen([
-                            ['child0', byte_gen],
-                            ['child1', simple_string_to_string_map_gen]
-                        ]),
-                        max_length=3),
+                        IntegerGen(nullable=False),
+                        StringGen(pattern='value_[0-9]', nullable=False),
+                        max_length=4),
                     max_length=7),
                 max_length=5)]
 
