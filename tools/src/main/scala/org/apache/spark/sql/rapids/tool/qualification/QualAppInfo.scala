@@ -207,7 +207,7 @@ class QualAppInfo(
         case '<' => angleBracketsCount += 1
         case '>' => angleBracketsCount -= 1
         // If the schema has decimals, Example decimal(6,2) then we have to make sure it has both
-        // opening and closing parentheses(unless the string is incomplete due to V2 reader.
+        // opening and closing parentheses(unless the string is incomplete due to V2 reader).
         case '(' => parenthesesCount += 1
         case ')' => parenthesesCount -= 1
         case _ =>
