@@ -23,6 +23,7 @@ import scala.collection.mutable.ListBuffer
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
+import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
@@ -30,7 +31,7 @@ import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, S
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
+import org.apache.spark.sql.rapids.tool.qualification.{QualAppInfo, QualificationSummaryInfo}
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -349,6 +350,42 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test event log nested types in ReadSchema") {
     val logFiles = Array(s"$logDir/nested_type_eventlog")
     runQualificationTest(logFiles, "nested_type_expectation.csv")
+  }
+
+  test("test different types in ReadSchema") {
+    val outpath = Array(
+      s"$logDir/eventlog_complex_dec_nested", // complex nested types with decimal
+      s"$logDir/decimal_part_eventlog.zstd", // decimal and non decimal types
+      s"$logDir/nds_q86_test") // non decimal types
+
+    // default values for EventLogInfo and QualAppInfo
+    val hadoopConf = new Configuration()
+    val readScorePercent = 20
+    val numRows = 1000
+    val pluginTypeChecker = None
+    var index = 0
+
+    val expComplexNested = List(
+      ("array<struct<name:string;price:decimal(8;2);author:string;pages:int>>",
+          "array<struct<name:string;price:decimal(8;2);author:string;pages:int>>"),
+      ("array<struct<city:string;state:string>>;map<string;string>;map<string;array<string>>;" +
+          "map<string;map<string;string>>",
+          "array<struct<city:string;state:string>>;map<string;array<string>>;map<string;" +
+              "map<string;string>>"),
+      ("", ""))
+
+    val (eventLogFsFiltered, allEventLogs) = EventLogPathProcessor.processAllPaths(
+      None, None, outpath.toList, hadoopConf)
+
+    allEventLogs.map { x =>
+      val app = QualAppInfo.createApp(x, numRows, hadoopConf, pluginTypeChecker,
+        readScorePercent)
+      val (complexTypes, nestedComplexTypes) = app.get.reportComplexTypes
+
+      assert(complexTypes.equals(expComplexNested(index)._1))
+      assert(nestedComplexTypes.equals(expComplexNested(index)._2))
+      index += 1
+    }
   }
 
   // this event log has both decimal and non-decimal so comes out partial
