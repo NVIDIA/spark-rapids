@@ -18,14 +18,13 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, InputFileBlockLength, InputFileBlockStart, InputFileName}
-import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.{FileSourceScanExec, LeafExecNode, SparkPlan}
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 
 /**
- * InputFileBlockRule is to revert the converting between the SparkPlan with
- * input_file_name/InputFileBlockStart/InputFileBlockLength expression
- * and FileScan which can't be replaced.
+ * InputFileBlockRule is to prevent the SparkPlans
+ * [SparkPlan (with first input_file_xxx expression), FileScan) to run on GPU
  *
  * See https://github.com/NVIDIA/spark-rapids/issues/3333
  */
@@ -44,23 +43,24 @@ object InputFileBlockRule {
 
   // Apply the rule on SparkPlanMeta
   def apply(plan: SparkPlanMeta[SparkPlan]) = {
-    // The key is the SparkPlanMeta where has the first InputFile expression
-    // The value is an array with the SparkPlanMeta chain from SparkPlan (with first input_file_xxx)
-    //    to FileScan (exclusive)
+    /**
+     * key: the SparkPlanMeta where has the first input_file_xxx expression
+     * value: an array of the SparkPlanMeta chain [SparkPlan (with first input_file_xxx), FileScan)
+     */
     val resultOps = LinkedHashMap[SparkPlanMeta[SparkPlan], ArrayBuffer[SparkPlanMeta[SparkPlan]]]()
     recursivelyResolve(plan, None, resultOps)
 
-    // If we've found some chain, we should prevent the transition.
+    // If we've found some chains, we should prevent the transition.
     resultOps.foreach { item =>
       item._2.foreach(p => p.inputFilePreventsRunningOnGpu())
     }
   }
 
   /**
-   * Recursively to apply the rule on the plan
+   * Recursively apply the rule on the plan
    * @param plan the plan to be resolved.
    * @param key  the SparkPlanMeta with the first input_file_xxx
-   * @param resultOps
+   * @param resultOps the found SparkPlan chain
    */
   private def recursivelyResolve(
       plan: SparkPlanMeta[SparkPlan],
@@ -83,7 +83,7 @@ object InputFileBlockRule {
           // The node is in the chain of input_file_xx to FileScan
           resultOps.getOrElseUpdate(key.get,  new ArrayBuffer[SparkPlanMeta[SparkPlan]]) += plan
           key
-        } else { // There is no parent Node who has input_file_xx
+        } else { // There is no parent Node who has input_file_xxx
           if (checkHasInputFileExpressions(plan.wrapped)) {
             // Current node has input_file_xxx. Mark it as the first Node with input_file_xxx
             resultOps.getOrElseUpdate(plan, new ArrayBuffer[SparkPlanMeta[SparkPlan]]) += plan
