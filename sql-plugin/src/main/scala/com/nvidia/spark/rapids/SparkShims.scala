@@ -25,7 +25,7 @@ import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
@@ -34,9 +34,10 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, Nul
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
+import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -239,4 +240,25 @@ trait SparkShims {
   def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
 
   def broadcastModeTransform(mode: BroadcastMode, toArray: Array[InternalRow]): Any
+
+  def isAqePlan(p: SparkPlan): Boolean
+
+  def isExchangeOp(plan: SparkPlanMeta[_]): Boolean
+
+  def getDateFormatter(): DateFormatter
+
+  def sessionFromPlan(plan: SparkPlan): SparkSession
+
+  def isCustomReaderExec(x: SparkPlan): Boolean
+
+  def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
+}
+
+abstract class SparkCommonShims extends SparkShims {
+  override def alias(child: Expression, name: String)(
+      exprId: ExprId,
+      qualifier: Seq[String],
+      explicitMetadata: Option[Metadata]): Alias = {
+    Alias(child, name)(exprId, qualifier, explicitMetadata)
+  }
 }

@@ -93,6 +93,68 @@
             </modules>
        </profile>
        <profile>
+            <id>no-buildver-default</id>
+            <activation>
+                <property>
+                    <name>!buildver</name>
+                </property>
+            </activation>
+           <properties>
+               <spark.version.classifier/>
+           </properties>
+           <build>
+               <plugins>
+                   <plugin>
+                       <groupId>org.codehaus.mojo</groupId>
+                       <artifactId>build-helper-maven-plugin</artifactId>
+                       <executions>
+                           <execution>
+                               <id>add-profile-src-default</id>
+                               <goals><goal>add-source</goal></goals>
+                               <phase>generate-sources</phase>
+                               <configuration>
+                                   <sources>
+                                       <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                       <source>${project.basedir}/src/main/spark30+all/java</source>
+                                   </sources>
+                               </configuration>
+                           </execution>
+                       </executions>
+                   </plugin>
+               </plugins>
+           </build>
+       </profile>
+
+       <profile>
+           <id>buildver-default</id>
+           <activation>
+               <property>
+                   <name>buildver</name>
+               </property>
+           </activation>
+           <build>
+               <plugins>
+                   <plugin>
+                       <groupId>org.codehaus.mojo</groupId>
+                       <artifactId>build-helper-maven-plugin</artifactId>
+                       <executions>
+                           <execution>
+                               <id>add-profile-src-default</id>
+                               <goals><goal>add-source</goal></goals>
+                               <phase>generate-sources</phase>
+                               <configuration>
+                                   <sources>
+                                       <source>${project.basedir}/src/main/spark${buildver}/scala</source>
+                                       <source>${project.basedir}/src/main/spark${buildver}/java</source>
+                                   </sources>
+                               </configuration>
+                           </execution>
+                       </executions>
+                   </plugin>
+               </plugins>
+           </build>
+       </profile>
+       <profile>
             <id>release301</id>
             <activation>
                 <property>
@@ -101,10 +163,29 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark301</spark.version.classifier>
                 <spark.version>${spark301.version}</spark.version>
                 <spark.test.version>${spark301.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-30+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>api_validation</module>
             </modules>
@@ -118,10 +199,29 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark301emr</spark.version.classifier>
                 <spark.version>${spark301emr.version}</spark.version>
                 <spark.test.version>${spark301emr.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-30+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>release302</id>
@@ -131,8 +231,27 @@
                     <value>302</value>
                 </property>
             </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-30+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <properties>
-                <spark.version.classifier>spark302</spark.version.classifier>
                 <spark.version>${spark302.version}</spark.version>
                 <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
@@ -149,10 +268,29 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark303</spark.version.classifier>
                 <spark.version>${spark303.version}</spark.version>
                 <spark.test.version>${spark303.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-30+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>api_validation</module>
             </modules>
@@ -166,10 +304,29 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark304</spark.version.classifier>
                 <spark.version>${spark304.version}</spark.version>
                 <spark.test.version>${spark304.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-30+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>api_validation</module>
             </modules>
@@ -183,10 +340,31 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark311</spark.version.classifier>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>api_validation</module>
                 <module>tools</module>
@@ -255,10 +433,31 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark312</spark.version.classifier>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>api_validation</module>
             </modules>
@@ -272,10 +471,31 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark313</spark.version.classifier>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
             <modules>
                 <module>api_validation</module>
             </modules>
@@ -289,7 +509,6 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark320</spark.version.classifier>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
             </properties>
@@ -300,12 +519,12 @@
                         <artifactId>build-helper-maven-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>add-profile-src</id>
+                                <id>add-profile-src-31+</id>
                                 <goals><goal>add-source</goal></goals>
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark${buildver}/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -323,10 +542,30 @@
                 </property>
             </activation>
             <properties>
-                <spark.version.classifier>spark311cdh</spark.version.classifier>
                 <spark.version>${spark311cdh.version}</spark.version>
                 <spark.test.version>${spark311cdh.version}</spark.test.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
         <profile>
             <id>udf-compiler</id>
@@ -463,27 +702,27 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark301.version}</spark.version>
+        <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <spark.test.version>${spark301.version}</spark.test.version>
-        <spark.version.classifier></spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>21.10.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
         <orc.version>1.5.8</orc.version>
-        <orc.classifier></orc.classifier>
+        <orc.classifier/>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
         -->
         <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
-        <test.exclude.tags></test.exclude.tags>
-        <test.include.tags></test.include.tags>
+        <test.exclude.tags/>
+        <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <pytest.TEST_TAGS>not qarun</pytest.TEST_TAGS>
-        <pytest.TEST_PARALLEL></pytest.TEST_PARALLEL>
+        <pytest.TEST_PARALLEL/>
         <pytest.TEST_TYPE>developer</pytest.TEST_TYPE>
         <rat.consoleOutput>false</rat.consoleOutput>
         <!--
@@ -673,18 +912,6 @@
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
                     <version>3.2.0</version>
-                    <executions>
-                        <execution>
-                            <id>add-profile-src</id>
-                            <goals><goal>add-source</goal></goals>
-                            <phase>generate-sources</phase>
-                            <configuration>
-                                <sources>
-                                    <source>${project.basedir}/src/main/spark301/scala</source>
-                                </sources>
-                            </configuration>
-                        </execution>
-                    </executions>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>

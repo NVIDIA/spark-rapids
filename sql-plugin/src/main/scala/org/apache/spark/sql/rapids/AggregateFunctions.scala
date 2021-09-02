@@ -21,6 +21,7 @@ import java.io.{ByteArrayInputStream, ObjectInputStream}
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -32,7 +33,9 @@ import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.Platform
 
-trait GpuAggregateFunction extends GpuExpression with GpuUnevaluable {
+trait GpuAggregateFunction extends GpuExpression
+    with ShimExpression
+    with GpuUnevaluable {
   // using the child reference, define the shape of the vectors sent to
   // the update/merge expressions
   val inputProjection: Seq[Expression]
@@ -129,7 +132,9 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
                                   isDistinct: Boolean,
                                   filter: Option[Expression],
                                   resultId: ExprId)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression
+      with ShimExpression
+      with GpuUnevaluable {
 
   val aggregateFunction: GpuAggregateFunction = if (filter.isDefined) {
     WrappedAggFunction(origAggregateFunction, filter.get)
@@ -184,7 +189,7 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
   override def sql: String = aggregateFunction.sql(isDistinct)
 }
 
-abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable {
+abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable with ShimExpression {
   // we use this to get the ordinal of the bound reference, s.t. we can ask cudf to perform
   // the aggregate on that column
   def getOrdinal(ref: Expression): Int = ref.asInstanceOf[GpuBoundReference].ordinal
@@ -586,7 +591,7 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
-  // counts are Long
+  // counts are GpuToCpuBufferTransitionLong
   private lazy val cudfCount = AttributeReference("count", LongType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(children.head)
@@ -682,7 +687,7 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
     new CudfSum(cudfCount))
 
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
-  // divide-by-zero exceptions, even when ansi mode is enabled in Spark. 
+  // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: GpuExpression = GpuDivide(
     GpuCast(cudfSum, DoubleType),
@@ -905,9 +910,9 @@ trait GpuToCpuAggregateBufferConverter {
   def createExpression(child: Expression): GpuToCpuBufferTransition
 }
 
-trait CpuToGpuBufferTransition extends UnaryExpression with CodegenFallback
+trait CpuToGpuBufferTransition extends ShimUnaryExpression with CodegenFallback
 
-trait GpuToCpuBufferTransition extends UnaryExpression with CodegenFallback {
+trait GpuToCpuBufferTransition extends ShimUnaryExpression with CodegenFallback {
   override def dataType: DataType = BinaryType
 }
 

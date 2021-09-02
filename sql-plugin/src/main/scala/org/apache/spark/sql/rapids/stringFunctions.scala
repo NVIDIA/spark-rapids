@@ -21,6 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
@@ -276,7 +277,7 @@ case class GpuStringTrimRight(column: Expression, trimParameters: Option[Express
 }
 
 case class GpuConcatWs(children: Seq[Expression])
-    extends GpuExpression with ImplicitCastInputTypes {
+    extends GpuExpression with ShimExpression with ImplicitCastInputTypes {
   override def dataType: DataType = StringType
   override def nullable: Boolean = children.head.nullable
   override def foldable: Boolean = children.forall(_.foldable)

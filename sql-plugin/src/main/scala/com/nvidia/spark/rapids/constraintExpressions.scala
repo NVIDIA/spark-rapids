@@ -17,15 +17,19 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, TaggingExpression}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+
+trait ShimTaggingExpression extends TaggingExpression with ShimUnaryExpression
 
 /**
  * This is a TaggingExpression in spark, which gets matched in NormalizeFloatingNumbers (which is
  * a Rule).
  */
-case class GpuKnownFloatingPointNormalized(child: Expression) extends TaggingExpression
+case class GpuKnownFloatingPointNormalized(child: Expression) extends ShimTaggingExpression
     with GpuExpression {
   override def columnarEval(batch: ColumnarBatch): Any = {
     child.columnarEval(batch)
@@ -36,7 +40,7 @@ case class GpuKnownFloatingPointNormalized(child: Expression) extends TaggingExp
  * GPU version of the 'KnownNotNull', a TaggingExpression in spark,
  * to tag an expression as known to not be null.
  */
-case class GpuKnownNotNull(child: Expression) extends TaggingExpression
+case class GpuKnownNotNull(child: Expression) extends ShimTaggingExpression
     with GpuExpression {
   override def nullable: Boolean = false
 

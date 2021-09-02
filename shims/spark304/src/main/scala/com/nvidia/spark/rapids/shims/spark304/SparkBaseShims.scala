@@ -20,6 +20,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.Spark30XShims
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -67,7 +68,7 @@ import org.apache.spark.unsafe.types.CalendarInterval
  * that version should be folded into here. Any shim methods that are implemented only in the
  * updated base version can then be removed from the shim interface.
  */
-abstract class SparkBaseShims extends SparkShims {
+abstract class SparkBaseShims extends Spark30XShims {
 
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key

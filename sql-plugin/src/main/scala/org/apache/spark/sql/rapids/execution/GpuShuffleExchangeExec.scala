@@ -21,6 +21,7 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD
@@ -83,7 +84,9 @@ class GpuShuffleMeta(
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
 
     shuffle.outputPartitioning match {
-      case _: RoundRobinPartitioning if shuffle.sqlContext.conf.sortBeforeRepartition =>
+      case _: RoundRobinPartitioning
+        if ShimLoader.getSparkShims.sessionFromPlan(shuffle).sessionState.conf
+            .sortBeforeRepartition =>
         val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
         shuffle.output.map(_.dataType)
             .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
@@ -144,7 +147,7 @@ abstract class GpuShuffleExchangeExecBaseWithMetrics(
  */
 abstract class GpuShuffleExchangeExecBase(
     override val outputPartitioning: Partitioning,
-    child: SparkPlan) extends Exchange with GpuExec {
+    child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   private lazy val useRapidsShuffle = {

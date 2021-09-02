@@ -410,12 +410,18 @@ object CatalystExpressionBuilder extends Logging {
         // JVMachine encodes boolean array components using 1 to represent true
         // and 0 to represent false (see
         // https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-2.html#jvms-2.3.4).
-        case Cast(Literal(0, _), BooleanType, _) => Literal.FalseLiteral
-        case Cast(Literal(1, _), BooleanType, _) => Literal.TrueLiteral
-        case Cast(If(c, t, f), BooleanType, tz) =>
+        case ce: Cast if ce.child.isInstanceOf[Literal] && ce.dataType == BooleanType =>
+          ce.child match {
+            case Literal(0, _) => Literal.FalseLiteral
+            case Literal(1, _) => Literal.TrueLiteral
+          }
+        case ce: Cast if ce.child.isInstanceOf[If] && ce.dataType == BooleanType =>
+          ce.child match {
+            case If(c, t, f) =>
           simplifyExpr(If(simplifyExpr(c),
-            simplifyExpr(Cast(t, BooleanType, tz)),
-            simplifyExpr(Cast(f, BooleanType, tz))))
+            simplifyExpr(Cast(t, BooleanType, ce.timeZoneId)),
+            simplifyExpr(Cast(f, BooleanType, ce.timeZoneId))))
+          }
         case If(c, Repr.ArrayBuffer(t), Repr.ArrayBuffer(f)) => Repr.ArrayBuffer(If(c, t, f))
         case If(c, Repr.StringBuilder(t), Repr.StringBuilder(f)) => Repr.StringBuilder(If(c, t, f))
         case _ => expr

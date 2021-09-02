@@ -31,10 +31,11 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
+import org.apache.spark.rapids.shims.v2.api.python.ShimBasePythonRunner
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -264,9 +265,24 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
       env: SparkEnv,
       worker: Socket,
       releasedOrClosed: AtomicBoolean,
+      context: TaskContext
+  ): Iterator[ColumnarBatch] = {
+    newReaderIterator(stream, writerThread, startTime, env, worker, None, releasedOrClosed,
+      context)
+  }
+
+  protected def newReaderIterator(
+      stream: DataInputStream,
+      writerThread: WriterThread,
+      startTime: Long,
+      env: SparkEnv,
+      worker: Socket,
+      pid: Option[Int],
+      releasedOrClosed: AtomicBoolean,
       context: TaskContext): Iterator[ColumnarBatch] = {
 
-    new ReaderIterator(stream, writerThread, startTime, env, worker, releasedOrClosed, context) {
+    new ShimReaderIterator(stream, writerThread, startTime, env, worker, pid, releasedOrClosed,
+      context) {
 
       private[this] var arrowReader: StreamedTableReader = _
 
@@ -346,7 +362,7 @@ class GpuArrowPythonRunner(
     onDataWriteFinished: () => Unit,
     val pythonOutSchema: StructType,
     var minReadTargetBatchSize: Int = 1)
-    extends BasePythonRunner[ColumnarBatch, ColumnarBatch](funcs, evalType, argOffsets)
+    extends ShimBasePythonRunner[ColumnarBatch, ColumnarBatch](funcs, evalType, argOffsets)
         with GpuPythonArrowOutput {
 
   override val bufferSize: Int = SQLConf.get.pandasUDFBufferSize
