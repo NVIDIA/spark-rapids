@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql,\
     assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
     assert_cpu_and_gpu_are_equal_collect_with_capture
+from conftest import is_databricks_runtime
 from data_gen import *
 from functools import reduce
 from pyspark.sql.types import *
@@ -514,7 +515,6 @@ def test_hash_groupby_collect_with_multi_distinct(data_gen):
             f.countDistinct('c'))
     assert_gpu_and_cpu_are_equal_collect(spark_fn)
 
-@approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
@@ -522,46 +522,71 @@ def test_hash_groupby_collect_with_multi_distinct(data_gen):
                'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
                'AggregateExpression')
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-@pytest.mark.parametrize('conf', [_nans_float_conf_partial, _nans_float_conf_final], ids=idfn)
+@pytest.mark.parametrize('replace_mode', ['final|complete', 'partial'], ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
-def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled, use_obj_hash_agg):
-    local_conf = conf.copy()
-    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled,
-                       'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg})
-    # test without Distinct
+def test_hash_groupby_collect_partial_replace_fallback(data_gen, replace_mode, aqe_enabled, use_obj_hash_agg):
+    conf = {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
+            'spark.sql.adaptive.enabled': aqe_enabled,
+            'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
+
+    cpu_clz = ['CollectList', 'CollectSet']
+    gpu_clz = ['GpuCollectList', 'GpuCollectSet']
+    exist_clz, non_exist_clz = [], []
+    if is_databricks_runtime():
+        if replace_mode == 'partial':
+            exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        else:
+            exist_clz, non_exist_clz = gpu_clz, cpu_clz
+    else:
+        exist_clz = cpu_clz + gpu_clz
+
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_list('b')), f.sort_array(f.collect_set('b'))),
-        exist_classes='CollectList,CollectSet,GpuCollectList,GpuCollectSet',
-        conf=local_conf)
+        exist_classes=','.join(exist_clz),
+        non_exist_classes=','.join(non_exist_clz),
+        conf=conf)
 
+@ignore_order(local=True)
+@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
+               'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
+               'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
+               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
+               'AggregateExpression')
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('replace_mode', [
+    'partial|partialMerge',  # CPU -> CPU -> GPU -> GPU
+    'final|partialMerge&partial|final&complete',  # GPU -> GPU -> CPU -> CPU
+], ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen, replace_mode, aqe_enabled):
+    conf = {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
+            'spark.sql.adaptive.enabled': aqe_enabled}
     # test with single Distinct
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
             .agg(f.sort_array(f.collect_list('b')),
                  f.sort_array(f.collect_set('b')),
-                 f.countDistinct('c'),
-                 f.count('c')),
+                 f.countDistinct('c')),
         exist_classes='CollectList,CollectSet,GpuCollectList,GpuCollectSet',
-        conf=local_conf)
+        conf=conf)
 
     # test with Distinct Collect
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100),
         table_name='table',
-        exist_classes='CollectList,CollectSet,GpuCollectList,GpuCollectSet',
+        exist_classes='CollectSet,GpuCollectSet,Count,GpuCount',
         sql="""
     select a,
         sort_array(collect_list(distinct c)),
         sort_array(collect_set(b)),
-        count(distinct c),
         count(c)
     from table
     group by a""",
-        conf=local_conf)
+        conf=conf)
 
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
@@ -615,10 +640,9 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans[1:2], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
-    condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
+@pytest.mark.parametrize('parameterless', ['true'])
 def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, parameterless):
     conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_sql(
