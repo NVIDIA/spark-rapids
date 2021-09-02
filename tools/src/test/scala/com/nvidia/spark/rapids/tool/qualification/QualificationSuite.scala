@@ -409,7 +409,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val tmpParquet = s"$outpath/decparquet"
         createDecFile(sparkSession, tmpParquet)
 
-        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
           val plusOne = udf((x: Int) => x + 1)
           import spark.implicits._
           spark.udf.register("plusOne", plusOne)
@@ -441,7 +441,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val tmpParquet = s"$outpath/decparquet"
         createDecFile(sparkSession, tmpParquet)
 
-        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
           val plusOne = udf((x: Int) => x + 1)
           import spark.implicits._
           spark.udf.register("plusOne", plusOne)
@@ -499,7 +499,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener
-      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")

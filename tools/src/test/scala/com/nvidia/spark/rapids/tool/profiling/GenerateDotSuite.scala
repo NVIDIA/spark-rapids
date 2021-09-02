@@ -35,7 +35,7 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
 
   test("Generate DOT") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+      val (eventLog, appId) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
         import spark.implicits._
         val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
         t1.createOrReplaceTempView("t1")
@@ -57,13 +57,11 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           eventLog))
         ProfileMain.mainInternal(appArgs)
 
-        val tempSubDir = new File(dotFileDir, Profiler.SUBDIR)
-
+        val tempSubDir = new File(dotFileDir, s"${Profiler.SUBDIR}/$appId")
         // assert that a file was generated
         val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
-          (f.startsWith("local") && f.endsWith(".dot"))
+          f.endsWith(".dot")
         })
-        // 2 dot files and one regular output log file
         assert(dotDirs.length === 2)
 
         // assert that the generated files looks something like what we expect

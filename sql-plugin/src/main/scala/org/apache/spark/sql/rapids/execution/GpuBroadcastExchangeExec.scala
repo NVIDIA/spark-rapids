@@ -28,6 +28,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -251,7 +252,7 @@ abstract class GpuBroadcastExchangeExecBaseWithFuture(
  */
 abstract class GpuBroadcastExchangeExecBase(
     val mode: BroadcastMode,
-    child: SparkPlan) extends Exchange with GpuExec {
+    child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -290,7 +291,7 @@ abstract class GpuBroadcastExchangeExecBase(
       override def call(): Broadcast[Any] = {
         // This will run in another thread. Set the execution id so that we can connect these jobs
         // with the correct execution.
-        SQLExecution.withExecutionId(sqlContext.sparkSession, executionId) {
+        SQLExecution.withExecutionId(sparkSession, executionId) {
           val totalRange = new MetricRange(totalTime)
           try {
             // Setup a job group here so later it may get cancelled by groupId if necessary.

@@ -333,15 +333,18 @@ The profiling tool generates information which can be used for debugging and pro
 ### Profiling tool functions
 
 Below is the information the profiling tool reports, see [Profile tool Detailed Output and Examples](#profile-tool-detailed-output-and-examples) for more information
-and examples. It has 2 main modes of operation: collection and compare.  Collection mode is when no other options are specified it simply collects information
-on each application individually and outputs a file per application. Compare mode will combine all the applications information in the same tables into a single file.
-It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.
+and examples. It has 3 modes of operation: collection, combined, and compare.  Collection mode is when no other options are specified it simply collects information
+on each application individually and outputs a file per application. Combined mode is collection mode but then combines all the applications together
+and you get one file for all applications. Compare mode will combine all the applications information in the same tables into a single file and also adds in 
+tables to compare stages and sql ids across all of those applications. The Compare mode will use more memory if comparing lots of applications.
+It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.  It can also optionally output
+CSV files for each table.
 
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
 - Application information
 - Datasource information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
@@ -369,6 +372,10 @@ in the local filesystem, HDFS, S3 or mixed. Note that if you are on an HDFS clus
 the default filesystem is likely HDFS for both the input and output so if you want to
 point to the local filesystem be sure to include `file:` in the path
 
+Please note, if processing a lot of event logs using combined or compare mode you may
+need to increase the java heap size using `-Xmx` option.  For instance, to specify
+30 GB heap size `java -Xmx30g ...`
+
 ```bash
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
@@ -391,9 +398,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 
+      --combined                  Collect mode but combine all applications into
+                                  the same tables.
   -c, --compare                   Compare Applications (Note this may require
                                   more memory if comparing a large number of
                                   applications). Default is false.
+      --csv                       Output each table to a CSV file as well
+                                  creating the summary text file.
   -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
                                   processing.eg: 100-newest-filesystem (for
                                   processing newest 100 event logs). eg:
@@ -417,7 +428,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   overwrite any existing files with the same
                                   name.
   -p, --print-plans               Print the SQL plans to a file named
-                                  '{APPLICATION_ID}-planDescriptions.log'.
+                                  'planDescriptions.log'.
                                   Default is false.
   -t, --timeout  <arg>            Maximum time in seconds to wait for the event
                                   logs to be processed. Default is 24 hours
@@ -433,16 +444,21 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
 ### Profiling tool output
-By default this outputs a log file under sub-directory `./rapids_4_spark_profile`.
-If running in normal collect mode, it outputs a file named `{APPLICATION_ID}-profile.log`
-for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_compare.log`
-will be output. The output will go into your default filesystem, it supports local filesystem or HDFS.
+The default output location is the current directory. The output location can be changed using the `--output-directory` option.
+The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
+If running in normal collect mode, it processes event log individually and outputs files for each application under
+a directory named `rapids_4_spark_profile/{APPLICATION_ID}`. It creates a summary text file named `profile.log`.
+If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summary
+text file named `rapids_4_spark_tools_combined.log`.
+If running compare mode the output is put under a directory named `rapids_4_spark_profile/compare/` and creates a summary
+text file named `rapids_4_spark_tools_compare.log`.
+The output will go into your default filesystem, it supports local filesystem or HDFS.
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
 so if you want to point to the local filesystem be sure to include `file:` in the path
 There are separate files that are generated under the same sub-directory when using the options to generate query
 visualizations or printing the SQL plans.
-
-The output location can be changed using the `--output-directory` option. Default is current directory.
+Optionally if the `--csv` option is specified then it creates a csv file for each table for each application in the
+corresponding sub-directory.
 
 There is a 100 characters limit for each output column. If the result of the column exceeds this limit, it is suffixed with ... for that column.
 
@@ -460,7 +476,7 @@ All the metrics definitions can be found in the [executor task metrics doc](http
 - Application information
 - Data Source information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
@@ -630,9 +646,9 @@ SQL Plan Metrics for Application:
 ```
 
 - Print SQL Plans (-p option):
-Prints the SQL plan as a text string to a file ends with `-planDescriptions.log`.
+Prints the SQL plan as a text string to a file named `planDescriptions.log`.
 For example if your application id is app-20210507103057-0000, then the
-filename will be `app-20210507103057-0000-planDescriptions.log`
+filename will be `planDescriptions.log`
 
 - Generate DOT graph for each SQL (-g option):
 
@@ -667,7 +683,7 @@ If a stage hs no metrics, like if the query crashed early, we cannot establish t
 - Generate timeline for application (--generate-timeline option):
 
 The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
-named `${APPLICATION_ID}-timeline.svg`.  Most web browsers can display this file.  It is a
+named `timeline.svg`.  Most web browsers can display this file.  It is a
 timeline view similar Apache Spark's 
 [event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
 

@@ -42,13 +42,15 @@ class CompareSuite extends FunSuite {
       index += 1
     }
     assert(apps.size == 2)
-    val compare = new CompareApplications(apps, None, 1000)
+    val compare = new CompareApplications(apps)
     val (matchingSqlIdsRet, matchingStageIdsRet) = compare.findMatchingStages()
     // none match
     assert(matchingSqlIdsRet.size === 29)
-    assert(matchingSqlIdsRet.head.size == 2)
+    assert(matchingSqlIdsRet.head.outputHeaders.size == 2)
+    assert(matchingSqlIdsRet.head.rows.size == 2)
     assert(matchingStageIdsRet.size === 73)
-    assert(matchingStageIdsRet.head.size == 2)
+    assert(matchingStageIdsRet.head.outputHeaders.size == 2)
+    assert(matchingStageIdsRet.head.rows.size == 2)
   }
 
   test("test 2 app runs event logs compare") {
@@ -63,16 +65,15 @@ class CompareSuite extends FunSuite {
       index += 1
     }
     assert(apps.size == 2)
-    val compare = new CompareApplications(apps, None, 1000)
+    val compare = new CompareApplications(apps)
     val (matchingSqlIdsRet, matchingStageIdsRet) = compare.findMatchingStages()
     // all match
     assert(matchingSqlIdsRet.size === 1)
-    assert(matchingSqlIdsRet.head.size == 2)
-    assert(matchingSqlIdsRet.head(0) == matchingSqlIdsRet.head(1))
+    assert(matchingSqlIdsRet.head.outputHeaders.size == 2)
+    assert(matchingSqlIdsRet.head.rows(0) == matchingSqlIdsRet.head.rows(1))
     assert(matchingStageIdsRet.size === 4)
-    assert(matchingStageIdsRet.head.size == 2)
+    assert(matchingStageIdsRet.head.outputHeaders.size == 2)
     val firstRow = matchingStageIdsRet(3)
-    assert(firstRow(0) == firstRow(1))
-
+    assert(firstRow.rows(0) == firstRow.rows(1))
   }
 }
