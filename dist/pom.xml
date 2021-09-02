@@ -69,6 +69,82 @@
               <scope>provided</scope>
             </dependency>
         </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <configuration>
+          <artifactSet>
+            <excludes>org.slf4j:*</excludes>
+          </artifactSet>
+	  <transformers>
+            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+	  </transformers>
+          <shadedArtifactAttached>false</shadedArtifactAttached>
+          <createDependencyReducedPom>true</createDependencyReducedPom>
+          <relocations>
+            <relocation>
+              <pattern>org.apache.orc.</pattern>
+              <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
+            </relocation>
+            <relocation>
+              <pattern>org.apache.hadoop.hive.</pattern>
+              <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
+              <excludes>
+                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
+                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
+              </excludes>
+            </relocation>
+            <relocation>
+              <pattern>org.apache.hive.</pattern>
+              <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>
+            </relocation>
+            <relocation>
+              <pattern>io.airlift.compress.</pattern>
+              <shadedPattern>${rapids.shade.package}.io.airlift.compress.</shadedPattern>
+            </relocation>
+            <relocation>
+              <pattern>org.apache.commons.codec.</pattern>
+              <shadedPattern>${rapids.shade.package}.org.apache.commons.codec.</shadedPattern>
+            </relocation>
+            <relocation>
+              <pattern>org.apache.commons.lang.</pattern>
+              <shadedPattern>${rapids.shade.package}.org.apache.commons.lang.</shadedPattern>
+            </relocation>
+
+            <relocation>
+              <pattern>com.google</pattern>
+              <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
+            </relocation>
+          </relocations>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <filters>
+                <filter>
+                  <artifact>com.nvidia:rapids-4-spark_2.12</artifact>
+                  <includes>
+                    <include>META-INF/**</include>
+                  </includes>
+                  <excludes>
+                    <exclude>META-INF/**</exclude>
+                    <exclude>META-INF/services/**</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+  </plugins>
+  </build>
     </profile>
     <profile>
         <id>with-classifier</id>
@@ -112,6 +188,187 @@
               <scope>provided</scope>
             </dependency>
         </dependencies>
+  <build>
+    <plugins>
+        <plugin>
+        <!-- wierd but first build the jar for dependencies pick it up, 
+             it gets overwritten below by ant target
+        -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+      </plugin>
+      <plugin>
+            <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+            <execution>
+            <id>copy</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <artifactItems>
+            <artifactItem>
+              <groupId>com.nvidia</groupId>
+              <artifactId>rapids-4-spark-sql_2.12</artifactId>
+              <classifier>spark301</classifier>
+              <version>${project.version}</version>
+              <type>jar</type>
+              <overWrite>false</overWrite>
+              <outputDirectory>${project.build.directory}/deps</outputDirectory>
+            </artifactItem>
+            <artifactItem>
+              <groupId>com.nvidia</groupId>
+              <artifactId>rapids-4-spark-sql_2.12</artifactId>
+              <classifier>spark302</classifier>
+              <version>${project.version}</version>
+              <type>jar</type>
+              <overWrite>false</overWrite>
+              <outputDirectory>${project.build.directory}/deps</outputDirectory>
+            </artifactItem>
+          </artifactItems>
+          <outputDirectory>${project.build.directory}/deps</outputDirectory>
+<!--
+          <overWriteReleases>false</overWriteReleases>
+          <overWriteSnapshots>true</overWriteSnapshots>
+-->
+        </configuration>
+            <!--
+            <executions>
+              <execution>
+                <phase>generate-resources</phase>
+                <goals>
+                  <goal>copy-dependencies</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                </configuration>
+              </execution>
+            </executions>
+-->
+          </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>prepare-package</phase>
+            <goals><goal>run</goal></goals>
+            <id>delete-shim-classes</id>
+            <configuration>
+              <target>
+                <delete
+                        dir="${project.build.directory}/parallel-world"
+                        includeemptydirs="true"
+                />
+
+                <delete>
+                  <fileset
+                          dir="${project.build.directory}"
+                          includes="*.jar"
+                  />
+                </delete>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>run</goal></goals>
+            <id>create-parallel-world</id>
+            <configuration>
+              <target>
+
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-sql_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                        dest="${project.build.directory}/parallel-world"
+                >
+                  <patternset id="sharedWorld">
+                    <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                    <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                  </patternset>
+                </unzip>
+
+<!--                unzip task seems to be broken for $$ files, so using exec with jar -->
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-sql_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                        dest="${project.build.directory}/parallel-world/"
+                >
+                  <!--
+                  TODO generate automatically based on the number of shims in the build
+                  this example works for 3 shims. If we find 3 duplicates of a class then it can
+                  be shared
+                  find shims -name \*.class -exec md5sum {} + |
+                    sort -k 1 |
+                    uniq -w32 -c | tr -s ' ' | grep '^ 3 ' | cut -d'/' -f 5- | sort > dist/unshimmed-classes.txt
+                  -->
+                  <patternset id="sharedWorld">
+                    <excludesfile name="${project.basedir}/shimmed-classes.txt"/>
+                    <excludesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                    <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                  </patternset>
+                </unzip>
+
+                <unzip
+                        src="${project.build.directory}/deps/rapids-4-spark-sql_${scala.binary.version}-${project.version}-spark301.jar"
+                        dest="${project.build.directory}/parallel-world/spark301"
+                >
+                  <!-- to keep in sync with sharedWorld: inverse it to exclude -->
+                  <patternset id="shimPattern">
+                    <includesfile name="${project.basedir}/shimmed-classes.txt"/>
+                  </patternset>
+                </unzip>
+                <unzip
+                        src="${project.build.directory}/deps/rapids-4-spark-sql_${scala.binary.version}-${project.version}-spark302.jar"
+                        dest="${project.build.directory}/parallel-world/spark302"
+                >
+                  <patternset refid="shimPattern"/>
+                </unzip>
+                <!--
+                <unzip
+                        src="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}-spark303.jar"
+                        dest="${project.build.directory}/parallel-world/spark303"
+                >
+                  <patternset refid="shimPattern"/>
+                </unzip>
+                <unzip
+                        src="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}-spark311.jar"
+                        dest="${project.build.directory}/parallel-world/spark311"
+                >
+                  <patternset refid="shimPattern"/>
+                </unzip>
+                <unzip
+                        src="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}-spark312.jar"
+                        dest="${project.build.directory}/parallel-world/spark312"
+                >
+                  <patternset refid="shimPattern"/>
+                </unzip>
+                <unzip
+                        src="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}-spark312db.jar"
+                        dest="${project.build.directory}/parallel-world/spark312db"
+                >
+                  <patternset refid="shimPattern"/>
+                </unzip>
+                <unzip
+                        src="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}-spark320.jar"
+                        dest="${project.build.directory}/parallel-world/spark320"
+                >
+                  <patternset refid="shimPattern"/>
+                </unzip>
+-->
+                <jar
+                        destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                        basedir="${project.build.directory}/parallel-world"
+                >
+                </jar>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+  </plugins>
+  </build>
     </profile>
     <profile>
         <id>release311cdh</id>
@@ -205,79 +462,6 @@
 
   <build>
     <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <configuration>
-          <artifactSet>
-            <excludes>org.slf4j:*</excludes>
-          </artifactSet>
-	  <transformers>
-            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
-	  </transformers>
-          <shadedArtifactAttached>false</shadedArtifactAttached>
-          <createDependencyReducedPom>true</createDependencyReducedPom>
-          <relocations>
-            <!-- Shade ORC and Hive and their dependencies -->
-            <relocation>
-              <pattern>org.apache.orc.</pattern>
-              <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.hadoop.hive.</pattern>
-              <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
-              <excludes>
-                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
-                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
-                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
-              </excludes>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.hive.</pattern>
-              <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>io.airlift.compress.</pattern>
-              <shadedPattern>${rapids.shade.package}.io.airlift.compress.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.commons.codec.</pattern>
-              <shadedPattern>${rapids.shade.package}.org.apache.commons.codec.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.commons.lang.</pattern>
-              <shadedPattern>${rapids.shade.package}.org.apache.commons.lang.</shadedPattern>
-            </relocation>
-
-            <!-- Shade Guava, Flatbuffers, and Protobuf -->
-            <relocation>
-              <pattern>com.google</pattern>
-              <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
-            </relocation>
-          </relocations>
-        </configuration>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-            <configuration>
-              <filters>
-                <filter>
-                  <artifact>com.nvidia:rapids-4-spark_2.12</artifact>
-                  <includes>
-                    <include>META-INF/**</include>
-                  </includes>
-                  <excludes>
-                    <exclude>META-INF/services/**</exclude>
-                  </excludes>
-                </filter>
-              </filters>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
       <plugin>
         <groupId>net.alchim31.maven</groupId>
         <artifactId>scala-maven-plugin</artifactId>

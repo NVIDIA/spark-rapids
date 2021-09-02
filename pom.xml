@@ -101,6 +101,7 @@
             </activation>
            <properties>
                <spark.version.classifier/>
+               <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
            </properties>
            <build>
                <plugins>
@@ -714,7 +715,7 @@
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
         -->
-        <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
         <test.exclude.tags/>
         <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
