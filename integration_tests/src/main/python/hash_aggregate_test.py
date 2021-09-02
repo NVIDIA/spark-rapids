@@ -515,6 +515,14 @@ def test_hash_groupby_collect_with_multi_distinct(data_gen):
             f.countDistinct('c'))
     assert_gpu_and_cpu_are_equal_collect(spark_fn)
 
+_replace_modes_non_distinct = [
+    # Spark: GPU(Final) -> CPU(Partial)
+    # Databricks runtime: GPU(Complete)
+    'final|complete',
+    # Spark: CPU(Final) -> GPU(Partial)
+    # Databricks runtime: CPU(Complete)
+    'partial',
+]
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
@@ -522,17 +530,22 @@ def test_hash_groupby_collect_with_multi_distinct(data_gen):
                'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
                'AggregateExpression')
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-@pytest.mark.parametrize('replace_mode', ['final|complete', 'partial'], ids=idfn)
+@pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
-def test_hash_groupby_collect_partial_replace_fallback(data_gen, replace_mode, aqe_enabled, use_obj_hash_agg):
+def test_hash_groupby_collect_partial_replace_fallback(data_gen,
+                                                       replace_mode,
+                                                       aqe_enabled,
+                                                       use_obj_hash_agg):
     conf = {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
             'spark.sql.adaptive.enabled': aqe_enabled,
             'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
 
-    cpu_clz = ['CollectList', 'CollectSet']
-    gpu_clz = ['GpuCollectList', 'GpuCollectSet']
+    cpu_clz, gpu_clz = ['CollectList', 'CollectSet'], ['GpuCollectList', 'GpuCollectSet']
     exist_clz, non_exist_clz = [], []
+    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage (
+    # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
+    # set the expected exist_classes according to runtime.
     if is_databricks_runtime():
         if replace_mode == 'partial':
             exist_clz, non_exist_clz = cpu_clz, gpu_clz
@@ -549,6 +562,15 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen, replace_mode, a
         non_exist_classes=','.join(non_exist_clz),
         conf=conf)
 
+_replace_modes_single_distinct = [
+    # Spark: CPU -> CPU -> GPU(PartialMerge) -> GPU(Partial)
+    # Databricks runtime: CPU(Final and Complete) -> GPU(PartialMerge)
+    'partial|partialMerge',
+    # Spark: GPU(Final) -> GPU(PartialMerge&Partial) -> CPU(PartialMerge) -> CPU(Partial)
+    # Databricks runtime: GPU(Final&Complete) -> CPU(PartialMerge)
+    'final|partialMerge&partial|final&complete',
+]
+# TODO: add param of use_obj_hash_agg after https://github.com/NVIDIA/spark-rapids/issues/3367 getting fixed
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
@@ -556,12 +578,11 @@ def test_hash_groupby_collect_partial_replace_fallback(data_gen, replace_mode, a
                'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
                'AggregateExpression')
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
-@pytest.mark.parametrize('replace_mode', [
-    'partial|partialMerge',  # CPU -> CPU -> GPU -> GPU
-    'final|partialMerge&partial|final&complete',  # GPU -> GPU -> CPU -> CPU
-], ids=idfn)
+@pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen, replace_mode, aqe_enabled):
+def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
+                                                                     replace_mode,
+                                                                     aqe_enabled):
     conf = {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
             'spark.sql.adaptive.enabled': aqe_enabled}
     # test with single Distinct
