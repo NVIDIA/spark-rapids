@@ -329,12 +329,12 @@ class CudfMergeM2s(ref: Expression) extends CudfAggregate(ref) {
   // TODO: remove comment below
   // dataType must be a structs column, and nullable of the output must be false
   // the struct field `mean` and `m2` can be nullable (but are not always nullable)
-  // so I'm no sure if set `nullable = true` is correct here.
+  // so I'm no sure if set `nullable = false` is correct here.
 
   override def dataType: DataType = StructType(Array(
-    StructField("count", IntegerType, nullable = false),
-    StructField("mean", DoubleType, nullable = true),
-    StructField("m2", DoubleType, nullable = true)))
+    StructField("n", IntegerType, nullable = false),
+    StructField("avg", DoubleType, nullable = false),
+    StructField("m2", DoubleType, nullable = false)))
   override def nullable: Boolean = false
 }
 
@@ -945,34 +945,35 @@ abstract class GpuM2(child: Expression)
   // so I'm no sure if set `nullable = true` is correct here.
 
   override def dataType: DataType = StructType(Array(
-    StructField("count", IntegerType, nullable = false),
-    StructField("mean", DoubleType, nullable = true),
-    StructField("m2", DoubleType, nullable = true)))
+    StructField("n", IntegerType, nullable = false),
+    StructField("avg", DoubleType, nullable = false),
+    StructField("m2", DoubleType, nullable = false)))
   override def nullable: Boolean = false
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
-  protected lazy val outputBuffer: AttributeReference = assembleOutputBuffer
-    // AttributeReference("bufferCountMeanM2", dataType, nullable = false)()
+  // Buffers for the update stage.
   protected lazy val bufferCount: AttributeReference =
-    AttributeReference("bufferCount", IntegerType, nullable = false)()
-  protected lazy val bufferSum: AttributeReference =
-    AttributeReference("bufferSum", DoubleType, nullable = true)()
+    AttributeReference("n", IntegerType, nullable = false)()
+  protected lazy val bufferMean: AttributeReference =
+    AttributeReference("avg", DoubleType, nullable = true)()
   protected lazy val bufferM2: AttributeReference =
-    AttributeReference("bufferM2", DoubleType, nullable = true)()
+    AttributeReference("m2", DoubleType, nullable = true)()
 
-  private def assembleOutputBuffer: AttributeReference = {
+  // Buffer for the merge stage.
+  // AttributeReference("bufferCountMeanM2", dataType, nullable = false)()
+  protected lazy val bufferCountMeanM2: AttributeReference = {
     // Firstly we need to compute mean from count and sum
     // TODO: withResource
 //    val mean = GpuDivide(bufferSum, GpuCast(bufferCount, DoubleType), failOnErrorOverride = false)
 
     // Assemble a struct column from the columns count, mean, and M2
 
-    AttributeReference("bufferCountMeanM2", dataType, nullable = false)()
+    AttributeReference("n_avg_m2", dataType, nullable = false)()
   }
 
   //  assembleOutputBuffer
 
-  override lazy val aggBufferAttributes: Seq[AttributeReference] = outputBuffer :: Nil
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = bufferCountMeanM2 :: Nil
   override lazy val inputProjection: Seq[Expression] = Seq(child)
 
   // TODO: Remove comment below
@@ -984,14 +985,18 @@ abstract class GpuM2(child: Expression)
   override lazy val updateExpressions: Seq[Expression] =
     new CudfCount(bufferCount) :: new CudfSum(bufferSum) :: new CudfM2(bufferM2) :: Nil
 
-  override lazy val mergeExpressions: Seq[GpuExpression] = new CudfMergeM2s(outputBuffer) :: Nil
+  override lazy val mergeExpressions: Seq[GpuExpression] =
+    new CudfMergeM2s(bufferCountMeanM2) :: Nil
 }
 
 case class GpuStddevPop(child: Expression) extends GpuM2(child) {
-  override lazy val evaluateExpression: GpuExpression =
-  {
-     // Compute stddev_pop from M2s.
-    GpuDivide(bufferSum, GpuCast(bufferCount, DoubleType), failOnErrorOverride = false)
+  override lazy val evaluateExpression: GpuExpression = {
+    // TODO: Extract finalM2 from the outputBuffer---below is not correct
+    // Extract finalM2 from the outputBuffer
+    val finalM2 = bufferM2;
+
+     // Compute stddev_pop from M2s: stddev_pop = sqrt(M2 / n).
+    GpuSqrt(GpuDivide(finalM2, GpuCast(bufferCount, DoubleType), failOnErrorOverride = false))
   }
 
   override def children: Seq[Expression] = Seq(child)
