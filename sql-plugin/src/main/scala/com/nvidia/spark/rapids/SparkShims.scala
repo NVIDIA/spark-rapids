@@ -253,6 +253,7 @@ trait SparkShims {
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 
+  /** Return list of operators in the plan that match the predicate */
   def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
 
   def shouldAssertIsOnTheGpu(plan: SparkPlan): Boolean

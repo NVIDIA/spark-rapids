@@ -99,7 +99,6 @@ trait Spark30XShims extends SparkShims {
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
-  /** Return list of matching predicates present in the plan */
   override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
     def recurse(
         plan: SparkPlan,
