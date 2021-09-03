@@ -1301,14 +1301,14 @@ case class GpuCast(
           // the input is already checked, just cast it
         //ADD debug here KUHU
           val res = checkedInput.castTo(cudfDecimal)
-          System.err.println("KUHU checkedInput row 0 =" +
-            checkedInput.asInstanceOf[ColumnView].copyToHost().getBigDecimal(0))
-        System.err.println("KUHU checkedInput row 1 =" +
-          checkedInput.asInstanceOf[ColumnView].copyToHost().getBigDecimal(1))
-        System.err.println("KUHU res row 0 =" +
-          res.asInstanceOf[ColumnView].copyToHost().getBigDecimal(0))
-          System.err.println("KUHU res row 1 =" +
-            res.asInstanceOf[ColumnView].copyToHost().getBigDecimal(1))
+//          System.err.println("KUHU checkedInput row 0 =" +
+//            checkedInput.asInstanceOf[ColumnView].copyToHost().getBigDecimal(0))
+//        System.err.println("KUHU checkedInput row 1 =" +
+//          checkedInput.asInstanceOf[ColumnView].copyToHost().getBigDecimal(1))
+//        System.err.println("KUHU res row 0 =" +
+//          res.asInstanceOf[ColumnView].copyToHost().getBigDecimal(0))
+//          System.err.println("KUHU res row 1 =" +
+//            res.asInstanceOf[ColumnView].copyToHost().getBigDecimal(1))
         return res
 //        }
       } else if (to.scale > from.scale) {
