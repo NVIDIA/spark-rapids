@@ -80,6 +80,11 @@ case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersio
   override def toString(): String = s"$major.$minor.$patch-amzn"
 }
 
+case class EEPShimVersion(major: Int, minor: Int, patch: Int, buildEBF: Int, eepVersion: String)
+  extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch.$buildEBF$eepVersion"
+}
+
 trait SparkShims {
   def getSparkShimVersion: ShimVersion
   def parquetRebaseReadKey: String
