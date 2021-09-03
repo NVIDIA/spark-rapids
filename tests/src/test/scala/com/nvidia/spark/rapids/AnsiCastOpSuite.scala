@@ -18,11 +18,13 @@ package com.nvidia.spark.rapids
 
 import java.sql.Timestamp
 import java.time.DateTimeException
+
 import scala.util.Random
+
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Cast, CastBase, NamedExpression}
-import org.apache.spark.sql.execution.{ProjectExec, SparkPlan}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, CastBase, NamedExpression}
+import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 
