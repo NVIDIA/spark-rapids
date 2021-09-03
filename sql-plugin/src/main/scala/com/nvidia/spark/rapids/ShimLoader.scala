@@ -18,13 +18,17 @@ package com.nvidia.spark.rapids
 
 import java.net.URL
 
+import scala.collection.JavaConverters._
+
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.VisibleShuffleManager
 import org.apache.spark.util.{MutableURLClassLoader, ParentClassLoader}
 
 /*
-    Plugin jar uses non-standard class file layout. It consists of three types of areas
+    Plugin jar uses non-standard class file layout. It consists of three types of areas,
+    "parallel worlds" in the JDK's com.sun.istack.internal.tools.ParallelWorldClassLoader parlance
+
     1. a few publicly documented classes in the conventional layout at the top
     2. a large fraction of classes whose bytecode is identical under all supported Spark versions
        in spark3xx-common
@@ -120,22 +124,28 @@ object ShimLoader extends Logging {
     }
   }
 
+  private val SERVICE_LOADER_PREFIX = "META-INF/services/"
+
   private def detectShimProvider(): String = {
     val sparkVersion = getSparkVersion
     logInfo(s"Loading shim for Spark version: $sparkVersion")
 
+    val thisClassLoader = getClass.getClassLoader
     // Emulating service loader manually because we have a non-standard jar layout for classes
-    val serviceProviderListPath = "/META-INF/services/" + classOf[SparkShimServiceProvider].getName
-    val serviceProviderList = Option(getClass.getResource(serviceProviderListPath)).toSeq
-      .map(scala.io.Source.fromURL)
-      .flatMap(_.getLines())
+    val serviceProviderListPath = SERVICE_LOADER_PREFIX + classOf[SparkShimServiceProvider].getName
+    val serviceProviderList = thisClassLoader.getResources(serviceProviderListPath)
+        .asScala.map(scala.io.Source.fromURL)
+        .flatMap(_.getLines())
+
+    assert(serviceProviderList.nonEmpty, "Classpath should contain the resource for " +
+        serviceProviderListPath)
 
     val shimServiceProviderOpt = serviceProviderList.flatMap { shimServiceProviderStr =>
       val mask = shimIdFromPackageName(shimServiceProviderStr)
       try {
         val shimURL = new java.net.URL(s"${shimRootURL.toString}$mask/")
         val shimClassLoader = new MutableURLClassLoader(Array(shimURL, shimCommonURL),
-          getClass.getClassLoader)
+          thisClassLoader)
         // can't use ServiceLoader with parallel world layout
         val shimClass = shimClassLoader.loadClass(shimServiceProviderStr)
         Option(
@@ -159,6 +169,9 @@ object ShimLoader extends Logging {
     }
   }
 
+  // shimId corresponds to spark.version.classifier by convention
+  // e.g. com.nvidia.spark.rapids.shims.spark320.SparkShimServiceProvider implies
+  // shimId = "spark320"
   private def shimIdFromPackageName(shimServiceProvider: SparkShimServiceProvider) = {
     shimServiceProvider.getClass.getPackage.toString.split('.').last
   }
@@ -220,7 +233,8 @@ object ShimLoader extends Logging {
   private def instantiateClass[T](cls: Class[T]): T = {
     logDebug(s"Instantiate ${cls.getName} using classloader " + cls.getClassLoader)
     cls.getClassLoader match {
-      case m: MutableURLClassLoader => logDebug("GERA_DEBUG urls " + m.getURLs.mkString("\n"))
+      case m: MutableURLClassLoader =>
+        logDebug("urls " + m.getURLs.mkString("\n"))
       case _ =>
     }
     val constructor = cls.getConstructor()

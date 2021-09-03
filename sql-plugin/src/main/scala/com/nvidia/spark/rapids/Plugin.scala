@@ -23,7 +23,6 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import java.util
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
@@ -144,7 +143,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     }
   }
 
-  override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
+  override def init(
+    sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
@@ -170,7 +170,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def init(
       pluginContext: PluginContext,
-      extraConf: util.Map[String, String]): Unit = {
+      extraConf: java.util.Map[String, String]): Unit = {
     try {
       val conf = new RapidsConf(extraConf.asScala.toMap)
       if (conf.shimsProviderOverride.isDefined) {
