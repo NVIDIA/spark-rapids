@@ -37,11 +37,11 @@ nav_order: 2
 
   To use this serializer please run Spark with the following conf.
   ```
-  spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.v2.ParquetCachedBatchSerializer
+  spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
   ```
 
  
-## Supported Types                       
+##          Supported Types                       
  
  All types are supported on the CPU, on the GPU, ArrayType, MapType and BinaryType are not
  supported. If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall 
