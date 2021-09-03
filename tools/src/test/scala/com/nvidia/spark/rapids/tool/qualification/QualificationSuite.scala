@@ -356,25 +356,48 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   // with complex types, complex nested types, decimals and simple types
   test("test different types in ReadSchema") {
     val testSchemas: ArrayBuffer[ArrayBuffer[String]] = ArrayBuffer(
+      ArrayBuffer(""),
+      ArrayBuffer("firstName:string,lastName:string"),
+      ArrayBuffer("properties:map<string,string>"),
+      ArrayBuffer("name:array<string>"),
       ArrayBuffer("name:string,booksInterested:array<struct<name:string,price:decimal(8,2)," +
-          "author:string,pages:int>>, name:string,subject:string"),
-      ArrayBuffer("value:decimal(4,2), " +
-          "name:string,addresses:array<struct<city:string,state:string>>," +
-          "properties:map<string,string>"),
-      ArrayBuffer("firstName:string,lastName:string"))
+          "author:string,pages:int>>,authbook:array<map<name:string,author:string>>, " +
+          "pages:array<array<struct<name:string,pages:int>>>,name:string,subject:string"),
+      ArrayBuffer("name:struct<fn:string,mn:array<string>,ln:string>," +
+          "add:struct<cur:struct<st:string,city:string>," +
+          "previous:struct<st:map<string,string>,city:string>>," +
+          "next:struct<fn:string,ln:string>"),
+      ArrayBuffer("name:map<id:int,map<fn:string,ln:string>>, " +
+          "address:map<id:int,struct<st:string,city:string>>," +
+          "orders:map<id:int,order:array<map<oname:string,oid:int>>>," +
+          "status:map<name:string,active:string>")
+    )
 
     var index = 0
-    val expComplexNested = List(
-      ("array<struct<name:string;price:decimal(8;2);author:string;pages:int>>",
-          "array<struct<name:string;price:decimal(8;2);author:string;pages:int>>"),
-      ("array<struct<city:string;state:string>>;map<string;string>",
-          "array<struct<city:string;state:string>>"),
-      ("", ""))
+    val expectedResult = List(
+      ("", ""),
+      ("", ""),
+      ("map<string;string>", ""),
+      ("array<string>", ""),
+      ("array<struct<name:string;price:decimal(8;2);author:string;pages:int>>;" +
+          "array<map<name:string;author:string>>;array<array<struct<name:string;pages:int>>>",
+          "array<struct<name:string;price:decimal(8;2);author:string;pages:int>>;" +
+              "array<map<name:string;author:string>>;array<array<struct<name:string;pages:int>>>"),
+      ("struct<fn:string;mn:array<string>;ln:string>;" +
+          "struct<cur:struct<st:string;city:string>;previous:struct<st:map<string;string>;" +
+          "city:string>>;struct<fn:string;ln:string>",
+          "struct<fn:string;mn:array<string>;ln:string>;" +
+              "struct<cur:struct<st:string;city:string>;previous:struct<st:map<string;string>;" +
+              "city:string>>"),
+      ("map<id:int;map<fn:string;ln:string>>;map<id:int;struct<st:string;city:string>>;" +
+          "map<id:int;order:array<map<oname:string;oid:int>>>;map<name:string;active:string>",
+          "map<id:int;map<fn:string;ln:string>>;map<id:int;struct<st:string;city:string>>;" +
+              "map<id:int;order:array<map<oname:string;oid:int>>>"))
 
     val result = testSchemas.map(x => QualAppInfo.parseReadSchemaForNestedTypes(x))
-    result.foreach { res =>
-      assert(res._1.equals(expComplexNested(index)._1))
-      assert(res._2.equals(expComplexNested(index)._2))
+    result.foreach { actualResult =>
+      assert(actualResult._1.equals(expectedResult(index)._1))
+      assert(actualResult._2.equals(expectedResult(index)._2))
       index += 1
     }
   }
