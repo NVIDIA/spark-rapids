@@ -189,6 +189,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -257,6 +258,7 @@
                 <spark.test.version>${spark302.version}</spark.test.version>
             </properties>
             <modules>
+                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -294,6 +296,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -330,6 +333,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -369,6 +373,7 @@
             <modules>
                 <module>api_validation</module>
                 <module>tools</module>
+                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -397,6 +402,9 @@
                 <hive.storage.api.version>${spark301db.version}</hive.storage.api.version>
                 <protobuf.java.version>${spark301db.version}</protobuf.java.version>
             </properties>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <!-- Note databricks requires 2 properties -Ddatabricks and -Dbuildver=[301db,311db] -->
@@ -424,6 +432,9 @@
                 <hive.storage.api.version>${spark311db.version}</hive.storage.api.version>
                 <protobuf.java.version>${spark311db.version}</protobuf.java.version>
             </properties>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <id>release312</id>
@@ -460,6 +471,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -498,6 +510,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -533,6 +546,9 @@
                     </plugin>
                 </plugins>
             </build>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <id>release311cdh</id>
@@ -567,6 +583,9 @@
                     </plugin>
                 </plugins>
             </build>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <id>udf-compiler</id>

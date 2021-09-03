@@ -1,4 +1,4 @@
-com/nvidia/shaded/spark/**
+com/nvidia/shaded/**
 libjucx.so
 org/openucx/**
 rapids4spark-version-info.properties
