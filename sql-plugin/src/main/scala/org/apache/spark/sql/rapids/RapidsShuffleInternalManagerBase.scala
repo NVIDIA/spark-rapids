@@ -236,6 +236,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   protected val wrapped = new SortShuffleManager(conf)
 
+  GpuShuffleEnv.setRapidsShuffleManager(Some(this))
+
   private[this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
     "Transport disabled (local cached blocks only)"
   } else {
