@@ -719,7 +719,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     })
     val count = projections.map {
         case p: ProjectExec => p.projectList.count {
-          // ansiEnabled is protected prior to Spark 3.2 so we rely on Cast.toString
+          // ansiEnabled is protected so we rely on CastBase.toString
           case c: CastBase => c.toString().startsWith("ansi_cast")
           case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast")
           case _ => false
