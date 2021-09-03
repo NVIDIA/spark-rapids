@@ -217,10 +217,14 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
     val dateTimeRebaseException = "EXCEPTION".equals(
       sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
+    // prior to spark 311 int96 don't check for rebase exception
+    // https://github.com/apache/spark/blob/068465d016447ef0dbf7974b1a3f992040f4d64d/sql/core/src/
+    // main/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetWriteSupport.scala#L195
+    val isBeforeSpark311 = ShimLoader.getSparkShims.getSparkShimVersion.toString < "3.1.1"
     val timestampRebaseException =
       outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
           "EXCEPTION".equals(sparkSession.sqlContext
-              .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey)) ||
+              .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey)) && !isBeforeSpark311 ||
           !outputTimestampType.equals(ParquetOutputTimestampType.INT96) && dateTimeRebaseException
 
     val committerClass =
@@ -315,7 +319,7 @@ class GpuParquetWriter(
     path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
-    dateTimeRebaseException: Boolean,
+    dateRebaseException: Boolean,
     timestampRebaseException: Boolean,
     context: TaskAttemptContext)
   extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
@@ -326,11 +330,11 @@ class GpuParquetWriter(
     (0 until table.getNumberOfColumns).foreach { i =>
       val col = table.getColumn(i)
       // if col is a day
-      if (dateTimeRebaseException && RebaseHelper.isDateRebaseNeeded(col)) {
+      if (dateRebaseException && RebaseHelper.isDateRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
       // if col is a time
-      else if (timestampRebaseException && RebaseHelper.isTimeRebaseNeeded(col)) {
+      else if (timestampRebaseException && RebaseHelper.isTimeRebaseNeededInWrite(col)) {
         throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }

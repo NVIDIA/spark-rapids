@@ -24,8 +24,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object RebaseHelper extends Arm {
   private[this] def isDateRebaseNeeded(column: ColumnVector,
-      startDay: Int,
-      startTs: Long): Boolean = {
+      startDay: Int): Boolean = {
     // TODO update this for nested column checks
     //  https://github.com/NVIDIA/spark-rapids/issues/1126
     val dtype = column.getType
@@ -43,7 +42,6 @@ object RebaseHelper extends Arm {
   }
 
   private[this] def isTimeRebaseNeeded(column: ColumnVector,
-      startDay: Int,
       startTs: Long): Boolean = {
     val dtype = column.getType
     if (dtype.hasTimeResolution) {
@@ -63,15 +61,17 @@ object RebaseHelper extends Arm {
     }
   }
 
-  def isDateRebaseNeeded(column: ColumnVector): Boolean =
-    isDateRebaseNeeded(column,
-      RebaseDateTime.lastSwitchJulianDay,
-      RebaseDateTime.lastSwitchGregorianTs)
+  def isDateRebaseNeededInRead(column: ColumnVector): Boolean =
+    isDateRebaseNeeded(column, RebaseDateTime.lastSwitchJulianDay)
 
-  def isTimeRebaseNeeded(column: ColumnVector): Boolean =
-    isTimeRebaseNeeded(column,
-      RebaseDateTime.lastSwitchJulianDay,
-      RebaseDateTime.lastSwitchGregorianTs)
+  def isTimeRebaseNeededInRead(column: ColumnVector): Boolean =
+    isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchJulianTs)
+
+  def isDateRebaseNeededInWrite(column: ColumnVector): Boolean =
+    isDateRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianDay)
+
+  def isTimeRebaseNeededInWrite(column: ColumnVector): Boolean =
+    isTimeRebaseNeeded(column, RebaseDateTime.lastSwitchGregorianTs)
 
   def newRebaseExceptionInRead(format: String): Exception = {
     val config = if (format == "Parquet") {

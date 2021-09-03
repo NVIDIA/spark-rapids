@@ -328,16 +328,32 @@ def test_write_map_nullable(spark_tmp_path):
 
 @pytest.mark.parametrize('ts_write_data_gen', [('INT96', limited_int96()), ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('rebase', ["CORRECTED","EXCEPTION"])
-@pytest.mark.skipif(is_before_spark_311(), reason="This is supported only in Spark 3.1.1+")
 def test_ts_write_fails_int96_exception(spark_tmp_path, ts_write_data_gen, spark_tmp_table_factory, rebase):
     ts_write, gen = ts_write_data_gen
     data_path = spark_tmp_path + '/PARQUET_DATA'
     int96_rebase = "EXCEPTION" if (ts_write == "INT96") else rebase
     date_time_rebase = "EXCEPTION" if (ts_write == "TIMESTAMP_MICROS") else rebase
-    with_gpu_session(
-        lambda spark : writeParquetUpgradeCatchException(spark, unary_op_df(spark, gen), data_path, spark_tmp_table_factory, int96_rebase, date_time_rebase, ts_write))
-    with_cpu_session(
-        lambda spark : writeParquetUpgradeCatchException(spark, unary_op_df(spark, gen), data_path, spark_tmp_table_factory, int96_rebase, date_time_rebase, ts_write))
+    if is_before_spark_311() and ts_write == 'INT96':
+        all_confs = {'spark.sql.parquet.outputTimestampType': ts_write}
+        all_confs.update({'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': date_time_rebase,
+                          'spark.sql.legacy.parquet.int96RebaseModeInWrite': int96_rebase})
+        assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            conf=all_confs)
+    else:
+        with_gpu_session(
+            lambda spark : writeParquetUpgradeCatchException(spark,
+                                                             unary_op_df(spark, gen),
+                                                             data_path,
+                                                             spark_tmp_table_factory,
+                                                             int96_rebase, date_time_rebase, ts_write))
+        with_cpu_session(
+            lambda spark: writeParquetUpgradeCatchException(spark,
+                                                            unary_op_df(spark, gen), data_path,
+                                                            spark_tmp_table_factory,
+                                                            int96_rebase, date_time_rebase, ts_write))
 
 @pytest.mark.parametrize('ts_write_data_gen', [('INT96', limited_int96()), ('TIMESTAMP_MICROS', TimestampGen(start=datetime(1, 1, 1, tzinfo=timezone.utc), end=datetime(1582, 1, 1, tzinfo=timezone.utc)))])
 @pytest.mark.parametrize('date_time_rebase_write', ["CORRECTED"])
