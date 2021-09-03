@@ -809,15 +809,12 @@ class Spark320Shims extends Spark32XShims {
 
   override def hasCastFloatTimestampUpcast: Boolean = true
 
-
   /** Return list of matching predicates present in the plan */
   override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
     def recurse(
-                 plan: SparkPlan,
-                 predicate: SparkPlan => Boolean,
-                 accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
-      println(s"recurse: ${plan.getClass.getSimpleName}")
-
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
       plan match {
         case _ if predicate(plan) =>
           accum += plan
