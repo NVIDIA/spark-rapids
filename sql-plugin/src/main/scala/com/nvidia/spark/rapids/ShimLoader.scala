@@ -74,7 +74,7 @@ object ShimLoader extends Logging {
   // REPL-only logic
   @volatile private var tmpClassLoader: MutableURLClassLoader = _
 
-  def shimId: String = shimProviderClass.split('.').takeRight(2).head
+  def shimId: String = shimIdFromPackageName(shimProviderClass)
 
   def getRapidsShuffleManagerClass: String = {
     findShimProvider()
@@ -102,7 +102,7 @@ object ShimLoader extends Logging {
     }
   }
 
-  def getShimClassLoader(): ClassLoader = {
+  private def getShimClassLoader(): ClassLoader = {
     if (shimURL == null) {
       findShimProvider()
     }
