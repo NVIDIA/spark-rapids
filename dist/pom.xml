@@ -294,16 +294,41 @@
                     src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                     dest="${project.build.directory}/parallel-world/spark301"
                 >
+                  <patternset id="excludeMeta">
+                    <excludesfile name="${project.basedir}/meta-extras.txt"/>
+                  </patternset>
+                </unzip>
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                    dest="${project.build.directory}/parallel-world/"
+                >
+                  <patternset id="includeMeta">
+                    <includesfile name="${project.basedir}/meta-extras.txt"/>
+                  </patternset>
                 </unzip>
                 <unzip
                     src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                     dest="${project.build.directory}/parallel-world/spark302"
                 >
+                    <patternset refid="excludeMeta"/>
+                </unzip>
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                    dest="${project.build.directory}/parallel-world/"
+                >
+                    <patternset refid="includeMeta"/>
                 </unzip>
                 <unzip
                     src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                     dest="${project.build.directory}/parallel-world/spark303"
                 >
+                    <patternset refid="excludeMeta"/>
+                </unzip>
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                    dest="${project.build.directory}/parallel-world/"
+                >
+                    <patternset refid="includeMeta"/>
                 </unzip>
                   <!-- to keep in sync with sharedWorld: inverse it to exclude -->
                   <!--
@@ -312,6 +337,7 @@
                   </patternset>
 -->
                 <!-- TODO - add all spark versions -->
+                <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.spark30x" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                 <jar
                         destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                         basedir="${project.build.directory}/parallel-world"
@@ -326,10 +352,12 @@
   </build>
     </profile>
     <profile>
-        <id>with-classifier</id>
+        <id>individual</id>
+        <!--
         <activation>
             <property><name>buildver</name></property>
         </activation>
+        -->
         <dependencies>
             <dependency>
                <groupId>com.nvidia</groupId>

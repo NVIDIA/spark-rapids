@@ -78,6 +78,12 @@
                     <classifier>${spark.version.classifier}</classifier>
                     <scope>provided</scope>
                 </dependency>
+                <!-- needed for tests to pick up shim services provider -->
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
             </dependencies>
             <build>
                 <plugins>
