@@ -30,15 +30,8 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
  */
 object InputFileBlockRule {
 
-  private def checkHasInputFileExpressions(exec: Expression): Boolean = exec match {
-    case _: InputFileName => true
-    case _: InputFileBlockStart => true
-    case _: InputFileBlockLength => true
-    case e => e.children.exists(checkHasInputFileExpressions)
-  }
-
   private def checkHasInputFileExpressions(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(checkHasInputFileExpressions)
+    plan.expressions.exists(GpuTransitionOverrides.checkHasInputExpressions)
   }
 
   // Apply the rule on SparkPlanMeta

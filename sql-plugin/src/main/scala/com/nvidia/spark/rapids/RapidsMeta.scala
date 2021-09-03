@@ -158,7 +158,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   final def inputFilePreventsRunningOnGpu(): Unit = {
     if (canThisBeReplaced) {
-      willNotWorkOnGpu("Removed by InputFileBlockRule")
+      willNotWorkOnGpu("Removed by InputFileBlockRule preventing plans " +
+        "[SparkPlan(with input_file_xxx), FileScan) running on GPU")
     }
   }
 
