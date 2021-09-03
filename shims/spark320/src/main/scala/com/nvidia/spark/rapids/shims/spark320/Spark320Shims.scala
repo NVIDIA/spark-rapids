@@ -830,8 +830,8 @@ class Spark320Shims extends Spark32XShims {
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 
-  override def isIgnoreAssertIsOnGpu(plan: SparkPlan): Boolean = plan match {
-    case _: CommandResultExec => true
-    case _ => false
+  override def shouldAssertIsOnTheGpu(plan: SparkPlan): Boolean = plan match {
+    case _: CommandResultExec => false
+    case _ => true
   }
 }

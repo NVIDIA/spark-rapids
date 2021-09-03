@@ -255,7 +255,7 @@ trait SparkShims {
 
   def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
 
-  def isIgnoreAssertIsOnGpu(plan: SparkPlan): Boolean
+  def shouldAssertIsOnTheGpu(plan: SparkPlan): Boolean
 }
 
 abstract class SparkCommonShims extends SparkShims {
