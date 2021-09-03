@@ -252,6 +252,11 @@ trait SparkShims {
   def isCustomReaderExec(x: SparkPlan): Boolean
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
+
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
+
+  def isIgnoreAssertIsOnGpu(plan: SparkPlan): Boolean
+
 }
 
 abstract class SparkCommonShims extends SparkShims {
