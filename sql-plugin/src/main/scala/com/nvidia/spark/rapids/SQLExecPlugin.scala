@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,27 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.udf
-
-import com.nvidia.spark.rapids.ShimLoader
+package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
 
-class Plugin extends (SparkSessionExtensions => Unit) with Logging {
+/**
+ * Extension point to enable GPU SQL processing.
+ */
+class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
-    logWarning("Installing rapids UDF compiler extensions to Spark. The compiler is disabled" +
-        s" by default. To enable it, set `spark.rapids.sql.udfCompiler.enabled` to true")
-    extensions.injectResolutionRule(logicalPlanRules)
+    extensions.injectColumnar(columnarOverrides)
+    extensions.injectQueryStagePrepRule(queryStagePrepOverrides)
   }
 
-  def logicalPlanRules(sparkSession: SparkSession): Rule[LogicalPlan] = {
-    ShimLoader.newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
+  private def columnarOverrides(sparkSession: SparkSession): ColumnarRule = {
+    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.ColumnarOverrideRules")
+  }
+
+  private def queryStagePrepOverrides(sparkSession: SparkSession): Rule[SparkPlan] = {
+    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
   }
 }

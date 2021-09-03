@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark
 
-import com.nvidia.spark.rapids.{RapidsDriverPlugin, RapidsExecutorPlugin}
+import com.nvidia.spark.rapids.ShimLoader
 
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, SparkPlugin}
 import org.apache.spark.internal.Logging
@@ -26,6 +26,9 @@ import org.apache.spark.internal.Logging
  * To enable this plugin, set the config "spark.plugins" to `com.nvidia.spark.SQLPlugin`
  */
 class SQLPlugin extends SparkPlugin with Logging {
-  override def driverPlugin(): DriverPlugin = new RapidsDriverPlugin
-  override def executorPlugin(): ExecutorPlugin = new RapidsExecutorPlugin
+  override def driverPlugin(): DriverPlugin =
+    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.RapidsDriverPlugin")
+
+  override def executorPlugin(): ExecutorPlugin =
+    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.RapidsExecutorPlugin")
 }
