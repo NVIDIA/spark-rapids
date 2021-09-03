@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shims.spark311cdh
 import java.net.URI
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
@@ -26,6 +27,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids.shims.spark311cdh._
+import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
 import org.apache.spark.sql.sources.BaseRelation
 
 class Spark311CDHShims extends SparkBaseShims {
