@@ -147,6 +147,185 @@
   </build>
     </profile>
     <profile>
+        <id>all30X</id>
+        <dependencies>
+            <dependency>
+               <groupId>com.nvidia</groupId>
+               <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+               <version>${project.version}</version>
+            </dependency>
+            <dependency>
+               <!-- required for conf generation script -->
+               <groupId>org.apache.spark</groupId>
+               <artifactId>spark-sql_${scala.binary.version}</artifactId>
+               <scope>provided</scope>
+            </dependency>
+            <dependency>
+              <!-- required for conf generation script -->
+              <groupId>org.apache.spark</groupId>
+              <artifactId>spark-hive_${scala.binary.version}</artifactId>
+              <scope>provided</scope>
+            </dependency>
+        </dependencies>
+  <build>
+    <plugins>
+        <plugin>
+        <!-- wierd but first build the jar for dependencies pick it up,
+             it gets overwritten below by ant target
+        -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+      </plugin>
+      <plugin>
+            <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+            <execution>
+            <id>copy-current</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <artifactItems>
+            <artifactItem>
+              <groupId>com.nvidia</groupId>
+              <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+              <classifier>spark301</classifier>
+              <version>${project.version}</version>
+              <type>jar</type>
+              <overWrite>false</overWrite>
+              <outputDirectory>${project.build.directory}/deps</outputDirectory>
+            </artifactItem>
+            <artifactItem>
+              <groupId>com.nvidia</groupId>
+              <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+              <classifier>spark302</classifier>
+              <version>${project.version}</version>
+              <type>jar</type>
+              <overWrite>false</overWrite>
+              <outputDirectory>${project.build.directory}/deps</outputDirectory>
+            </artifactItem>
+            <artifactItem>
+              <groupId>com.nvidia</groupId>
+              <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+              <classifier>spark303</classifier>
+              <version>${project.version}</version>
+              <type>jar</type>
+              <overWrite>false</overWrite>
+              <outputDirectory>${project.build.directory}/deps</outputDirectory>
+            </artifactItem>
+          </artifactItems>
+          <outputDirectory>${project.build.directory}/deps</outputDirectory>
+          <overWriteReleases>false</overWriteReleases>
+          <overWriteSnapshots>true</overWriteSnapshots>
+        </configuration>
+          </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <!--
+             TODO - how to make sure the versions we pull are up to date?
+        -->
+        <executions>
+          <execution>
+            <phase>prepare-package</phase>
+            <goals><goal>run</goal></goals>
+            <id>delete-shim-classes</id>
+            <configuration>
+              <target>
+                <delete
+                        dir="${project.build.directory}/parallel-world"
+                        includeemptydirs="true"
+                />
+
+                <delete>
+                  <fileset
+                          dir="${project.build.directory}"
+                          includes="*.jar"
+                  />
+                </delete>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>run</goal></goals>
+            <id>create-parallel-world</id>
+            <configuration>
+              <target>
+
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                        dest="${project.build.directory}/parallel-world"
+                >
+                  <patternset id="sharedWorld">
+                    <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                    <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                  </patternset>
+                </unzip>
+
+<!--                unzip task seems to be broken for $$ files, so using exec with jar -->
+<!--
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                        dest="${project.build.directory}/parallel-world/"
+                >
+-->
+                  <!--
+                  TODO generate automatically based on the number of shims in the build
+                  this example works for 3 shims. If we find 3 duplicates of a class then it can
+                  be shared
+                  find shims -name \*.class -exec md5sum {} + |
+                    sort -k 1 |
+                    uniq -w32 -c | tr -s ' ' | grep '^ 3 ' | cut -d'/' -f 5- | sort > dist/unshimmed-classes.txt
+                  -->
+<!--
+                  <patternset id="sharedWorld">
+                    <excludesfile name="${project.basedir}/shimmed-classes.txt"/>
+                    <excludesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                    <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                  </patternset>
+                </unzip>
+-->
+
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                    dest="${project.build.directory}/parallel-world/spark301"
+                >
+                </unzip>
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                    dest="${project.build.directory}/parallel-world/spark302"
+                >
+                </unzip>
+                <unzip
+                    src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                    dest="${project.build.directory}/parallel-world/spark303"
+                >
+                </unzip>
+                  <!-- to keep in sync with sharedWorld: inverse it to exclude -->
+                  <!--
+                  <patternset id="shimPattern">
+                    <includesfile name="${project.basedir}/shimmed-classes.txt"/>
+                  </patternset>
+-->
+                <!-- TODO - add all spark versions -->
+                <jar
+                        destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                        basedir="${project.build.directory}/parallel-world"
+                >
+                </jar>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+  </plugins>
+  </build>
+    </profile>
+    <profile>
         <id>with-classifier</id>
         <activation>
             <property><name>buildver</name></property>
@@ -527,6 +706,11 @@
       <plugin>
         <groupId>org.apache.rat</groupId>
         <artifactId>apache-rat-plugin</artifactId>
+ <configuration>
+                    <excludes>
+                        <exclude>*.txt</exclude>
+                    </excludes>
+                </configuration>
       </plugin>
     </plugins>
   </build>
