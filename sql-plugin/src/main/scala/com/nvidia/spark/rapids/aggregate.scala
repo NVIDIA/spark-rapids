@@ -946,38 +946,38 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
    * plans only contain PartialMerge mode.
    */
   private def tagForReplaceMode(): Unit = {
-    val hashAggModes = agg.aggregateExpressions.map(_.mode).distinct
-    val nameToMode: Map[String, AggregateMode] = Map("partial" -> Partial,
-      "final" -> Final,
-      "complete" -> Complete,
-      "partialmerge" -> PartialMerge)
+    val aggPattern = agg.aggregateExpressions.map(_.mode).toSet
+    val strPatternToReplace = conf.hashAggReplaceMode.toLowerCase
 
-    conf.hashAggReplaceMode.toLowerCase match {
-      case "all" =>
-      case pattern =>
-        val currentAggPattern = hashAggModes.toSet
-        val aggPatternsCanReplace = pattern.split("\\|").map { subPattern =>
-          subPattern.split("&").map(nameToMode).toSet
+    if (aggPattern.nonEmpty && strPatternToReplace != "all") {
+      val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
+        subPattern.split("&").map {
+          case "partial" => Partial
+          case "partialmerge" => PartialMerge
+          case "final" => Final
+          case "complete" => Complete
+          case s => throw new IllegalArgumentException(s"Invalid Aggregate Mode $s")
+        }.toSet
+      }
+      if (!aggPatternsCanReplace.contains(aggPattern)) {
+        val message = aggPattern.map(_.toString).mkString(",")
+        willNotWorkOnGpu(s"Replacing mode pattern `$message` hash aggregates disabled")
+      } else if (aggPattern == Set(Partial)) {
+        // In partial mode, if there are non-distinct functions and multiple distinct functions,
+        // non-distinct functions are computed using the First operator. The final result would be
+        // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
+        // the first batch computed and sent to CPU doesn't contain all the rows required to
+        // compute non-distinct function(s), then Spark would consider that value as final result
+        // (due to First). Fall back to CPU in this case.
+        if (AggregateUtils.shouldFallbackMultiDistinct(agg.aggregateExpressions)) {
+          willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
+              "functions are non-deterministic for non-distinct functions as it is " +
+              "computed using First.")
         }
-        if (!aggPatternsCanReplace.contains(currentAggPattern)) {
-          val message = hashAggModes.map(_.toString).mkString(",")
-          willNotWorkOnGpu(s"Replacing mode pattern `$message` hash aggregates disabled")
-        } else if (currentAggPattern == Set(Partial)) {
-          // In partial mode, if there are non-distinct functions and multiple distinct functions,
-          // non-distinct functions are computed using the First operator. The final result would be
-          // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
-          // the first batch computed and sent to CPU doesn't contain all the rows required to
-          // compute non-distinct function(s), then Spark would consider that value as final result
-          // (due to First). Fall back to CPU in this case.
-          if (AggregateUtils.shouldFallbackMultiDistinct(agg.aggregateExpressions)) {
-            willNotWorkOnGpu("Aggregates of non-distinct functions with multiple distinct " +
-                "functions are non-deterministic for non-distinct functions as it is " +
-                "computed using First.")
-          }
-        }
+      }
     }
 
-    if (!conf.partialMergeDistinctEnabled && hashAggModes.contains(PartialMerge)) {
+    if (!conf.partialMergeDistinctEnabled && aggPattern.contains(PartialMerge)) {
       willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
     }
