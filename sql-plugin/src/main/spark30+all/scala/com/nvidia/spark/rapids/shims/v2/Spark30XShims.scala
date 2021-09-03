@@ -104,10 +104,10 @@ trait Spark30XShims extends SparkShims {
         plan: SparkPlan,
         predicate: SparkPlan => Boolean,
         accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      if (predicate(plan)) {
+        accum += plan
+      }
       plan match {
-        case _ if predicate(plan) =>
-          accum += plan
-          plan.children.flatMap(p => recurse(p, predicate, accum)).headOption
         case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
         case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
         case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
