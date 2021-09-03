@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.tool.qualification
 import java.io.File
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
@@ -352,38 +352,29 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nested_type_expectation.csv")
   }
 
+  // this tests parseReadSchema by passing different schemas as strings. Schemas
+  // with complex types, complex nested types, decimals and simple types
   test("test different types in ReadSchema") {
-    val outpath = Array(
-      s"$logDir/eventlog_complex_dec_nested", // complex nested types with decimal
-      s"$logDir/decimal_part_eventlog.zstd", // decimal and non decimal types
-      s"$logDir/nds_q86_test") // non decimal types
+    val testSchemas: ArrayBuffer[ArrayBuffer[String]] = ArrayBuffer(
+      ArrayBuffer("name:string,booksInterested:array<struct<name:string,price:decimal(8,2)," +
+          "author:string,pages:int>>, name:string,subject:string"),
+      ArrayBuffer("value:decimal(4,2), " +
+          "name:string,addresses:array<struct<city:string,state:string>>," +
+          "properties:map<string,string>"),
+      ArrayBuffer("firstName:string,lastName:string"))
 
-    // default values for EventLogInfo and QualAppInfo
-    val hadoopConf = new Configuration()
-    val readScorePercent = 20
-    val numRows = 1000
-    val pluginTypeChecker = None
     var index = 0
-
     val expComplexNested = List(
       ("array<struct<name:string;price:decimal(8;2);author:string;pages:int>>",
           "array<struct<name:string;price:decimal(8;2);author:string;pages:int>>"),
-      ("array<struct<city:string;state:string>>;map<string;string>;map<string;array<string>>;" +
-          "map<string;map<string;string>>",
-          "array<struct<city:string;state:string>>;map<string;array<string>>;map<string;" +
-              "map<string;string>>"),
+      ("array<struct<city:string;state:string>>;map<string;string>",
+          "array<struct<city:string;state:string>>"),
       ("", ""))
 
-    val (eventLogFsFiltered, allEventLogs) = EventLogPathProcessor.processAllPaths(
-      None, None, outpath.toList, hadoopConf)
-
-    allEventLogs.map { x =>
-      val app = QualAppInfo.createApp(x, numRows, hadoopConf, pluginTypeChecker,
-        readScorePercent)
-      val (complexTypes, nestedComplexTypes) = app.get.reportComplexTypes
-
-      assert(complexTypes.equals(expComplexNested(index)._1))
-      assert(nestedComplexTypes.equals(expComplexNested(index)._2))
+    val result = testSchemas.map(x => QualAppInfo.parseReadSchemaForNestedTypes(x))
+    result.foreach { res =>
+      assert(res._1.equals(expComplexNested(index)._1))
+      assert(res._2.equals(expComplexNested(index)._2))
       index += 1
     }
   }
