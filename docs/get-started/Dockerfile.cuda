@@ -51,8 +51,8 @@ COPY spark/examples /opt/spark/examples
 COPY spark/kubernetes/tests /opt/spark/tests
 COPY spark/data /opt/spark/data
 
-COPY cudf-21.10.0-SNAPSHOT-cuda11.jar /opt/sparkRapidsPlugin
-COPY rapids-4-spark_2.12-21.10.0-SNAPSHOT.jar /opt/sparkRapidsPlugin
+COPY cudf-*-cuda11.jar /opt/sparkRapidsPlugin
+COPY rapids-4-spark_2.12-*.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
 
 RUN mkdir /opt/spark/python
