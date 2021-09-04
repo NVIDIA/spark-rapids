@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
-import org.apache.spark.shuffle.ShuffleManager
 
 class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private var shuffleCatalog: ShuffleBufferCatalog = _
@@ -67,13 +66,13 @@ object GpuShuffleEnv extends Logging {
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
   val RAPIDS_SHUFFLE_INTERNAL: String = ShimLoader.getRapidsShuffleInternal
 
-  var mgr: Option[ShuffleManager] = None
-
   @volatile private var env: GpuShuffleEnv = _
 
   def shutdown() = {
-    mgr.foreach(_.stop())
-    mgr = None
+    val shuffleManager = SparkEnv.get.shuffleManager
+    if (shuffleManager.isInstanceOf[VisibleShuffleManager]) {
+      shuffleManager.stop()
+    }
   }
 
   //
@@ -96,20 +95,6 @@ object GpuShuffleEnv extends Logging {
 
   def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {
     conf.shuffleManagerEnabled && isRapidsShuffleAvailable
-  }
-
-  def setRapidsShuffleManager(
-    managerOpt: Option[ShuffleManager] = None): Unit = {
-    managerOpt.foreach { manager =>
-      if (manager.getClass.getCanonicalName != GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS) {
-        throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
-          s"${manager.getClass.getCanonicalName} != ${GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS}). " +
-          s"Check that configuration setting spark.shuffle.manager is correct for the Spark " +
-          s"version being used.")
-      }
-      logInfo("RapidsShuffleManager is initialized")
-    }
-    mgr = managerOpt
   }
 
   def getCatalog: ShuffleBufferCatalog = if (env == null) {
