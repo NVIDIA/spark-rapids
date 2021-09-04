@@ -69,10 +69,11 @@ object GpuShuffleEnv extends Logging {
   @volatile private var env: GpuShuffleEnv = _
 
   def shutdown() = {
-    val shuffleManager = SparkEnv.get.shuffleManager
-    if (shuffleManager.isInstanceOf[VisibleShuffleManager]) {
-      shuffleManager.stop()
-    }
+    // check for nulls in tests
+    val shuffleManager = Option(SparkEnv.get)
+      .map(_.shuffleManager)
+      .collect { case sm: VisibleShuffleManager => sm }
+      .foreach(_.stop())
   }
 
   //
