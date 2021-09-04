@@ -87,6 +87,9 @@ object GpuShuffleEnv extends Logging {
     // the driver has `mgr` defined when this is checked
     val sparkEnv = SparkEnv.get
     val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[VisibleShuffleManager]
+    if (isRapidsManager) {
+      validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
+    }
     // executors have `env` defined when this is checked
     // in tests
     val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
@@ -101,6 +104,16 @@ object GpuShuffleEnv extends Logging {
     null
   } else {
     env.getCatalog
+  }
+
+  private def validateRapidsShuffleManager(shuffManagerClassName: String): Unit = {
+    val shuffleManagerStr = ShimLoader.getRapidsShuffleManagerClass
+    if (shuffManagerClassName != shuffleManagerStr) {
+      throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
+          s"${shuffManagerClassName} != $shuffleManagerStr). " +
+          s"Check that configuration setting spark.shuffle.manager is correct for the Spark " +
+          s"version being used.")
+    }
   }
 
   //

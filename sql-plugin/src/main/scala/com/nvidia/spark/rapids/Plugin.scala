@@ -24,7 +24,7 @@ import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
-import org.apache.spark.{SparkConf, SparkContext, SparkEnv}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
@@ -152,8 +152,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
       ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
     }
 
-    validateRapidsShuffleManager(Option(SparkEnv.get.shuffleManager))
-
     if (GpuShuffleEnv.isRapidsShuffleAvailable &&
         conf.shuffleTransportEarlyStart) {
       rapidsShuffleHeartbeatManager =
@@ -162,20 +160,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
     }
     conf.rapidsConfMap
-  }
-
-  def validateRapidsShuffleManager(
-      managerOpt: Option[_ <: Any] = None): Unit = {
-    managerOpt.foreach { manager =>
-      val shuffleManagerStr = ShimLoader.getRapidsShuffleManagerClass
-      if (manager.getClass.getCanonicalName != shuffleManagerStr) {
-        throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
-            s"${manager.getClass.getCanonicalName} != $shuffleManagerStr). " +
-            s"Check that configuration setting spark.shuffle.manager is correct for the Spark " +
-            s"version being used.")
-      }
-      logInfo("RapidsShuffleManager is initialized")
-    }
   }
 }
 
