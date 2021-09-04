@@ -42,8 +42,8 @@ class PluginException(msg: String) extends RuntimeException(msg)
 case class CudfVersionMismatchException(errorMsg: String) extends PluginException(errorMsg)
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
-  val overrides: Rule[SparkPlan] = GpuOverrides()
-  val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
+  lazy val overrides: Rule[SparkPlan] = GpuOverrides()
+  lazy val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
 
   override def preColumnarTransitions : Rule[SparkPlan] = overrides
 
@@ -148,7 +148,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
-    if (conf.shimsProviderOverride.isDefined) {
+    if (conf.shimsProviderOverride.isDefined) { // TODO test it, probably not working yet
       ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
     }
     if (GpuShuffleEnv.isRapidsShuffleAvailable &&
@@ -191,6 +191,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             conf.shuffleTransportEarlyStart) {
           logInfo("Initializing shuffle manager heartbeats")
           rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
         }
       }
 

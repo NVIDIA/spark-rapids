@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
+import org.apache.spark.shuffle.ShuffleManager
 
 class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private var shuffleCatalog: ShuffleBufferCatalog = _
@@ -63,16 +64,17 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 }
 
 object GpuShuffleEnv extends Logging {
+  val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
+  val RAPIDS_SHUFFLE_INTERNAL: String = ShimLoader.getRapidsShuffleInternal
+
+  var mgr: Option[ShuffleManager] = None
+
+  @volatile private var env: GpuShuffleEnv = _
+
   def shutdown() = {
     mgr.foreach(_.stop())
     mgr = None
   }
-
-  val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
-
-  var mgr: Option[RapidsShuffleInternalManagerBase] = None
-
-  @volatile private var env: GpuShuffleEnv = _
 
   //
   // Functions below get called from the driver or executors
@@ -84,14 +86,11 @@ object GpuShuffleEnv extends Logging {
 
   def isRapidsShuffleAvailable: Boolean = {
     // the driver has `mgr` defined when this is checked
-    val isRapidsManager = mgr.isDefined
+    val sparkEnv = SparkEnv.get
+    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[VisibleShuffleManager]
     // executors have `env` defined when this is checked
     // in tests
-    val isConfiguredInEnv = if (env != null) {
-      env.isRapidsShuffleConfigured
-    } else {
-      false
-    }
+    val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
     (isConfiguredInEnv || isRapidsManager) && !isExternalShuffleEnabled
   }
 
@@ -100,9 +99,8 @@ object GpuShuffleEnv extends Logging {
   }
 
   def setRapidsShuffleManager(
-    managerOpt: Option[RapidsShuffleInternalManagerBase] = None): Unit = {
-    if (managerOpt.isDefined) {
-      val manager = managerOpt.get
+    managerOpt: Option[ShuffleManager] = None): Unit = {
+    managerOpt.foreach { manager =>
       if (manager.getClass.getCanonicalName != GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS) {
         throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
           s"${manager.getClass.getCanonicalName} != ${GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS}). " +
