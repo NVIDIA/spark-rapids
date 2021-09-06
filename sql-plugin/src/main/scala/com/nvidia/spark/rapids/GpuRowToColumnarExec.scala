@@ -114,6 +114,8 @@ private object GpuRowToColumnConverter {
       case (TimestampType, false) => NotNullLongConverter
       case (StringType, true) => StringConverter
       case (StringType, false) => NotNullStringConverter
+      case (BinaryType, true) => BinaryConverter
+      case (BinaryType, false) => NotNullBinaryConverter
       // NOT SUPPORTED YET
       // case CalendarIntervalType => CalendarConverter
       case (at: ArrayType, true) =>
@@ -352,6 +354,32 @@ private object GpuRowToColumnConverter {
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       val bytes = row.getUTF8String(column).getBytes
+      builder.appendUTF8String(bytes)
+      bytes.length + OFFSET
+    }
+
+    override def getNullSize: Double = OFFSET + VALIDITY
+  }
+
+  private object BinaryConverter extends TypeConverter {
+    override def append(row: SpecializedGetters,
+        column: Int,
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double =
+      if (row.isNullAt(column)) {
+        builder.appendNull()
+        VALIDITY_N_OFFSET
+      } else {
+        NotNullBinaryConverter.append(row, column, builder) + VALIDITY
+      }
+
+    override def getNullSize: Double = OFFSET + VALIDITY
+  }
+
+  private object NotNullBinaryConverter extends TypeConverter {
+    override def append(row: SpecializedGetters,
+        column: Int,
+        builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
+      val bytes = row.getBinary(column)
       builder.appendUTF8String(bytes)
       bytes.length + OFFSET
     }

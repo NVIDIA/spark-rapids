@@ -179,7 +179,7 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final byte[] getBinary(int rowId) {
-    throw new IllegalStateException("Binary data access is currently not supported by rapids cudf");
+    return cudfCv.getUTF8(rowId);
   }
 
   @Override

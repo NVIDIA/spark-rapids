@@ -472,7 +472,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_DAYS;
     } else if (type instanceof TimestampType) {
       return DType.TIMESTAMP_MICROSECONDS;
-    } else if (type instanceof StringType) {
+    } else if (type instanceof StringType || type instanceof BinaryType) {
       return DType.STRING;
     } else if (type instanceof NullType) {
       // INT8 is used for both in this case
