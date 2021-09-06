@@ -661,7 +661,7 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans[1:2], ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true'])
 def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, parameterless):
