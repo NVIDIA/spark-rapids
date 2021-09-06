@@ -1020,6 +1020,18 @@ private case class GpuOrcFileFilterHandler(
             setMapping(id)
             updateMapping(prefixNew, children(i))
           }
+        } else if(schema.getCategory == TypeDescription.Category.MAP) {
+          val children = schema.getChildren.asScala
+          for (i <- 0 until children.size) {
+            val prefixNew = if(i == 0) {
+              prefix + "._key"
+            } else {
+              prefix + "._value"
+            }
+            val id = fileSchema.findSubtype(prefixNew).getId
+            setMapping(id)
+            updateMapping(prefixNew, children(i))
+          }
         }
       }
       updateMapping("", readerSchema, true)
