@@ -282,7 +282,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * the ones that might have issues with coalesce here.
    */
   private def disableCoalesceUntilInput(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(GpuTransitionOverrides.checkHasInputExpressions)
+    plan.expressions.exists(GpuTransitionOverrides.checkHasInputFileExpressions)
   }
 
   private def disableScanUntilInput(exec: Expression): Boolean = {
@@ -567,15 +567,15 @@ object GpuTransitionOverrides {
   }
 
   /**
-   * Check the Expression is or has Input expressions.
+   * Check the Expression is or has Input File expressions.
    * @param exec expression to check
    * @return true or false
    */
-  def checkHasInputExpressions(exec: Expression): Boolean = exec match {
+  def checkHasInputFileExpressions(exec: Expression): Boolean = exec match {
     case _: InputFileName => true
     case _: InputFileBlockStart => true
     case _: InputFileBlockLength => true
-    case e => e.children.exists(checkHasInputExpressions)
+    case e => e.children.exists(checkHasInputFileExpressions)
   }
 }
 

@@ -17,7 +17,6 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, InputFileBlockLength, InputFileBlockStart, InputFileName}
 import org.apache.spark.sql.execution.{FileSourceScanExec, LeafExecNode, SparkPlan}
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -31,7 +30,7 @@ import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 object InputFileBlockRule {
 
   private def checkHasInputFileExpressions(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(GpuTransitionOverrides.checkHasInputExpressions)
+    plan.expressions.exists(GpuTransitionOverrides.checkHasInputFileExpressions)
   }
 
   // Apply the rule on SparkPlanMeta
@@ -73,7 +72,7 @@ object InputFileBlockRule {
         key.map(p => resultOps.remove(p)) // Remove the chain from Map
       case _ =>
         val newKey = if (key.isDefined) {
-          // The node is in the chain of input_file_xx to FileScan
+          // The node is in the middle of chain [SparkPlan with input_file_xxx, FileScan)
           resultOps.getOrElseUpdate(key.get,  new ArrayBuffer[SparkPlanMeta[SparkPlan]]) += plan
           key
         } else { // There is no parent Node who has input_file_xxx

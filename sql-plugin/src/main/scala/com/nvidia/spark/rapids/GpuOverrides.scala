@@ -3459,7 +3459,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       } else {
         Seq.empty
       }
-      InputFileBlockRule.apply(wrap)
       wrap.runAfterTagRules()
       if (conf.shouldExplain) {
         wrap.tagForExplain()
