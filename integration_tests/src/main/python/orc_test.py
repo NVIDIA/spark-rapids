@@ -82,9 +82,16 @@ orc_struct_gens_sample = [orc_basic_struct_gen,
     StructGen([['child0', byte_gen], ['child1', orc_basic_struct_gen]]),
     StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
+all_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, TimestampGen]] + [simple_string_to_string_map_gen]
+all_basic_map_gens += [DateGen(start=date(1590, 1, 1))]
+orc_map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+                   MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+                   MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+
 orc_gens_list = [orc_basic_gens,
     orc_array_gens_sample,
     orc_struct_gens_sample,
+    orc_map_gens_sample,
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
 
