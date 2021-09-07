@@ -17,17 +17,17 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
+    <modelVersion>4.0.0</modelVersion>
 
-  <parent>
-    <groupId>com.nvidia</groupId>
-    <artifactId>rapids-4-spark-parent</artifactId>
+    <parent>
+        <groupId>com.nvidia</groupId>
+        <artifactId>rapids-4-spark-parent</artifactId>
+        <version>21.10.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>rapids-4-spark_2.12</artifactId>
+    <name>RAPIDS Accelerator for Apache Spark Distribution</name>
+    <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
     <version>21.10.0-SNAPSHOT</version>
-  </parent>
-  <artifactId>rapids-4-spark_2.12</artifactId>
-  <name>RAPIDS Accelerator for Apache Spark Distribution</name>
-  <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-  <version>21.10.0-SNAPSHOT</version>
 
     <profiles>
         <profile>
@@ -736,78 +736,79 @@
     </profiles>
 
     <build>
-    <plugins>
-      <plugin>
-        <groupId>net.alchim31.maven</groupId>
-        <artifactId>scala-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>update_config</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <configuration>
-              <launchers>
-                <launcher>
-                  <id>update_rapids_config</id>
-                  <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
-                  <args>
-                    <arg>${project.basedir}/../docs/configs.md</arg>
-                  </args>
-                </launcher>
-              </launchers>
-            </configuration>
-          </execution>
-          <execution>
-            <id>update_supported</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <configuration>
-              <launchers>
-                <launcher>
-                  <id>update_rapids_support</id>
-                  <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
-                  <args>
-                    <arg>${project.basedir}/../docs/supported_ops.md</arg>
-                  </args>
-                </launcher>
-              </launchers>
-            </configuration>
-          </execution>
-          <execution>
-            <id>update_supported_tools</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <configuration>
-              <launchers>
-                <launcher>
-                  <id>update_rapids_support_tools</id>
-                  <mainClass>com.nvidia.spark.rapids.SupportedOpsForTools</mainClass>
-                  <args>
-                      <arg>${project.basedir}/../tools/src/main/resources/supportedDataSource.csv</arg>
-                  </args>
-                </launcher>
-              </launchers>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.rat</groupId>
-        <artifactId>apache-rat-plugin</artifactId>
- <configuration>
+        <plugins>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>update_config</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <launchers>
+                                <launcher>
+                                    <id>update_rapids_config</id>
+                                    <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
+                                    <args>
+                                        <arg>${project.basedir}/../docs/configs.md</arg>
+                                    </args>
+                                </launcher>
+                            </launchers>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>update_supported</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <launchers>
+                                <launcher>
+                                    <id>update_rapids_support</id>
+                                    <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
+                                    <args>
+                                        <arg>${project.basedir}/../docs/supported_ops.md</arg>
+                                    </args>
+                                </launcher>
+                            </launchers>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>update_supported_tools</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <launchers>
+                                <launcher>
+                                    <id>update_rapids_support_tools</id>
+                                    <mainClass>com.nvidia.spark.rapids.SupportedOpsForTools</mainClass>
+                                    <args>
+                                        <arg>${project.basedir}/../tools/src/main/resources/supportedDataSource.csv
+                                        </arg>
+                                    </args>
+                                </launcher>
+                            </launchers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+                <configuration>
                     <excludes>
                         <exclude>*.txt</exclude>
                         <exclude>com.nvidia.spark.rapids.SparkShimServiceProvider.spark30x</exclude>
                     </excludes>
                 </configuration>
-      </plugin>
-    </plugins>
-  </build>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>
