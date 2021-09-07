@@ -380,7 +380,7 @@
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
-                                                dest="${project.build.directory}/parallel-world/spark301"
+                                                dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
                                         >
                                         </unzip>
                                         <jar
