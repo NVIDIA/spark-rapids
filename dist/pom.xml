@@ -609,6 +609,113 @@
             </build>
         </profile>
         <profile>
+            <id>release311cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311cdh</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.curator</groupId>
+                            <artifactId>curator-recipes</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-recipes</artifactId>
+                    <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- wierd but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${project.build.directory}/target/deps"/>
+                                        <copy file="../aggregator/target/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                              todir="${project.build.directory}/deps"/>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/meta-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                                dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
+                                        >
+                                        </unzip>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>individual</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
