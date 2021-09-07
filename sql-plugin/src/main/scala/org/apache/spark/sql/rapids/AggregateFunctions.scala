@@ -149,12 +149,13 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
   // We compute the same thing regardless of our final result.
   override lazy val canonicalized: Expression = {
     val normalizedAggFunc = mode match {
-      // For PartialMerge or Final mode, the input to the `aggregateFunction` is aggregate buffers,
-      // and the actual children of `aggregateFunction` is not used, here we normalize the expr id.
-      case PartialMerge | Final => aggregateFunction.transform {
+      // For Partial, PartialMerge, or Final mode, the input to the `aggregateFunction` is
+      // aggregate buffers, and the actual children of `aggregateFunction` is not used,
+      // here we normalize the expr id.
+      case Partial | PartialMerge | Final => aggregateFunction.transform {
         case a: AttributeReference => a.withExprId(ExprId(0))
       }
-      case Partial | Complete => aggregateFunction
+      case Complete => aggregateFunction
     }
 
     GpuAggregateExpression(
