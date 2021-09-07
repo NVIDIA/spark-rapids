@@ -16,7 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+import java.nio.file.Files
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.Decimal
 
 class FilterExprSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("filter with decimal literals", mixedDf(_), repart = 0) { df =>
@@ -32,5 +38,28 @@ class FilterExprSuite extends SparkQueryCompareTestSuite {
     df.filter(col("ints") > 90)
       .filter(col("decimals").isNotNull)
       .select("ints", "strings", "decimals")
+  }
+
+  test("filter with In/InSet") {
+    val dir = Files.createTempDirectory("spark-rapids-test").toFile
+    val path = new File(dir, s"InSet-${System.currentTimeMillis()}.parquet").getAbsolutePath
+    try {
+      withCpuSparkSession(spark => mixedDf(spark).write.parquet(path), new SparkConf())
+      val createDF = (ss: SparkSession) => ss.read.parquet(path)
+      val fun = (df: DataFrame) => df
+          // In
+          .filter(col("strings").isin("A", "B", "C", "d"))
+          .filter(col("decimals").isin(Decimal("1.2"), Decimal("2.1")))
+          // outBound values will be removed by UnwrapCastInBinaryComparison
+          .filter(col("ints").isin(90L, 95L, Int.MaxValue.toLong + 1))
+          // InSet (spark.sql.optimizer.inSetConversionThreshold = 10 by default)
+          .filter(col("longs").isin(100L to 1200L: _*))
+          .filter(col("doubles").isin(1 to 15: _*))
+      val conf = new SparkConf().set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+      val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, fun, conf, repart = 0)
+      compareResults(false, 0.0, fromCpu, fromGpu)
+    } finally {
+      dir.delete()
+    }
   }
 }

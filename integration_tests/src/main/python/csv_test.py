@@ -367,6 +367,34 @@ def test_input_meta(spark_tmp_path, v1_enabled_list):
                         'input_file_block_length()'),
             conf=updated_conf)
 
+@allow_non_gpu('ProjectExec', 'Alias', 'InputFileName', 'InputFileBlockStart', 'InputFileBlockLength',
+               'FilterExec', 'And', 'IsNotNull', 'GreaterThan', 'Literal',
+               'FileSourceScanExec',
+               'BatchScanExec', 'CsvScan')
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
+def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
+    gen = StructGen([('a', long_gen), ('b', long_gen)], nullable=False)
+    first_data_path = spark_tmp_path + '/CSV_DATA/key=0'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.csv(first_data_path))
+    second_data_path = spark_tmp_path + '/CSV_DATA/key=1'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.csv(second_data_path))
+    data_path = spark_tmp_path + '/CSV_DATA'
+    updated_conf=_enable_all_types_conf.copy()
+    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
+    updated_conf[disable_conf]='false'
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(gen.data_type)\
+                    .csv(data_path)\
+                    .filter(f.col('a') > 0)\
+                    .selectExpr('a',
+                        'input_file_name()',
+                        'input_file_block_start()',
+                        'input_file_block_length()'),
+            conf=updated_conf)
+
 @allow_non_gpu('DataWritingCommandExec')
 def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
     gen = TimestampGen()
