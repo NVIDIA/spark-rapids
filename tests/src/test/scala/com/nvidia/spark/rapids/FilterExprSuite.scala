@@ -49,9 +49,10 @@ class FilterExprSuite extends SparkQueryCompareTestSuite {
       val createDF = (ss: SparkSession) => ss.read.parquet(path)
       val fun = (df: DataFrame) => df
           // In
-          .filter(col("ints").isin(90L, 95L, Int.MaxValue))
           .filter(col("strings").isin("A", "B", "C", "d"))
           .filter(col("decimals").isin(Decimal("1.2"), Decimal("2.1")))
+          // outBound values will be removed by UnwrapCastInBinaryComparison
+          .filter(col("ints").isin(90L, 95L, Int.MaxValue.toLong + 1))
           // InSet (spark.sql.optimizer.inSetConversionThreshold = 10 by default)
           .filter(col("longs").isin(100L to 1200L: _*))
           .filter(col("doubles").isin(1 to 15: _*))
