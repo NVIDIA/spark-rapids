@@ -22,13 +22,15 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, Lag, Lead, Literal
 import org.apache.spark.sql.types.IntegerType
 
 /**
- * Spark 3.1.1-specific replacement for com.nvidia.spark.rapids.OffsetWindowFunctionMeta.
+ * Spark 3.2-specific replacement for com.nvidia.spark.rapids.OffsetWindowFunctionMeta.
  * This is required primarily for two reasons:
  *   1. com.nvidia.spark.rapids.OffsetWindowFunctionMeta (compiled against Spark 3.0.x)
  *      fails class load in Spark 3.1.x. (`expr.input` is not recognized as an Expression.)
  *   2. The semantics of offsets in LAG() are reversed/negated in Spark 3.1.1.
  *      E.g. The expression `LAG(col, 5)` causes Lag.offset to be set to `-5`,
  *      as opposed to `5`, in prior versions of Spark.
+ *   3. IGNORE NULL and RESPECT NULL was added in 3.2.0 and we need to fall back
+ *      until this can be supported.
  * This class adjusts the LAG offset to use similar semantics to Spark 3.0.x.
  */
 abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
@@ -68,8 +70,14 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
 
   override def tagExprForGpu(): Unit = {
     expr match {
-      case _: Lead => // Supported.
-      case _: Lag =>  // Supported.
+      case lead: Lead =>
+        if (lead.ignoreNulls) {
+          willNotWorkOnGpu("IGNORE NULLS for lead is not currently supported")
+        }
+      case lag: Lag =>
+        if (lag.ignoreNulls) {
+          willNotWorkOnGpu("IGNORE NULLS for lag is not currently supported")
+        }
       case other =>
         willNotWorkOnGpu( s"Only LEAD/LAG offset window functions are supported. Found: $other")
     }
