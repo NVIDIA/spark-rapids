@@ -349,7 +349,7 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
-    !exp.isInstanceOf[GpuExpression] &&
+    !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
       PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
       exp.children.exists(didFallBack(_, fallbackCpuClass))
   }
