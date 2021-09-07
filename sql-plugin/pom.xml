@@ -141,6 +141,10 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                </dependency>
+                <dependency>
                     <groupId>com.fasterxml.jackson.core</groupId>
                     <artifactId>jackson-core</artifactId>
                     <version>${spark.version}</version>
