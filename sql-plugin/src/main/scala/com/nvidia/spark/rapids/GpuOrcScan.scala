@@ -1001,7 +1001,7 @@ private case class GpuOrcFileFilterHandler(
         if (schema.getCategory == TypeDescription.Category.STRUCT) {
           val fieldNames = schema.getFieldNames.asScala
           val children = schema.getChildren.asScala
-          for (i <- 0 until children.size) {
+          for (i <- children.indices) {
             val prefixNew = if (isRoot) {
               fieldNames(i)
             } else {
@@ -1014,7 +1014,7 @@ private case class GpuOrcFileFilterHandler(
           }
         } else if (schema.getCategory == TypeDescription.Category.LIST) {
           val children = schema.getChildren.asScala
-          for (i <- 0 until children.size) {
+          for (i <- children.indices) {
             val prefixNew = prefix + "._elem"
             val id = fileSchema.findSubtype(prefixNew).getId
             setMapping(id)
@@ -1022,7 +1022,7 @@ private case class GpuOrcFileFilterHandler(
           }
         } else if(schema.getCategory == TypeDescription.Category.MAP) {
           val children = schema.getChildren.asScala
-          for (i <- 0 until children.size) {
+          for (i <- children.indices) {
             val prefixNew = if(i == 0) {
               prefix + "._key"
             } else {
