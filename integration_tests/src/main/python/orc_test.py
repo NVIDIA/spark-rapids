@@ -278,6 +278,33 @@ def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
                         'input_file_block_length()'),
             conf=all_confs)
 
+@allow_non_gpu('ProjectExec', 'Alias', 'InputFileName', 'InputFileBlockStart', 'InputFileBlockLength',
+               'FilterExec', 'And', 'IsNotNull', 'GreaterThan', 'Literal',
+               'FileSourceScanExec', 'ColumnarToRowExec',
+               'BatchScanExec', 'OrcScan')
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.orc.enabled', 'spark.rapids.sql.format.orc.read.enabled'])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disable_conf):
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, long_gen).write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, long_gen).write.orc(second_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs.update({disable_conf: 'false'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc(data_path)\
+                    .filter(f.col('a') > 0)\
+                    .selectExpr('a',
+                        'input_file_name()',
+                        'input_file_block_start()',
+                        'input_file_block_length()'),
+            conf=all_confs)
+
 def setup_orc_file_no_column_names(spark, table_name):
     drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
     create_query = "CREATE TABLE `{}` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc".format(table_name)
