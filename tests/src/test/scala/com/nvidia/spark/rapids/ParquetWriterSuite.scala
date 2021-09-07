@@ -147,12 +147,13 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       try {
         spark.sql("CREATE TABLE t(id STRING) USING PARQUET")
         val df = spark.sql("INSERT INTO TABLE t SELECT 'abc'")
-        val insert = df.queryExecution.executedPlan.find(_.isInstanceOf[GpuDataWritingCommandExec])
-        assert(insert.isDefined)
-        assert(insert.get.metrics.contains(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME))
-        assert(insert.get.metrics.contains(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME))
-        assert(insert.get.metrics(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME).value > 0)
-        assert(insert.get.metrics(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME).value > 0)
+        val insert = ShimLoader.getSparkShims.findOperators(df.queryExecution.executedPlan,
+          _.isInstanceOf[GpuDataWritingCommandExec]).head
+          .asInstanceOf[GpuDataWritingCommandExec]
+        assert(insert.metrics.contains(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME))
+        assert(insert.metrics.contains(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME))
+        assert(insert.metrics(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME).value > 0)
+        assert(insert.metrics(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME).value > 0)
       } finally {
         spark.sql("DROP TABLE IF EXISTS tempmetricstable")
       }
