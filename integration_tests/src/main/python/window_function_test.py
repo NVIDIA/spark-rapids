@@ -622,8 +622,7 @@ def test_window_aggs_lead_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
             ('a', RepeatSeqGen(a_gen, length=20)),
             ('b', b_gen),
             ('c', c_gen),
-            ('d', d_gen),
-            ('d_default', d_gen)]
+            ('d', d_gen)]
 
     assert_gpu_sql_fallback_collect(
         lambda spark: gen_df(spark, data_gen),
@@ -647,8 +646,7 @@ def test_window_aggs_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
             ('a', RepeatSeqGen(a_gen, length=20)),
             ('b', b_gen),
             ('c', c_gen),
-            ('d', d_gen),
-            ('d_default', d_gen)]
+            ('d', d_gen)]
 
     assert_gpu_sql_fallback_collect(
         lambda spark: gen_df(spark, data_gen),
