@@ -357,7 +357,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test different types in ReadSchema") {
     val testSchemas: ArrayBuffer[ArrayBuffer[String]] = ArrayBuffer(
       ArrayBuffer(""),
-      ArrayBuffer("firstName:string,lastName:string"),
+      ArrayBuffer("firstName:string,lastName:string", "", "address:string"),
       ArrayBuffer("properties:map<string,string>"),
       ArrayBuffer("name:array<string>"),
       ArrayBuffer("name:string,booksInterested:array<struct<name:string,price:decimal(8,2)," +

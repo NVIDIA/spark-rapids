@@ -335,7 +335,7 @@ object QualAppInfo extends Logging {
     val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
     var angleBracketsCount = 0
     var parenthesesCount = 0
-    val distinctSchema = schema.distinct.mkString(",")
+    val distinctSchema = schema.distinct.filter(_.nonEmpty).mkString(",")
 
     // Get the nested types i.e everything between < >
     for (char <- distinctSchema) {
@@ -351,8 +351,7 @@ object QualAppInfo extends Logging {
       if (angleBracketsCount == 0 && parenthesesCount == 0 && char.equals(',')) {
         individualSchema += tempStringBuilder.toString
         tempStringBuilder.setLength(0)
-      }
-      else {
+      } else {
         tempStringBuilder.append(char);
       }
     }
