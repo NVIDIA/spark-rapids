@@ -275,23 +275,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => false
   }
 
-  /**
-   * Because we cannot change the executors in spark itself we need to try and account for
-   * the ones that might have issues with coalesce here.
-   */
-  private def disableCoalesceUntilInput(exec: Expression): Boolean = exec match {
-    case _: InputFileName => true
-    case _: InputFileBlockStart => true
-    case _: InputFileBlockLength => true
-    case e => e.children.exists(disableCoalesceUntilInput)
-  }
+
 
   /**
    * Because we cannot change the executors in spark itself we need to try and account for
    * the ones that might have issues with coalesce here.
    */
   private def disableCoalesceUntilInput(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(disableCoalesceUntilInput)
+    plan.expressions.exists(GpuTransitionOverrides.checkHasInputFileExpressions)
   }
 
   private def disableScanUntilInput(exec: Expression): Boolean = {
@@ -573,6 +564,18 @@ object GpuTransitionOverrides {
         }
       case _ => plan
     }
+  }
+
+  /**
+   * Check the Expression is or has Input File expressions.
+   * @param exec expression to check
+   * @return true or false
+   */
+  def checkHasInputFileExpressions(exec: Expression): Boolean = exec match {
+    case _: InputFileName => true
+    case _: InputFileBlockStart => true
+    case _: InputFileBlockLength => true
+    case e => e.children.exists(checkHasInputFileExpressions)
   }
 }
 
