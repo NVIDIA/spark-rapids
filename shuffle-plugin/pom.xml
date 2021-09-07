@@ -47,6 +47,13 @@
           <version>1.11</version>
           <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
@@ -77,13 +84,6 @@
                     <version>4.3.0.7.2.7.0-184</version>
                     <scope>provided</scope>
                 </dependency>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                    <scope>provided</scope>
-                </dependency>
             </dependencies>
         </profile>
         <profile>
@@ -98,13 +98,6 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                </dependency>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>

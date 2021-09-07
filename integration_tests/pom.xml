@@ -68,6 +68,14 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
@@ -82,14 +90,6 @@
 -->
             </activation>
             <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}tests</classifier>
-                    <type>test-jar</type>
-                    <scope>test</scope>
-                </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
@@ -130,14 +130,6 @@
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
-                </dependency>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}tests</classifier>
-                    <type>test-jar</type>
-                    <scope>test</scope>
                 </dependency>
             </dependencies>
         </profile>

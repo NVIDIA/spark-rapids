@@ -25,7 +25,7 @@ BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$4
 BUILD_PROFILES=${BUILD_PROFILES:-'databricks311,!snapshot-shims'}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.1'}
 # set this to anything (true) to skip building with mvn and it will only install the dependencies into .m2
-INSTALL_DEPS_ONLY=""
+INSTALL_DEPS_ONLY="true"
 # the version of Spark used when we install the Databricks jars in .m2
 # 3.1.0-databricks is add because its actually based on Spark 3.1.1
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
@@ -378,10 +378,7 @@ else
        -Dpackaging=jar
 fi
 
-if [[ -z $INSTALL_DEPS_ONLY ]]
-then
-    mvn -B -P${BUILD_PROFILES} clean package -DskipTests
-fi
+mvn -B -Ddatabricks -Dbuildver=311db clean package -DskipTests
 
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids
