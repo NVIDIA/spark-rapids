@@ -143,17 +143,6 @@
         </dependencies>
     </profile>
     <profile>
-        <id>with-classifier</id>
-        <activation>
-            <activeByDefault>true</activeByDefault>
-            <!--
-            <property><name>buildver</name></property>
--->
-        </activation>
-        <dependencies>
-        </dependencies>
-    </profile>
-    <profile>
         <id>release311cdh</id>
         <activation>
             <property>

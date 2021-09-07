@@ -83,11 +83,6 @@
             <id>with-classifier</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
-                <!--
-                <property>
-                    <name>buildver</name>
-                </property>
--->
             </activation>
             <dependencies>
                 <dependency>

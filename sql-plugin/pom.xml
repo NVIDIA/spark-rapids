@@ -108,11 +108,13 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>
@@ -276,11 +278,6 @@
             <id>with-classifier</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
-                <!--
-                <property>
-                    <name>buildver</name>
-                </property>
--->
             </activation>
             <dependencies>
                 <dependency>
