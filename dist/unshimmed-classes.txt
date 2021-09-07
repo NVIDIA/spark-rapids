@@ -1,4 +1,5 @@
 com/nvidia/spark/SQLPlugin*
+com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/SQLExecPlugin*
