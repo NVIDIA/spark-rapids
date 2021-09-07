@@ -23,7 +23,6 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import java.util
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
@@ -43,8 +42,8 @@ class PluginException(msg: String) extends RuntimeException(msg)
 case class CudfVersionMismatchException(errorMsg: String) extends PluginException(errorMsg)
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
-  val overrides: Rule[SparkPlan] = GpuOverrides()
-  val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
+  lazy val overrides: Rule[SparkPlan] = GpuOverrides()
+  lazy val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
 
   override def preColumnarTransitions : Rule[SparkPlan] = overrides
 
@@ -144,13 +143,15 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     }
   }
 
-  override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
+  override def init(
+    sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
-    if (conf.shimsProviderOverride.isDefined) {
+    if (conf.shimsProviderOverride.isDefined) { // TODO test it, probably not working yet
       ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
     }
+
     if (GpuShuffleEnv.isRapidsShuffleAvailable &&
         conf.shuffleTransportEarlyStart) {
       rapidsShuffleHeartbeatManager =
@@ -170,7 +171,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def init(
       pluginContext: PluginContext,
-      extraConf: util.Map[String, String]): Unit = {
+      extraConf: java.util.Map[String, String]): Unit = {
     try {
       val conf = new RapidsConf(extraConf.asScala.toMap)
       if (conf.shimsProviderOverride.isDefined) {
@@ -191,6 +192,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             conf.shuffleTransportEarlyStart) {
           logInfo("Initializing shuffle manager heartbeats")
           rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
         }
       }
 
