@@ -86,24 +86,14 @@
 
     <profiles>
         <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark.test.version}</version>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>with-classifier</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
+                <!--
                 <property>
                     <name>buildver</name>
                 </property>
+-->
             </activation>
             <build>
                 <plugins>

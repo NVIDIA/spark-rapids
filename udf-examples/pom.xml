@@ -91,20 +91,6 @@
 
   <profiles>
     <profile>
-        <id>default</id>
-        <activation>
-            <activeByDefault>true</activeByDefault>
-        </activation>
-        <dependencies>
-            <dependency>
-                <groupId>com.nvidia</groupId>
-                <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                <version>${project.version}</version>
-                <scope>provided</scope>
-            </dependency>
-        </dependencies>
-    </profile>
-    <profile>
         <!--
              Note that we are using the Spark version for all of the Databricks dependencies as well.
              The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
@@ -152,7 +138,10 @@
     <profile>
         <id>with-classifier</id>
         <activation>
+            <activeByDefault>true</activeByDefault>
+            <!--
             <property><name>buildver</name></property>
+-->
         </activation>
         <dependencies>
             <dependency>

@@ -84,22 +84,6 @@
 
     <profiles>
         <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>release311cdh</id>
             <activation>
                 <property>
@@ -287,9 +271,12 @@
         <profile>
             <id>with-classifier</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
+                <!--
                 <property>
                     <name>buildver</name>
                 </property>
+-->
             </activation>
             <dependencies>
                 <dependency>

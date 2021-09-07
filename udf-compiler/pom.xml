@@ -52,56 +52,12 @@
 
     <profiles>
         <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>with-classifier</id>
             <activation>
+                <activeByDefault>true</activeByDefault>
+                <!--
                 <property><name>buildver</name></property>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
-                    <scope>provided</scope>
-                </dependency>
-                <!-- temporarily needed for tests to pick up shim services provider:
-                     credits Tom -->
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                        <configuration>
-                            <classifier>${spark.version.classifier}</classifier>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
-            <id>no-classifier</id>
-            <activation>
-                <property><name>!buildver</name></property>
+-->
             </activation>
             <dependencies>
                 <dependency>
