@@ -611,13 +611,13 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
 
 
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
-@allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Lag', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
+@allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
 @ignore_order(local=True)
 @pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
 @pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
 @pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
-def test_window_aggs_lead_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
+def test_window_aggs_lead_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
     data_gen = [
             ('a', RepeatSeqGen(a_gen, length=20)),
             ('b', b_gen),
@@ -631,10 +631,32 @@ def test_window_aggs_lead_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
         "window_agg_table",
         '''
         SELECT
-            LEAD(d, 5) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lead_d_5,
-            LEAD(d, 2, d_default) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lead_d_2_default,
-            LAG(d, 5) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lag_d_5,
-            LAG(d, 2, d_default) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lag_d_2_default
+            LEAD(d, 5) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lead_d_5
+        FROM window_agg_table
+        ''')
+
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
+@allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lag', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
+@ignore_order(local=True)
+@pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
+@pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
+def test_window_aggs_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
+    data_gen = [
+            ('a', RepeatSeqGen(a_gen, length=20)),
+            ('b', b_gen),
+            ('c', c_gen),
+            ('d', d_gen),
+            ('d_default', d_gen)]
+
+    assert_gpu_sql_fallback_collect(
+        lambda spark: gen_df(spark, data_gen),
+        'Lag',
+        "window_agg_table",
+        '''
+        SELECT
+            LAG(d, 5) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lag_d_5
         FROM window_agg_table
         ''')
 
