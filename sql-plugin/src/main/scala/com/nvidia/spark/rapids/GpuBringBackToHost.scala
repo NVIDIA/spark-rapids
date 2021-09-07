@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,19 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Pull back any data on the GPU to the host so the host can access it.
  */
-case class GpuBringBackToHost(child: SparkPlan) extends UnaryExecNode with GpuExec {
+case class GpuBringBackToHost(child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = child.output
   override def supportsColumnar: Boolean = true

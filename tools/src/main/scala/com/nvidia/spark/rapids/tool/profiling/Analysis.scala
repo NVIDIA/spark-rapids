@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling._
 
@@ -27,8 +25,7 @@ import org.apache.spark.sql.rapids.tool.profiling._
  * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
-class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter],
-    numOutputRows: Int) {
+class Analysis(apps: Seq[ApplicationInfo]) {
 
   def getDurations(tcs: ArrayBuffer[TaskCase]): (Long, Long, Long, Double) = {
     val durations = tcs.map(_.duration)
@@ -40,10 +37,16 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
     }
   }
 
+  private def maxWithEmptyHandling(arr: ArrayBuffer[Long]): Long = {
+    if (arr.isEmpty) {
+      0L
+    } else {
+      arr.max
+    }
+  }
+
   // Job + Stage Level TaskMetrics Aggregation
   def jobAndStageMetricsAggregation(): Seq[JobStageAggTaskMetricsProfileResult] = {
-    val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
-    fileWriter.foreach(_.write(messageHeader))
     val allJobRows = apps.flatMap { app =>
       app.jobIdToInfo.map { case (id, jc) =>
         val stageIdsInJob = jc.stageIds
@@ -58,41 +61,40 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
           }
           // count duplicate task attempts
           val numTaskAttempt = tasksInJob.size
-
           val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
           Some(JobStageAggTaskMetricsProfileResult(app.index,
             s"job_$id",
             numTaskAttempt,
             jc.duration,
-            Option(tasksInJob.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum,
+            tasksInJob.map(_.diskBytesSpilled).sum,
             durSum,
             durMax,
             durMin,
             durAvg,
-            Option(tasksInJob.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.executorRunTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
-            Option(tasksInJob.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.resultSize)).getOrElse(Seq(0L)).max,
-            Option(tasksInJob.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
-            Option(tasksInJob.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
+            tasksInJob.map(_.executorCPUTime).sum,
+            tasksInJob.map(_.executorDeserializeCPUTime).sum,
+            tasksInJob.map(_.executorDeserializeTime).sum,
+            tasksInJob.map(_.executorRunTime).sum,
+            tasksInJob.map(_.gettingResultTime).sum,
+            tasksInJob.map(_.input_bytesRead).sum,
+            tasksInJob.map(_.input_recordsRead).sum,
+            tasksInJob.map(_.jvmGCTime).sum,
+            tasksInJob.map(_.memoryBytesSpilled).sum,
+            tasksInJob.map(_.output_bytesWritten).sum,
+            tasksInJob.map(_.output_recordsWritten).sum,
+            maxWithEmptyHandling(tasksInJob.map(_.peakExecutionMemory)),
+            tasksInJob.map(_.resultSerializationTime).sum,
+            maxWithEmptyHandling(tasksInJob.map(_.resultSize)),
+            tasksInJob.map(_.sr_fetchWaitTime).sum,
+            tasksInJob.map(_.sr_localBlocksFetched).sum,
+            tasksInJob.map(_.sr_localBytesRead).sum,
+            tasksInJob.map(_.sr_remoteBlocksFetched).sum,
+            tasksInJob.map(_.sr_remoteBytesRead).sum,
+            tasksInJob.map(_.sr_remoteBytesReadToDisk).sum,
+            tasksInJob.map(_.sr_totalBytesRead).sum,
+            tasksInJob.map(_.sw_bytesWritten).sum,
+            tasksInJob.map(_.sw_recordsWritten).sum,
+            tasksInJob.map(_.sw_writeTime).sum
           ))
         }
       }
@@ -117,35 +119,35 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               s"stage_$id",
               numAttempts,
               sc.duration,
-              Option(tasksInStage.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum,
+              tasksInStage.map(_.diskBytesSpilled).sum,
               durSum,
               durMax,
               durMin,
               durAvg,
-              Option(tasksInStage.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.executorRunTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
-              Option(tasksInStage.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.resultSize)).getOrElse(Seq(0L)).max,
-              Option(tasksInStage.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInStage.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
+              tasksInStage.map(_.executorCPUTime).sum,
+              tasksInStage.map(_.executorDeserializeCPUTime).sum,
+              tasksInStage.map(_.executorDeserializeTime).sum,
+              tasksInStage.map(_.executorRunTime).sum,
+              tasksInStage.map(_.gettingResultTime).sum,
+              tasksInStage.map(_.input_bytesRead).sum,
+              tasksInStage.map(_.input_recordsRead).sum,
+              tasksInStage.map(_.jvmGCTime).sum,
+              tasksInStage.map(_.memoryBytesSpilled).sum,
+              tasksInStage.map(_.output_bytesWritten).sum,
+              tasksInStage.map(_.output_recordsWritten).sum,
+              maxWithEmptyHandling(tasksInStage.map(_.peakExecutionMemory)),
+              tasksInStage.map(_.resultSerializationTime).sum,
+              maxWithEmptyHandling(tasksInStage.map(_.resultSize)),
+              tasksInStage.map(_.sr_fetchWaitTime).sum,
+              tasksInStage.map(_.sr_localBlocksFetched).sum,
+              tasksInStage.map(_.sr_localBytesRead).sum,
+              tasksInStage.map(_.sr_remoteBlocksFetched).sum,
+              tasksInStage.map(_.sr_remoteBytesRead).sum,
+              tasksInStage.map(_.sr_remoteBytesReadToDisk).sum,
+              tasksInStage.map(_.sr_totalBytesRead).sum,
+              tasksInStage.map(_.sw_bytesWritten).sum,
+              tasksInStage.map(_.sw_recordsWritten).sum,
+              tasksInStage.map(_.sw_writeTime).sum
             ))
           }
         }
@@ -179,35 +181,35 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
                 s"stage_$id",
                 numAttempts,
                 sc.duration,
-                Option(tasksInStage.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum,
+                tasksInStage.map(_.diskBytesSpilled).sum,
                 durSum,
                 durMax,
                 durMin,
                 durAvg,
-                Option(tasksInStage.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.executorRunTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
-                Option(tasksInStage.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.resultSize)).getOrElse(Seq(0L)).max,
-                Option(tasksInStage.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
-                Option(tasksInStage.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
+                tasksInStage.map(_.executorCPUTime).sum,
+                tasksInStage.map(_.executorDeserializeCPUTime).sum,
+                tasksInStage.map(_.executorDeserializeTime).sum,
+                tasksInStage.map(_.executorRunTime).sum,
+                tasksInStage.map(_.gettingResultTime).sum,
+                tasksInStage.map(_.input_bytesRead).sum,
+                tasksInStage.map(_.input_recordsRead).sum,
+                tasksInStage.map(_.jvmGCTime).sum,
+                tasksInStage.map(_.memoryBytesSpilled).sum,
+                tasksInStage.map(_.output_bytesWritten).sum,
+                tasksInStage.map(_.output_recordsWritten).sum,
+                maxWithEmptyHandling(tasksInStage.map(_.peakExecutionMemory)),
+                tasksInStage.map(_.resultSerializationTime).sum,
+                maxWithEmptyHandling(tasksInStage.map(_.resultSize)),
+                tasksInStage.map(_.sr_fetchWaitTime).sum,
+                tasksInStage.map(_.sr_localBlocksFetched).sum,
+                tasksInStage.map(_.sr_localBytesRead).sum,
+                tasksInStage.map(_.sr_remoteBlocksFetched).sum,
+                tasksInStage.map(_.sr_remoteBytesRead).sum,
+                tasksInStage.map(_.sr_remoteBytesReadToDisk).sum,
+                tasksInStage.map(_.sr_totalBytesRead).sum,
+                tasksInStage.map(_.sw_bytesWritten).sum,
+                tasksInStage.map(_.sw_recordsWritten).sum,
+                tasksInStage.map(_.sw_writeTime).sum
               ))
           }
         }
@@ -221,22 +223,15 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.id)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No Job/Stage Metrics Found!\n"))
       Seq.empty
     }
 
   }
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
-  def sqlMetricsAggregation(): Seq[SQLTaskAggMetrics] = {
-    val messageHeader = "\nSQL level aggregated task metrics:\n"
-    fileWriter.foreach(_.write(messageHeader))
-
+  def sqlMetricsAggregation(): Seq[SQLTaskAggMetricsProfileResult] = {
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         val jcs = app.jobIdToInfo.filter { case (_, jc) =>
@@ -256,16 +251,16 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
             // count all attempts
             val numAttempts = tasksInSQL.size
 
-            val diskBytes = Option(tasksInSQL.map(_.diskBytesSpilled)).getOrElse(Seq(0L)).sum
-            val execCpuTime = Option(tasksInSQL.map(_.executorCPUTime)).getOrElse(Seq(0L)).sum
-            val execRunTime = Option(tasksInSQL.map(_.executorRunTime)).getOrElse(Seq(0L)).sum
+            val diskBytes = tasksInSQL.map(_.diskBytesSpilled).sum
+            val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
+            val execRunTime = tasksInSQL.map(_.executorRunTime).sum
             val execCPURatio = ToolUtils.calculateDurationPercent(execCpuTime, execRunTime)
 
             // set this here, so make sure we don't get it again until later
             sqlCase.sqlCpuTimePercent = execCPURatio
            
             val (durSum, durMax, durMin, durAvg) = getDurations(tasksInSQL)
-            Some(SQLTaskAggMetrics(app.index,
+            Some(SQLTaskAggMetricsProfileResult(app.index,
               app.appId,
               sqlId,
               sqlCase.description,
@@ -280,29 +275,29 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
               durMin,
               durAvg,
               execCpuTime,
-              Option(tasksInSQL.map(_.executorDeserializeCPUTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.executorDeserializeTime)).getOrElse(Seq(0L)).sum,
+              tasksInSQL.map(_.executorDeserializeCPUTime).sum,
+              tasksInSQL.map(_.executorDeserializeTime).sum,
               execRunTime,
-              Option(tasksInSQL.map(_.gettingResultTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.input_bytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.input_recordsRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.jvmGCTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.memoryBytesSpilled)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.output_bytesWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.output_recordsWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.peakExecutionMemory)).getOrElse(Seq(0L)).max,
-              Option(tasksInSQL.map(_.resultSerializationTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.resultSize)).getOrElse(Seq(0L)).max,
-              Option(tasksInSQL.map(_.sr_fetchWaitTime)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sr_localBlocksFetched)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sr_localBytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sr_remoteBlocksFetched)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sr_remoteBytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sr_remoteBytesReadToDisk)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sr_totalBytesRead)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sw_bytesWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sw_recordsWritten)).getOrElse(Seq(0L)).sum,
-              Option(tasksInSQL.map(_.sw_writeTime)).getOrElse(Seq(0L)).sum
+              tasksInSQL.map(_.gettingResultTime).sum,
+              tasksInSQL.map(_.input_bytesRead).sum,
+              tasksInSQL.map(_.input_recordsRead).sum,
+              tasksInSQL.map(_.jvmGCTime).sum,
+              tasksInSQL.map(_.memoryBytesSpilled).sum,
+              tasksInSQL.map(_.output_bytesWritten).sum,
+              tasksInSQL.map(_.output_recordsWritten).sum,
+              maxWithEmptyHandling(tasksInSQL.map(_.peakExecutionMemory)),
+              tasksInSQL.map(_.resultSerializationTime).sum,
+              maxWithEmptyHandling(tasksInSQL.map(_.resultSize)),
+              tasksInSQL.map(_.sr_fetchWaitTime).sum,
+              tasksInSQL.map(_.sr_localBlocksFetched).sum,
+              tasksInSQL.map(_.sr_localBytesRead).sum,
+              tasksInSQL.map(_.sr_remoteBlocksFetched).sum,
+              tasksInSQL.map(_.sr_remoteBytesRead).sum,
+              tasksInSQL.map(_.sr_remoteBytesReadToDisk).sum,
+              tasksInSQL.map(_.sr_totalBytesRead).sum,
+              tasksInSQL.map(_.sw_bytesWritten).sum,
+              tasksInSQL.map(_.sw_recordsWritten).sum,
+              tasksInSQL.map(_.sw_writeTime).sum
             ))
           }
         }
@@ -314,24 +309,17 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, -(sortDur), cols.sqlId, cols.executorCpuTime)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No SQL Metrics Found!\n"))
       Seq.empty
     }
   }
 
-  def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTime] = {
-    val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
-    fileWriter.foreach(_.write(messageHeader))
-
+  def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTimeProfileResult] = {
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         // Potential problems not properly track, add it later
-        SQLDurationExecutorTime(app.index, app.appId, sqlId, sqlCase.duration,
+        SQLDurationExecutorTimeProfileResult(app.index, app.appId, sqlId, sqlCase.duration,
           sqlCase.hasDataset, app.appInfo.duration, sqlCase.problematic,
           sqlCase.sqlCpuTimePercent)
       }
@@ -342,23 +330,15 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val sortDur = cols.duration.getOrElse(0L)
         (cols.appIndex, cols.sqlID, sortDur)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
       Seq.empty
     }
   }
 
   private case class AverageStageInfo(avgDuration: Double, avgShuffleReadBytes: Double)
 
-  def shuffleSkewCheck(): Seq[ShuffleSkewInfo] = {
-    val messageHeader = s"\nShuffle Skew Check:" +
-      " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
-    fileWriter.foreach(_.write(messageHeader))
-
+  def shuffleSkewCheck(): Seq[ShuffleSkewProfileResult] = {
     val allRows = apps.flatMap { app =>
       val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
         (tc.stageId, tc.stageAttemptId)
@@ -389,7 +369,7 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
         val avgShuffleDur = avgsStageInfos.get((tc.stageId, tc.stageAttemptId))
         avgShuffleDur match {
           case Some(avg) =>
-            Some(ShuffleSkewInfo(app.index, tc.stageId, tc.stageAttemptId,
+            Some(ShuffleSkewProfileResult(app.index, tc.stageId, tc.stageAttemptId,
               tc.taskId, tc.attempt, tc.duration, avg.avgDuration, tc.sr_totalBytesRead,
               avg.avgShuffleReadBytes, tc.peakExecutionMemory, tc.successful, tc.endReason))
           case None =>
@@ -403,12 +383,8 @@ class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter
       val sortedRows = allNonEmptyRows.sortBy { cols =>
         (cols.appIndex, cols.stageId, cols.stageAttemptId, cols.taskId, cols.taskAttemptId)
       }
-      val outStr = ProfileOutputWriter.makeFormattedString(numOutputRows, 0,
-        sortedRows.head.outputHeaders, sortedRows.map(_.convertToSeq))
-      fileWriter.foreach(_.write(outStr))
       sortedRows
     } else {
-      fileWriter.foreach(_.write("No SQL Duration and Executor CPU Time Percent Found!\n"))
       Seq.empty
     }
   }

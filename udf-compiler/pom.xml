@@ -44,19 +44,6 @@
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <type>test-jar</type>
-            <scope>test</scope>
-            <version>${spark.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
@@ -105,6 +92,58 @@
             </build>
         </profile>
        <profile>
+           <!--
+                 Note that we are using the Spark version for all of the Databricks dependencies as well.
+                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                 This is to make it easier and not have to change version numbers for each individual dependency
+                 and deal with differences between Databricks versions
+            -->
+            <id>dbdeps</id>
+            <activation>
+                <property>
+                    <name>databricks</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-core_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.javaassist</groupId>
+                    <artifactId>javaassist</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+           </dependencies>
+       </profile>
+       <profile>
             <id>release311cdh</id>
             <activation>
                 <property>
@@ -113,6 +152,13 @@
                 </property>
             </activation>
             <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                    <scope>provided</scope>
+                </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
@@ -220,9 +266,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
-		<configuration>
+                <configuration>
                     <includeTestSourceDirectory>true</includeTestSourceDirectory>
-		</configuration>
+                </configuration>
             </plugin>
         </plugins>
     </build>

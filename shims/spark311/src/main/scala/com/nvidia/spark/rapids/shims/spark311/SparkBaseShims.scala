@@ -20,9 +20,10 @@ import java.net.URI
 import java.nio.ByteBuffer
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.Spark30XShims
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
@@ -54,7 +55,8 @@ import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
-import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.shims.spark311._
 import org.apache.spark.sql.rapids.shims.spark311._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -63,21 +65,7 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 /**
  * Base Shim for Spark 3.1.1 that can be used by other 3.1.x versions and to easily diff
  */
-abstract class SparkBaseShims extends SparkShims {
-
-  override def parquetRebaseReadKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
-  override def parquetRebaseWriteKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key
-  override def avroRebaseReadKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_READ.key
-  override def avroRebaseWriteKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_WRITE.key
-  override def parquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
-  override def parquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
-
+abstract class SparkBaseShims extends Spark30XShims {
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
@@ -642,7 +630,7 @@ abstract class SparkBaseShims extends SparkShims {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {
-      org.apache.spark.sql.rapids.shims.spark311.GpuColumnarToRowTransitionExec(plan)
+      GpuColumnarToRowTransitionExec(plan)
     } else {
       GpuColumnarToRowExec(plan)
     }
@@ -834,4 +822,10 @@ abstract class SparkBaseShims extends SparkShims {
 
   override def hasCastFloatTimestampUpcast: Boolean = false
 
+  override def filesFromFileIndex(fileIndex: PartitioningAwareFileIndex): Seq[FileStatus] = {
+    fileIndex.allFiles()
+  }
+
+  override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
+    mode.transform(rows)
 }

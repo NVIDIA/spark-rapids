@@ -54,13 +54,13 @@ Optional:
 You do not need to compile the jar yourself because you can download it from the Maven repository directly.
 
 Here are 2 options:
-1. Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.0/)
+1. Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.1/)
 
 2. Compile the jar from github repo
 ```bash
 git clone https://github.com/NVIDIA/spark-rapids.git
 cd spark-rapids
-mvn -pl .,tools clean verify -DskipTests
+mvn -Pdefault -pl .,tools clean verify -DskipTests
 ```
 The jar is generated in below directory :
 
@@ -144,14 +144,20 @@ you are running on needs to be taken into account.
 had to estimate it, it means the event log was missing the application finished event so we will use the last job
 or sql execution time we find as the end time used to calculate the duration.
 
+`Complex Types and Unsupported Nested Complex Types` looks at the Read Schema and reports if there are any complex types(array, struct or maps)
+in the schema. Nested complex types are complex types which contain other complex types (Example: array<struct<string,string>>).
+Note that it can read all the schemas for DataSource V1. The Data Source V2 truncates the schema, so if you see ...,
+then the full schema is not available. For such schemas we read until ... and report if there are any complex types and
+nested complex types in that.
+
 Note that SQL queries that contain failed jobs are not included.
 
 Sample output in csv:
 
 ```
-App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types
-job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,""
-job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]"
+App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Unsupported Nested Complex Types
+job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,"",JSON,array<struct<city:string;state:string>>;map<string;string>,array<struct<city:string;state:string>>
+job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]",JSON;CSV,"",""
 ```
 
 Sample output in text:
@@ -327,15 +333,18 @@ The profiling tool generates information which can be used for debugging and pro
 ### Profiling tool functions
 
 Below is the information the profiling tool reports, see [Profile tool Detailed Output and Examples](#profile-tool-detailed-output-and-examples) for more information
-and examples. It has 2 main modes of operation: collection and compare.  Collection mode is when no other options are specified it simply collects information
-on each application individually and outputs a file per application. Compare mode will combine all the applications information in the same tables into a single file.
-It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.
+and examples. It has 3 modes of operation: collection, combined, and compare.  Collection mode is when no other options are specified it simply collects information
+on each application individually and outputs a file per application. Combined mode is collection mode but then combines all the applications together
+and you get one file for all applications. Compare mode will combine all the applications information in the same tables into a single file and also adds in 
+tables to compare stages and sql ids across all of those applications. The Compare mode will use more memory if comparing lots of applications.
+It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.  It can also optionally output
+CSV files for each table.
 
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
 - Application information
 - Datasource information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
@@ -363,6 +372,10 @@ in the local filesystem, HDFS, S3 or mixed. Note that if you are on an HDFS clus
 the default filesystem is likely HDFS for both the input and output so if you want to
 point to the local filesystem be sure to include `file:` in the path
 
+Please note, if processing a lot of event logs using combined or compare mode you may
+need to increase the java heap size using `-Xmx` option.  For instance, to specify
+30 GB heap size `java -Xmx30g ...`
+
 ```bash
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
@@ -385,9 +398,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 
+      --combined                  Collect mode but combine all applications into
+                                  the same tables.
   -c, --compare                   Compare Applications (Note this may require
                                   more memory if comparing a large number of
                                   applications). Default is false.
+      --csv                       Output each table to a CSV file as well
+                                  creating the summary text file.
   -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
                                   processing.eg: 100-newest-filesystem (for
                                   processing newest 100 event logs). eg:
@@ -411,7 +428,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   overwrite any existing files with the same
                                   name.
   -p, --print-plans               Print the SQL plans to a file named
-                                  '{APPLICATION_ID}-planDescriptions.log'.
+                                  'planDescriptions.log'.
                                   Default is false.
   -t, --timeout  <arg>            Maximum time in seconds to wait for the event
                                   logs to be processed. Default is 24 hours
@@ -427,16 +444,21 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
 ### Profiling tool output
-By default this outputs a log file under sub-directory `./rapids_4_spark_profile`.
-If running in normal collect mode, it outputs a file named `{APPLICATION_ID}-profile.log`
-for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_compare.log`
-will be output. The output will go into your default filesystem, it supports local filesystem or HDFS.
+The default output location is the current directory. The output location can be changed using the `--output-directory` option.
+The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
+If running in normal collect mode, it processes event log individually and outputs files for each application under
+a directory named `rapids_4_spark_profile/{APPLICATION_ID}`. It creates a summary text file named `profile.log`.
+If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summary
+text file named `rapids_4_spark_tools_combined.log`.
+If running compare mode the output is put under a directory named `rapids_4_spark_profile/compare/` and creates a summary
+text file named `rapids_4_spark_tools_compare.log`.
+The output will go into your default filesystem, it supports local filesystem or HDFS.
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
 so if you want to point to the local filesystem be sure to include `file:` in the path
 There are separate files that are generated under the same sub-directory when using the options to generate query
 visualizations or printing the SQL plans.
-
-The output location can be changed using the `--output-directory` option. Default is current directory.
+Optionally if the `--csv` option is specified then it creates a csv file for each table for each application in the
+corresponding sub-directory.
 
 There is a 100 characters limit for each output column. If the result of the column exceeds this limit, it is suffixed with ... for that column.
 
@@ -454,7 +476,7 @@ All the metrics definitions can be found in the [executor task metrics doc](http
 - Application information
 - Data Source information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
@@ -624,9 +646,9 @@ SQL Plan Metrics for Application:
 ```
 
 - Print SQL Plans (-p option):
-Prints the SQL plan as a text string to a file ends with `-planDescriptions.log`.
+Prints the SQL plan as a text string to a file named `planDescriptions.log`.
 For example if your application id is app-20210507103057-0000, then the
-filename will be `app-20210507103057-0000-planDescriptions.log`
+filename will be `planDescriptions.log`
 
 - Generate DOT graph for each SQL (-g option):
 
@@ -661,7 +683,7 @@ If a stage hs no metrics, like if the query crashed early, we cannot establish t
 - Generate timeline for application (--generate-timeline option):
 
 The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
-named `${APPLICATION_ID}-timeline.svg`.  Most web browsers can display this file.  It is a
+named `timeline.svg`.  Most web browsers can display this file.  It is a
 timeline view similar Apache Spark's 
 [event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
 
