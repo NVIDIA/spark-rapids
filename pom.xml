@@ -621,32 +621,6 @@
                 </plugins>
             </build>
         </profile>
-        <!--
-        <profile>
-            <id>databricks301</id>
-            <properties>
-                <rat.consoleOutput>true</rat.consoleOutput>
-            </properties>
-        </profile>
-        <profile>
-            <id>databricks311</id>
-            <properties>
-                <rat.consoleOutput>true</rat.consoleOutput>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark301dbtests</id>
-            <properties>
-                <spark.test.version>${spark301db.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark311dbtests</id>
-            <properties>
-                <spark.test.version>${spark311db.version}</spark.test.version>
-            </properties>
-        </profile>
--->
     </profiles>
 
     <properties>
