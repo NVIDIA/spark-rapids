@@ -829,10 +829,7 @@
                                 </goals>
                                 <configuration>
                                     <executable>bash</executable>
-                                    <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z
-                                        $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn
-                                        verify:\n$MODIFIED"; exit 1;}'
-                                    </commandlineArgs>
+                                     <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn verify:\n$MODIFIED"; exit 1;}'</commandlineArgs>
                                 </configuration>
                             </execution>
                         </executions>
