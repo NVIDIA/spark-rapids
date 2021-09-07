@@ -332,7 +332,7 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark301db</shim.module.name>
-                <spark.version.classifier>spark301-databricks</spark.version.classifier>
+                <spark.version.classifier>spark301db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
                      The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
@@ -362,7 +362,7 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark311db</shim.module.name>
-                <spark.version.classifier>spark311-databricks</spark.version.classifier>
+                <spark.version.classifier>spark311db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
                      The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
