@@ -95,54 +95,13 @@
             <version>${spark311db.version}</version>
             <scope>provided</scope>
         </dependency>
-    </dependencies>
 
-    <profiles>
-        <profile>
-            <id>databricks311</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <properties>
-                <parquet.version>1.10.1</parquet.version>
-                <arrow.version>2.0.0</arrow.version>
-            </properties>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.arrow</groupId>
-                    <artifactId>arrow-vector</artifactId>
-                    <version>${arrow.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.parquet</groupId>
-                    <artifactId>parquet-column</artifactId>
-                    <version>${parquet.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.parquet</groupId>
-                    <artifactId>parquet-hadoop</artifactId>
-                    <version>${parquet.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <!--
                  Note that we are using the Spark version for all of the Databricks dependencies as well.
                  The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
                  This is to make it easier and not have to change version numbers for each individual dependency
                  and deal with differences between Databricks versions
             -->
-            <id>release311db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>311db</value>
-                </property>
-            </activation>
-            <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
@@ -216,7 +175,4 @@
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
-        </profile>
-    </profiles>
-
 </project>
