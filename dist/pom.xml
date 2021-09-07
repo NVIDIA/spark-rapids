@@ -268,42 +268,9 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
       </plugin>
-      <!--
-      <plugin>
-            <artifactId>maven-dependency-plugin</artifactId>
-        <executions>
-            <execution>
-            <id>copy-current</id>
-            <phase>generate-sources</phase>
-            <goals>
-              <goal>copy</goal>
-            </goals>
-          </execution>
-        </executions>
-        <configuration>
-          <artifactItems>
-            <artifactItem>
-              <groupId>com.nvidia</groupId>
-              <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
-              <classifier>${spark.version.classifier}</classifier>
-              <version>${project.version}</version>
-              <type>jar</type>
-              <overWrite>false</overWrite>
-              <outputDirectory>${project.build.directory}/deps</outputDirectory>
-            </artifactItem>
-          </artifactItems>
-          <outputDirectory>${project.build.directory}/deps</outputDirectory>
-          <overWriteReleases>false</overWriteReleases>
-          <overWriteSnapshots>true</overWriteSnapshots>
-        </configuration>
-          </plugin>
--->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-antrun-plugin</artifactId>
-        <!--
-             TODO - how to make sure the versions we pull are up to date?
-        -->
         <executions>
           <execution>
             <phase>prepare-package</phase>
@@ -340,6 +307,7 @@
                   <patternset id="sharedWorld">
                     <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
                     <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                    <includesfile name="${project.basedir}/meta-extras.txt"/>
                   </patternset>
                 </unzip>
                 <unzip
