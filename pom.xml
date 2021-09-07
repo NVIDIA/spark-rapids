@@ -1058,7 +1058,7 @@
                         <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>**/*.csv</exclude>
                         <exclude>dist/*.txt</exclude>
-                        <exclude>dist/com.nvidia.spark.rapids.SparkShimServiceProvider.spark30x</exclude>
+                        <exclude>dist/com.nvidia.spark.rapids.SparkShimServiceProvider*</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>

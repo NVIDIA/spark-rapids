@@ -283,7 +283,7 @@
                                         >
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
-                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.spark30x"
+                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshot"
                                               tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
@@ -593,7 +593,7 @@
                                         >
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
-                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.spark30x"
+                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot"
                                               tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
