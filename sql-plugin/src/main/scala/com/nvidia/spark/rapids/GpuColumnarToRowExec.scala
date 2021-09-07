@@ -181,8 +181,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     opTime: GpuMetric,
     fetchTime: GpuMetric) extends Iterator[InternalRow] with Arm {
   // GPU batches read in must be closed by the receiver (us)
-  @transient var cb: ColumnarBatch = null
-  var it: java.util.Iterator[InternalRow] = null
+  @transient private var cb: ColumnarBatch = null
+  private var it: java.util.Iterator[InternalRow] = null
 
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 
