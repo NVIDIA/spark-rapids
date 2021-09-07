@@ -21,7 +21,11 @@ import java.net.URL
 import scala.collection.JavaConverters._
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf}
+import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
 import org.apache.spark.sql.rapids.VisibleShuffleManager
 import org.apache.spark.util.{MutableURLClassLoader, ParentClassLoader}
 
@@ -78,19 +82,30 @@ object ShimLoader extends Logging {
   // REPL-only logic
   @volatile private var tmpClassLoader: MutableURLClassLoader = _
 
-  def shimId: String = shimIdFromPackageName(shimProviderClass)
+  private def shimId: String = shimIdFromPackageName(shimProviderClass)
+
+  // defensively call findShimProvider logic on all entry points to avoid uninitialized
+  // this won't be necessary if we can upstream changes to the plugin and shuffle
+  // manager loading changes to Apache Spark
+  private def initShimProviderIfNeeded(): Unit = {
+    if (shimURL == null) {
+      findShimProvider()
+    }
+  }
 
   def getRapidsShuffleManagerClass: String = {
-    findShimProvider()
+    initShimProviderIfNeeded()
     s"com.nvidia.spark.rapids.$shimId.RapidsShuffleManager"
   }
 
-  def getRapidsShuffleInternal: String = {
-    findShimProvider()
+  def getRapidsShuffleInternalClass: String = {
+    initShimProviderIfNeeded()
     s"org.apache.spark.sql.rapids.shims.$shimId.RapidsShuffleInternalManager"
   }
 
   private def updateSparkClassLoader(): Unit = {
+    // TODO propose a proper addClassPathURL API to Spark similar to addJar but
+    //  accepting non-file-based URI
     val contextClassLoader = Thread.currentThread().getContextClassLoader
     Option(contextClassLoader).collect {
       case mutable: MutableURLClassLoader => mutable
@@ -107,9 +122,7 @@ object ShimLoader extends Logging {
   }
 
   private def getShimClassLoader(): ClassLoader = {
-    if (shimURL == null) {
-      findShimProvider()
-    }
+    initShimProviderIfNeeded()
     if (pluginClassLoader == null) {
       updateSparkClassLoader()
     }
@@ -131,7 +144,19 @@ object ShimLoader extends Logging {
     logInfo(s"Loading shim for Spark version: $sparkVersion")
 
     val thisClassLoader = getClass.getClassLoader
+
     // Emulating service loader manually because we have a non-standard jar layout for classes
+    // when we pass a classloader to https://docs.oracle.com/javase/8/docs/api/java/util/
+    // ServiceLoader.html#load-java.lang.Class-java.lang.ClassLoader-
+    // it expects META-INF/services at the normal root locations (OK)
+    // and provider classes under the normal root entry as well. The latter is not OK because we
+    // want to minimize the use of reflection and prevent leaking the provider to a conventional
+    // classloader.
+    //
+    // Alternatively, we could use a ChildFirstClassloader implementation. However, this means that
+    // ShimServiceProvider API definition is not shared via parent and we run
+    // into ClassCastExceptions. If we find a way to solve this then we can revert to ServiceLoader
+
     val serviceProviderListPath = SERVICE_LOADER_PREFIX + classOf[SparkShimServiceProvider].getName
     val serviceProviderList = thisClassLoader.getResources(serviceProviderListPath)
         .asScala.map(scala.io.Source.fromURL)
@@ -146,7 +171,6 @@ object ShimLoader extends Logging {
         val shimURL = new java.net.URL(s"${shimRootURL.toString}$mask/")
         val shimClassLoader = new MutableURLClassLoader(Array(shimURL, shimCommonURL),
           thisClassLoader)
-        // can't use ServiceLoader with parallel world layout
         val shimClass = shimClassLoader.loadClass(shimServiceProviderStr)
         Option(
           (instantiateClass(shimClass).asInstanceOf[SparkShimServiceProvider], shimURL)
@@ -213,20 +237,10 @@ object ShimLoader extends Logging {
     shimProviderClass = classname
   }
 
-  def newInstanceOf[T](className: String): T = {
+  private def newInstanceOf[T](className: String): T = {
     val loader = getShimClassLoader()
     logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
     instantiateClass(loader.loadClass(className)).asInstanceOf[T]
-  }
-
-  def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): VisibleShuffleManager = {
-    val shuffleClassLoader = getShimClassLoader()
-    val shuffleClassName =
-      s"org.apache.spark.sql.rapids.shims.${shimId}.RapidsShuffleInternalManager"
-    val shuffleClass = shuffleClassLoader.loadClass(shuffleClassName)
-    shuffleClass.getConstructor(classOf[SparkConf], java.lang.Boolean.TYPE)
-        .newInstance(conf, java.lang.Boolean.valueOf(isDriver))
-        .asInstanceOf[VisibleShuffleManager]
   }
 
   // avoid cached constructors
@@ -239,5 +253,35 @@ object ShimLoader extends Logging {
     }
     val constructor = cls.getConstructor()
     constructor.newInstance()
+  }
+
+  def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): VisibleShuffleManager = {
+    val shuffleClassLoader = getShimClassLoader()
+    val shuffleClassName =
+      s"org.apache.spark.sql.rapids.shims.$shimId.RapidsShuffleInternalManager"
+    val shuffleClass = shuffleClassLoader.loadClass(shuffleClassName)
+    shuffleClass.getConstructor(classOf[SparkConf], java.lang.Boolean.TYPE)
+        .newInstance(conf, java.lang.Boolean.valueOf(isDriver))
+        .asInstanceOf[VisibleShuffleManager]
+  }
+
+  def newDriverPlugin(): DriverPlugin = {
+    newInstanceOf("com.nvidia.spark.rapids.RapidsDriverPlugin")
+  }
+
+  def newExecutorPlugin(): ExecutorPlugin = {
+    newInstanceOf("com.nvidia.spark.rapids.RapidsExecutorPlugin")
+  }
+
+  def newColumnarOverrideRules(): ColumnarRule = {
+    newInstanceOf("com.nvidia.spark.rapids.ColumnarOverrideRules")
+  }
+
+  def newGpuQueryStagePrepOverrides(): Rule[SparkPlan] = {
+    newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
+  }
+
+  def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
+    newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
 }
