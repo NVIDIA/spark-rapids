@@ -62,7 +62,7 @@
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
+            <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
