@@ -1,1 +1,2 @@
 META-INF/services/**
+spark-*-info.properties
