@@ -31,34 +31,13 @@ import org.apache.spark.sql.types._
 
 object SchemaUtils extends Arm {
   /**
-   * Replaces CharType/VarcharType with StringType recursively in the given data type.
-   */
-  private[rapids] def replaceCharVarcharWithString(dt: DataType): DataType = dt match {
-    case ArrayType(et, nullable) =>
-      ArrayType(replaceCharVarcharWithString(et), nullable)
-    case MapType(kt, vt, nullable) =>
-      MapType(replaceCharVarcharWithString(kt), replaceCharVarcharWithString(vt), nullable)
-    case StructType(fields) =>
-      StructType(fields.map { field =>
-        field.copy(dataType = replaceCharVarcharWithString(field.dataType))
-      })
-    case _: CharType => StringType
-    case _: VarcharType => StringType
-    case _ => dt
-  }
-
-  /**
    * Convert a TypeDescription to a Catalyst StructType.
-   *
-   * (This is almost similar to the Spark implementation involved in v3.1, except caching the
-   *  raw type metadata. We can add it back if needed in the future.)
    */
   implicit def toCatalystSchema(schema: TypeDescription): StructType = {
-    // The Spark query engine has not completely supported CHAR/VARCHAR type yet, and here we
-    // replace the orc CHAR/VARCHAR with STRING type.
-    replaceCharVarcharWithString(
-      CatalystSqlParser.parseDataType(schema.toString)
-    ).asInstanceOf[StructType]
+    // Here just follows the implementation of Spark3.0.x, so it does not replace the
+    // CharType/VarcharType with StringType. It is OK because GPU does not support
+    // these two char types yet.
+    CatalystSqlParser.parseDataType(schema.toString).asInstanceOf[StructType]
   }
 
   private def getPrecisionsList(dt: DataType): Seq[Int] = dt match {

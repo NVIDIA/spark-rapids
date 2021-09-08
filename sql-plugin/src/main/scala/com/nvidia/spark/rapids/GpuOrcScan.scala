@@ -389,7 +389,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     requestedIds.map { ids =>
       val retSchema = TypeDescription.createStruct()
       ids.foreach(id =>
-        retSchema.addField(schema.getFieldNames.get(id), schema.getChildren.get(id))
+        if (id >= 0) {
+          retSchema.addField(schema.getFieldNames.get(id), schema.getChildren.get(id))
+        }
       )
       retSchema
     }.getOrElse(schema)
@@ -900,8 +902,9 @@ private case class GpuOrcFileFilterHandler(
       OrcProto.Stream.Kind.ROW_INDEX)
 
     def getOrcPartitionReaderContext: OrcPartitionReaderContext = {
+      val isCaseSensitive = readerOpts.getIsSchemaEvolutionCaseAware
       val updatedReadSchema = checkSchemaCompatibility(orcReader.getSchema, readerOpts.getSchema,
-        readerOpts.getIsSchemaEvolutionCaseAware)
+        isCaseSensitive)
       val evolution = new SchemaEvolution(orcReader.getSchema, updatedReadSchema, readerOpts)
       val (sargApp, sargColumns) = getSearchApplier(evolution,
         orcFileReaderOpts.getUseUTCTimestamp)
@@ -909,7 +912,7 @@ private case class GpuOrcFileFilterHandler(
         s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
       val stripes = buildOutputStripes(splitStripes, evolution,
         sargApp, sargColumns, OrcConf.IGNORE_NON_UTF8_BLOOM_FILTERS.getBoolean(conf),
-        orcReader.getWriterVersion, updatedReadSchema)
+        orcReader.getWriterVersion, updatedReadSchema, isCaseSensitive)
       OrcPartitionReaderContext(filePath, conf, orcReader.getSchema, updatedReadSchema, evolution,
         orcReader.getFileTail, orcReader.getCompressionSize, orcReader.getCompressionKind,
         readerOpts, stripes.iterator.buffered, requestedMapping)
@@ -928,7 +931,8 @@ private case class GpuOrcFileFilterHandler(
     private def columnRemap(
         fileIncluded: Array[Boolean],
         fileSchema: TypeDescription,
-        readerSchema: TypeDescription): (Array[Int], Array[Int]) = {
+        readerSchema: TypeDescription,
+        isCaseSensitive: Boolean): (Array[Int], Array[Int]) = {
 
       // A column mapping for the new column id in the new re-constructing orc
       val columnMapping = Array.fill[Int](fileIncluded.length)(-1)
@@ -951,35 +955,42 @@ private case class GpuOrcFileFilterHandler(
         }
       }
 
-      //  Recursively update columnMapping and idMapping according to the TypeDescription id
+      // Recursively update columnMapping and idMapping according to the TypeDescription id
       // For now, we are only supporting struct and list nested type
-      def updateMapping(prefix: String, schema: TypeDescription, isRoot: Boolean = false): Unit = {
-        // The first level must be STRUCT type
-        if (schema.getCategory == TypeDescription.Category.STRUCT) {
-          val fieldNames = schema.getFieldNames.asScala
-          val children = schema.getChildren.asScala
-          for (i <- 0 until children.size) {
-            val prefixNew = if (isRoot) {
-              fieldNames(i)
-            } else {
-              prefix + "." + fieldNames(i)
-            }
-            // We need to set the parent mapping
-            val id = fileSchema.findSubtype(prefixNew).getId
-            setMapping(id)
-            updateMapping(prefixNew, children(i))
+      def updateMapping(rSchema: TypeDescription, fSchema: TypeDescription,
+                        isRoot: Boolean = false): Unit = {
+        assert(rSchema.getCategory == fSchema.getCategory)
+        // 'findSubtype' in v1.5.x always follows the case sensitive rule to comparing the
+        // column names, so cannot be used here.
+        // The first level must be STRUCT type, and this also supports nested STRUCT type.
+        if (rSchema.getCategory == TypeDescription.Category.STRUCT) {
+          val mapSensitive = fSchema.getFieldNames.asScala.zip(fSchema.getChildren.asScala).toMap
+          val name2ChildMap = if (isCaseSensitive) {
+            mapSensitive
+          } else {
+            CaseInsensitiveMap[TypeDescription](mapSensitive)
           }
-        } else if (schema.getCategory == TypeDescription.Category.LIST) {
-          val children = schema.getChildren.asScala
-          for (i <- 0 until children.size) {
-            val prefixNew = prefix + "._elem"
-            val id = fileSchema.findSubtype(prefixNew).getId
-            setMapping(id)
-            updateMapping(prefixNew, children(i))
+          rSchema.getFieldNames.asScala.zip(rSchema.getChildren.asScala)
+            .foreach { case (rName, rChild) =>
+              val fChild = name2ChildMap(rName)
+              setMapping(fChild.getId)
+              updateMapping(rChild, fChild)
+          }
+        } else {
+          val rChildren = rSchema.getChildren
+          val fChildren = fSchema.getChildren
+          if (rChildren != null) {
+            // Go into children for List, Map, Union.
+            rChildren.asScala.zipWithIndex.foreach { case (rChild, id) =>
+              val fChild = fChildren.get(id)
+              setMapping(fChild.getId)
+              updateMapping(rChild, fChild)
+            }
           }
         }
       }
-      updateMapping("", readerSchema, true)
+
+      updateMapping(readerSchema, fileSchema, isRoot=true)
       (columnMapping, idMapping)
     }
 
@@ -1032,10 +1043,11 @@ private case class GpuOrcFileFilterHandler(
         sargColumns: Array[Boolean],
         ignoreNonUtf8BloomFilter: Boolean,
         writerVersion: OrcFile.WriterVersion,
-        updatedReadSchema: TypeDescription): Seq[OrcOutputStripe] = {
+        updatedReadSchema: TypeDescription,
+        isCaseSensitive: Boolean): Seq[OrcOutputStripe] = {
       val fileIncluded = calcOrcFileIncluded(evolution)
       val (columnMapping, idMapping) = columnRemap(fileIncluded, evolution.getFileSchema,
-        updatedReadSchema)
+        updatedReadSchema, isCaseSensitive)
       val result = new ArrayBuffer[OrcOutputStripe](stripes.length)
       stripes.foreach { stripe =>
         val stripeFooter = dataReader.readStripeFooter(stripe)
