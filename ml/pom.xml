@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2021, NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="http://maven.apache.org/POM/4.0.0" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.nvidia</groupId>
+        <artifactId>rapids-4-spark-parent</artifactId>
+        <version>21.10.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>rapids-4-spark-ml_2.12</artifactId>
+    <name>RAPIDS Accelerator for Apache Spark ML</name>
+    <description>The RAPIDS cuML library for Apache Spark</description>
+    <version>21.10.0-SNAPSHOT</version>
+
+    <properties>
+        <java.version>1.8</java.version>
+        <spark.version>3.1.2</spark.version>
+         <scala.version>2.12.14</scala.version>
+        <test.java.home>${java.home}</test.java.home>
+        <spark.test.webdriver.chrome.driver></spark.test.webdriver.chrome.driver>
+        <spark.test.docker.keepContainer>false</spark.test.docker.keepContainer>
+        <spark.test.docker.removePulledImage>true</spark.test.docker.removePulledImage>
+        <CodeCacheSize>128m</CodeCacheSize>
+        <build.copyDependenciesPhase>none</build.copyDependenciesPhase>
+        <test.default.exclude.tags>org.apache.spark.tags.ChromeUITest</test.default.exclude.tags>
+        <test.exclude.tags></test.exclude.tags>
+        <test.include.tags></test.include.tags>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-library</artifactId>
+            <version>${scala.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-mllib_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_${scala.binary.version}</artifactId>
+            <version>3.2.9</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-core_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-mllib_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-mllib-local_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <classifier>tests</classifier>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>${basedir}/..</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>${project.build.directory}/native-deps/</directory>
+            </resource>
+        </resources>
+
+        <plugins>
+            <!-- This plugin dumps the test classpath into a file -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>generate-test-classpath</id>
+                        <phase>test-compile</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>test</includeScope>
+                            <outputProperty>test_classpath</outputProperty>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+                <version>4.5.4</version>
+                <executions>
+                    <execution>
+                        <id>scala-compile-first</id>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>scala-test-compile-first</id>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>attach-scaladocs</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>doc-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <scalaVersion>${scala.version}</scalaVersion>
+                    <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                    <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                    <recompileMode>incremental</recompileMode>
+                    <args>
+                        <arg>-unchecked</arg>
+                        <arg>-deprecation</arg>
+                        <arg>-feature</arg>
+                        <arg>-explaintypes</arg>
+                        <arg>-target:jvm-1.8</arg>
+                        <arg>-Xfatal-warnings</arg>
+                        <arg>-Ywarn-unused:imports</arg>
+                        <arg>-P:silencer:globalFilters=.*deprecated.*</arg>
+                    </args>
+                    <jvmArgs>
+                        <jvmArg>-Xss128m</jvmArg>
+                        <jvmArg>-Xms4g</jvmArg>
+                        <jvmArg>-Xmx4g</jvmArg>
+                        <jvmArg>-XX:MaxMetaspaceSize=2g</jvmArg>
+                        <jvmArg>-XX:ReservedCodeCacheSize=${CodeCacheSize}</jvmArg>
+                    </jvmArgs>
+                    <javacArgs>
+                        <javacArg>-source</javacArg>
+                        <javacArg>${java.version}</javacArg>
+                        <javacArg>-target</javacArg>
+                        <javacArg>${java.version}</javacArg>
+                        <javacArg>-Xlint:all,-serial,-path,-try</javacArg>
+                    </javacArgs>
+                    <compilerPlugins>
+                        <compilerPlugin>
+                            <groupId>com.github.ghik</groupId>
+                            <artifactId>silencer-plugin_${scala.version}</artifactId>
+                            <version>1.7.5</version>
+                        </compilerPlugin>
+                    </compilerPlugins>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
+                <version>2.0.2</version>
+                <configuration>
+                    <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
+                    <junitxml>.</junitxml>
+                    <filereports>SparkMLTestSuite.txt</filereports>
+                    <argLine>-ea -Xmx4g -Xss4m -XX:MaxMetaspaceSize=2g -XX:ReservedCodeCacheSize=${CodeCacheSize} -Dio.netty.tryReflectionSetAccessible=true</argLine>
+                    <stderr/>
+                    <environmentVariables>
+                        <SPARK_PREPEND_CLASSES>1</SPARK_PREPEND_CLASSES>
+                        <SPARK_SCALA_VERSION>${scala.binary.version}</SPARK_SCALA_VERSION>
+                        <SPARK_TESTING>1</SPARK_TESTING>
+                        <JAVA_HOME>${test.java.home}</JAVA_HOME>
+                    </environmentVariables>
+                    <systemProperties>
+                        <log4j.configuration>file:src/test/resources/log4j.properties</log4j.configuration>
+                        <derby.system.durability>test</derby.system.durability>
+                        <java.awt.headless>true</java.awt.headless>
+                        <java.io.tmpdir>${project.build.directory}/tmp</java.io.tmpdir>
+                        <spark.test.home>${spark.test.home}</spark.test.home>
+                        <spark.testing>1</spark.testing>
+                        <spark.ui.enabled>false</spark.ui.enabled>
+                        <spark.ui.showConsoleProgress>false</spark.ui.showConsoleProgress>
+                        <spark.unsafe.exceptionOnMemoryLeak>true</spark.unsafe.exceptionOnMemoryLeak>
+                        <spark.test.webdriver.chrome.driver>${spark.test.webdriver.chrome.driver}</spark.test.webdriver.chrome.driver>
+                        <spark.test.docker.keepContainer>${spark.test.docker.keepContainer}</spark.test.docker.keepContainer>
+                        <spark.test.docker.removePulledImage>${spark.test.docker.removePulledImage}</spark.test.docker.removePulledImage>
+                        <!-- Needed by sql/hive tests. -->
+                        <test.src.tables>__not_used__</test.src.tables>
+                    </systemProperties>
+                    <tagsToExclude>${test.exclude.tags},${test.default.exclude.tags}</tagsToExclude>
+                    <tagsToInclude>${test.include.tags}</tagsToInclude>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>test</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <filesets>
+                        <fileset>
+                            <directory>work</directory>
+                        </fileset>
+                        <fileset>
+                            <directory>checkpoint</directory>
+                        </fileset>
+                        <fileset>
+                            <directory>lib_managed</directory>
+                        </fileset>
+                        <fileset>
+                            <directory>metastore_db</directory>
+                        </fileset>
+                        <fileset>
+                            <directory>spark-warehouse</directory>
+                        </fileset>
+                    </filesets>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.0.0</version>
+                <executions>
+                    <execution>
+                        <id>ninja</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="cmake" failonerror="true">
+                                    <arg line="-S ${basedir}/native/ -B ${project.build.directory}/native -GNinja"/>
+                                </exec>
+                                <exec executable="ninja" dir="${project.build.directory}/native" failonerror="true">
+                                    <arg line="-v"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-native-libs</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <overwrite>true</overwrite>
+                            <outputDirectory>
+                                ${project.build.directory}/native-deps/${os.arch}/${os.name}
+                            </outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.build.directory}/native/lib</directory>
+                                    <includes>
+                                        <include>libcublas_jni.so</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

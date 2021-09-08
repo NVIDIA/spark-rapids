@@ -79,6 +79,7 @@
         <module>tests</module>
         <module>udf-compiler</module>
         <module>udf-examples</module>
+        <module>ml</module>
     </modules>
 
     <profiles>
