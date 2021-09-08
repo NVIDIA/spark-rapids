@@ -31,7 +31,7 @@ mvn -U -B -Dbuildver=312 install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcud
 mvn -U -B -Dbuildver=313 install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 mvn -U -B -Dbuildver=311cdh install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 # Disabled until Spark 3.2 source incompatibility fixed, see https://github.com/NVIDIA/spark-rapids/issues/2052
-#mvn -U -B -Pspark320tests,snapshot-shims test $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+#mvn -U -B -Dbuildver=320 install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 mvn -U -B -Pallsnapshotshims deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
     -Dpytest.TEST_TAGS='' -Dpytest.TEST_TYPE="nightly" -Dcuda.version=$CUDA_CLASSIFIER
 
