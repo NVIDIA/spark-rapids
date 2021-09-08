@@ -46,7 +46,7 @@ mvn_verify() {
     # All others shims test should be covered in nightly pipelines
     # Disabled until Spark 3.2 source incompatibility fixed, see https://github.com/NVIDIA/spark-rapids/issues/2052
     # env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark320tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=spark313 test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=313 test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
