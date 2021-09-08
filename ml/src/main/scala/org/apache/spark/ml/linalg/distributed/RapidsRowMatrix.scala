@@ -28,6 +28,20 @@ import org.apache.spark.mllib.stat.Statistics
 import org.apache.spark.rdd.RDD
 import org.apache.spark.TaskContext
 
+
+/**
+ * Rapids version of RowMatrix in Spark ML.
+ *
+ * @param rows rows stored as an RDD[Vector]
+ * @param meanCentering whether do mean centering before covariance matrix computation
+ * @param useGemm whether use cuBLAS gemm instead of BLAS spr
+ * @param gpuID which GPU resource the computation will take place on. By default, each task will run
+ *              on the GPU that this task is assigned by Spark.
+ * @param nRows number of rows. A non-positive value means unknown, and then the number of rows will
+ *              be determined by the number of records in the RDD `rows`.
+ * @param nCols number of columns. A non-positive value means unknown, and then the number of
+ *              columns will be determined by the size of the first row.
+ */
 class RapidsRowMatrix(
     val rows: RDD[Vector],
     val meanCentering: Boolean,
@@ -140,6 +154,7 @@ class RapidsRowMatrix(
         }
         val B = new DenseMatrix(bas.length, n, Array.concat(bas: _*), isTransposed = true)
         val C = DenseMatrix.zeros(n, n)
+        // Do CUBLAS gemm calculation
         CUBLAS.gemm(B, C, gpu)
         Iterator.single(C.asBreeze)
       })

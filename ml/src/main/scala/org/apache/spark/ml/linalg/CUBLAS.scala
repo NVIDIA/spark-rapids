@@ -42,10 +42,11 @@ private[spark] object CUBLAS extends Serializable {
   }
 
   /**
-   * C := B.transpose * B
+   * C := B.transpose * B, only used for PCA covariance matrix computation.
    *
    * @param B the matrix B that will be left multiplied by its transpose. Size of m x n.
    * @param C the resulting matrix C. Size of n x n.
+   * @param deviceID the GPU index this function will run on.
    */
   def gemm(B: DenseMatrix, C: DenseMatrix, deviceID: Int): Unit = {
     val rows = B.numRows
@@ -57,8 +58,15 @@ private[spark] object CUBLAS extends Serializable {
     jniCUBLAS.dgemm(rows, cols, B.values, C.values, deviceID)
   }
 
+  /**
+   * C := A * B, only used for PCA transform computation
+   *
+   * @param A the matrix A that will multiply matrix B. Size of m x n. The raw matrix.
+   * @param B the matrix B that will be left multiplied by A. Size of n x k. The principal compunent matrix.
+   * @param C the resulting matrix C. Size of m x k.
+   * @param deviceID the GPU index this function will run on.
+   */
   def gemm_b(A: DenseMatrix, B: DenseMatrix, C: DenseMatrix, deviceID: Int): Unit = {
-
     require(C.numRows == A.numRows, s"The rows of C don't match the columns of B. C: ${C.numRows}, B: ${A.numRows}")
     require(C.numCols == B.numCols, s"The columns of C don't match the columns of B. C: ${C.numCols}, B: ${B.numCols}")
     jniCUBLAS.dgemm_b(A.numRows, B.numCols, A.numCols, A.values, B.values, C.values, deviceID)

@@ -153,7 +153,7 @@ class RapidsPCAModel(
    */
   override def transform(dataset: Dataset[_]): DataFrame = {
     val outputSchema = transformSchema(dataset.schema, logging = true)
-
+    // Currently the transform part is slower than CPU
     // TODO(rongou): make this faster and re-enable.
     //    if (getUseGemm) {
     //      val transformed = dataset.toDF().rdd.mapPartitions(iterator => {

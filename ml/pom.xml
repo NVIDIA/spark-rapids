@@ -25,13 +25,11 @@
     <artifactId>rapids-4-spark-ml_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark ML</name>
     <description>The RAPIDS cuML library for Apache Spark</description>
-    <version>21.10.0-SNAPSHOT</version>
 
     <properties>
         <java.version>1.8</java.version>
         <spark.version>3.1.2</spark.version>
-         <scala.version>2.12.14</scala.version>
-        <test.java.home>${java.home}</test.java.home>
+        <scala.version>2.12.14</scala.version>
         <spark.test.webdriver.chrome.driver></spark.test.webdriver.chrome.driver>
         <spark.test.docker.keepContainer>false</spark.test.docker.keepContainer>
         <spark.test.docker.removePulledImage>true</spark.test.docker.removePulledImage>
@@ -215,7 +213,6 @@
                         <SPARK_PREPEND_CLASSES>1</SPARK_PREPEND_CLASSES>
                         <SPARK_SCALA_VERSION>${scala.binary.version}</SPARK_SCALA_VERSION>
                         <SPARK_TESTING>1</SPARK_TESTING>
-                        <JAVA_HOME>${test.java.home}</JAVA_HOME>
                     </environmentVariables>
                     <systemProperties>
                         <log4j.configuration>file:src/test/resources/log4j.properties</log4j.configuration>
