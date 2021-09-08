@@ -6,21 +6,12 @@ parent: Developer Overview
 ---
 # RAPIDS Accelerator for Apache Spark Distribution Packaging
 
-Currently the distribution package is for making an uber jar with the Spark versions you need combined into a single jar.
+The distribution module creates a jar with support for the Spark versions you need combined into a single jar.
 
-By default, it will only include the single version of Spark. This runs the profile `individual`.
+See the [CONTRIBUTING.md](../CONTRIBUTING.md) doc for details on building and profiles available to build an Uber jar.
 
-If you want to create a jar with multiple versions we currently have 4 options.
-
-1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
-2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
-3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
-4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
-
-You have to first build and install the Spark versions you want combined into your .m2 and then run using appropriate profile above to combine them.
-
-Note that when you use these profiles there are currently some hardcoded service provider files that get put into place. 1 files for each of the
-above profiles. Please note that you will need to update these if adding or removing supported Spark versions.
+Note that when you use the profiles to build an Uber jar there are currently some hardcoded service provider files that get put into place. One file for each of the
+above profiles. Please note that you will need to update these if adding or removing support for a Spark version.
 
 Files are: `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshot`, `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot`, `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshotDB`, and `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshotDB`.
 

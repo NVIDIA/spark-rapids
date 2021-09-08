@@ -191,8 +191,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -463,8 +462,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -738,8 +736,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -1066,8 +1063,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -1314,8 +1310,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1412,8 +1407,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>

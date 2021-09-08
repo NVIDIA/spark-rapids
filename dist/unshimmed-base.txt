@@ -15,3 +15,12 @@ com/nvidia/spark/rapids/*/RapidsShuffleManager*
 org/apache/spark/sql/rapids/shims/*/ProxyRapidsShuffleInternalManager*
 org/apache/spark/sql/rapids/VisibleShuffleManager*
 com/nvidia/spark/udf/Plugin*
+com/nvidia/shaded/**
+libjucx.so
+org/openucx/**
+rapids4spark-version-info.properties
+META-INF/LICENSE
+META-INF/NOTICE
+META-INF/DEPENDENCIES
+META-INF/maven/**
+rapids/*.py
