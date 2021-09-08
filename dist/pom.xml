@@ -1531,6 +1531,7 @@
                     <excludes>
                         <exclude>com.nvidia.spark.rapids.SparkShimServiceProvider.*</exclude>
                         <exclude>*.txt</exclude>
+                        <exclude>*.md</exclude>
                     </excludes>
                 </configuration>
             </plugin>
