@@ -60,10 +60,10 @@ for more details.
 By default the distribution jar only includes code for a single version of Spark. If you want
 to create a jar with multiple versions we currently have 4 options.
 
-1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-Pallnosnapshots`.
-2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Pallwithsnapshots`.
-3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PallnosnapshotswithDB`.
-4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PallwithsnapshotsDB`
+1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
+2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
+3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
+4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
 
 You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
 

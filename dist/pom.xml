@@ -31,7 +31,7 @@
 
     <profiles>
         <profile>
-            <id>allnosnapshotswithDB</id>
+            <id>noSnaphsotsWithDatabricks</id>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -191,7 +191,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
@@ -321,7 +321,7 @@
             </build>
         </profile>
         <profile>
-            <id>allnosnapshots</id>
+            <id>noSnapshots</id>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -463,7 +463,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
@@ -569,7 +569,7 @@
             </build>
         </profile>
         <profile>
-            <id>allwithsnapshots</id>
+            <id>snapshots</id>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -738,7 +738,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
@@ -879,7 +879,7 @@
             </build>
         </profile>
         <profile>
-            <id>allwithsnapshotsDB</id>
+            <id>snapshotsWithDatabricks</id>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -1066,7 +1066,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1314,7 +1314,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
@@ -1412,7 +1412,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-classes.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>

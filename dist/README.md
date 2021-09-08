@@ -12,10 +12,10 @@ By default, it will only include the single version of Spark. This runs the prof
 
 If you want to create a jar with multiple versions we currently have 4 options.
 
-1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-Pallnosnapshots`.
-2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Pallwithsnapshots`.
-3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PallnosnapshotswithDB`.
-4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PallwithsnapshotsDB`
+1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
+2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
+3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
+4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
 
 You have to first build and install the Spark versions you want combined into your .m2 and then run using appropriate profile above to combine them.
 
@@ -34,7 +34,7 @@ The new Uber jar is structured like:
 
 If you have to change the contents of the uber jar the following files control what goes into the base jar as classes that are not shaded.
 
-1. `unshimmed-classes.txt` - this has classes that should go into the base jar with their normal package name (not shaded). This includes user visible classes (ie com/nvidia/spark/SQLPlugin). Uses Spark 3.0.1 built jar for any of the uber jars.
+1. `unshimmed-base-classes.txt` - this has classes that should go into the base jar with their normal package name (not shaded). This includes user visible classes (ie com/nvidia/spark/SQLPlugin). Uses Spark 3.0.1 built jar for any of the uber jars.
 2. `unshimmed-base-extras.txt` - these are other files applied to the base version of Spark that stay in the base of the jar and not put into Spark version specific directories. Note we choose Spark 3.0.1 as the base version to use for base and unshimmed classes.
 3. `unshimmed-extras.txt` - These are files that are put into the base of the jar and not into the Spark specific directory from all of the other Spark version jars.
 
