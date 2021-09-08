@@ -26,4 +26,5 @@ mvn -U -Dbuildver=311 clean install -Drat.skip=true -DskipTests
 mvn -U -Dbuildver=312 clean install -Drat.skip=true -DskipTests
 mvn -U -Dbuildver=313 clean install -Drat.skip=true -DskipTests
 mvn -U -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=320 clean install -Drat.skip=true -DskipTests
 mvn -U -pl dist -Pallwithsnapshots package -DskipTests

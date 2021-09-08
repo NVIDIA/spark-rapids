@@ -692,26 +692,6 @@
                                     <overWrite>false</overWrite>
                                     <outputDirectory>${project.build.directory}/deps</outputDirectory>
                                 </artifactItem>
-                                <!--
-                                <artifactItem>
-                                  <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
-                                  <classifier>spark301db</classifier>
-                                  <version>${project.version}</version>
-                                  <type>jar</type>
-                                  <overWrite>false</overWrite>
-                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
--->
-                                <artifactItem>
-                                  <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
-                                  <classifier>spark311db</classifier>
-                                  <version>${project.version}</version>
-                                  <type>jar</type>
-                                  <overWrite>false</overWrite>
-                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
                             </artifactItems>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
