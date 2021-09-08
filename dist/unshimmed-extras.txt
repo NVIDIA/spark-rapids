@@ -1,8 +1,2 @@
-com/nvidia/shaded/**
-libjucx.so
-org/openucx/**
-rapids4spark-version-info.properties
-META-INF/LICENSE
-META-INF/NOTICE
-META-INF/DEPENDENCIES
+META-INF/services/**
 spark-*-info.properties

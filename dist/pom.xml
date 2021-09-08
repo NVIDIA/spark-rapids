@@ -192,7 +192,7 @@
                                         >
                                             <patternset id="sharedWorld">
                                                 <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -201,7 +201,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -209,7 +209,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -464,7 +464,7 @@
                                         >
                                             <patternset id="sharedWorld">
                                                 <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -473,7 +473,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -481,7 +481,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -759,7 +759,7 @@
                                         >
                                             <patternset id="sharedWorld">
                                                 <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -768,7 +768,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -776,7 +776,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1087,7 +1087,7 @@
                                         >
                                             <patternset id="sharedWorld">
                                                 <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -1096,7 +1096,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1104,7 +1104,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/meta-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1335,8 +1335,8 @@
                                         >
                                             <patternset id="sharedWorld">
                                                 <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
-                                                <includesfile name="${project.basedir}/meta-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1433,8 +1433,8 @@
                                         >
                                             <patternset id="sharedWorld">
                                                 <includesfile name="${project.basedir}/unshimmed-classes.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-base-extras.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
-                                                <includesfile name="${project.basedir}/meta-extras.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
