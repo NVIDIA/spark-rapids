@@ -123,6 +123,17 @@ starts. If you are only going to run a single query that only takes a few second
 be problematic. In general if you are going to do 30 seconds or more of processing within a single
 session the overhead can be amortized.
 
+### How long does it take to translate a query to run on the GPU?
+
+The time it takes to translate the Apache Spark physical plan to one that can run on the GPU
+is proportional to the size of the plan. But, it also depends on the CPU you are
+running on and if the JVM has optimized that code path yet. The first queries run in a client will
+be worse than later queries. Small queries can typically be translated in a millisecond or two while
+larger queries can take tens of milliseconds. In all cases tested the translation time is orders of
+magnitude smaller than the total runtime of the query.
+
+See the entry on [explain](#explain) for details on how to measure this for your queries.
+
 ### How can I tell what will run on the GPU and what will not run on it?
 <a name="explain"></a>
 
@@ -169,9 +180,26 @@ In this `indicator` is one of the following
   * will not run on the GPU with an explanation why
   * will be removed from the plan with a reason why
 
-Generally if an operator is not compatible with Spark for some reason and is off the explanation
+Generally if an operator is not compatible with Spark for some reason and is off, the explanation
 will include information about how it is incompatible and what configs to set to enable the
 operator if you can accept the incompatibility.
+
+These messages are logged at the WARN level so even in `spark-shell` which by default only logs
+at WARN or above you should see these messages.
+
+This translation takes place in two steps. The first step looks at the plan, figures out what
+can be translated to the GPU, and then does the translation. The second step optimizes the
+transitions between the CPU and the GPU.
+Explain will also log how long these translations took at the INFO level with lines like.
+
+```
+INFO GpuOverrides: Plan conversion to the GPU took 3.13 ms
+INFO GpuOverrides: GPU plan transition optimization took 1.66 ms
+```
+
+Because it is at the INFO level, the default logging level for `spark-shell` is not going to display
+this information. If you want to monitor this number for your queries you might need to adjust your
+logging configuration.
 
 ### Why does the plan for the GPU query look different from the CPU query?
 
