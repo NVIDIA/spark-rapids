@@ -379,7 +379,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
   val end: Long = range.end
   val step: Long = range.step
   val numSlices: Int = range.numSlices.getOrElse(ShimLoader.getSparkShims
-    .leafNodeDefaultParallelism(ShimLoader.getSparkShims.sessionFromPlan(this)))
+    .leafNodeDefaultParallelism(sparkSession))
   val numElements: BigInt = range.numElements
   val isEmptyRange: Boolean = start == end || (start < end ^ 0 < step)
 
