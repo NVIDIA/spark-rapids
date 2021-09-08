@@ -16,10 +16,11 @@
 
 package org.apache.spark.sql
 
-import org.apache.spark.sql.SparkSession
-
 object Spark32XShimsUtils {
+
   def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     ss.leafNodeDefaultParallelism
   }
+
 }
+
