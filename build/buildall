@@ -18,12 +18,12 @@
 set -ex
 
 # Install all the versions we support
-mvn -U -Dbuildver=301 install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=302 install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=303 install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=304 install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=311 install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=312 install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=313 install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=311cdh install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=301 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=302 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=303 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=304 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=311 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=312 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=313 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
 mvn -U -pl dist -Pallwithsnapshots package -DskipTests
