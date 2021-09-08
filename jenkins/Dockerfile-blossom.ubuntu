@@ -54,3 +54,11 @@ RUN mkdir -p /tmp/ucx && \
     wget https://github.com/openucx/ucx/releases/download/${UCX_VER}/ucx-${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5.x-cuda${CUDA_VER}.deb && \
     dpkg -i *.deb && \
     rm -rf /tmp/ucx
+
+RUN cd /usr/local/ && wget --quiet https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz && \
+   tar zxf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz && \
+   rm cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
+ENV PATH /usr/local/cmake-${CMAKE_VERSION}-linux-x86_64/bin:$PATH
+
+# used to build rapids ml submodule
+RUN apt install ninja-build -y
