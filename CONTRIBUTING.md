@@ -41,21 +41,20 @@ mvn verify
 After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
 This will build the plugin for a single version of Spark.  By default this is Apache Spark
 3.0.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
-to maven. For instance to build Spark 3.1.1 you would use:
+to Maven. For instance to build Spark 3.1.1 you would use:
 
 ```shell script
 mvn -Dbuildver=311 verify
 ```
-You can find all available build versions in the top level pom.xml file. Currently
-they include 301, 302, 303, 304, 311, 312, 313, 320 and 311cdh. If you are building
-Databricks suggest you use the `jenkins/databricks/build.sh` script and modify it for
+You can find all available build versions in the top level pom.xml file. If you are building
+for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
 the version you want.
 
 To get an uber jar with more then 1 version you have to `mvn install` each version
 and then use one of the defined profiles in the dist module. See the next section
 for more details.
 
-### Building a distribution for multiple versions of Spark
+### Building a Distribution for Multiple Versions of Spark
 
 By default the distribution jar only includes code for a single version of Spark. If you want
 to create a jar with multiple versions we currently have 4 options.
@@ -67,18 +66,19 @@ to create a jar with multiple versions we currently have 4 options.
 
 You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
 
-For instance if I want all Apache Spark versions and CDH with no SNAPSHOT versions I would run something like this:
+There is a build script `build/buildall` to build everything with snapshots and this will have more options to build later.
+
+You can also install some manually and build a combined jar. For instance to build non-snapshot versions:
 
 ```shell script
-mvn -U -Dbuildver=301 clean install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=302 clean install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=303 clean install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=311 clean install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=312 clean install -Drat.skip=true -DskipTests
-mvn -U -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
-mvn -U -pl dist -Pallnosnapshots package -DskipTests
+mvn -Dbuildver=301 clean install -DskipTests
+mvn -Dbuildver=302 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=303 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=312 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
+mvn -pl dist -PnoSnapshots package -DskipTests
 ```
-There is also a build script `build/buildall` to build everything with snapshots and this will have more options to build later.
 
 ### Building against different CUDA Toolkit versions
 

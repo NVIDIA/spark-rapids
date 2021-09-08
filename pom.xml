@@ -569,6 +569,7 @@
                                         <source>${project.basedir}/src/main/spark301+all/scala</source>
                                         <source>${project.basedir}/src/main/spark301+nondb/scala</source>
                                         <source>${project.basedir}/src/main/spark311+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark311cdh/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>

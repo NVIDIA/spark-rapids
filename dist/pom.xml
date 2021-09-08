@@ -31,7 +31,7 @@
 
     <profiles>
         <profile>
-            <id>noSnaphsotsWithDatabricks</id>
+            <id>noSnapshotsWithDatabricks</id>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
