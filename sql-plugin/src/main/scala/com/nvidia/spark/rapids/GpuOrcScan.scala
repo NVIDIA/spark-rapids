@@ -955,8 +955,7 @@ private case class GpuOrcFileFilterHandler(
         }
       }
 
-      // Recursively update columnMapping and idMapping according to the TypeDescription id
-      // For now, we are only supporting struct and list nested type
+      // Recursively update columnMapping and idMapping according to the TypeDescription id.
       def updateMapping(rSchema: TypeDescription, fSchema: TypeDescription,
                         isRoot: Boolean = false): Unit = {
         assert(rSchema.getCategory == fSchema.getCategory)
