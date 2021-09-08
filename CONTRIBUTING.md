@@ -48,7 +48,7 @@ mvn -Dbuildver=311 verify
 ```
 You can find all available build versions in the top level pom.xml file. Currently
 they include 301, 302, 303, 304, 311, 312, 313, 320 and 311cdh. If you are building
-Databricks suggest you use the jenkins/databricks/build.sh script and modify it for
+Databricks suggest you use the `jenkins/databricks/build.sh` script and modify it for
 the version you want.
 
 To get an uber jar with more then 1 version you have to `mvn install` each version

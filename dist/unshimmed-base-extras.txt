@@ -7,3 +7,4 @@ META-INF/NOTICE
 META-INF/DEPENDENCIES
 META-INF/maven/**
 spark-*-info.properties
+rapids/*.py
