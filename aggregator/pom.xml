@@ -121,7 +121,6 @@
                                     <pattern>org.apache.commons.lang.</pattern>
                                     <shadedPattern>${rapids.shade.package}.org.apache.commons.lang.</shadedPattern>
                                 </relocation>
-
                                 <relocation>
                                     <pattern>com.google</pattern>
                                     <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
@@ -142,7 +141,6 @@
                                                 <include>META-INF/**</include>
                                             </includes>
                                             <excludes>
-                                                <exclude>META-INF/**</exclude>
                                                 <exclude>META-INF/services/**</exclude>
                                             </excludes>
                                         </filter>
@@ -286,7 +284,6 @@
                                                 <include>META-INF/**</include>
                                             </includes>
                                             <excludes>
-                                                <exclude>META-INF/**</exclude>
                                                 <exclude>META-INF/services/**</exclude>
                                             </excludes>
                                         </filter>
