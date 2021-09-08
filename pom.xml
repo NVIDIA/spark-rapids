@@ -530,6 +530,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/spark311+all/scala</source>
+                                        <source>${project.basedir}/src/main/spark320/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
