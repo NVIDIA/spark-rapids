@@ -118,5 +118,5 @@ trait Spark30XShims extends SparkShims {
     recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 
-  override def shouldAssertIsOnTheGpu(plan: SparkPlan): Boolean = false
+  override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = false
 }

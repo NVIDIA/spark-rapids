@@ -466,7 +466,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
-      case p if !ShimLoader.getSparkShims.shouldAssertIsOnTheGpu(p) => () // Ignored
+      case p if ShimLoader.getSparkShims.skipAssertIsOnTheGpu(p) => () // Ignored
       case _ =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little

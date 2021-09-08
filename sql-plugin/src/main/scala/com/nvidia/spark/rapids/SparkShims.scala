@@ -263,7 +263,7 @@ trait SparkShims {
    * there are some operators that we do not translate to GPU plans, so we need a way
    * to bypass the check for those.
    */
-  def shouldAssertIsOnTheGpu(plan: SparkPlan): Boolean
+  def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
 }
 
 abstract class SparkCommonShims extends SparkShims {
