@@ -1845,6 +1845,9 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def assumePriorToSpark320 =
     assume(cmpSparkVersion(3, 2, 0) < 0)
 
+  def assumeSpark320orLater =
+    assume(cmpSparkVersion(3, 2, 0) >= 0)
+
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
