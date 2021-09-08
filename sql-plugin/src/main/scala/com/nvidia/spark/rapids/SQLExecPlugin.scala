@@ -31,10 +31,10 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   }
 
   private def columnarOverrides(sparkSession: SparkSession): ColumnarRule = {
-    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.ColumnarOverrideRules")
+    ShimLoader.newColumnarOverrideRules()
   }
 
   private def queryStagePrepOverrides(sparkSession: SparkSession): Rule[SparkPlan] = {
-    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
+    ShimLoader.newGpuQueryStagePrepOverrides()
   }
 }

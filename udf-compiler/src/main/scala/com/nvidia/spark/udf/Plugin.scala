@@ -31,6 +31,6 @@ class Plugin extends (SparkSessionExtensions => Unit) with Logging {
   }
 
   def logicalPlanRules(sparkSession: SparkSession): Rule[LogicalPlan] = {
-    ShimLoader.newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
+    ShimLoader.newUdfLogicalPlanRules()
   }
 }

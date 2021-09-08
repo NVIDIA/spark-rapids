@@ -26,9 +26,7 @@ import org.apache.spark.internal.Logging
  * To enable this plugin, set the config "spark.plugins" to `com.nvidia.spark.SQLPlugin`
  */
 class SQLPlugin extends SparkPlugin with Logging {
-  override def driverPlugin(): DriverPlugin =
-    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.RapidsDriverPlugin")
+  override def driverPlugin(): DriverPlugin = ShimLoader.newDriverPlugin()
 
-  override def executorPlugin(): ExecutorPlugin =
-    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.RapidsExecutorPlugin")
+  override def executorPlugin(): ExecutorPlugin = ShimLoader.newExecutorPlugin()
 }
