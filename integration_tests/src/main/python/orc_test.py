@@ -82,18 +82,18 @@ orc_struct_gens_sample = [orc_basic_struct_gen,
     StructGen([['child0', byte_gen], ['child1', orc_basic_struct_gen]]),
     StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
-# similar with parquet map gens
-orc_map_gens_sample = [MapGen(f(nullable=False), f()) for f in [
+orc_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-    lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable)]] + \
-                      [simple_string_to_string_map_gen,
-                       MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
-                       MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
-                       MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
-# test map(date, date)
-orc_map_gens_sample += [MapGen(DateGen(start=date(1590, 1, 1), nullable=False), DateGen(start=date(1590, 1, 1)))]
-# test map(struct, struct)
-orc_map_gens_sample += [MapGen(StructGen([['child0', byte_gen], ['child1', long_gen]], nullable=False), StructGen([['child0', byte_gen], ['child1', long_gen]]))]
+    lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
+    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable)]]
+
+# Some map gens, but not all because of nesting
+orc_map_gens_sample = orc_basic_map_gens + [
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+    MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+    MapGen(StructGen([['child0', byte_gen], ['child1', long_gen]], nullable=False),
+           StructGen([['child0', byte_gen], ['child1', long_gen]]))]
 
 orc_gens_list = [orc_basic_gens,
     orc_array_gens_sample,
