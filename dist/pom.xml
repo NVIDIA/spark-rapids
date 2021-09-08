@@ -31,7 +31,7 @@
 
     <profiles>
         <profile>
-            <id>allnosnapshotswithdb</id>
+            <id>allnosnapshotswithDB</id>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>

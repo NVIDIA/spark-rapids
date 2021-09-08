@@ -39,14 +39,34 @@ mvn verify
 ```
 
 After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
+This will build the plugin for a single version of Spark.  By default this is Apache Spark
+3.0.1. To get an uber jar with more then 1 version you have to `mvn install` each version
+and then use one of the defined profiles in the dist module.
 
-### Building Shims for Spark Snapshot Versions
+### Building a distribution for multiple versions of Spark
 
-By default the build will only include shims for released versions of Spark. To include shims
-for snapshot versions of Spark still under development, use the `snapshot-shims` Maven profile
-(e.g.: add `-Psnapshot-shims` to the Maven command-line). Note that when a snapshot Spark version
-later becomes an official release, the snapshot shim for that version may no longer build due to
-missing snapshot artifacts for that Spark version.
+By default the distribution jar only includes code for a single version of Spark. If you want
+to create a jar with multiple versions we currently have 4 options.
+
+1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-Pallnosnapshots`.
+2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Pallwithsnapshots`.
+3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PallnosnapshotswithDB`.
+4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PallwithsnapshotsDB`
+
+You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
+
+For instance if I want all Apache Spark versions and CDH with no SNAPSHOT versions I would run something like this:
+
+```shell script
+mvn -U -Dbuildver=301 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=302 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=303 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=311 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=312 clean install -Drat.skip=true -DskipTests
+mvn -U -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
+mvn -U -pl dist -Pallnosnapshots package -DskipTests
+```
+There is also a build script `build/buildall` to build everything with snapshots and this will have more options to build later.
 
 ### Building against different CUDA Toolkit versions
 
