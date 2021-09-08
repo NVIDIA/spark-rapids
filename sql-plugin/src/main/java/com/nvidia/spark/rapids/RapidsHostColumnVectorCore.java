@@ -22,6 +22,7 @@ import ai.rapids.cudf.HostColumnVectorCore;
 
 import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.sql.types.MapType;
 import org.apache.spark.sql.types.StructField;
@@ -179,7 +180,15 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final byte[] getBinary(int rowId) {
-    return cudfCv.getUTF8(rowId);
+    if (cachedChildren[0] == null) {
+      // cache the child data
+      HostColumnVectorCore data = cudfCv.getChildColumnView(0);
+      cachedChildren[0] = new RapidsHostColumnVectorCore(DataTypes.ByteType, data);
+    }
+    RapidsHostColumnVectorCore data = cachedChildren[0];
+    int startOffset = (int) cudfCv.getStartListOffset(rowId);
+    int endOffset = (int) cudfCv.getEndListOffset(rowId);
+    return new ColumnarArray(data, startOffset, endOffset - startOffset).toByteArray();
   }
 
   @Override

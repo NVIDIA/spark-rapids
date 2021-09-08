@@ -251,6 +251,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         children[i] = convertFrom(fields[i].dataType(), fields[i].nullable());
       }
       return new HostColumnVector.StructType(nullable, children);
+    } else if (spark instanceof BinaryType) {
+      return new HostColumnVector.ListType(nullable, convertFrom(DataTypes.ByteType, false));
     } else {
       // Only works for basic types
       return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
@@ -472,8 +474,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_DAYS;
     } else if (type instanceof TimestampType) {
       return DType.TIMESTAMP_MICROSECONDS;
-    } else if (type instanceof StringType || type instanceof BinaryType) {
+    } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof BinaryType) {
+      return DType.LIST;
     } else if (type instanceof NullType) {
       // INT8 is used for both in this case
       return DType.INT8;

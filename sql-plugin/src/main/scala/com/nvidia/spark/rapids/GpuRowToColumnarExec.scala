@@ -379,8 +379,10 @@ private object GpuRowToColumnConverter {
     override def append(row: SpecializedGetters,
         column: Int,
         builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
+      val child = builder.getChild(0)
       val bytes = row.getBinary(column)
-      builder.appendUTF8String(bytes)
+      bytes.foreach(child.append)
+      builder.endList()
       bytes.length + OFFSET
     }
 
