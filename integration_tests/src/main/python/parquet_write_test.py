@@ -323,26 +323,24 @@ def test_write_map_nullable(spark_tmp_path):
 
 @pytest.mark.allow_non_gpu("DataWritingCommandExec", "HiveTableScanExec")
 @pytest.mark.parametrize('allow_non_empty', [True, False])
-def test_non_empty_ctas(spark_tmp_path, allow_non_empty):
+def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty):
     data_path = spark_tmp_path + "/CTAS"
     conf = {
         "spark.sql.hive.convertCTAS": "true",
         "spark.sql.legacy.allowNonEmptyLocationInCTAS": str(allow_non_empty)
     }
     def test_it(spark):
+        src_name = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE {}(id string) LOCATION '{}/src1'".format(src_name, data_path))
+        spark.sql("INSERT INTO TABLE {} SELECT 'A'".format(src_name))
+        ctas1_name = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE {}(id string) LOCATION '{}/ctas/ctas1'".format(ctas1_name, data_path))
+        spark.sql("INSERT INTO TABLE {} SELECT 'A'".format(ctas1_name))
         try:
-            spark.sql("CREATE TABLE src1(id string) LOCATION '{}/src1'".format(data_path))
-            spark.sql("INSERT INTO TABLE src1 SELECT 'A'")
-            spark.sql("CREATE TABLE ctas1(id string) LOCATION '{}/ctas/ctas1'".format(data_path))
-            spark.sql("INSERT INTO TABLE ctas1 SELECT 'A'")
-            try:
-                spark.sql("CREATE TABLE ctas_with_existing_location LOCATION '{}/ctas'".format(data_path) +\
-                          " AS SELECT * FROM src1")
-            except pyspark.sql.utils.AnalysisException as e:
-                if allow_non_empty or e.desc.find('non-empty directory') == -1:
-                    raise e
-        finally:
-            spark.sql("DROP TABLE IF EXISTS src1")
-            spark.sql("DROP TABLE IF EXISTS ctas1")
-            spark.sql("DROP TABLE IF EXISTS ctas_with_existing_location")
+            ctas_with_existing_name = spark_tmp_table_factory.get()
+            spark.sql("CREATE TABLE {} LOCATION '{}/ctas' AS SELECT * FROM {}".format(
+                ctas_with_existing_name, data_path, src_name))
+        except pyspark.sql.utils.AnalysisException as e:
+            if allow_non_empty or e.desc.find('non-empty directory') == -1:
+                raise e
     with_gpu_session(test_it, conf)
