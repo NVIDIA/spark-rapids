@@ -41,12 +41,6 @@ case class GpuScalarSubquery(
   override def toString: String = plan.simpleString(SQLConf.get.maxToStringFields)
   override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
 
-  // TODO SPARK-35742 canonicalize
-//  override def semanticEquals(other: Expression): Boolean = other match {
-//    case s: GpuScalarSubquery => plan.sameResult(s.plan)
-//    case _ => false
-//  }
-
   // the first column in first row from `query`.
   @volatile private var result: Any = _
   @volatile private var updated: Boolean = false
