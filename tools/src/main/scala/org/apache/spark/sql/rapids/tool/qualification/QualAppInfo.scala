@@ -335,7 +335,7 @@ object QualAppInfo extends Logging {
     val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
     var angleBracketsCount = 0
     var parenthesesCount = 0
-    val distinctSchema = schema.distinct.mkString(",")
+    val distinctSchema = schema.distinct.filter(_.nonEmpty).mkString(",")
 
     // Get the nested types i.e everything between < >
     for (char <- distinctSchema) {
@@ -351,8 +351,7 @@ object QualAppInfo extends Logging {
       if (angleBracketsCount == 0 && parenthesesCount == 0 && char.equals(',')) {
         individualSchema += tempStringBuilder.toString
         tempStringBuilder.setLength(0)
-      }
-      else {
+      } else {
         tempStringBuilder.append(char);
       }
     }
@@ -368,13 +367,30 @@ object QualAppInfo extends Logging {
     // Check if it has types
     val incompleteTypes = incompleteSchema.map { x =>
       if (x.contains("...") && x.contains(":")) {
-        x.split(":", 2)(1).split("\\.\\.\\.")(0)
+        val schemaTypes = x.split(":", 2)
+        if (schemaTypes.size == 2) {
+          val partialSchema = schemaTypes(1).split("\\.\\.\\.")
+          if (partialSchema.size == 1) {
+            partialSchema(0)
+          } else {
+            ""
+          }
+        } else {
+          ""
+        }
       } else {
         ""
       }
     }
     // Omit columnName and get only schemas
-    val completeTypes = completeSchema.map(x => x.split(":", 2)(1))
+    val completeTypes = completeSchema.map { x =>
+      val schemaTypes = x.split(":", 2)
+      if (schemaTypes.size == 2) {
+        schemaTypes(1)
+      } else {
+        ""
+      }
+    }
     val schemaTypes = completeTypes ++ incompleteTypes
 
     // Filter only complex types.

@@ -139,6 +139,8 @@ class Spark320Shims extends Spark32XShims {
           }
           super.tagExprForGpu()
         }
+
+        override def stringToDateAnsiModeEnabled: Boolean = true
       }),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
