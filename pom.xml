@@ -1118,6 +1118,12 @@
                         <goals><goal>run</goal></goals>
                         <configuration>
                             <target>
+                                <pathconvert property="scala.dirs">
+                                    <dirset dir="." includes="**/src/main/scala"/>
+                                    <dirset dir="." includes="**/src/main/*/scala"/>
+                                    <dirset dir="." includes="**/src/test/scala"/>
+                                    <dirset dir="." includes="**/src/test/*/scala"/>
+                                </pathconvert>
                                 <java classname="org.scalastyle.Main" failonerror="true">
                                     <arg line="--verbose false"/>
                                     <arg line="--warnings false"/>
@@ -1125,7 +1131,7 @@
                                     <arg line="--xmlOutput ${basedir}/target/scalastyle-output.xml"/>
                                     <arg line="--inputEncoding ${project.build.sourceEncoding}"/>
                                     <arg line="--xmlEncoding ${project.reporting.outputEncoding}"/>
-                                    <arg path="${basedir}/src/main/scala"/>
+                                    <arg pathref="${scala.dirs}"/>
                                 </java>
                             </target>
                         </configuration>
