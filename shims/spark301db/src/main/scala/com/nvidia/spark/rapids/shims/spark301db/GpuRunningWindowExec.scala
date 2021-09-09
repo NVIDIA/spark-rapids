@@ -28,9 +28,11 @@ class GpuRunningWindowExecMeta(runningWindowFunctionExec: RunningWindowFunctionE
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends GpuBaseWindowExecMeta[RunningWindowFunctionExec](runningWindowFunctionExec, conf, parent, rule) {
+    extends GpuBaseWindowExecMeta[RunningWindowFunctionExec](runningWindowFunctionExec, conf,
+      parent, rule) {
 
-  override def getInputWindowExpressions: Seq[NamedExpression] = runningWindowFunctionExec.windowExpressionList
+  override def getInputWindowExpressions: Seq[NamedExpression] =
+    runningWindowFunctionExec.windowExpressionList
   override def getPartitionSpecs: Seq[Expression] = runningWindowFunctionExec.partitionSpec
   override def getOrderSpecs: Seq[SortOrder] = runningWindowFunctionExec.orderSpec
   override def getResultColumnsOnly: Boolean = true

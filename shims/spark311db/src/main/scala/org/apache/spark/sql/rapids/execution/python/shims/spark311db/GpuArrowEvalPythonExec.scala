@@ -42,11 +42,11 @@ import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.python.GpuPythonHelper
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 
 /**
  * This iterator will round incoming batches to multiples of targetRoundoff rows, if possible.
@@ -269,7 +269,8 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
       context: TaskContext): Iterator[ColumnarBatch] = {
 
     // DB SPECIFIC - new parameter for pid
-    new ReaderIterator(stream, writerThread, startTime, env, worker, pid, releasedOrClosed, context) {
+    new ReaderIterator(stream, writerThread, startTime, env, worker, pid, releasedOrClosed,
+      context) {
 
       private[this] var arrowReader: StreamedTableReader = _
 
