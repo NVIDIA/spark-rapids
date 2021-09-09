@@ -21,6 +21,7 @@ from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session
 import pyspark.sql.functions as f
+import pyspark.sql.utils
 import random
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
@@ -319,3 +320,29 @@ def test_write_map_nullable(spark_tmp_path):
             generate_map_with_empty_validity,
             lambda spark, path: spark.read.parquet(path),
             data_path)
+
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", "HiveTableScanExec")
+@pytest.mark.parametrize('allow_non_empty', [True, False])
+def test_non_empty_ctas(spark_tmp_path, allow_non_empty):
+    data_path = spark_tmp_path + "/CTAS"
+    conf = {
+        "spark.sql.hive.convertCTAS": "true",
+        "spark.sql.legacy.allowNonEmptyLocationInCTAS": str(allow_non_empty)
+    }
+    def test_it(spark):
+        try:
+            spark.sql("CREATE TABLE src1(id string) LOCATION '{}/src1'".format(data_path))
+            spark.sql("INSERT INTO TABLE src1 SELECT 'A'")
+            spark.sql("CREATE TABLE ctas1(id string) LOCATION '{}/ctas/ctas1'".format(data_path))
+            spark.sql("INSERT INTO TABLE ctas1 SELECT 'A'")
+            try:
+                spark.sql("CREATE TABLE ctas_with_existing_location LOCATION '{}/ctas'".format(data_path) +\
+                          " AS SELECT * FROM src1")
+            except pyspark.sql.utils.AnalysisException as e:
+                if allow_non_empty or e.desc.find('non-empty directory') == -1:
+                    raise e
+        finally:
+            spark.sql("DROP TABLE IF EXISTS src1")
+            spark.sql("DROP TABLE IF EXISTS ctas1")
+            spark.sql("DROP TABLE IF EXISTS ctas_with_existing_location")
+    with_gpu_session(test_it, conf)
