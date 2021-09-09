@@ -102,6 +102,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
+                                        <source>${project.basedir}/src/main/spark301+nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
