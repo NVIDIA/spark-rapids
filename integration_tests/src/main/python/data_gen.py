@@ -930,6 +930,12 @@ allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDe
 
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 
+def copy_and_update(conf, *more_confs):
+    local_conf = conf.copy()
+    for more in more_confs:
+        local_conf.update(more)
+    return local_conf
+
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
