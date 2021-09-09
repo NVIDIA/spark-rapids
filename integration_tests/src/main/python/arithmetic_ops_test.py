@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
 from data_gen import *
 from marks import incompat, approximate_float
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311, is_before_spark_320
 import pyspark.sql.functions as f
 from pyspark.sql.utils import IllegalArgumentException
 
@@ -535,3 +535,35 @@ def test_div_by_zero_ansi(expr):
 @pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
 def test_div_by_zero_nonansi(expr):
     _test_div_by_zero(ansi_mode='nonAnsi', expr=expr)
+
+
+def _test_div_overflow(ansi_mode, expr):
+    ansi_conf = {'spark.sql.ansi.enabled': ansi_mode == 'ansi'}
+    data_gen = lambda spark: two_col_df(
+        spark,
+        LongGen(max_val=LONG_MIN),
+        IntegerGen(min_val=-1, max_val=-1), length=1)
+    div_overflow_func = lambda spark: data_gen(spark).selectExpr(expr)
+
+    if ansi_mode == 'ansi':
+        assert_gpu_and_cpu_error(
+            df_fun=lambda spark: div_overflow_func(spark).collect(),
+            conf=ansi_conf,
+            error_message='java.lang.ArithmeticException: Overflow in integral divide')
+    else:
+        assert_gpu_and_cpu_are_equal_collect(div_overflow_func, ansi_conf)
+
+div_overflow_exprs = [
+    'CAST(-9223372036854775808L as LONG) DIV -1',
+    'a DIV CAST(-1 AS INT)',
+    'a DIV b']
+
+@pytest.mark.parametrize('expr', div_overflow_exprs)
+@pytest.mark.xfail(condition=is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
+def test_div_overflow_ansi(expr):
+    _test_div_overflow(ansi_mode='ansi', expr=expr)
+
+
+@pytest.mark.parametrize('expr', div_overflow_exprs)
+def test_div_overflow_nonansi(expr):
+    _test_div_overflow(ansi_mode='nonAnsi', expr=expr)

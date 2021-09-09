@@ -131,6 +131,8 @@ trait Spark32XShims extends SparkShims {
       // we will need to change the API to pass these values in.
       enableAddPartitions = true,
       enableDropPartitions = false)
+
+  override def shouldFailDivOverflow(): Boolean = SQLConf.get.ansiEnabled
 }
 
 // TODO dedupe utils inside shims

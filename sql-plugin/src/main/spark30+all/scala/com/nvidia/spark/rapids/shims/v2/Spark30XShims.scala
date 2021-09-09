@@ -96,4 +96,6 @@ trait Spark30XShims extends SparkShims {
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
+
+  override def shouldFailDivOverflow(): Boolean = false
 }
