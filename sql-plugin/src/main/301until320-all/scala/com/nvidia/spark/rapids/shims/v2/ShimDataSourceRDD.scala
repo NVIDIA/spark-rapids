@@ -24,5 +24,5 @@ class ShimDataSourceRDD(
     sc: SparkContext,
     @transient private val inputPartitions: Seq[InputPartition],
     partitionReaderFactory: PartitionReaderFactory,
-    columnarReads: Boolean,
+    columnarReads: Boolean
 ) extends DataSourceRDD(sc, inputPartitions, partitionReaderFactory, columnarReads)
