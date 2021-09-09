@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
-import com.nvidia.spark.rapids.shims._
-
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
