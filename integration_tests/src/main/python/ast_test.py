@@ -54,8 +54,7 @@ def assert_gpu_ast(is_supported, func, conf={}):
     if not is_supported:
         exist = "GpuProjectExec"
         non_exist = "GpuProjectAstExec"
-    ast_conf = conf.copy()
-    ast_conf.update({"spark.rapids.sql.projectAstEnabled": "true"})
+    ast_conf = copy_and_update(conf, {"spark.rapids.sql.projectAstEnabled": "true"})
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         func,
         exist_classes=exist,
