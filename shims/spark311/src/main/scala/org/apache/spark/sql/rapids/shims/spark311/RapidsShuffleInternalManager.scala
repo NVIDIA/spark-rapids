@@ -41,7 +41,6 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
   }
 }
 
-
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) {
 
@@ -57,4 +56,4 @@ class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     self.getReader(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
       metrics)
   }
-ca
+}

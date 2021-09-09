@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.spark311db
 
 import org.apache.spark.SparkConf
-import org.apache.spark.rapids.shims.v2.ProxyRapidsShuffleInternalManager
+import org.apache.spark.sql.rapids.shims.spark311db.ProxyRapidsShuffleInternalManager
 
 /** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
 sealed class RapidsShuffleManager(
