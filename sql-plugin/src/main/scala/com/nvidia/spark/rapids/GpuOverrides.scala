@@ -430,7 +430,7 @@ object WriteFileOp extends FileFormatOp {
   override def toString = "write"
 }
 
-object GpuOverrides {
+object GpuOverrides extends Logging {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
@@ -443,6 +443,20 @@ object GpuOverrides {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+
+  /**
+   * Provides a way to log an info message about how long an operation took in milliseconds.
+   */
+  def logDuration[T](shouldLog: Boolean, msg: Double => String)(block: => T): T = {
+    val start = System.nanoTime()
+    val ret = block
+    val end = System.nanoTime()
+    if (shouldLog) {
+      val timeTaken = (end - start).toDouble / java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1)
+      logInfo(msg(timeTaken))
+    }
+    ret
+  }
 
   private[this] val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
 
@@ -2909,11 +2923,11 @@ object GpuOverrides {
       "Collect a list of non-unique elements, not supported in reduction",
       // GpuCollectList is not yet supported in Reduction context.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
@@ -2939,9 +2953,9 @@ object GpuOverrides {
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL),
         TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -3313,7 +3327,7 @@ object GpuOverrides {
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
+            .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
@@ -3418,17 +3432,20 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
-        // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
-        // distribution expressions are not semantically equal.
-        GpuOverrides.removeExtraneousShuffles(plan, conf)
-      } else {
-        plan
+      GpuOverrides.logDuration(conf.shouldExplain,
+        t => f"Plan conversion to the GPU took $t%.2f ms") {
+        val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
+          // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
+          // distribution expressions are not semantically equal.
+          GpuOverrides.removeExtraneousShuffles(plan, conf)
+        } else {
+          plan
+        }
+        applyOverrides(updatedPlan, conf)
       }
-      applyOverrides(updatedPlan, conf)
     } else {
       plan
     }

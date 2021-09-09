@@ -542,7 +542,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
       // Note that this is not an accurate check since the total buffer size of the input
       // strings column may be larger than the total length of strings that will be repeated in
       // this function.
-      val inputBufferSize = input.getBase.getData.getLength
+      val inputBufferSize: Long = Option(input.getBase.getData).map(_.getLength).getOrElse(0)
       if (repeatTimesVal > 0 && inputBufferSize > Int.MaxValue / repeatTimesVal) {
         throw new RuntimeException("Output strings have total size exceed maximum allowed size")
       }

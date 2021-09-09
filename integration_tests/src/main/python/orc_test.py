@@ -102,6 +102,8 @@ orc_gens_list = [orc_basic_gens,
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
 
+flattened_orc_gens = orc_basic_gens + orc_array_gens_sample + orc_struct_gens_sample
+
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.orc.enabled', 'spark.rapids.sql.format.orc.read.enabled'])
@@ -292,6 +294,33 @@ def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
                         'input_file_block_length()'),
             conf=all_confs)
 
+@allow_non_gpu('ProjectExec', 'Alias', 'InputFileName', 'InputFileBlockStart', 'InputFileBlockLength',
+               'FilterExec', 'And', 'IsNotNull', 'GreaterThan', 'Literal',
+               'FileSourceScanExec', 'ColumnarToRowExec',
+               'BatchScanExec', 'OrcScan')
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.orc.enabled', 'spark.rapids.sql.format.orc.read.enabled'])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disable_conf):
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, long_gen).write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, long_gen).write.orc(second_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs.update({disable_conf: 'false'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc(data_path)\
+                    .filter(f.col('a') > 0)\
+                    .selectExpr('a',
+                        'input_file_name()',
+                        'input_file_block_start()',
+                        'input_file_block_length()'),
+            conf=all_confs)
+
 def setup_orc_file_no_column_names(spark, table_name):
     drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
     create_query = "CREATE TABLE `{}` (`_col1` INT, `_col2` STRING, `_col3` INT) USING orc".format(table_name)
@@ -391,3 +420,32 @@ def test_read_struct_without_stream(spark_tmp_path):
             lambda spark : unary_op_df(spark, data_gen, 10).write.orc(data_path))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path))
+
+
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('case_sensitive', ["false", "true"])
+def test_read_with_more_columns(spark_tmp_path, orc_gen, reader_confs, v1_enabled_list, case_sensitive):
+    struct_gen = StructGen([('nested_col', orc_gen)])
+    # Map is not supported yet.
+    gen_list = [("top_pri", orc_gen),
+                ("top_st", struct_gen),
+                ("top_ar", ArrayGen(struct_gen, max_length=10))]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.caseSensitive': case_sensitive})
+    # This is a hack to get the type in a slightly less verbose way
+    extra_struct_gen = StructGen([('nested_col', orc_gen), ("nested_non_existing", orc_gen)])
+    extra_gen_list = [("top_pri", orc_gen),
+                      ("top_non_existing_mid", orc_gen),
+                      ("TOP_AR", ArrayGen(extra_struct_gen, max_length=10)),
+                      ("top_ST", extra_struct_gen),
+                      ("top_non_existing_end", orc_gen)]
+    rs = StructGen(extra_gen_list, nullable=False).data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(rs).orc(data_path),
+            conf=all_confs)
