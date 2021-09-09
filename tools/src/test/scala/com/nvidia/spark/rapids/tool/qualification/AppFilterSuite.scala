@@ -640,6 +640,40 @@ class AppFilterSuite extends FunSuite {
       3, "all")
   }
 
+  test("Test conjunction match filename and config") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ configs("spark.driver.port:43492"), 2, "all")
+  }
+
+  test("Test disjunction match multiple configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      configs("spark.driver.host:10.10.19.19")
+          ++ configs("spark.driver.port:43492"), 7, "any")
+  }
+
+  test("Test conjunction match fileName and appName with configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ configs("spark.driver.port:43492")
+          ++ filterAppName("Nds"), 1, "all")
+  }
+
+  test("Test disjunction match appName and config") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("nds") ++ configs("spark.driver.port:43492"), 6, "any")
+  }
+
+  test("Test conjunction match fileName and appName with non existent configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ configs("spark.driver.hosta")
+          ++ configs("spark.driver.porta") ++ filterAppName("Nds"), 0, "all")
+  }
+
+  test("Test disjunction match fileName and appName with non existent configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ configs("spark.driver.hosta")
+          ++ configs("spark.driver.porta") ++ filterAppName("Nds"), 5, "any")
+  }
+
   def filterCriteria(filterCrit: String): Array[String] = {
     Array("--filter-criteria", filterCrit)
   }
@@ -660,6 +694,10 @@ class AppFilterSuite extends FunSuite {
     Array("--user-name", name)
   }
 
+  def configs(configNames: String): Array[String] = {
+    Array("--configuration-names", configNames)
+  }
+
   private def testConjunctionAndDisjunction(
       apps: Array[TestConjunctionAndDisjunction],
       filtersToApply: Array[String],
@@ -673,7 +711,8 @@ class AppFilterSuite extends FunSuite {
           // scalastyle:off line.size.limit
           val supText =
             s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"${app.userName}"}""".stripMargin
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"${app.userName}"}
+               |{"Event":"SparkListenerEnvironmentUpdate","JVM Information":{"Java Home":"/usr/lib/jvm/java-8-openjdk-amd64/jre"},"Spark Properties":{"spark.driver.host":"10.10.19.19","spark.eventLog.enabled":"true","spark.driver.port":"4349${app.uniqueId}"},"Hadoop Properties":{"hadoop.service.shutdown.timeout":"30s"},"System Properties":{"java.io.tmpdir":"/tmp"},"Classpath Entries":{"/home/user1/runspace/spark311/spark-3.1.1-bin-hadoop3.2/jars/hive-exec-2.3.7-core.jar":"System Classpath"}}""".stripMargin
           // scalastyle:on line.size.limit
           Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
           new File(elogFile.toString).setLastModified(app.fsTime)
@@ -686,7 +725,7 @@ class AppFilterSuite extends FunSuite {
           s"--$logicFilter"
         )
 
-        val appArgs = new QualificationArgs(allArgs ++ filtersToApply ++ fileNames)
+        val appArgs = new QualificationArgs(filtersToApply ++ allArgs ++ fileNames)
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
         assert(appSum.size == expectedFilterSize)

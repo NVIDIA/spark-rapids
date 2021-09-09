@@ -107,7 +107,7 @@ object QualificationMain extends Logging {
   def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {
     val filterCriteria = appArgs.filterCriteria.toOption
     appArgs.applicationName.isSupplied || appArgs.startAppTime.isSupplied ||
-        appArgs.userName.isSupplied ||
+        appArgs.userName.isSupplied || appArgs.configurationNames.isSupplied ||
         (filterCriteria.isDefined && (filterCriteria.get.endsWith("-newest") ||
             filterCriteria.get.endsWith("-oldest") || filterCriteria.get.endsWith("-per-app-name")))
   }
