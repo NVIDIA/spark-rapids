@@ -110,7 +110,6 @@
                                 <configuration>
                                     <sources>
                                         <source>${spark-rapids.sql-plugin.root}/src/main/301until320-all/scala</source>
-                                        <source>${spark-rapids.sql-plugin.root}/src/main/301until311-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
