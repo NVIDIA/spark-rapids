@@ -1018,30 +1018,6 @@
                     </executions>
                 </plugin>
                 <plugin>
-                    <groupId>org.scalastyle</groupId>
-                    <artifactId>scalastyle-maven-plugin</artifactId>
-                    <version>1.0.0</version>
-                    <configuration>
-                        <verbose>false</verbose>
-                        <failOnViolation>true</failOnViolation>
-                        <includeTestSourceDirectory>false</includeTestSourceDirectory>
-                        <failOnWarning>false</failOnWarning>
-                        <sourceDirectory>${basedir}/src/main/scala</sourceDirectory>
-                        <testSourceDirectory>${basedir}/src/test/scala</testSourceDirectory>
-                        <configLocation>scalastyle-config.xml</configLocation>
-                        <outputFile>${basedir}/target/scalastyle-output.xml</outputFile>
-                        <inputEncoding>${project.build.sourceEncoding}</inputEncoding>
-                        <outputEncoding>${project.reporting.outputEncoding}</outputEncoding>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <goals>
-                                <goal>check</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
                     <groupId>org.apache.rat</groupId>
                     <artifactId>apache-rat-plugin</artifactId>
                     <version>0.13</version>
@@ -1136,7 +1112,32 @@
                             <goal>run</goal>
                         </goals>
                     </execution>
+                    <execution>
+                        <id>scala-style-all-modules</id>
+                        <phase>verify</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <java classname="org.scalastyle.Main" failonerror="true">
+                                    <arg line="--verbose false"/>
+                                    <arg line="--warnings false"/>
+                                    <arg line="--config scalastyle-config.xml"/>
+                                    <arg line="--xmlOutput ${basedir}/target/scalastyle-output.xml"/>
+                                    <arg line="--inputEncoding ${project.build.sourceEncoding}"/>
+                                    <arg line="--xmlEncoding ${project.reporting.outputEncoding}"/>
+                                    <arg path="${basedir}/src/main/scala"/>
+                                </java>
+                            </target>
+                        </configuration>
+                    </execution>
                 </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.scalastyle</groupId>
+                        <artifactId>scalastyle_${scala.binary.version}</artifactId>
+                        <version>1.0.0</version>
+                    </dependency>
+                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
