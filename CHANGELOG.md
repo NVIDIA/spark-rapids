@@ -1,5 +1,18 @@
 # Change log
-Generated on 2021-08-12
+Generated on 2021-08-31
+
+## Release 21.08.1
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3350](https://github.com/NVIDIA/spark-rapids/issues/3350)|[BUG] Qualification tool: check for metadata being null|
+
+### PRs
+|||
+|:---|:---|
+|[#3348](https://github.com/NVIDIA/spark-rapids/pull/3348)|Change tool version to 21.08.1 [skip ci]|
+|[#3343](https://github.com/NVIDIA/spark-rapids/pull/3343)|Qualification tool backport: Check for metadata being null (#3285)|
 
 ## Release 21.08
 
@@ -99,6 +112,7 @@ Generated on 2021-08-12
 ### PRs
 |||
 |:---|:---|
+|[#3216](https://github.com/NVIDIA/spark-rapids/pull/3216)|Update changelog to include download doc update [skip ci]|
 |[#3214](https://github.com/NVIDIA/spark-rapids/pull/3214)|Update download and databricks doc for 21.06.2 [skip ci]|
 |[#3210](https://github.com/NVIDIA/spark-rapids/pull/3210)|Update 21.08.0 changelog to latest [skip ci]|
 |[#3197](https://github.com/NVIDIA/spark-rapids/pull/3197)|Databricks parquetFilters api change in db 8.2 runtime|

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.udf
 
-import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.types.DataType
 
-case class GpuScalaUDFLogical(udf: ScalaUDF) extends Expression with Logging {
+case class GpuScalaUDFLogical(udf: ScalaUDF) extends ShimExpression with Logging {
   override def nullable: Boolean = udf.nullable
 
   override def eval(input: InternalRow): Any = {

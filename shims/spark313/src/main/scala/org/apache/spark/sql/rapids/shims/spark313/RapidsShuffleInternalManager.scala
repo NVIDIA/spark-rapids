@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.shims.spark313
 
 import org.apache.spark.{SparkConf, TaskContext}
-import org.apache.spark.shuffle._
+import org.apache.spark.shuffle.{ShuffleHandle, ShuffleReader, ShuffleReadMetricsReporter}
 import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
 
 /**
@@ -27,7 +27,6 @@ import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     extends RapidsShuffleInternalManagerBase(conf, isDriver) {
-
   def getReader[K, C](
       handle: ShuffleHandle,
       startMapIndex: Int,

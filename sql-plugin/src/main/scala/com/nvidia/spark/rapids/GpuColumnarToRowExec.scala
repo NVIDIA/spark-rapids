@@ -21,12 +21,12 @@ import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
@@ -181,8 +181,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     opTime: GpuMetric,
     fetchTime: GpuMetric) extends Iterator[InternalRow] with Arm {
   // GPU batches read in must be closed by the receiver (us)
-  @transient var cb: ColumnarBatch = null
-  var it: java.util.Iterator[InternalRow] = null
+  @transient private var cb: ColumnarBatch = null
+  private var it: java.util.Iterator[InternalRow] = null
 
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 
@@ -266,13 +266,18 @@ object CudfRowTransitions {
     schema.forall(att => isSupportedType(att.dataType))
 }
 
-abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRdd: Boolean)
+abstract class GpuColumnarToRowExecParent(child: SparkPlan,
+    val exportColumnarRdd: Boolean,
+    val postProjection: Seq[NamedExpression])
     extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 
-  override def output: Seq[Attribute] = child.output
+  override def output: Seq[Attribute] = postProjection match {
+    case expressions if expressions.isEmpty => child.output
+    case expressions => expressions.map(_.toAttribute)
+  }
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
@@ -294,12 +299,23 @@ abstract class GpuColumnarToRowExecParent(child: SparkPlan, val exportColumnarRd
     val f = makeIteratorFunc(child.output, numOutputRows, numInputBatches, opTime, collectTime)
 
     val cdata = child.executeColumnar()
-    if (exportColumnarRdd) {
+    val rdata = if (exportColumnarRdd) {
       // If we are exporting columnar rdd we need an easy way for the code that walks the
       // RDDs to know where the columnar to row transition is happening.
       GpuColumnToRowMapPartitionsRDD.mapPartitions(cdata, f)
     } else {
       cdata.mapPartitions(f)
+    }
+
+    postProjection match {
+      case transformations if transformations.nonEmpty =>
+        rdata.mapPartitionsWithIndex { case (index, iterator) =>
+          val projection = UnsafeProjection.create(transformations, child.output)
+          projection.initialize(index)
+          iterator.map(projection)
+        }
+      case _ =>
+        rdata
     }
   }
 }
@@ -339,5 +355,7 @@ object GpuColumnarToRowExecParent {
   }
 }
 
-case class GpuColumnarToRowExec(child: SparkPlan, override val exportColumnarRdd: Boolean = false)
-   extends GpuColumnarToRowExecParent(child, exportColumnarRdd)
+case class GpuColumnarToRowExec(child: SparkPlan,
+    override val exportColumnarRdd: Boolean = false,
+    override val postProjection: Seq[NamedExpression] = Seq.empty)
+    extends GpuColumnarToRowExecParent(child, exportColumnarRdd, postProjection)

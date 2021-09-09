@@ -22,7 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -51,6 +51,11 @@ class GpuSortMeta(
   // and we need to propagate possible type conversions on the output attributes of
   // GpuSortAggregateExec.
   override protected val useOutputAttributesOfChild: Boolean = true
+
+  // For transparent plan like ShuffleExchange, the accessibility of runtime data transition is
+  // depended on the next non-transparent plan. So, we need to trace back.
+  override val availableRuntimeDataTransition: Boolean =
+    childPlans.head.availableRuntimeDataTransition
 
   override def convertToGpu(): GpuExec = {
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],

@@ -20,6 +20,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.DecimalUtil.createCudfDecimal
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -491,7 +492,9 @@ case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLike {
   override def dataType: DataType = left.dataType
 }
 
-trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression
+  with ShimExpression {
+
   override def nullable: Boolean = children.forall(_.nullable)
   override def foldable: Boolean = children.forall(_.foldable)
 

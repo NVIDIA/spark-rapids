@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExpression
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.AnalysisException
@@ -35,6 +35,8 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   def this() = this(GpuLiteral(Utils.random.nextLong(), LongType))
 
   override def withNewSeed(seed: Long): GpuRand = GpuRand(GpuLiteral(seed, LongType))
+
+  def seedExpression: Expression = child
 
   /**
    * Record ID within each partition. By being transient, the Random Number Generator is

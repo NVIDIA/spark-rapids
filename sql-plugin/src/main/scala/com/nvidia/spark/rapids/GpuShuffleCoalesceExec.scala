@@ -20,7 +20,7 @@ import java.util
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -95,7 +95,7 @@ class GpuShuffleCoalesceIterator(
   private[this] var numTablesInBatch: Int = 0
   private[this] var numRowsInBatch: Int = 0
   private[this] var batchByteSize: Long = 0L
-  
+
   private val batchIter = new CollectTimeIterator(
     "ShuffleCoalesce: collect", iter, collectTimeMetric)
 

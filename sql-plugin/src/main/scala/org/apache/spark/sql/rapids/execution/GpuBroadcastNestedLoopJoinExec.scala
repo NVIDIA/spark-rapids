@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{ast, GatherMap, NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
-import com.nvidia.spark.rapids.shims.sql.ShimBinaryExecNode
+import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -213,11 +213,11 @@ class ConditionalNestedLoopJoinIterator(
           case GpuBuildRight => (streamTable, builtTable)
         }
         joinType match {
-          case _: InnerLike =>left.conditionalInnerJoinRowCount(right, condition, false)
-          case LeftOuter => left.conditionalLeftJoinRowCount(right, condition, false)
-          case RightOuter => right.conditionalLeftJoinRowCount(left, condition, false)
-          case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition, false)
-          case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition, false)
+          case _: InnerLike =>left.conditionalInnerJoinRowCount(right, condition)
+          case LeftOuter => left.conditionalLeftJoinRowCount(right, condition)
+          case RightOuter => right.conditionalLeftJoinRowCount(left, condition)
+          case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition)
+          case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition)
           case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
         }
       }
@@ -253,36 +253,36 @@ class ConditionalNestedLoopJoinIterator(
     joinType match {
       case _: InnerLike =>
         numJoinRows.map { rowCount =>
-          left.conditionalInnerJoinGatherMaps(right, condition, false, rowCount)
+          left.conditionalInnerJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
-          left.conditionalInnerJoinGatherMaps(right, condition, false)
+          left.conditionalInnerJoinGatherMaps(right, condition)
         }
       case LeftOuter =>
         numJoinRows.map { rowCount =>
-          left.conditionalLeftJoinGatherMaps(right, condition, false, rowCount)
+          left.conditionalLeftJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
-          left.conditionalLeftJoinGatherMaps(right, condition, false)
+          left.conditionalLeftJoinGatherMaps(right, condition)
         }
       case RightOuter =>
         val maps = numJoinRows.map { rowCount =>
-          right.conditionalLeftJoinGatherMaps(left, condition, false, rowCount)
+          right.conditionalLeftJoinGatherMaps(left, condition, rowCount)
         }.getOrElse {
-          right.conditionalLeftJoinGatherMaps(left, condition, false)
+          right.conditionalLeftJoinGatherMaps(left, condition)
         }
         // Reverse the output of the join, because we expect the right gather map to
         // always be on the right
         maps.reverse
       case LeftSemi =>
         numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, false, rowCount))
+          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount))
         }.getOrElse {
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, false))
+          Array(left.conditionalLeftSemiJoinGatherMap(right, condition))
         }
       case LeftAnti =>
         numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, false, rowCount))
+          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount))
         }.getOrElse {
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, false))
+          Array(left.conditionalLeftAntiJoinGatherMap(right, condition))
         }
       case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
     }
@@ -387,9 +387,10 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExecBase = broadcast match {
-    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExecBase) => gpu
-    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
-      reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] =>
+      bqse.plan.asInstanceOf[GpuBroadcastExchangeExecBase]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
+      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExecBase]
     case gpu: GpuBroadcastExchangeExecBase => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
   }
@@ -489,9 +490,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           }
         case LeftAnti =>
           // degenerate case, no rows are returned.
-          left.executeColumnar().mapPartitions { _ =>
-            Iterator.single(new ColumnarBatch(Array(), 0))
-          }
+          val childRDD = left.executeColumnar()
+          new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, childRDD.getNumPartitions)
         case _ =>
           // Everything else is treated like an unconditional cross join
           val buildSide = getGpuBuildSide

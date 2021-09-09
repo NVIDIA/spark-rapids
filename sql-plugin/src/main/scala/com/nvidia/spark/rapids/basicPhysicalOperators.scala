@@ -18,10 +18,11 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 
+import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{ShimSparkPlan, ShimUnaryExecNode}
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -214,7 +215,7 @@ case class GpuProjectAstExec(
             withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
               numOutputBatches += 1
               numOutputRows += cb.numRows()
-              val projectedTable = withResource(GpuColumnVector.from(cb)) { table =>
+              val projectedTable = withResource(tableFromBatch(cb)) { table =>
                 withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
                   new Table(projectedColumns:_*)
                 }
@@ -229,6 +230,20 @@ case class GpuProjectAstExec(
         override def close(): Unit = {
           compiledAstExprs.safeClose()
           compiledAstExprs = Nil
+        }
+
+        private def tableFromBatch(cb: ColumnarBatch): Table = {
+          if (cb.numCols != 0) {
+            GpuColumnVector.from(cb)
+          } else {
+            // Count-only batch but cudf Table cannot be created with no columns.
+            // Create the cheapest table we can to evaluate the AST expression.
+            withResource(Scalar.fromBool(false)) { falseScalar =>
+              withResource(cudf.ColumnVector.fromScalar(falseScalar, cb.numRows())) { falseColumn =>
+                new Table(falseColumn)
+              }
+            }
+          }
         }
       }
     }
@@ -363,7 +378,8 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
   val start: Long = range.start
   val end: Long = range.end
   val step: Long = range.step
-  val numSlices: Int = range.numSlices.getOrElse(sparkContext.defaultParallelism)
+  val numSlices: Int = range.numSlices.getOrElse(ShimLoader.getSparkShims
+    .leafNodeDefaultParallelism(sparkSession))
   val numElements: BigInt = range.numElements
   val isEmptyRange: Boolean = start == end || (start < end ^ 0 < step)
 
@@ -407,7 +423,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     if (isEmptyRange) {
       sparkContext.emptyRDD[ColumnarBatch]
     } else {
-      sqlContext
+      sparkSession
           .sparkContext
           .parallelize(0 until numSlices, numSlices)
           .mapPartitionsWithIndex { (i, _) =>
@@ -491,7 +507,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 }
 
 
-case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
+case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with GpuExec {
 
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {

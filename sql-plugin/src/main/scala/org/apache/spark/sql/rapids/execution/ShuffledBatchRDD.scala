@@ -139,9 +139,9 @@ class ShuffledBatchRDD(
   override def getPreferredLocations(partition: Partition): Seq[String] = {
     val tracker = SparkEnv.get.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
     partition.asInstanceOf[ShuffledBatchRDDPartition].spec match {
-      case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
+      case cps: CoalescedPartitionSpec =>
         // TODO order by partition size.
-        startReducerIndex.until(endReducerIndex).flatMap { reducerIndex =>
+        cps.startReducerIndex.until(cps.endReducerIndex).flatMap { reducerIndex =>
           tracker.getPreferredLocationsForShuffle(dependency, reducerIndex)
         }
 
@@ -150,6 +150,7 @@ class ShuffledBatchRDD(
 
       case PartialMapperPartitionSpec(mapIndex, _, _) =>
         tracker.getMapLocation(dependency, mapIndex, mapIndex + 1)
+      // TODO shim CoalescedMapperPartitionSpec
     }
   }
 
@@ -162,15 +163,16 @@ class ShuffledBatchRDD(
     val shim = ShimLoader.getSparkShims
     val shuffleManagerShims = shim.getShuffleManagerShims()
     val (reader, partitionSize) = shuffledBatchPartition.spec match {
-      case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
+      case cps: CoalescedPartitionSpec =>
         val reader = SparkEnv.get.shuffleManager.getReader(
           dependency.shuffleHandle,
-          startReducerIndex,
-          endReducerIndex,
+          cps.startReducerIndex,
+          cps.endReducerIndex,
           context,
           sqlMetricsReporter)
         val blocksByAddress = shim.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
+          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, cps.startReducerIndex,
+            cps.endReducerIndex)
         val partitionSize = blocksByAddress.flatMap(_._2).map(_._2).sum
         (reader, partitionSize)
 
