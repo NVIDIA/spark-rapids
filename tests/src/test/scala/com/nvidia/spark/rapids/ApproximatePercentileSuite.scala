@@ -27,9 +27,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   val DEFAULT_PERCENTILES = Array(0.05, 0.25, 0.5, 0.75, 0.95)
 
-  //TODO: ai.rapids.cudf.CudfException: reduce_by_key: failed to synchronize:
-  // cudaErrorIllegalAddress: an illegal memory access was encountered
-  ignore("5 rows per group, delta 100, doubles") {
+  test("5 rows per group, delta 100, doubles") {
     doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = Some(100))
   }
 
@@ -41,8 +39,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     doTest(DataTypes.DoubleType, 250, Some(100))
   }
 
-  //TODO: CPU is more accurate
-  ignore("2500 rows per group, delta 100, doubles") {
+  test("2500 rows per group, delta 100, doubles") {
     doTest(DataTypes.DoubleType, 2500, Some(100))
   }
 
@@ -120,8 +117,13 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
     rows.map(row => {
       val dept = row.getString(0)
-      val percentiles = row.getAs[mutable.WrappedArray[Double]](1)
-      dept -> percentiles.map(d => d).toArray
+      val percentiles: mutable.Seq[Double] = row.getAs[mutable.WrappedArray[Double]](1)
+      val foo: Array[Double] = if (percentiles==null) {
+        Array[Double]()
+      } else {
+        percentiles.map(d => d).toArray
+      }
+      dept -> foo
     }).toMap
   }
 
