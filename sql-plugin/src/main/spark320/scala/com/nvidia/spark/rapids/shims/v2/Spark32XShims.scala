@@ -19,10 +19,10 @@ package com.nvidia.spark.rapids.shims.v2
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import com.nvidia.spark.rapids.shims._
-
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
+import org.apache.spark.sql.Spark32XShimsUtils
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
@@ -131,6 +131,11 @@ trait Spark32XShims extends SparkShims {
       // we will need to change the API to pass these values in.
       enableAddPartitions = true,
       enableDropPartitions = false)
+
+  override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
+    Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
+  }
+
 }
 
 // TODO dedupe utils inside shims
