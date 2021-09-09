@@ -20,13 +20,14 @@ import java.util
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -38,7 +39,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *       not being used.
  */
 case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
-    extends UnaryExecNode with GpuExec {
+    extends ShimUnaryExecNode with GpuExec {
 
   import GpuMetric._
 
@@ -94,7 +95,7 @@ class GpuShuffleCoalesceIterator(
   private[this] var numTablesInBatch: Int = 0
   private[this] var numRowsInBatch: Int = 0
   private[this] var batchByteSize: Long = 0L
-  
+
   private val batchIter = new CollectTimeIterator(
     "ShuffleCoalesce: collect", iter, collectTimeMetric)
 

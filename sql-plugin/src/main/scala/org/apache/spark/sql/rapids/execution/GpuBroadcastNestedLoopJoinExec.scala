@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{ast, GatherMap, NvtxColor, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
+import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -27,7 +28,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
@@ -359,7 +360,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     right: SparkPlan,
     joinType: JoinType,
     condition: Option[Expression],
-    targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+    targetSizeBytes: Long) extends ShimBinaryExecNode with GpuExec {
 
   import GpuMetric._
 
@@ -386,9 +387,10 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExecBase = broadcast match {
-    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExecBase) => gpu
-    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
-      reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] =>
+      bqse.plan.asInstanceOf[GpuBroadcastExchangeExecBase]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
+      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExecBase]
     case gpu: GpuBroadcastExchangeExecBase => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExecBase]
   }
@@ -488,9 +490,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           }
         case LeftAnti =>
           // degenerate case, no rows are returned.
-          left.executeColumnar().mapPartitions { _ =>
-            Iterator.single(new ColumnarBatch(Array(), 0))
-          }
+          val childRDD = left.executeColumnar()
+          new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, childRDD.getNumPartitions)
         case _ =>
           // Everything else is treated like an unconditional cross join
           val buildSide = getGpuBuildSide

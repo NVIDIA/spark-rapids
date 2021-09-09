@@ -30,6 +30,48 @@
     <description>The RAPIDS SQL plugin for Apache Spark 3.1.1 Shim</description>
     <version>21.10.0-SNAPSHOT</version>
 
+    <profiles>
+        <profile>
+            <!--
+                enables Shim class consolidation without breaking the existing build,
+                to be removed when the build architecture swap is complete
+            -->
+            <id>no-buildver-default</id>
+            <activation>
+                <property>
+                    <name>!buildver</name>
+                </property>
+            </activation>
+            <properties>
+                <spark-rapids.sql-plugin.root>${project.basedir}/../../sql-plugin</spark-rapids.sql-plugin.root>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-default</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark311/scala</source>
+                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark311/java</source>
+                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark31+all/scala</source>
+                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark31+all/java</source>
+                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark31+apache/scala</source>
+                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark31+apache/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
     <!-- Set 'spark.version' for the shims layer -->
     <!-- Create a separate file 'SPARK_VER.properties' in the jar to save cudf & spark version info -->
     <build>
@@ -75,11 +117,6 @@
     </build>
 
     <dependencies>
-	<dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-spark301_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>

@@ -28,7 +28,7 @@ import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast}
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -154,6 +154,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
   test("Cast from string to date using random inputs with valid year prefix") {
     testCastStringTo(DataTypes.DateType,
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
+  }
+
+  test("Cast from string to date ANSI mode with valid values") {
+    testCastStringTo(DataTypes.DateType, Seq("2021-01-01", "2021-02-01"),
+      ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to date ANSI mode with invalid values") {
+    assumeSpark320orLater
+    // test the values individually
+    Seq("2021-20-60", "not numbers", "666666666").foreach { value =>
+      testCastStringTo(DataTypes.DateType, Seq(value), ansiMode = AnsiExpectFailure)
+    }
   }
 
   ignore("Cast from string to timestamp using random inputs") {
@@ -440,7 +453,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
     assert(checks.gpuCanCast(dataType, DataTypes.StringType))
     val schema = FuzzerUtils.createSchema(Seq(dataType))
-    val childExpr: GpuBoundReference = GpuBoundReference(0, dataType, nullable = false)
+    val childExpr: GpuBoundReference =
+      GpuBoundReference(0, dataType, nullable = false)(NamedExpression.newExprId, "arg")
     checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType),
       dataType,
       DataTypes.StringType,

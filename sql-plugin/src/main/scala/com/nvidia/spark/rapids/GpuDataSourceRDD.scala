@@ -16,10 +16,12 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.v2.ShimDataSourceRDD
+
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, SparkException, TaskContext}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
-import org.apache.spark.sql.execution.datasources.v2.{DataSourceRDD, DataSourceRDDPartition}
+import org.apache.spark.sql.execution.datasources.v2.DataSourceRDDPartition
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -34,7 +36,7 @@ class GpuDataSourceRDD(
     sc: SparkContext,
     @transient private val inputPartitions: Seq[InputPartition],
     partitionReaderFactory: PartitionReaderFactory)
-    extends DataSourceRDD(sc, inputPartitions, partitionReaderFactory, columnarReads = true) {
+    extends ShimDataSourceRDD(sc, inputPartitions, partitionReaderFactory, columnarReads = true) {
 
   private def castPartition(split: Partition): DataSourceRDDPartition = split match {
     case p: DataSourceRDDPartition => p

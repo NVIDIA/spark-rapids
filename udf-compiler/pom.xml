@@ -44,30 +44,166 @@
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <type>test-jar</type>
-            <scope>test</scope>
-            <version>${spark.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>provided</scope>
-        </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-classifier</id>
+            <activation>
+                <property><name>buildver</name></property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <configuration>
+                            <classifier>${spark.version.classifier}</classifier>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+       <profile>
+           <!--
+                 Note that we are using the Spark version for all of the Databricks dependencies as well.
+                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                 This is to make it easier and not have to change version numbers for each individual dependency
+                 and deal with differences between Databricks versions
+            -->
+            <id>dbdeps</id>
+            <activation>
+                <property>
+                    <name>databricks</name>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-core_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.javaassist</groupId>
+                    <artifactId>javaassist</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+           </dependencies>
+       </profile>
+       <profile>
+            <id>release311cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311cdh</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                    <classifier>${spark.version.classifier}</classifier>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.curator</groupId>
+                            <artifactId>curator-recipes</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-recipes</artifactId>
+                    <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- it seems CDH jars pull an old version of Guava but need new version
+                         to run with, so here we override Guava version for testing -->
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                    <version>${guava.cdh.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <configuration>
+                            <classifier>${spark.version.classifier}</classifier>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <build>
         <resources>
@@ -130,9 +266,9 @@
             <plugin>
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
-		<configuration>
+                <configuration>
                     <includeTestSourceDirectory>true</includeTestSourceDirectory>
-		</configuration>
+                </configuration>
             </plugin>
         </plugins>
     </build>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.DType
 
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
 import org.apache.spark.sql.rapids.{GpuEqualTo, GpuGreaterThan, GpuGreaterThanOrEqual, GpuLessThan, GpuLessThanOrEqual}
 import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType}
 
@@ -27,14 +28,18 @@ class DecimalBinaryOpSuite extends GpuExpressionTestSuite {
     DecimalType(DType.DECIMAL32_MAX_PRECISION, 2)))
   private val litValue = Decimal(12345.678)
   private val lit = GpuLiteral(litValue, DecimalType(DType.DECIMAL32_MAX_PRECISION, 3))
-  private val leftExpr = GpuBoundReference(0, schema.head.dataType, nullable = true)
-  private val rightExpr = GpuBoundReference(1, schema(1).dataType, nullable = true)
+  private val leftExpr =
+    GpuBoundReference(0, schema.head.dataType, nullable = true)(NamedExpression.newExprId, "left")
+  private val rightExpr =
+    GpuBoundReference(1, schema(1).dataType, nullable = true)(NamedExpression.newExprId, "right")
 
   private val schemaSame = FuzzerUtils.createSchema(Seq(
     DecimalType(DType.DECIMAL32_MAX_PRECISION, 3),
     DecimalType(DType.DECIMAL32_MAX_PRECISION, 3)))
-  private val leftExprSame = GpuBoundReference(0, schemaSame.head.dataType, nullable = true)
-  private val rightExprSame = GpuBoundReference(1, schemaSame(1).dataType, nullable = true)
+  private val leftExprSame = GpuBoundReference(0, schemaSame.head.dataType,
+    nullable = true)(NamedExpression.newExprId, "left")
+  private val rightExprSame = GpuBoundReference(1, schemaSame(1).dataType,
+    nullable = true)(NamedExpression.newExprId, "right")
 
   test("GpuEqualTo") {
     val expectedFun = (l: Decimal, r: Decimal) => Option(l == r)

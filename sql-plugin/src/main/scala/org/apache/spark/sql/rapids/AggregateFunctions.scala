@@ -16,18 +16,26 @@
 
 package org.apache.spark.sql.rapids
 
+import java.io.{ByteArrayInputStream, ObjectInputStream}
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2._
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnaryExpression, UnsafeArrayData, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.util.TypeUtils
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
+import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtils}
 import org.apache.spark.sql.types._
+import org.apache.spark.unsafe.Platform
 
-trait GpuAggregateFunction extends GpuExpression with GpuUnevaluable {
+trait GpuAggregateFunction extends GpuExpression
+    with ShimExpression
+    with GpuUnevaluable {
   // using the child reference, define the shape of the vectors sent to
   // the update/merge expressions
   val inputProjection: Seq[Expression]
@@ -124,7 +132,9 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
                                   isDistinct: Boolean,
                                   filter: Option[Expression],
                                   resultId: ExprId)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression
+      with ShimExpression
+      with GpuUnevaluable {
 
   val aggregateFunction: GpuAggregateFunction = if (filter.isDefined) {
     WrappedAggFunction(origAggregateFunction, filter.get)
@@ -139,12 +149,13 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
   // We compute the same thing regardless of our final result.
   override lazy val canonicalized: Expression = {
     val normalizedAggFunc = mode match {
-      // For PartialMerge or Final mode, the input to the `aggregateFunction` is aggregate buffers,
-      // and the actual children of `aggregateFunction` is not used, here we normalize the expr id.
-      case PartialMerge | Final => aggregateFunction.transform {
+      // For Partial, PartialMerge, or Final mode, the input to the `aggregateFunction` is
+      // aggregate buffers, and the actual children of `aggregateFunction` is not used,
+      // here we normalize the expr id.
+      case Partial | PartialMerge | Final => aggregateFunction.transform {
         case a: AttributeReference => a.withExprId(ExprId(0))
       }
-      case Partial | Complete => aggregateFunction
+      case Complete => aggregateFunction
     }
 
     GpuAggregateExpression(
@@ -179,7 +190,7 @@ case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
   override def sql: String = aggregateFunction.sql(isDistinct)
 }
 
-abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable {
+abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable with ShimExpression {
   // we use this to get the ordinal of the bound reference, s.t. we can ask cudf to perform
   // the aggregate on that column
   def getOrdinal(ref: Expression): Int = ref.asInstanceOf[GpuBoundReference].ordinal
@@ -622,7 +633,7 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
-  // counts are Long
+  // counts are GpuToCpuBufferTransitionLong
   private lazy val cudfCount = AttributeReference("count", LongType)()
 
   override lazy val inputProjection: Seq[Expression] = Seq(children.head)
@@ -933,6 +944,7 @@ case class GpuCollectSet(
     RollingAggregation.collectSet().onColumn(inputs.head._2)
 }
 
+
 /**
  * TODO
  */
@@ -1047,3 +1059,67 @@ case class GpuStddevPop(child: Expression) extends GpuM2(child) {
 //
 //  override def prettyName: String = "stddev_pop"
 //}
+
+trait CpuToGpuAggregateBufferConverter {
+  def createExpression(child: Expression): CpuToGpuBufferTransition
+}
+
+trait GpuToCpuAggregateBufferConverter {
+  def createExpression(child: Expression): GpuToCpuBufferTransition
+}
+
+trait CpuToGpuBufferTransition extends ShimUnaryExpression with CodegenFallback
+
+trait GpuToCpuBufferTransition extends ShimUnaryExpression with CodegenFallback {
+  override def dataType: DataType = BinaryType
+}
+
+class CpuToGpuCollectBufferConverter(
+    elementType: DataType) extends CpuToGpuAggregateBufferConverter {
+  def createExpression(child: Expression): CpuToGpuBufferTransition = {
+    CpuToGpuCollectBufferTransition(child, elementType)
+  }
+}
+
+case class CpuToGpuCollectBufferTransition(
+    override val child: Expression,
+    private val elementType: DataType) extends CpuToGpuBufferTransition {
+
+  private lazy val row = new UnsafeRow(1)
+
+  override def dataType: DataType = ArrayType(elementType, containsNull = false)
+
+  override protected def nullSafeEval(input: Any): ArrayData = {
+    // Converts binary buffer into UnSafeArrayData, according to the deserialize method of Collect.
+    // The input binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. Since array of elements exactly matches the GPU format, we
+    // don't need to do any conversion in memory level. Instead, we simply bind the binary data to
+    // a reused UnsafeRow. Then, fetch the only field as ArrayData.
+    val bytes = input.asInstanceOf[Array[Byte]]
+    row.pointTo(bytes, bytes.length)
+    row.getArray(0).copy()
+  }
+}
+
+class GpuToCpuCollectBufferConverter extends GpuToCpuAggregateBufferConverter {
+  def createExpression(child: Expression): GpuToCpuBufferTransition = {
+    GpuToCpuCollectBufferTransition(child)
+  }
+}
+
+case class GpuToCpuCollectBufferTransition(
+    override val child: Expression) extends GpuToCpuBufferTransition {
+
+  private lazy val projection = UnsafeProjection.create(Array(child.dataType))
+
+  override protected def nullSafeEval(input: Any): Array[Byte] = {
+    // Converts UnSafeArrayData into binary buffer, according to the serialize method of Collect.
+    // The binary buffer is the binary view of a UnsafeRow, which only contains single field
+    // with ArrayType of elementType. As Collect.serialize, we create an UnsafeProjection to
+    // transform ArrayData to binary view of the single field UnsafeRow. Unlike Collect.serialize,
+    // we don't have to build ArrayData from on-heap array, since the input is already formatted
+    // in ArrayData(UnsafeArrayData).
+    val arrayData = input.asInstanceOf[ArrayData]
+    projection.apply(InternalRow.apply(arrayData)).getBytes
+  }
+}

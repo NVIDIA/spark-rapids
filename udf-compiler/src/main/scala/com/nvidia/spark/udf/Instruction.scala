@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.udf
 
-import CatalystExpressionBuilder.simplify
 import java.nio.charset.Charset
-import javassist.Modifier
+
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.udf.CatalystExpressionBuilder.simplify
 import javassist.bytecode.{CodeIterator, Opcode}
 
 import org.apache.spark.SparkException
@@ -30,7 +31,7 @@ import org.apache.spark.sql.types._
 
 private[udf] object Repr {
 
-  abstract class CompilerInternal(name: String) extends Expression {
+  abstract class CompilerInternal(name: String) extends ShimExpression {
     override def dataType: DataType = {
       throw new SparkException(s"Compiler internal representation of " +
           s"${name} cannot be evaluated")

@@ -158,7 +158,7 @@ class GpuBatchUtilsSuite extends FunSuite {
   }
 
   private def compareEstimateWithActual(schema: StructType, rowCount: Int) {
-    val rows = createRows(schema, rowCount)
+    val rows = GpuBatchUtilsSuite.createRows(schema, rowCount)
     val estimate = GpuBatchUtils.estimateGpuMemory(schema, rows.length)
     val actual = calculateGpuMemory(schema, rows)
     assert(estimate == actual)
@@ -184,8 +184,11 @@ class GpuBatchUtilsSuite extends FunSuite {
       builders.close()
     }
   }
+}
 
-  private def createRows(schema: StructType, rowCount: Int): Array[InternalRow] = {
+object GpuBatchUtilsSuite {
+
+  def createRows(schema: StructType, rowCount: Int): Array[InternalRow] = {
     val rows = new mutable.ArrayBuffer[InternalRow](rowCount)
     val r = new Random(0)
     for (i <- 0 until rowCount) {
@@ -212,7 +215,7 @@ class GpuBatchUtilsSuite extends FunSuite {
           if (field.nullable) {
             // since we want a deterministic test that compares the estimate with actual
             // usage we need to make sure the average length of strings is `dataType.defaultSize`
-            if (i%2 == 0) {
+            if (i % 2 == 0) {
               null
             } else {
               createString(dataType.defaultSize * 2)
@@ -238,7 +241,7 @@ class GpuBatchUtilsSuite extends FunSuite {
   }
 
   private def maybeNull(field: StructField, i: Int, value: Any): Any = {
-    if (field.nullable && i%2==0) {
+    if (field.nullable && i % 2 == 0) {
       null
     } else {
       value
@@ -249,6 +252,5 @@ class GpuBatchUtilsSuite extends FunSuite {
     // avoid multi byte characters to keep the test simple
     val str = (0 until size).map(_ => 'a').mkString
     UTF8String.fromString(str)
-
   }
 }

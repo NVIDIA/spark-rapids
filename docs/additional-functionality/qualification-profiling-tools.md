@@ -54,13 +54,13 @@ Optional:
 You do not need to compile the jar yourself because you can download it from the Maven repository directly.
 
 Here are 2 options:
-1. Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.0/)
+1. Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.1/)
 
 2. Compile the jar from github repo
 ```bash
 git clone https://github.com/NVIDIA/spark-rapids.git
 cd spark-rapids
-mvn -pl .,tools clean verify -DskipTests
+mvn -Pdefault -pl .,tools clean verify -DskipTests
 ```
 The jar is generated in below directory :
 
@@ -71,11 +71,12 @@ If any input is a S3 file path or directory path, 2 extra steps are needed to ac
    - `hadoop-aws-<version>.jar`
    - `aws-java-sdk-<version>.jar`
      
-Take Hadoop 2.7.4 for example, we can download and include below jars in the '--jars' option to spark-shell or spark-submit:
-[hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and 
-[aws-java-sdk-1.7.4.jar](https://repo.maven.apache.org/maven2/com/amazonaws/aws-java-sdk/1.7.4/aws-java-sdk-1.7.4.jar)
+   Take Hadoop 2.7.4 for example, we can download and include below jars in the '--jars' option to spark-shell or spark-submit:
+   [hadoop-aws-2.7.4.jar](https://repo.maven.apache.org/maven2/org/apache/hadoop/hadoop-aws/2.7.4/hadoop-aws-2.7.4.jar) and 
+   [aws-java-sdk-1.7.4.jar](https://repo.maven.apache.org/maven2/com/amazonaws/aws-java-sdk/1.7.4/aws-java-sdk-1.7.4.jar)
 
 2. In $SPARK_HOME/conf, create `hdfs-site.xml` with below AWS S3 keys inside:
+
 ```xml
 <?xml version="1.0"?>
 <configuration>
@@ -89,6 +90,7 @@ Take Hadoop 2.7.4 for example, we can download and include below jars in the '--
 </property>
 </configuration>
 ```
+
 Please refer to this [doc](https://hadoop.apache.org/docs/current/hadoop-aws/tools/hadoop-aws/index.html) on 
 more options about integrating hadoop-aws module with S3.
 
@@ -142,16 +144,24 @@ you are running on needs to be taken into account.
 had to estimate it, it means the event log was missing the application finished event so we will use the last job
 or sql execution time we find as the end time used to calculate the duration.
 
+`Complex Types and Unsupported Nested Complex Types` looks at the Read Schema and reports if there are any complex types(array, struct or maps)
+in the schema. Nested complex types are complex types which contain other complex types (Example: array<struct<string,string>>).
+Note that it can read all the schemas for DataSource V1. The Data Source V2 truncates the schema, so if you see ...,
+then the full schema is not available. For such schemas we read until ... and report if there are any complex types and
+nested complex types in that.
+
 Note that SQL queries that contain failed jobs are not included.
 
 Sample output in csv:
+
 ```
-App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types
-job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,""
-job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]"
+App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Unsupported Nested Complex Types
+job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,"",JSON,array<struct<city:string;state:string>>;map<string;string>,array<struct<city:string;state:string>>
+job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]",JSON;CSV,"",""
 ```
 
 Sample output in text:
+
 ```
 ===========================================================================
 |                 App ID|App Duration|SQL DF Duration|Problematic Duration|
@@ -174,6 +184,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
 Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
+
 ```bash
 java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
@@ -182,6 +193,7 @@ java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP
 ### Qualification tool options
 
   Note: `--help` should be before the trailing event logs.
+
 ```bash
 java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain --help
@@ -282,16 +294,21 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
 Example commands:
 - Process the 10 newest logs, and only output the top 3 in the output:
+
 ```bash
 java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 10-newest -n 3 /eventlogDir
 ```
+
 - Process last 100 days' logs:
+
 ```bash
 java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain -s 100d /eventlogDir
 ```
+
 - Process only the newest log with the same application name: 
+
 ```bash
 java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain -f 1-newest-per-app-name /eventlogDir
@@ -316,15 +333,18 @@ The profiling tool generates information which can be used for debugging and pro
 ### Profiling tool functions
 
 Below is the information the profiling tool reports, see [Profile tool Detailed Output and Examples](#profile-tool-detailed-output-and-examples) for more information
-and examples. It has 2 main modes of operation: collection and compare.  Collection mode is when no other options are specified it simply collects information
-on each application individually and outputs a file per application. Compare mode will combine all the applications information in the same tables into a single file.
-It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.
+and examples. It has 3 modes of operation: collection, combined, and compare.  Collection mode is when no other options are specified it simply collects information
+on each application individually and outputs a file per application. Combined mode is collection mode but then combines all the applications together
+and you get one file for all applications. Compare mode will combine all the applications information in the same tables into a single file and also adds in 
+tables to compare stages and sql ids across all of those applications. The Compare mode will use more memory if comparing lots of applications.
+It can also optionally output the SQL plan, the SQL graphs, and a timeline graph for each application when in collection mode.  It can also optionally output
+CSV files for each table.
 
 #### A. Collect Information or Compare Information(if more than 1 event logs are as input and option -c is specified)
 - Application information
 - Datasource information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
@@ -337,7 +357,7 @@ It can also optionally output the SQL plan, the SQL graphs, and a timeline graph
 #### B. Analysis
 - Job + Stage level aggregated task metrics
 - SQL level aggregated task metrics
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent
+- SQL duration, application duration, if it contains a Dataset operation, potential problems, executor CPU time percent
 - Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
 #### C. Health Check
@@ -352,6 +372,10 @@ in the local filesystem, HDFS, S3 or mixed. Note that if you are on an HDFS clus
 the default filesystem is likely HDFS for both the input and output so if you want to
 point to the local filesystem be sure to include `file:` in the path
 
+Please note, if processing a lot of event logs using combined or compare mode you may
+need to increase the java heap size using `-Xmx` option.  For instance, to specify
+30 GB heap size `java -Xmx30g ...`
+
 ```bash
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
@@ -359,6 +383,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
 Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
+
 ```bash
 java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.profiling.ProfileMain  /eventlogDir
@@ -373,9 +398,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
        <eventlogs | eventlog directories ...>
 
+      --combined                  Collect mode but combine all applications into
+                                  the same tables.
   -c, --compare                   Compare Applications (Note this may require
                                   more memory if comparing a large number of
                                   applications). Default is false.
+      --csv                       Output each table to a CSV file as well
+                                  creating the summary text file.
   -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
                                   processing.eg: 100-newest-filesystem (for
                                   processing newest 100 event logs). eg:
@@ -399,7 +428,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   overwrite any existing files with the same
                                   name.
   -p, --print-plans               Print the SQL plans to a file named
-                                  '{APPLICATION_ID}-planDescriptions.log'.
+                                  'planDescriptions.log'.
                                   Default is false.
   -t, --timeout  <arg>            Maximum time in seconds to wait for the event
                                   logs to be processed. Default is 24 hours
@@ -415,16 +444,21 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
 ### Profiling tool output
-By default this outputs a log file under sub-directory `./rapids_4_spark_profile`.
-If running in normal collect mode, it outputs a file named `{APPLICATION_ID}-profile.log`
-for each processed event log. If running compare mode a single file named `rapids_4_spark_tools_compare.log`
-will be output. The output will go into your default filesystem, it supports local filesystem or HDFS.
+The default output location is the current directory. The output location can be changed using the `--output-directory` option.
+The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
+If running in normal collect mode, it processes event log individually and outputs files for each application under
+a directory named `rapids_4_spark_profile/{APPLICATION_ID}`. It creates a summary text file named `profile.log`.
+If running combine mode the output is put under a directory named `rapids_4_spark_profile/combined/` and creates a summary
+text file named `rapids_4_spark_tools_combined.log`.
+If running compare mode the output is put under a directory named `rapids_4_spark_profile/compare/` and creates a summary
+text file named `rapids_4_spark_tools_compare.log`.
+The output will go into your default filesystem, it supports local filesystem or HDFS.
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
 so if you want to point to the local filesystem be sure to include `file:` in the path
 There are separate files that are generated under the same sub-directory when using the options to generate query
 visualizations or printing the SQL plans.
-
-The output location can be changed using the `--output-directory` option. Default is current directory.
+Optionally if the `--csv` option is specified then it creates a csv file for each table for each application in the
+corresponding sub-directory.
 
 There is a 100 characters limit for each output column. If the result of the column exceeds this limit, it is suffixed with ... for that column.
 
@@ -442,7 +476,7 @@ All the metrics definitions can be found in the [executor task metrics doc](http
 - Application information
 - Data Source information
 - Executors information
-- Job, stage and SQL ID information (not in `compare` mode yet)
+- Job, stage and SQL ID information
 - Rapids related parameters
 - Rapids Accelerator Jar and cuDF Jar
 - SQL Plan Metrics
@@ -457,6 +491,8 @@ For example, GPU run vs CPU run performance comparison or different runs with di
 We can input multiple Spark event logs and this tool can compare environments, executors, Rapids related Spark parameters,
 
 - Compare the durations/versions/gpuMode on or off:
+
+
 ```
 ### A. Information Collected ###
 Application Information:
@@ -470,6 +506,7 @@ Application Information:
 ```
 
 - Executor information:
+
 ```
 Executor Information:
 +--------+-----------------+------------+-------------+-----------+------------+-------------+--------------+------------------+---------------+-------+-------+
@@ -483,6 +520,7 @@ Executor Information:
 - Data Source information
 The details of this output differ between using a Spark Data Source V1 and Data Source V2 reader. The Data Source V2 truncates the schema, so if you see `...`, then
 the full schema is not available.
+
 ```
 Data Source Information:
 +--------+-----+-------+---------------------------------------------------------------------------------------------------------------------------+-----------------+---------------------------------------------------------------------------------------------+
@@ -501,6 +539,7 @@ Data Source Information:
 ```
 
 - Matching SQL IDs Across Applications:
+
 ```
 Matching SQL IDs Across Applications:
 +-----------------------+-----------------------+
@@ -522,6 +561,7 @@ also match between CPU plans and GPU plans so in most cases the same query run o
 CPU and on the GPU will match.
 
 - Matching Stage IDs Across Applications:
+
 ```
 Matching Stage IDs Across Applications:
 +-----------------------+-----------------------+
@@ -545,6 +585,7 @@ cases there are a different number of stages because of slight differences in th
 is a best effort, and it is not guaranteed to match up all stages in a plan.
 
 - Compare Rapids related Spark properties side-by-side:
+
 ```
 Compare Rapids Properties which are set explicitly:
 +-------------------------------------------+----------+----------+
@@ -563,6 +604,7 @@ Compare Rapids Properties which are set explicitly:
 ```
  
 - List rapids-4-spark and cuDF jars based on classpath: 
+
 ```
 Rapids Accelerator Jar and cuDF Jar:
 +--------+------------------------------------------------------------+
@@ -576,6 +618,7 @@ Rapids Accelerator Jar and cuDF Jar:
 ```
 
 - Job, stage and SQL ID information(not in `compare` mode yet):
+
 ```
 +--------+-----+---------+-----+
 |appIndex|jobID|stageIds |sqlID|
@@ -588,6 +631,7 @@ Rapids Accelerator Jar and cuDF Jar:
 - SQL Plan Metrics for Application for each SQL plan node in each SQL:
 
 These are also called accumulables in Spark.
+
 ```
 SQL Plan Metrics for Application:
 +--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
@@ -602,16 +646,19 @@ SQL Plan Metrics for Application:
 ```
 
 - Print SQL Plans (-p option):
-Prints the SQL plan as a text string to a file ends with `-planDescriptions.log`.
+Prints the SQL plan as a text string to a file named `planDescriptions.log`.
 For example if your application id is app-20210507103057-0000, then the
-filename will be `app-20210507103057-0000-planDescriptions.log`
+filename will be `planDescriptions.log`
 
 - Generate DOT graph for each SQL (-g option):
+
 ```
 Generated DOT graphs for app app-20210507103057-0000 to /path/. in 17 second(s)
 ```
+
 Once the DOT file is generated, you can install [graphviz](http://www.graphviz.org) to convert the DOT file 
 as a graph in pdf format using below command:
+
 ```bash
 dot -Tpdf ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.pdf
 ```
@@ -620,6 +667,7 @@ Or to svg using
 ```bash
 dot -Tsvg ./app-20210507103057-0000-query-0/0.dot > app-20210507103057-0000.svg
 ```
+
 The pdf or svg file has the SQL plan graph with metrics. The svg file will act a little
 more like the Spark UI and include extra information for nodes when hovering over it with
 a mouse.
@@ -635,26 +683,26 @@ If a stage hs no metrics, like if the query crashed early, we cannot establish t
 - Generate timeline for application (--generate-timeline option):
 
 The output of this is an [svg](https://en.wikipedia.org/wiki/Scalable_Vector_Graphics) file
-named `${APPLICATION_ID}-timeline.svg`.  Most web browsers can display this file.  It is a
+named `timeline.svg`.  Most web browsers can display this file.  It is a
 timeline view similar Apache Spark's 
 [event timeline](https://spark.apache.org/docs/latest/web-ui.html). 
 
 This displays several data sections.
 
-1) **Tasks** This shows all tasks in the application divided by executor.  Please note that this
+1. **Tasks** This shows all tasks in the application divided by executor.  Please note that this
    tries to pack the tasks in the graph. It does not represent actual scheduling on CPU cores.
    The tasks are labeled with the time it took for them to run, but there is no breakdown about
    different aspects of each task, like there is in Spark's timeline.
-2) **STAGES** This shows the stages times reported by Spark. It starts with when the stage was 
+2. **STAGES** This shows the stages times reported by Spark. It starts with when the stage was 
    scheduled and ends when Spark considered the stage done.
-3) **STAGE RANGES** This shows the time from the start of the first task to the end of the last
+3. **STAGE RANGES** This shows the time from the start of the first task to the end of the last
    task. Often a stage is scheduled, but there are not enough resources in the cluster to run it.
    This helps to show. How long it takes for a task to start running after it is scheduled, and in
    many cases how long it took to run all of the tasks in the stage. This is not always true because
    Spark can intermix tasks from different stages.
-4) **JOBS** This shows the time range reported by Spark from when a job was scheduled to when it
+4. **JOBS** This shows the time range reported by Spark from when a job was scheduled to when it
    completed.
-5) **SQL** This shows the time range reported by Spark from when a SQL statement was scheduled to
+5. **SQL** This shows the time range reported by Spark from when a SQL statement was scheduled to
    when it completed.
 
 Tasks and stages all are color coordinated to help know what tasks are associated with a given
@@ -669,6 +717,7 @@ stage. Jobs and SQL are not color coordinated.
 Below we will aggregate the task level metrics at different levels to do some analysis such as detecting possible shuffle skew.
 
 - Job + Stage level aggregated task metrics:
+
 ```
 ### B. Analysis ###
 
@@ -678,9 +727,9 @@ Job + Stage level aggregated task metrics:
 +--------+-------+--------+--------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
 |1       |job_0  |3333    |222222  |0                   |11111111    |111111      |111         |1111.1      |6666666            |55555                         |55555                      |55555555           |0                    |222222222222       |22222222222          |111111       |0                     |0                      |0                        |222222222              |1                          |11111         |11111               |99999                    |22222222222          |2222221                   |222222222222          |0                           |222222222222         |222222222222       |5555555              |444444          |
 ```
-  
 
 - SQL level aggregated task metrics:
+
 ```
 SQL level aggregated task metrics:
 +--------+------------------------------+-----+--------------------+--------+--------+---------------+---------------+----------------+--------------------+------------+------------+------------+------------+-------------------+------------------------------+---------------------------+-------------------+---------------------+-------------------+---------------------+-------------+----------------------+-----------------------+-------------------------+-----------------------+---------------------------+--------------+--------------------+-------------------------+---------------------+--------------------------+----------------------+----------------------------+---------------------+-------------------+---------------------+----------------+
@@ -690,6 +739,7 @@ SQL level aggregated task metrics:
 ```
 
 - SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent: 
+
 ```
 SQL Duration and Executor CPU Time Percent
 +--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
@@ -700,6 +750,7 @@ SQL Duration and Executor CPU Time Percent
 ```
 
 - Shuffle Skew Check: 
+
 ```
 Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
@@ -709,6 +760,7 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 |1       |2      |0             |2224  |1      |222.22         |8.8           |3333.33          |111.11          |0.01            |false     |ExceptionFailure(ai.rapids.cudf.CudfException,cuDF failure at: /dddd/xxxxxxx/ccccc/bbbbbbbbb/aaaaaaa|
 +--------+-------+--------------+------+-------+---------------+--------------+-----------------+----------------+----------------+----------+----------------------------------------------------------------------------------------------------+
 ```
+
 #### C. Health Check
 - List failed tasks, stages and jobs
 - Removed BlockManagers and Executors
@@ -716,6 +768,7 @@ Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
 Below are examples.
 - Print failed tasks:
+
 ```
 Failed tasks:
 +--------+-------+--------------+------+-------+----------------------------------------------------------------------------------------------------+
@@ -731,6 +784,7 @@ Failed tasks:
 ```
 
 - Print failed stages:
+
 ```
 Failed stages:
 +--------+-------+---------+-------------------------------------+--------+---------------------------------------------------+
@@ -741,6 +795,7 @@ Failed stages:
 ```
 
 - Print failed jobs:
+
 ```
 Failed jobs:
 +--------+-----+---------+------------------------------------------------------------------------+
@@ -753,6 +808,7 @@ Failed jobs:
 - SQL Plan HealthCheck:
 
   Prints possibly unsupported query plan nodes such as `$Lambda` key word means dataset API.
+
 ```
 +--------+-----+------+--------+---------------------------------------------------------------------------------------------------+
 |appIndex|sqlID|nodeID|nodeName|nodeDescription                                                                                    |

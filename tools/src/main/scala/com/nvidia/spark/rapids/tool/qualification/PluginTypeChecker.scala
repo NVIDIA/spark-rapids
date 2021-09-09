@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.HashMap
+import scala.collection.mutable.{ArrayBuffer,HashMap}
 import scala.io.{BufferedSource, Source}
 
 /**
@@ -38,17 +38,22 @@ class PluginTypeChecker {
   private val DEFAULT_DS_FILE = "supportedDataSource.csv"
 
   // map of file format => Map[support category => Seq[Datatypes for that category]]
-  // contains the details of formats to which ones have datatypes not supported
-  // var for testing puposes
-  private var formatsToSupportedCategory = readSupportedTypesForPlugin
+  // contains the details of formats to which ones have datatypes not supported.
+  // Write formats contains only the formats that are supported. Types cannot be determined
+  // from event logs for write formats.
+  // var for testing purposes
+  private var (readFormatsAndTypes, writeFormats) = readSupportedTypesForPlugin
 
   // for testing purposes only
   def setPluginDataSourceFile(filePath: String): Unit = {
     val source = Source.fromFile(filePath)
-    formatsToSupportedCategory = readSupportedTypesForPlugin(source)
+    val (readFormatsAndTypesTest, writeFormatsTest) = readSupportedTypesForPlugin(source)
+    readFormatsAndTypes = readFormatsAndTypesTest
+    writeFormats = writeFormatsTest
   }
 
-  private def readSupportedTypesForPlugin: Map[String, Map[String, Seq[String]]] = {
+  private def readSupportedTypesForPlugin: (
+      Map[String, Map[String, Seq[String]]], ArrayBuffer[String]) = {
     val source = Source.fromResource(DEFAULT_DS_FILE)
     readSupportedTypesForPlugin(source)
   }
@@ -56,10 +61,12 @@ class PluginTypeChecker {
   // file format should be like this:
   // Format,Direction,BOOLEAN,BYTE,SHORT,INT,LONG,FLOAT,DOUBLE,DATE,...
   // CSV,read,S,S,S,S,S,S,S,S,S*,S,NS,NA,NS,NA,NA,NA,NA,NA
+  // Parquet,write,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
   private def readSupportedTypesForPlugin(
-      source: BufferedSource): Map[String, Map[String, Seq[String]]] = {
+      source: BufferedSource): (Map[String, Map[String, Seq[String]]], ArrayBuffer[String]) = {
     // get the types the Rapids Plugin supports
     val allSupportedReadSources = HashMap.empty[String, Map[String, Seq[String]]]
+    val allSupportedWriteFormats = ArrayBuffer[String]()
     try {
       val fileContents = source.getLines().toSeq
       if (fileContents.size < 2) {
@@ -85,12 +92,14 @@ class PluginTypeChecker {
           val allNsTypes = nsTypes.flatMap(t => getOtherTypes(t) :+ t)
           val allBySup = HashMap(NS -> allNsTypes)
           allSupportedReadSources.put(format, allBySup.toMap)
+        } else if (direction.equals("write")) {
+          allSupportedWriteFormats += format
         }
       }
     } finally {
       source.close()
     }
-    allSupportedReadSources.toMap
+    (allSupportedReadSources.toMap, allSupportedWriteFormats)
   }
 
   def getOtherTypes(typeRead: String): Seq[String] = {
@@ -114,7 +123,7 @@ class PluginTypeChecker {
   def scoreReadDataTypes(format: String, schema: String): (Double, Set[String]) = {
     val schemaLower = schema.toLowerCase
     val formatInLower = format.toLowerCase
-    val typesBySup = formatsToSupportedCategory.get(formatInLower)
+    val typesBySup = readFormatsAndTypes.get(formatInLower)
     val score = typesBySup match {
       case Some(dtSupMap) =>
         // check if any of the not supported types are in the schema
@@ -139,5 +148,10 @@ class PluginTypeChecker {
         (0.0, Set("*"))
     }
     score
+  }
+
+  def isWriteFormatsupported(writeFormat: ArrayBuffer[String]): ArrayBuffer[String] = {
+    writeFormat.map(x => x.toLowerCase.trim).filterNot(
+      writeFormats.map(x => x.trim).contains(_))
   }
 }

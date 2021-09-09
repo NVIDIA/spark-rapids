@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark311
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark301.GpuBroadcastExchangeExec
+import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -25,16 +25,13 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
 import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- *  Spark 3.1 changed packages of BuildLeft, BuildRight, BuildSide
- */
 class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
@@ -99,7 +96,7 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+    right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

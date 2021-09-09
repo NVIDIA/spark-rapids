@@ -643,6 +643,9 @@ def _mark_as_lit(data, data_type):
     # To support nested types, 'data_type' is required.
     assert data_type is not None
 
+    if data is None:
+        return f.lit(data).cast(data_type)
+
     if isinstance(data_type, ArrayType):
         assert isinstance(data, list)
         # Sadly you cannot create a literal from just an array in pyspark
@@ -652,11 +655,19 @@ def _mark_as_lit(data, data_type):
         # Sadly you cannot create a literal from just a dict/tuple in pyspark
         children = zip(data, data_type.fields)
         return f.struct([_mark_as_lit(x, fd.dataType).alias(fd.name) for x, fd in children])
-    elif isinstance(data_type, DateType) and data is not None:
+    elif isinstance(data_type, DateType):
         # Due to https://bugs.python.org/issue13305 we need to zero pad for years prior to 1000,
         # but this works for all of them
         dateString = data.strftime("%Y-%m-%d").zfill(10)
         return f.lit(dateString).cast(data_type)
+    elif isinstance(data_type, MapType):
+        assert isinstance(data, dict)
+        # Sadly you cannot create a literal from just a dict/tuple in pyspark
+        col_array = []
+        for k in data:
+            col_array.append(_mark_as_lit(k, data_type.keyType))
+            col_array.append(_mark_as_lit(data[k], data_type.valueType))
+        return f.create_map(*col_array)
     else:
         # lit does not take a data type so we might have to cast it
         return f.lit(data).cast(data_type)
@@ -854,6 +865,9 @@ decimal_gens = [decimal_gen_neg_scale] + decimal_gens_no_neg
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -876,6 +890,8 @@ date_n_time_gens = [date_gen, timestamp_gen]
 boolean_gens = [boolean_gen]
 
 single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens]
+
+single_level_array_gens_no_nan = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_nan + decimal_gens]
 
 single_level_array_gens_no_decimal = [ArrayGen(sub_gen) for sub_gen in all_basic_gens]
 
@@ -913,6 +929,12 @@ map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nu
 allow_negative_scale_of_decimal_conf = {'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
 
 no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
+
+def copy_and_update(conf, *more_confs):
+    local_conf = conf.copy()
+    for more in more_confs:
+        local_conf.update(more)
+    return local_conf
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),

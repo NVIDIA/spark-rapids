@@ -34,6 +34,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, MapData, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -619,7 +620,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       }
     case (v: Decimal, _: DecimalType) => v + "BD"
     case (v: Int, DateType) =>
-      val formatter = DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
+      val formatter = ShimLoader.getSparkShims.getDateFormatter()
       s"DATE '${formatter.format(v)}'"
     case (v: Long, TimestampType) =>
       val formatter = TimestampFormatter.getFractionFormatter(
@@ -665,13 +666,6 @@ class LiteralExprMeta(
   override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
     if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
       super.print(append, depth, all)
-    }
-  }
-
-  override protected def tagSelfForAst(): Unit = {
-    // Preclude null literals until https://github.com/rapidsai/cudf/issues/8831 is fixed.
-    if (lit.value == null) {
-      willNotWorkInAst("null literals are not supported")
     }
   }
 }
