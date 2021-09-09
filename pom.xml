@@ -80,14 +80,6 @@
         <module>udf-compiler</module>
         <module>udf-examples</module>
     </modules>
-
-    <!--
-        301+ : beginning with spark301 including spark301
-        311- : until 311 excluding spark 311
-        all  : applies to all shims
-        apache: applies only to upstream shims
-        cdh, emr, db: applies to one of the distribution shims
-    -->
     <profiles>
         <profile>
             <id>default</id>
