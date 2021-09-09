@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@ import pyspark.sql.functions as f
 
 def test_mono_id():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, short_gen).select(
+            lambda spark : unary_op_df(spark, short_gen, num_slices=8).select(
                 f.col('a'),
                 f.monotonically_increasing_id()))
 
 def test_part_id():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, short_gen).select(
+            lambda spark : unary_op_df(spark, short_gen, num_slices=8).select(
                 f.col('a'),
                 f.spark_partition_id()))

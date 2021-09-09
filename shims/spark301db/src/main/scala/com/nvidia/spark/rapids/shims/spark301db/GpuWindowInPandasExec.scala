@@ -17,10 +17,11 @@
 package com.nvidia.spark.rapids.shims.spark301db
 
 import com.nvidia.spark.rapids.{GpuBindReferences, GpuBoundReference, GpuProjectExec, GpuWindowExpression}
+
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecBase
-import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.sql.rapids.execution.python.shims.spark301db._
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /*
  * This GpuWindowInPandasExec aims at accelerating the data transfer between
@@ -62,7 +63,8 @@ case class GpuWindowInPandasExec(
     val allExpressions = windowFramesWithExpressions.map(_._2).flatten
     val references = allExpressions.zipWithIndex.map { case (e, i) =>
       // Results of window expressions will be on the right side of child's output
-      GpuBoundReference(child.output.size + i, e.dataType, e.nullable)
+      GpuBoundReference(child.output.size + i, e.dataType,
+        e.nullable)(NamedExpression.newExprId, s"gpu_win_$i")
     }
     val unboundToRefMap = allExpressions.zip(references).toMap
     // Bound the project list for GPU

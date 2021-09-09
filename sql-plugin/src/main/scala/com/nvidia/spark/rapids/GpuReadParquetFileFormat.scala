@@ -60,7 +60,7 @@ object GpuReadParquetFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuParquetScanBase.tagSupport(
-      fsse.sqlContext.sparkSession,
+      ShimLoader.getSparkShims.sessionFromPlan(fsse),
       fsse.requiredSchema,
       meta
     )

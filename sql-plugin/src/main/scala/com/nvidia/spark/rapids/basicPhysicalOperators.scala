@@ -18,9 +18,11 @@ package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
 
+import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.{ShimSparkPlan, ShimUnaryExecNode}
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -28,7 +30,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuPredicateHelper
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
@@ -119,7 +121,7 @@ case class GpuProjectExec(
    //   immutable/List.scala#L516
    projectList: List[Expression],
    child: SparkPlan
- ) extends UnaryExecNode with GpuExec {
+ ) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -164,7 +166,7 @@ case class GpuProjectAstExec(
     //   immutable/List.scala#L516
     projectList: List[Expression],
     child: SparkPlan
-) extends UnaryExecNode with GpuExec {
+) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -213,7 +215,7 @@ case class GpuProjectAstExec(
             withResource(new NvtxWithMetrics("Project AST", NvtxColor.CYAN, opTime)) { _ =>
               numOutputBatches += 1
               numOutputRows += cb.numRows()
-              val projectedTable = withResource(GpuColumnVector.from(cb)) { table =>
+              val projectedTable = withResource(tableFromBatch(cb)) { table =>
                 withResource(compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
                   new Table(projectedColumns:_*)
                 }
@@ -228,6 +230,20 @@ case class GpuProjectAstExec(
         override def close(): Unit = {
           compiledAstExprs.safeClose()
           compiledAstExprs = Nil
+        }
+
+        private def tableFromBatch(cb: ColumnarBatch): Table = {
+          if (cb.numCols != 0) {
+            GpuColumnVector.from(cb)
+          } else {
+            // Count-only batch but cudf Table cannot be created with no columns.
+            // Create the cheapest table we can to evaluate the AST expression.
+            withResource(Scalar.fromBool(false)) { falseScalar =>
+              withResource(cudf.ColumnVector.fromScalar(falseScalar, cb.numRows())) { falseColumn =>
+                new Table(falseColumn)
+              }
+            }
+          }
         }
       }
     }
@@ -295,7 +311,7 @@ object GpuFilter extends Arm {
 }
 
 case class GpuFilterExec(condition: Expression, child: SparkPlan)
-    extends UnaryExecNode with GpuPredicateHelper with GpuExec {
+    extends ShimUnaryExecNode with GpuPredicateHelper with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -406,7 +422,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     if (isEmptyRange) {
       sparkContext.emptyRDD[ColumnarBatch]
     } else {
-      sqlContext
+      sparkSession
           .sparkContext
           .parallelize(0 until numSlices, numSlices)
           .mapPartitionsWithIndex { (i, _) =>
@@ -490,7 +506,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 }
 
 
-case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
+case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with GpuExec {
 
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {
@@ -527,7 +543,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec
 }
 
 case class GpuCoalesceExec(numPartitions: Int, child: SparkPlan)
-    extends UnaryExecNode with GpuExec {
+    extends ShimUnaryExecNode with GpuExec {
 
   // This operator does not record any metrics
   override lazy val allMetrics: Map[String, GpuMetric] = Map.empty

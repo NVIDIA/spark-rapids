@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -30,7 +31,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedPreceding}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, MapType, ShortType, StructType}
@@ -364,7 +365,7 @@ object GpuWindowExec extends Arm {
   }
 }
 
-trait GpuWindowBaseExec extends UnaryExecNode with GpuExec {
+trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   val windowOps: Seq[NamedExpression]
   val partitionSpec: Seq[Expression]
   val orderSpec: Seq[SortOrder]

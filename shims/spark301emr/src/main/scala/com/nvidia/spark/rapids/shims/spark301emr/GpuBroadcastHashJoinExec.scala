@@ -17,13 +17,14 @@
 package com.nvidia.spark.rapids.shims.spark301emr
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.{FullOuter, JoinType}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins._
@@ -94,7 +95,7 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends BinaryExecNode with GpuHashJoin {
+    right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL

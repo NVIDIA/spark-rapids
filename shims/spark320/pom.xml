@@ -77,11 +77,6 @@
 
   <dependencies>
     <dependency>
-      <groupId>com.nvidia</groupId>
-      <artifactId>rapids-4-spark-shims-spark311_${scala.binary.version}</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-sql_${scala.binary.version}</artifactId>
       <version>${spark320.version}</version>

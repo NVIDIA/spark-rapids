@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, NvtxColor, Table}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -27,7 +28,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.{DataType, NullType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -139,7 +140,7 @@ object CoalesceGoal {
 /**
  * Provides a goal for batching of data.
  */
-sealed abstract class CoalesceGoal extends GpuUnevaluable {
+sealed abstract class CoalesceGoal extends GpuUnevaluable with ShimExpression {
   override def nullable: Boolean = false
 
   override def dataType: DataType = NullType
@@ -516,7 +517,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 }
 
 case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
-  extends UnaryExecNode with GpuExec {
+  extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   private[this] val maxDecompressBatchMemory =

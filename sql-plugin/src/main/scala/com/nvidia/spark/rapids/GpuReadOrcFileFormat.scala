@@ -63,7 +63,7 @@ object GpuReadOrcFileFormat {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
     GpuOrcScanBase.tagSupport(
-      fsse.sqlContext.sparkSession,
+      ShimLoader.getSparkShims.sessionFromPlan(fsse),
       fsse.requiredSchema,
       meta
     )
