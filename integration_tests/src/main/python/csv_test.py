@@ -182,11 +182,12 @@ def read_csv_df(data_path, schema, options = {}):
     return read_impl
 
 def read_csv_sql(data_path, schema, options = {}):
+    opts = options
     if not schema is None:
-        options.update({'schema': schema})
+        opts = copy_and_update(options, {'schema': schema})
     def read_impl(spark):
         spark.sql('DROP TABLE IF EXISTS `TMP_CSV_TABLE`')
-        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', path=data_path, **options)
+        return spark.catalog.createTable('TMP_CSV_TABLE', source='csv', path=data_path, **opts)
     return read_impl
 
 @approximate_float
@@ -235,8 +236,7 @@ def read_csv_sql(data_path, schema, options = {}):
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 def test_basic_read(std_input_path, name, schema, options, read_func, v1_enabled_list):
-    updated_conf=_enable_all_types_conf.copy()
-    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
+    updated_conf=copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(read_func(std_input_path + '/' + name, schema, options),
             conf=updated_conf)
 
@@ -261,8 +261,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
     gen = StructGen([('a', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
-    updated_conf=_enable_all_types_conf.copy()
-    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(data_path))
     assert_gpu_and_cpu_are_equal_collect(
@@ -281,8 +280,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf):
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
-    updated_conf=_enable_all_types_conf.copy()
-    updated_conf[disable_conf]='false'
+    updated_conf = copy_and_update(_enable_all_types_conf, {disable_conf: 'false'})
 
     reader = read_func(data_path, schema)
     with_cpu_session(
@@ -301,8 +299,7 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list):
     gen = StructGen([('a', DateGen())], nullable=False)
     data_path = spark_tmp_path + '/CSV_DATA'
     schema = gen.data_type
-    updated_conf=_enable_all_types_conf.copy()
-    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write\
                     .option('dateFormat', date_format)\
@@ -336,8 +333,7 @@ def test_ts_formats_round_trip(spark_tmp_path, date_format, ts_part, v1_enabled_
             lambda spark : gen_df(spark, gen).write\
                     .option('timestampFormat', full_format)\
                     .csv(data_path))
-    updated_conf=_enable_all_types_conf.copy()
-    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read\
                     .schema(schema)\
@@ -355,8 +351,7 @@ def test_input_meta(spark_tmp_path, v1_enabled_list):
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(second_data_path))
     data_path = spark_tmp_path + '/CSV_DATA'
-    updated_conf=_enable_all_types_conf.copy()
-    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(gen.data_type)\
                     .csv(data_path)\
@@ -382,9 +377,9 @@ def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, disable_conf):
     with_cpu_session(
             lambda spark : gen_df(spark, gen).write.csv(second_data_path))
     data_path = spark_tmp_path + '/CSV_DATA'
-    updated_conf=_enable_all_types_conf.copy()
-    updated_conf['spark.sql.sources.useV1SourceList']=v1_enabled_list
-    updated_conf[disable_conf]='false'
+    updated_conf = copy_and_update(_enable_all_types_conf, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        disable_conf: 'false'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.schema(gen.data_type)\
                     .csv(data_path)\
