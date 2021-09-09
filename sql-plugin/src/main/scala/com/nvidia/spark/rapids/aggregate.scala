@@ -124,6 +124,7 @@ object AggregateUtils {
    * Compute the aggregation modes and aggregate expressions for all aggregation expressions
    * @param aggExpressions the aggregate expressions
    * @param aggBufferAttributes attributes to be bound to the aggregate expressions
+   * @param mergeBufferAttributes merge attributes to be bound to the merge expressions
    */
   def computeAggModeCudfAggregates(
       aggExpressions: Seq[GpuAggregateExpression],
@@ -810,7 +811,6 @@ class GpuHashAggregateIterator(
           groupingExpressions.map(_.dataType)
 
         for ((aggExp, mode, aggregates) <- aggModeCudfAggregates) {
-          // bind pre-merge to the aggBufferAttributes (input)
           val aggFn = aggExp.aggregateFunction
           if ((mode == Partial || mode == Complete) && ! merge) {
             preStep ++= aggFn.preUpdate
