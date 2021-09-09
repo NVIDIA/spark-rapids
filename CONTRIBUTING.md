@@ -71,10 +71,10 @@ The version-specific directory names have one of the following forms / use cases
 - `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
    only beginning with version Spark 3.1.2, and + signifies there is no upper version boundary
    among the supported versions
-- `src/main/302until312-all` contains code that applies to all shims between 3.0.2 inclusive,
-3.1.2 exclusive
-- `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 inclusive,
-   3.1.2 exclusive
+- `src/main/302until312-all` contains code that applies to all shims between 3.0.2 *inclusive*,
+3.1.2 *exclusive*
+- `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
+   3.1.2 *inclusive*
 
 ### Your first issue
 
