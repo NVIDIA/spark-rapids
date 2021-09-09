@@ -862,8 +862,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   /**
    * Creates a cudf ColumnVector where the elements are filled with nulls.
    *
-   * NOTE: Besides the non-nested types, the array type is supported.
-   *
    * @param count the row number of the output column
    * @param sparkType the expected data type of the output column
    * @return a ColumnVector filled with nulls. It should be closed to avoid memory leak.
