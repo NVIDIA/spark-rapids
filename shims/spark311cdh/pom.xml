@@ -57,8 +57,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark311cdh/scala</source>
-                                        <source>${spark-rapids.sql-plugin.root}/src/main/spark311cdh/java</source>
+                                        <source>${spark-rapids.sql-plugin.root}/src/main/311cdh/scala</source>
                                         <source>${spark-rapids.sql-plugin.root}/src/main/spark311+all/scala</source>
                                     </sources>
                                 </configuration>

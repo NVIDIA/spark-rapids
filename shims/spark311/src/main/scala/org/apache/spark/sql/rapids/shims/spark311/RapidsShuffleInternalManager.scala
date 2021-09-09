@@ -17,8 +17,9 @@
 package org.apache.spark.sql.rapids.shims.spark311
 
 import org.apache.spark.{SparkConf, TaskContext}
+
 import org.apache.spark.shuffle._
-import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
+import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
 
 /**
  * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
@@ -37,6 +38,24 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     getReaderInternal(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
+      metrics)
+  }
+}
+
+
+class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
+    extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) {
+
+  def getReader[K, C](
+      handle: ShuffleHandle,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter
+  ): ShuffleReader[K, C] = {
+    self.getReader(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
       metrics)
   }
 }
