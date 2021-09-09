@@ -417,6 +417,68 @@ class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
   override val offset: Int = -1
 }
 
+/** This is only used by the M2 class aggregates, do not confuse this with GpuAverage */
+class CudfMean(ref: Expression) extends CudfAggregate(ref) {
+  @transient val rapidsAvgType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
+
+  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("Reduction averages not supported")
+
+  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("Reduction averages not supported")
+
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mean()
+      .onColumn(getOrdinal(ref))
+
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mean()
+      .onColumn(getOrdinal(ref))
+
+  override def toString(): String = "CudfMeanForM2"
+}
+
+class CudfMergeM2(ref: Expression)
+  extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("M2 aggregation is not yet supported in reduction")
+  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("M2 aggregation is not yet supported in reduction")
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
+    throw new UnsupportedOperationException("Only merge is supported for CudfMergeM2")
+
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mergeM2()
+      .onColumn(getOrdinal(ref))
+
+  override def toString(): String = "CudfMergeM2"
+
+  override def dataType: DataType =
+    StructType(
+      StructField("n", IntegerType, nullable = true) ::
+        StructField("avg", DoubleType, nullable = true) ::
+        StructField("m2", DoubleType, nullable = true) :: Nil)
+
+  override def nullable: Boolean = true
+}
+
+class CudfM2(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("M2 aggregation is not yet supported in reduction")
+  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("M2 aggregation is not yet supported in reduction")
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.M2()
+      .onColumn(getOrdinal(ref))
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mergeM2()
+      .onColumn(getOrdinal(ref))
+  override def toString(): String = "CudfM2"
+
+  override def dataType: DataType = DoubleType
+  override def nullable: Boolean = true
+}
+
 case class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
@@ -1044,4 +1106,98 @@ case class GpuToCpuCollectBufferTransition(
     val arrayData = input.asInstanceOf[ArrayData]
     projection.apply(InternalRow.apply(arrayData)).getBytes
   }
+}
+
+abstract class GpuM2(child: Expression)
+  extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
+
+  override def dataType: DataType = DoubleType
+  override def nullable: Boolean = true
+  override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
+
+  // Buffers for the update stage.
+  protected lazy val bufferN: AttributeReference =
+    AttributeReference("n", DoubleType, nullable = false)()
+
+  protected lazy val bufferAvg: AttributeReference =
+    AttributeReference("avg", DoubleType, nullable = true)()
+
+  protected lazy val bufferM2: AttributeReference =
+    AttributeReference("m2", DoubleType, nullable = true)()
+
+  override lazy val aggBufferAttributes: Seq[AttributeReference] =
+    bufferN :: bufferAvg :: bufferM2 :: Nil
+
+  override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
+
+  override lazy val initialValues: Seq[GpuLiteral] =
+    Seq(GpuLiteral(0.0), GpuLiteral(0.0), GpuLiteral(0.0))
+
+  // For local update, we need to compute all 3 aggregates: count, sum, and M2.
+  override lazy val updateExpressions: Seq[Expression] =
+    new CudfCount(bufferN) ::
+      new CudfMean(bufferAvg) ::
+      new CudfM2(bufferM2) :: Nil
+
+  override lazy val postUpdate: Seq[Expression] = {
+    // we copy the `bufferN` attribute and stomp on the type as Integer here,
+    // because we really do have an int, and the `DoubleType` is what we want to output
+    // to match Spark. So this expression says we are going from the aggregated count,
+    // and we are casting it double so that a final aggregate that is on the CPU can use it,
+    // TODO: we need to make bufferCount (n) a Long at least in cuDF
+    val bufferCountAsInt = bufferN.copy(dataType = IntegerType)(
+      bufferN.exprId, bufferN.qualifier)
+    GpuCast(bufferCountAsInt, DoubleType) ::
+      bufferAvg ::
+      bufferM2 :: Nil
+  }
+
+  // before we merge we have 3 columns, we have to turn them into a struct
+  // this is a prior 3-column result of MERGE_M2 that was exploded out into 3 columns
+  // and reconstitutes a struct, which is necessary for MERGE_M2
+  //
+  // We cast `n` to be an Integer, as that's what MERGE_M2 expects, note that Spark
+  // keeps `n` as a Double.
+  override lazy val preMerge: Seq[Expression] = {
+    val childrenWithNames =
+      GpuLiteral("n", StringType) :: GpuCast(bufferN, IntegerType) ::
+        GpuLiteral("avg", StringType) :: bufferAvg ::
+        GpuLiteral("m2", StringType) :: bufferM2 :: Nil
+    GpuCreateNamedStruct(childrenWithNames) :: Nil
+  }
+
+  def mergeM2DataType: DataType =
+    StructType(
+      StructField("n", IntegerType, nullable = true) ::
+        StructField("avg", DoubleType, nullable = true) ::
+        StructField("m2", DoubleType, nullable = true) :: Nil)
+
+  override def mergeBufferAttributes: Seq[AttributeReference] = postMergeAttr
+
+  private val m2Struct =
+    AttributeReference("m2struct", mergeM2DataType, nullable = true)()
+
+  override lazy val mergeExpressions: Seq[GpuExpression] = new CudfMergeM2(m2Struct) :: Nil
+
+  // after a MERGE_M2 call in cudf, our result is 1 struct column
+  // we create this attribute to represent this result column
+  override lazy val postMergeAttr: Seq[AttributeReference] = Seq(m2Struct)
+
+  // we will bind this expression against the attribute above in post-merge,
+  // and then project. The result will be 3 columns, where the first one is
+  // casted to Double to match Spark.
+  override lazy val postMerge: Seq[Expression] = Seq(
+    GpuCast(GpuGetStructField(m2Struct, 0), DoubleType),
+    GpuCast(GpuGetStructField(m2Struct, 1), DoubleType),
+    GpuCast(GpuGetStructField(m2Struct, 2), DoubleType))
+}
+
+case class GpuStddevPop(child: Expression) extends GpuM2(child) {
+  override lazy val evaluateExpression: GpuExpression = {
+    // Compute stddev_pop from M2s: stddev_pop = sqrt(M2 / n).
+    GpuSqrt(GpuDivide(bufferM2, bufferN, failOnErrorOverride = false))
+  }
+
+  override def children: Seq[Expression] = Seq(child)
+  override def prettyName: String = "stddev_pop"
 }
