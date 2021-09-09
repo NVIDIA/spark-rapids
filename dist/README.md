@@ -8,14 +8,14 @@ parent: Developer Overview
 
 The distribution module creates a jar with support for the Spark versions you need combined into a single jar.
 
-See the [CONTRIBUTING.md](../CONTRIBUTING.md) doc for details on building and profiles available to build an Uber jar.
+See the [CONTRIBUTING.md](../CONTRIBUTING.md) doc for details on building and profiles available to build an uber jar.
 
-Note that when you use the profiles to build an Uber jar there are currently some hardcoded service provider files that get put into place. One file for each of the
+Note that when you use the profiles to build an uber jar there are currently some hardcoded service provider files that get put into place. One file for each of the
 above profiles. Please note that you will need to update these if adding or removing support for a Spark version.
 
 Files are: `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshot`, `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot`, `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshotDB`, and `com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshotDB`.
 
-The new Uber jar is structured like:
+The new uber jar is structured like:
 
 1. Base common classes are user visible classes. For these we use Spark 3.0.1 versions
 2. META-INF/services. This is a file that has to list all the shim versions supported by this jar. The files talked about above for each profile are put into place here for uber jars.
