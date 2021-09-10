@@ -81,6 +81,7 @@
                                     implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                         </transformers>
                         <createDependencyReducedPom>true</createDependencyReducedPom>
+                        <dependencyReducedPomLocation>${project.build.directory}/dependency-reduced-pom.xml</dependencyReducedPomLocation>
                         <shadedArtifactAttached>false</shadedArtifactAttached>
                         <relocations>
                             <relocation>

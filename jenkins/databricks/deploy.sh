@@ -33,4 +33,4 @@ DB_SHIM_NAME=${SPARK_VERSION_STR}db
 DBJARFPATH=./aggregator/target/rapids-4-spark-aggregator_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION-${DB_SHIM_NAME}.jar
 echo "Databricks jar is: $DBJARFPATH"
 mvn -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-    -Dfile=$DBJARFPATH -DpomFile=aggregator/dependency-reduced-pom.xml -Dclassifier=$DB_SHIM_NAME
+    -Dfile=$DBJARFPATH -DpomFile=aggregator/target/dependency-reduced-pom.xml -Dclassifier=$DB_SHIM_NAME
