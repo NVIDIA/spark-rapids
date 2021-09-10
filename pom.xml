@@ -117,40 +117,6 @@
             </modules>
         </profile>
         <profile>
-            <id>release301emr</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301emr</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version>${spark301emr.version}</spark.version>
-                <spark.test.version>${spark301emr.version}</spark.test.version>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-30+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
             <id>release302</id>
             <activation>
                 <property>
@@ -649,7 +615,6 @@
          please update the snapshot-shims profile as well so it is accurate -->
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
-        <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <spark302.version>3.0.2</spark302.version>
         <spark303.version>3.0.3</spark303.version>
         <spark304.version>3.0.4-SNAPSHOT</spark304.version>
