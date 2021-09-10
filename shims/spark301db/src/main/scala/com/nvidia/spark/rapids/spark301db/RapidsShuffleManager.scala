@@ -17,10 +17,10 @@
 package com.nvidia.spark.rapids.spark301db
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark301db.RapidsShuffleInternalManager
+import org.apache.spark.sql.rapids.shims.spark301db.ProxyRapidsShuffleInternalManager
 
 /** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
 sealed class RapidsShuffleManager(
     conf: SparkConf,
-    isDriver: Boolean) extends RapidsShuffleInternalManager(conf, isDriver) {
+    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
 }

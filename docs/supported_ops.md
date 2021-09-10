@@ -534,9 +534,9 @@ Accelerator supports are described below.
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>not allowed for grouping expressions;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
-<td><em>PS<br/>not allowed for grouping expressions;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
-<td><em>PS<br/>not allowed for grouping expressions if containing Array or Map as child;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>not allowed for grouping expressions;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>not allowed for grouping expressions;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>not allowed for grouping expressions if containing Array or Map as child;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -13729,12 +13729,12 @@ are limited.
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -13753,7 +13753,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13772,12 +13772,12 @@ are limited.
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -13796,7 +13796,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13862,7 +13862,7 @@ are limited.
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -13886,7 +13886,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13905,7 +13905,7 @@ are limited.
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
-<td><b>NS</b></td>
+<td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
@@ -13929,7 +13929,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16153,9 +16153,9 @@ dates or timestamps, or for a lack of type coercion support.
 <td> </td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, MAP, UDT</em></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, MAP, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, UDT</em></td>
+<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>

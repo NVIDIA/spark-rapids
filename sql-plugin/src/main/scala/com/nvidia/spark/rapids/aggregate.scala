@@ -969,17 +969,49 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     }
   }
 
-  /** Tagging checks tied to configs that control the aggregation modes that are replaced */
+  /**
+   * Tagging checks tied to configs that control the aggregation modes that are replaced.
+   *
+   * The rule of replacement is determined by `spark.rapids.sql.hashAgg.replaceMode`, which
+   * is a string configuration consisting of AggregateMode names in lower cases connected by
+   * &(AND) and |(OR). The default value of this config is `all`, which indicates replacing all
+   * aggregates if possible.
+   *
+   * The `|` serves as the outer connector, which represents patterns of both sides are able to be
+   * replaced. For instance, `final|partialMerge` indicates that aggregate plans purely in either
+   * Final mode or PartialMerge mode can be replaced. But aggregate plans also contain
+   * AggExpressions of other mode will NOT be replaced, such as: stage 3 of single distinct
+   * aggregate who contains both Partial and PartialMerge.
+   *
+   * On the contrary, the `&` serves as the inner connector, which intersects modes of both sides
+   * to form a mode pattern. The replacement only takes place for aggregate plans who have the
+   * exact same mode pattern as what defined the rule. For instance, `partial&partialMerge` means
+   * that aggregate plans can be only replaced if they contain AggExpressions of Partial and
+   * contain AggExpressions of PartialMerge and don't contain AggExpressions of other modes.
+   *
+   * In practice, we need to combine `|` and `&` to form some sophisticated patterns. For instance,
+   * `final&complete|final|partialMerge` represents aggregate plans in three different patterns are
+   * GPU-replaceable: plans contain both Final and Complete modes; plans only contain Final mode;
+   * plans only contain PartialMerge mode.
+   */
   private def tagForReplaceMode(): Unit = {
-    val hashAggModes = agg.aggregateExpressions.map(_.mode).distinct
-    val hashAggReplaceMode = conf.hashAggReplaceMode.toLowerCase
-    hashAggReplaceMode match {
-      case "all" =>
-      case "partial" =>
-        if (hashAggModes.contains(Final) || hashAggModes.contains(Complete)) {
-          // replacing only Partial hash aggregates, so a Final or Complete one should not replace
-          willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-        }
+    val aggPattern = agg.aggregateExpressions.map(_.mode).toSet
+    val strPatternToReplace = conf.hashAggReplaceMode.toLowerCase
+
+    if (aggPattern.nonEmpty && strPatternToReplace != "all") {
+      val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
+        subPattern.split("&").map {
+          case "partial" => Partial
+          case "partialmerge" => PartialMerge
+          case "final" => Final
+          case "complete" => Complete
+          case s => throw new IllegalArgumentException(s"Invalid Aggregate Mode $s")
+        }.toSet
+      }
+      if (!aggPatternsCanReplace.contains(aggPattern)) {
+        val message = aggPattern.map(_.toString).mkString(",")
+        willNotWorkOnGpu(s"Replacing mode pattern `$message` hash aggregates disabled")
+      } else if (aggPattern == Set(Partial)) {
         // In partial mode, if there are non-distinct functions and multiple distinct functions,
         // non-distinct functions are computed using the First operator. The final result would be
         // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
@@ -991,23 +1023,10 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
               "functions are non-deterministic for non-distinct functions as it is " +
               "computed using First.")
         }
-      case "final" =>
-        if (hashAggModes.contains(Partial) || hashAggModes.contains(Complete)) {
-          // replacing only Final hash aggregates, so a Partial or Complete one should not replace
-          willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
-        }
-      case "complete" =>
-        if (hashAggModes.contains(Partial) || hashAggModes.contains(Final)) {
-          // replacing only Complete hash aggregates, so a Partial or Final one should not replace
-          willNotWorkOnGpu("Replacing Partial or Final hash aggregates disabled")
-        }
-      case _ =>
-        throw new IllegalArgumentException(s"The hash aggregate replacement mode " +
-            s"$hashAggReplaceMode is not valid. Valid options are: 'partial', " +
-            s"'final', 'complete', or 'all'")
+      }
     }
 
-    if (!conf.partialMergeDistinctEnabled && hashAggModes.contains(PartialMerge)) {
+    if (!conf.partialMergeDistinctEnabled && aggPattern.contains(PartialMerge)) {
       willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
     }
