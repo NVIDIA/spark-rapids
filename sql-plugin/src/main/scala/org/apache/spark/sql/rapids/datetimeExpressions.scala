@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, ShimLoader}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -531,12 +531,25 @@ object GpuToTimestamp extends Arm {
     FIX_SINGLE_DIGIT_SECOND
   )
 
-  def daysScalarSeconds(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
+  def daysScalarDays(name: String): Scalar = ShimLoader.getSparkVersion match {
+    case version if version.startsWith("3.2") =>
+      Scalar.fromNull(DType.TIMESTAMP_DAYS)
+    case _ =>
+      Scalar.timestampFromLong(DType.TIMESTAMP_DAYS, DateUtils.specialDatesDays(name))
   }
 
-  def daysScalarMicros(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
+  def daysScalarSeconds(name: String): Scalar = ShimLoader.getSparkVersion match {
+    case version if version.startsWith("3.2") =>
+      Scalar.fromNull(DType.TIMESTAMP_SECONDS)
+    case _ =>
+      Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
+  }
+
+  def daysScalarMicros(name: String): Scalar = ShimLoader.getSparkVersion match {
+    case version if version.startsWith("3.2") =>
+      Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)
+    case _ =>
+      Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
   }
 
   def daysEqual(col: ColumnVector, name: String): ColumnVector = {

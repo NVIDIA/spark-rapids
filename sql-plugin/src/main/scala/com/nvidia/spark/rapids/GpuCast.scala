@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuToTimestamp.{daysEqual, daysScalarDays, daysScalarMicros}
 import org.apache.spark.sql.rapids.RegexReplace
 import org.apache.spark.sql.types._
 
@@ -806,27 +807,6 @@ object GpuCast extends Arm {
   }
 
   /**
-   * Replace special date strings such as "now" with timestampDays. This method does not
-   * close the `input` ColumnVector.
-   */
-  def specialDateOr(
-      input: ColumnVector,
-      special: String,
-      value: Int,
-      orColumnVector: ColumnVector): ColumnVector = {
-
-    withResource(orColumnVector) { other =>
-      withResource(Scalar.fromString(special)) { str =>
-        withResource(input.equalTo(str)) { isStr =>
-          withResource(Scalar.timestampDaysFromInt(value)) { date =>
-            isStr.ifElse(date, other)
-          }
-        }
-      }
-    }
-  }
-
-  /**
    * Parse dates that match the provided length and format. This method does not
    * close the `input` ColumnVector.
    *
@@ -928,8 +908,6 @@ object GpuCast extends Arm {
    */
   private def castStringToDate(input: ColumnVector): ColumnVector = {
 
-    val specialDates = DateUtils.specialDatesDays
-
     withResource(sanitizeStringToDate(input)) { sanitizedInput =>
 
       // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
@@ -938,8 +916,35 @@ object GpuCast extends Arm {
           convertFixedLenDateOrNull(sanitizedInput, 4, "%Y")))
 
       // handle special dates like "epoch", "now", etc.
-      specialDates.foldLeft(converted)((prev, specialDate) =>
-        specialDateOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+      withResource(daysEqual(sanitizedInput, DateUtils.EPOCH)) { isEpoch =>
+        withResource(daysEqual(sanitizedInput, DateUtils.NOW)) { isNow =>
+          withResource(daysEqual(sanitizedInput, DateUtils.TODAY)) { isToday =>
+            withResource(daysEqual(sanitizedInput, DateUtils.YESTERDAY)) { isYesterday =>
+              withResource(daysEqual(sanitizedInput, DateUtils.TOMORROW)) { isTomorrow =>
+                withResource(daysScalarDays(DateUtils.EPOCH)) { epoch =>
+                  withResource(daysScalarDays(DateUtils.NOW)) { now =>
+                    withResource(daysScalarDays(DateUtils.TODAY)) { today =>
+                      withResource(daysScalarDays(DateUtils.YESTERDAY)) { yesterday =>
+                        withResource(daysScalarDays(DateUtils.TOMORROW)) { tomorrow =>
+                          withResource(isTomorrow.ifElse(tomorrow, converted)) { a =>
+                            withResource(isYesterday.ifElse(yesterday, a)) { b =>
+                              withResource(isToday.ifElse(today, b)) { c =>
+                                withResource(isNow.ifElse(now, c)) { d =>
+                                  isEpoch.ifElse(epoch, d)
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -1093,8 +1098,35 @@ object GpuCast extends Arm {
               convertFixedLenTimestampOrNull(sanitizedInput, 4, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
-      val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
-        specialTimestampOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+      val finalResult = withResource(daysEqual(sanitizedInput, DateUtils.EPOCH)) { isEpoch =>
+        withResource(daysEqual(sanitizedInput, DateUtils.NOW)) { isNow =>
+          withResource(daysEqual(sanitizedInput, DateUtils.TODAY)) { isToday =>
+            withResource(daysEqual(sanitizedInput, DateUtils.YESTERDAY)) { isYesterday =>
+              withResource(daysEqual(sanitizedInput, DateUtils.TOMORROW)) { isTomorrow =>
+                withResource(daysScalarMicros(DateUtils.EPOCH)) { epoch =>
+                  withResource(daysScalarMicros(DateUtils.NOW)) { now =>
+                    withResource(daysScalarMicros(DateUtils.TODAY)) { today =>
+                      withResource(daysScalarMicros(DateUtils.YESTERDAY)) { yesterday =>
+                        withResource(daysScalarMicros(DateUtils.TOMORROW)) { tomorrow =>
+                          withResource(isTomorrow.ifElse(tomorrow, converted)) { a =>
+                            withResource(isYesterday.ifElse(yesterday, a)) { b =>
+                              withResource(isToday.ifElse(today, b)) { c =>
+                                withResource(isNow.ifElse(now, c)) { d =>
+                                  isEpoch.ifElse(epoch, d)
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
 
       if (ansiMode) {
         // When ANSI mode is enabled, we need to throw an exception if any values could not be

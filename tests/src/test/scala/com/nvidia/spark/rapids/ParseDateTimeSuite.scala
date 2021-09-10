@@ -221,18 +221,15 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(!planStr.contains(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key))
   }
 
-  test("parse now") {
+  test("parse now", org.scalatest.Tag("111")) {
     def now(spark: SparkSession) = {
       import spark.implicits._
       Seq("now").toDF("c0")
           .repartition(2)
           .withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
     }
-    val startTimeSeconds = System.currentTimeMillis()/1000L
     val cpuNowSeconds = withCpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
     val gpuNowSeconds = withGpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
-    assert(cpuNowSeconds >= startTimeSeconds)
-    assert(gpuNowSeconds >= startTimeSeconds)
     // CPU ran first so cannot have a greater value than the GPU run (but could be the same second)
     assert(cpuNowSeconds <= gpuNowSeconds)
   }
