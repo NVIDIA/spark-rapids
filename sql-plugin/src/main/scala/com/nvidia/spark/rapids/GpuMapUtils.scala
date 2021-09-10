@@ -152,7 +152,9 @@ object GpuMapUtils extends Arm {
     }
     withResource(sameLengthCol) { sameLengthCol =>
       withResource(sameLengthCol.all()) { allSame =>
-        if (!allSame.getBoolean) {
+        // If this is an empty batch allSame can be null, and we don't want to throw
+        // an exception for an empty batch
+        if (allSame.isValid && !allSame.getBoolean) {
           throw duplicateMapKeyFoundError
         }
       }
