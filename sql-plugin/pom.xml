@@ -84,22 +84,6 @@
 
     <profiles>
         <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>release311cdh</id>
             <activation>
                 <property>
@@ -124,11 +108,13 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>
@@ -155,6 +141,10 @@
                     <artifactId>hive-exec</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                 </dependency>
                 <dependency>
                     <groupId>com.fasterxml.jackson.core</groupId>
@@ -287,9 +277,7 @@
         <profile>
             <id>with-classifier</id>
             <activation>
-                <property>
-                    <name>buildver</name>
-                </property>
+                <activeByDefault>true</activeByDefault>
             </activation>
             <dependencies>
                 <dependency>
@@ -301,17 +289,6 @@
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
                 </dependency>
             </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                        <configuration>
-                            <classifier>${spark.version.classifier}</classifier>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
     </profiles>
 
@@ -336,6 +313,13 @@
           </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <classifier>${spark.version.classifier}</classifier>
+                </configuration>
+            </plugin>
             <plugin>
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
@@ -373,6 +357,7 @@
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
             </plugin>
+
         </plugins>
     </build>
 </project>

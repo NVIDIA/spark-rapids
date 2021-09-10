@@ -1712,7 +1712,7 @@ object GpuOverrides extends Logging {
       }),
     expr[And](
       "Logical AND",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[And](a, conf, p, r) {
@@ -1721,7 +1721,7 @@ object GpuOverrides extends Logging {
       }),
     expr[Or](
       "Logical OR",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[Or](a, conf, p, r) {
