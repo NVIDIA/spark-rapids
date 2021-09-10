@@ -532,21 +532,27 @@ object GpuToTimestamp extends Arm {
   )
 
   def daysScalarDays(name: String): Scalar = ShimLoader.getSparkVersion match {
-    case version if version.startsWith("3.2") =>
+    // In Spark 3.2, special datetime values such as `epoch`, `today`, `yesterday`, `tomorrow`,
+    // and `now` are supported in typed literals only
+    case version if version >= "3.2" =>
       Scalar.fromNull(DType.TIMESTAMP_DAYS)
     case _ =>
       Scalar.timestampFromLong(DType.TIMESTAMP_DAYS, DateUtils.specialDatesDays(name))
   }
 
   def daysScalarSeconds(name: String): Scalar = ShimLoader.getSparkVersion match {
-    case version if version.startsWith("3.2") =>
+    // In Spark 3.2, special datetime values such as `epoch`, `today`, `yesterday`, `tomorrow`,
+    // and `now` are supported in typed literals only
+    case version if version >= "3.2" =>
       Scalar.fromNull(DType.TIMESTAMP_SECONDS)
     case _ =>
       Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
   }
 
   def daysScalarMicros(name: String): Scalar = ShimLoader.getSparkVersion match {
-    case version if version.startsWith("3.2") =>
+    // In Spark 3.2, special datetime values such as `epoch`, `today`, `yesterday`, `tomorrow`,
+    // and `now` are supported in typed literals only
+    case version if version >= "3.2" =>
       Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)
     case _ =>
       Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))

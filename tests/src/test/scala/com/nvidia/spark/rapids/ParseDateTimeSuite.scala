@@ -221,7 +221,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(!planStr.contains(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key))
   }
 
-  test("parse now", org.scalatest.Tag("111")) {
+  test("parse now") {
     def now(spark: SparkSession) = {
       import spark.implicits._
       Seq("now").toDF("c0")
@@ -518,4 +518,3 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   )
 
 }
-
