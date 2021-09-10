@@ -121,7 +121,13 @@ object AggregateUtils {
   }
 
   /**
-   * Bind cuDF aggregate expressions depending on the aggregate expression mode
+   * Bind cuDF aggregate expressions depending on the aggregate expression mode.
+   * This binds `CudfAggregate` instances that are needed to realize each `GpuAggregateExpression`,
+   * where the shape the `CudfAggregate` expect is different for update vs merge.
+   *
+   * The only difference right now is in `CudfMergeM2`, in all other cases aggBufferAttributes
+   * and mergeBufferAttributes are the same. `CudfMergeM2` wants a struct to be passed to cuDF
+   * `MERGE_M2`, hence we handle it differently.
    * @param aggExpressions the aggregate expressions
    * @param aggBufferAttributes attributes to be bound to the aggregate expressions
    * @param mergeBufferAttributes merge attributes to be bound to the merge expressions
