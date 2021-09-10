@@ -586,8 +586,7 @@ filters = ["_1 = 500",
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_reading_from_unaligned_pages_basic_filters(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
     with_cpu_session(lambda spark : spark.range(0, 2000)\
             .selectExpr("id as _1", "concat(id, ':', repeat('o', id DIV 100)) as _2")\
@@ -605,8 +604,7 @@ def test_reading_from_unaligned_pages_basic_filters(spark_tmp_path, reader_confs
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
     with_cpu_session(lambda spark : spark.range(0, 2000)\
             .selectExpr("id as _1",
@@ -632,8 +630,7 @@ def test_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, en
 @pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
     with_cpu_session(lambda spark : spark.range(0, 2000)\
             .selectExpr("id as _1",
@@ -663,8 +660,7 @@ def test_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, r
 def test_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
     # insert 50 null values in [400, 450) to verify that they are skipped during processing row
     # range [500, 1000) against the second page of col_2 [400, 800)
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
     with_cpu_session(lambda spark : spark.range(0, 2000)\
             .selectExpr("id as _1", "IF(id >= 400 AND id < 450, null, concat(id, ':', repeat('o', id DIV 100))) as _2")\
