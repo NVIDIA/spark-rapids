@@ -961,27 +961,6 @@ object GpuCast extends Arm {
   }
 
   /**
-   * Replace special date strings such as "now" with timestampMicros. This method does not
-   * close the `input` ColumnVector.
-   */
-  private def specialTimestampOr(
-      input: ColumnVector,
-      special: String,
-      value: Long,
-      orColumnVector: ColumnVector): ColumnVector = {
-
-    withResource(orColumnVector) { other =>
-      withResource(Scalar.fromString(special)) { str =>
-        withResource(input.equalTo(str)) { isStr =>
-          withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
-            isStr.ifElse(date, other)
-          }
-        }
-      }
-    }
-  }
-
-  /**
    * Parse dates that match the the provided regex. This method does not close the `input`
    * ColumnVector.
    */
