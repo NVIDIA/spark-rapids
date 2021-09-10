@@ -54,8 +54,7 @@ def assert_gpu_ast(is_supported, func, conf={}):
     if not is_supported:
         exist = "GpuProjectExec"
         non_exist = "GpuProjectAstExec"
-    ast_conf = conf.copy()
-    ast_conf.update({"spark.rapids.sql.projectAstEnabled": "true"})
+    ast_conf = copy_and_update(conf, {"spark.rapids.sql.projectAstEnabled": "true"})
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         func,
         exist_classes=exist,
@@ -75,10 +74,18 @@ def test_literal(spark_tmp_path, data_gen):
     # Write data to Parquet so Spark generates a plan using just the count of the data.
     data_path = spark_tmp_path + '/AST_TEST_DATA'
     with_cpu_session(lambda spark: gen_df(spark, [("a", IntegerGen())]).write.parquet(data_path))
-    # AST does not support null literals until https://github.com/rapidsai/cudf/pull/9117
     scalar = gen_scalar(data_gen, force_no_nulls=True)
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(scalar))
+
+@pytest.mark.parametrize('data_gen', [boolean_gen, byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen, timestamp_gen], ids=idfn)
+def test_null_literal(spark_tmp_path, data_gen):
+    # Write data to Parquet so Spark generates a plan using just the count of the data.
+    data_path = spark_tmp_path + '/AST_TEST_DATA'
+    with_cpu_session(lambda spark: gen_df(spark, [("a", IntegerGen())]).write.parquet(data_path))
+    data_type = data_gen.data_type
+    assert_gpu_ast(is_supported=True,
+                   func=lambda spark: spark.read.parquet(data_path).select(f.lit(None).cast(data_type)))
 
 @pytest.mark.parametrize('data_descr', ast_integral_descrs, ids=idfn)
 def test_bitwise_not(data_descr):
@@ -337,16 +344,25 @@ def test_scalar_pow():
             'pow(-12.0, b)'))
 
 @approximate_float
-def test_scalar_pow_fallback():
-    # AST null literals not supported until https://github.com/rapidsai/cudf/issues/8831 is fixed
-    data_gen = [('a', DoubleGen()),('b', DoubleGen().with_special_case(lambda rand: float(rand.randint(-16, 16)), weight=100.0))]
-    assert_gpu_ast(is_supported=False,
-        func=lambda spark: gen_df(spark, data_gen).selectExpr(
-            'pow(cast(null as DOUBLE), a)',
-            'pow(b, cast(null as DOUBLE))'))
-
-@approximate_float
 @pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/89')
 @pytest.mark.parametrize('data_descr', ast_double_descr, ids=idfn)
 def test_columnar_pow(data_descr):
     assert_binary_ast(data_descr, lambda df: df.selectExpr('pow(a, b)'))
+
+@pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
+def test_and(data_gen):
+    data_type = data_gen.data_type
+    assert_gpu_ast(is_supported=True,
+        func=lambda spark: binary_op_df(spark, data_gen).select(
+            f.col('a') & f.lit(True),
+            f.lit(False) & f.col('b'),
+            f.col('a') & f.col('b')))
+
+@pytest.mark.parametrize('data_gen', boolean_gens, ids=idfn)
+def test_or(data_gen):
+    data_type = data_gen.data_type
+    assert_gpu_ast(is_supported=True,
+                   func=lambda spark: binary_op_df(spark, data_gen).select(
+                       f.col('a') | f.lit(True),
+                       f.lit(False) | f.col('b'),
+                       f.col('a') | f.col('b')))
