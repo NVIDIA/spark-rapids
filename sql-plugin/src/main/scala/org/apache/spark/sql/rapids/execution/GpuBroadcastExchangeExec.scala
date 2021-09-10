@@ -129,7 +129,6 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   override def close(): Unit = {
     data.safeClose()
-    buffers.safeClose()
     if (batchInternal != null) {
       batchInternal.close()
     }
