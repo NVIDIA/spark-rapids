@@ -29,8 +29,8 @@ SCALA_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=scala.binary.version -
 VERSION_NUM=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS//.}
 SPARK_VERSION_STR=spark$VERSION_NUM
 SPARK_PLUGIN_JAR_VERSION=`mvn help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout`
-DB_SHIM_DIRECTORY=${SPARK_VERSION_STR}db
-DBJARFPATH=./aggregator/target/rapids-4-spark-aggregator_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION-${SPARK_VERSION_STR}db.jar
+DB_SHIM_NAME=${SPARK_VERSION_STR}db
+DBJARFPATH=./aggregator/target/rapids-4-spark-aggregator_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION-${DB_SHIM_NAME}.jar
 echo "Databricks jar is: $DBJARFPATH"
 mvn -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-    -Dfile=$DBJARFPATH -DpomFile=aggregator/dependency-reduced-pom.xml
+    -Dfile=$DBJARFPATH -DpomFile=aggregator/dependency-reduced-pom.xml -Dclassifier=$DB_SHIM_NAME
