@@ -155,6 +155,30 @@ object AggregateUtils {
   }
 }
 
+/**
+ * Structure containing the original expressions, and a seq of `CudfAggregate`
+ * that corresponds to such a `GpuAggregateExpression.` For example, a
+ * `GpuAverage` aggregate, means we have two `CudfAggregate` instances, one
+ * for the count and one for the sum (hence the sequence).
+ *
+ * `boundCudfAggregate` items have a reference that is bound to either the
+ * update or merge buffer attributes, so it can mean different things depending
+ * on the stage of the aggregate.
+ *
+ * For example, the `GpuM2` aggregate can have either a `CudfM2` or a `CudfMergeM2`
+ * `CudfAggregate`. The reference used for `CudfM2` is that of 3 columns
+ * (n, mean, m2), but the reference used for `CudfMergeM2` is that of a struct 
+ * (m2struct). In other words, this is the shape cuDF expects.
+ *
+ * In the update case, `boundCudfAggregate` follows Spark, for the aggregates we have
+ * currently implemented. The update case must match the shape outputted by the preUpdate
+ * step.
+ *
+ * In the merge case, `boundCudfAggregate` shape needs to be the result of the preMerge
+ * step. In the case of `CudfMergeM2`, preMerge takes 3 columns and turns them
+ * into the desired struct.
+ *
+ */
 case class BoundCudfAggregate(
     aggExpression: GpuAggregateExpression,
     boundCudfAggregate: Seq[CudfAggregate])
@@ -795,7 +819,7 @@ class GpuHashAggregateIterator(
         // For example: GpuAverage has an update version of: (CudfSum, CudfCount)
         // and CudfCount has an update version of AggregateOp.COUNT and a
         // merge version of AggregateOp.COUNT.
-        var dataTypes = new mutable.ArrayBuffer[DataType]()
+        val dataTypes = new mutable.ArrayBuffer[DataType]()
         val cudfAggregates = new mutable.ArrayBuffer[GroupByAggregationOnColumn]()
 
         // `GpuAggregateFunction` can add a pre and post step for update
