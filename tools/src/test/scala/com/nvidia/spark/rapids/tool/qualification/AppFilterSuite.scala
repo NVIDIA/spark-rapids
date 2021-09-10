@@ -642,36 +642,42 @@ class AppFilterSuite extends FunSuite {
 
   test("Test conjunction match filename and config") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      matchFileName("app-nds") ++ configs("spark.driver.port:43492"), 2, "all")
+      matchFileName("app-nds") ++ filterConfigs("spark.driver.port:43492"), 2, "all")
   }
 
   test("Test disjunction match multiple configs") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      configs("spark.driver.host:10.10.19.19")
-          ++ configs("spark.driver.port:43492"), 7, "any")
+      filterConfigs("spark.driver.host:10.10.19.19")
+          ++ filterConfigs("spark.driver.port:43492"), 7, "any")
   }
 
   test("Test conjunction match fileName and appName with configs") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      matchFileName("app-nds") ++ configs("spark.driver.port:43492")
+      matchFileName("app-nds") ++ filterConfigs("spark.driver.port:43492")
           ++ filterAppName("Nds"), 1, "all")
   }
 
   test("Test disjunction match appName and config") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterAppName("nds") ++ configs("spark.driver.port:43492"), 6, "any")
+      filterAppName("nds") ++ filterConfigs("spark.driver.port:43492"), 6, "any")
+  }
+
+  test("Test disjunction match appName and mix match configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("nds") ++ filterConfigs("spark.driver.port:43492") ++
+          filterConfigs("spark.driver.host"), 7, "any")
   }
 
   test("Test conjunction match fileName and appName with non existent configs") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      matchFileName("app-nds") ++ configs("spark.driver.hosta")
-          ++ configs("spark.driver.porta") ++ filterAppName("Nds"), 0, "all")
+      matchFileName("app-nds") ++ filterConfigs("spark.driver.hosta")
+          ++ filterConfigs("spark.driver.porta") ++ filterAppName("Nds"), 0, "all")
   }
 
   test("Test disjunction match fileName and appName with non existent configs") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      matchFileName("app-nds") ++ configs("spark.driver.hosta")
-          ++ configs("spark.driver.porta") ++ filterAppName("Nds"), 5, "any")
+      matchFileName("app-nds") ++ filterConfigs("spark.driver.hosta")
+          ++ filterConfigs("spark.driver.porta") ++ filterAppName("Nds"), 5, "any")
   }
 
   def filterCriteria(filterCrit: String): Array[String] = {
@@ -694,8 +700,8 @@ class AppFilterSuite extends FunSuite {
     Array("--user-name", name)
   }
 
-  def configs(configNames: String): Array[String] = {
-    Array("--configuration-names", configNames)
+  def filterConfigs(configNames: String): Array[String] = {
+    Array("--conf-names", configNames)
   }
 
   private def testConjunctionAndDisjunction(

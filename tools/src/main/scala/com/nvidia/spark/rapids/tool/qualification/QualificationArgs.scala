@@ -88,17 +88,16 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[String](required = false,
       descr = "Filter event logs whose filenames contain the input string. Filesystem " +
               "based filtering happens before any application based filtering.")
-  val configurationNames: ScallopOption[List[String]] =
+  val confNames: ScallopOption[List[String]] =
     opt[List[String]](required = false,
-      descr = "Filter applications based on certain configurations that were set during " +
-          "launch of the application. It can filtered based on specific values or any values for" +
-          "a config. Multiple configs can be provided where the filtering is done if any of the" +
-          "config is present in the eventlog. Specific configurations takes precedence over at " +
-          "all configurations." +
-          "filter on specific configuration: --configuration-names=spark.eventLog.enabled:true" +
-          "filter all eventlogs which has config:  --configuration-names:spark.driver.port" +
-          "Multiple configs: --configuration-names=spark.eventLog.enabled:true " +
-          "--configuration-names=spark.driver.port:36303.")
+      descr = "Filter applications based on certain Spark properties that were set during " +
+          "launch of the application. It can filter based on key:value pair or just based on " +
+          "keys. Multiple configs can be provided where the filtering is done if any of the" +
+          "config is present in the eventlog. " +
+          "filter on specific configuration: --conf-names=spark.eventLog.enabled:true" +
+          "filter all eventlogs which has config:  --conf-names=spark.driver.port" +
+          "Multiple configs: --conf-names=spark.eventLog.enabled:true " +
+          "--conf-names=spark.driver.port")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows in the summary report. Default is 1000.",

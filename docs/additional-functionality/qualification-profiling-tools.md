@@ -219,19 +219,18 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     only logs for which all conditions are satisfied.
                                     Example: <Filter1> <Filter2> <Filter3> --all -> result
                                     is <Filter1> AND <Filter2> AND <Filter3>. Default is all=true.
-  -c, --configuration-names <arg>   Filter applications based on certain configurations that were
-                                    set during launch of the application. It can filtered based
-                                    on specific values or any values for a config. Multiple configs
+  -c, --conf-names <arg>            Filter applications based on certain Spark properties that were
+                                    set during launch of the application. It can filter based
+                                    on key:value pair or just based on keys. Multiple configs
                                     can be provided where the filtering is done if any of the
-                                    config is present in the eventlog. Specific configurations
-                                    takes precedence over at all configurations.
-                                    filter on specific configuration:
-                                    --configuration-names=spark.eventLog.enabled:true
-                                    filter all eventlogs which has config:
-                                    --configuration-names:spark.driver.port
+                                    config is present in the eventlog.
+                                    filter on specific configuration(key:value):
+                                    --conf-names=spark.eventLog.enabled:true
+                                    filter all eventlogs which has config(key):
+                                    --conf-names=spark.driver.port
                                     Multiple configs:
-                                    --configuration-names=spark.eventLog.enabled:true
-                                    --configuration-names=spark.driver.port:36303.
+                                    --conf-names=spark.eventLog.enabled:true
+                                    --conf-names=spark.driver.port.
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on
                                     application start timestamp, unique
                                     application name or filesystem timestamp.

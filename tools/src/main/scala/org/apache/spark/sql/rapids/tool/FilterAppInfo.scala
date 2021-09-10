@@ -46,14 +46,15 @@ class FilterAppInfo(
 
   def doSparkListenerEnvironmentUpdate(event: SparkListenerEnvironmentUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
-    val sparkProperties = event.environmentDetails("Spark Properties").toMap
-    configInfo = Some(EnvironmentInfo(sparkProperties))
+    val envSparkProperties = event.environmentDetails("Spark Properties").toMap
+    sparkProperties = Some(EnvironmentInfo(envSparkProperties))
   }
 
   var appStartInfo: Option[ApplicationStartInfo] = None
-  var configInfo: Option[EnvironmentInfo] = None
-  // This acts as a counter and it returns true when both the Listener events are processed.
-  var eventsToProcess: Int = Some(appStartInfo).size + Some(configInfo).size
+  var sparkProperties: Option[EnvironmentInfo] = None
+  // We are currently processing 2 events. This is used as counter to send true when both the
+  // event are processed so that we can stop processing further events.
+  var eventsToProcess: Int = 2
 
   override def processEvent(event: SparkListenerEvent): Boolean = {
     if (event.isInstanceOf[SparkListenerApplicationStart]) {
