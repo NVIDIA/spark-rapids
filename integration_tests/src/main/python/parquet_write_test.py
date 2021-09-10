@@ -79,10 +79,9 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type
                                   reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.parquet.outputTimestampType': ts_type})
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(reader_confs, writer_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
             lambda spark, path: spark.read.parquet(path),
@@ -125,10 +124,9 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.parquet.outputTimestampType': ts_type})
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(reader_confs, writer_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').parquet(path),
             lambda spark, path: spark.read.parquet(path),
@@ -141,8 +139,7 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
                                       TimestampGen(start=datetime(2262, 4, 11, tzinfo=timezone.utc))], ids=idfn)
 def test_catch_int96_overflow(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    confs = writer_confs.copy()
-    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
+    confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_py4j_exception(lambda: with_gpu_session(
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
@@ -150,9 +147,9 @@ def test_catch_int96_overflow(spark_tmp_path, data_gen):
 @pytest.mark.allow_non_gpu("DataWritingCommandExec")
 def test_int96_write_conf(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    confs = writer_confs.copy()
-    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96',
-                 'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
+    confs = copy_and_update(writer_confs, {
+        'spark.sql.parquet.outputTimestampType': 'INT96',
+        'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
     with_gpu_session(lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs)
 
 def test_all_null_int96(spark_tmp_path):
@@ -160,8 +157,7 @@ def test_all_null_int96(spark_tmp_path):
         def start(self, rand):
             self._start(rand, lambda : None)
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    confs = writer_confs.copy()
-    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
+    confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path : unary_op_df(spark, AllNullTimestampGen()).coalesce(1).write.parquet(path),
         lambda spark, path : spark.read.parquet(path),
@@ -174,9 +170,9 @@ parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.parquet.compression.codec': compress})
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.compression.codec': compress})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
@@ -188,8 +184,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, re
 def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.parquet.outputTimestampType': ts_type}
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.parquet(path),
@@ -207,8 +202,7 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.parquet.outputTimestampType': ts_type}
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: write_parquet_sql_from(spark, gen_df(spark, gen_list).coalesce(1), path, spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.parquet(path),

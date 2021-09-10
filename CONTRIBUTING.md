@@ -55,6 +55,27 @@ You can build against different versions of the CUDA Toolkit by using one of the
 
 ## Code contributions
 
+### Source code layout
+
+Conventional code locations in Maven modules are found under `src/main/<language>`. In addition to
+that and in order to support multiple versions of Apache Spark with the minimum amount of source
+code we maintain Spark-version-specific locations within non-shim modules if necessary. This allows
+us to switch between incompatible parent classes inside without copying the shared code to
+dedicated shim modules.
+
+Thus, the conventional source code root directories `src/main/<language>` contain the files that
+are source-compatible with all supported Spark releases, both upstream and vendor-specific.
+
+The version-specific directory names have one of the following forms / use cases:
+- `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
+- `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
+   only beginning with version Spark 3.1.2, and + signifies there is no upper version boundary
+   among the supported versions
+- `src/main/302until312-all` contains code that applies to all shims between 3.0.2 *inclusive*,
+3.1.2 *exclusive*
+- `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
+   3.1.2 *inclusive*
+
 ### Your first issue
 
 1. Read the [Developer Overview](docs/dev/README.md) to understand how the RAPIDS Accelerator

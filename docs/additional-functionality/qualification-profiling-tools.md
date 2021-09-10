@@ -369,7 +369,7 @@ CSV files for each table.
 #### B. Analysis
 - Job + Stage level aggregated task metrics
 - SQL level aggregated task metrics
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent
+- SQL duration, application duration, if it contains a Dataset operation, potential problems, executor CPU time percent
 - Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
 #### C. Health Check
