@@ -20,7 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnView, CudfException, GroupByAggregation, GroupByOptions, ParquetColumnWriterOptions, ParquetWriterOptions, Scalar}
-import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuListUtils, GpuLiteral, GpuScalar, GpuUnaryExpression}
+import com.nvidia.spark.rapids.{GpuBinaryExpression, GpuColumnVector, GpuComplexTypeMergingExpression, GpuListUtils, GpuLiteral, GpuMapUtils, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -225,13 +225,8 @@ case class GpuMapKeys(child: Expression)
   override def prettyName: String = "map_keys"
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    val base = input.getBase
-    withResource(base.getChildColumnView(0)) { structView =>
-      withResource(structView.getChildColumnView(0)) { keyView =>
-        withResource(GpuListUtils.replaceListDataColumnAsView(base, keyView)) { retView =>
-          retView.copyToColumnVector()
-        }
-      }
+    withResource(GpuMapUtils.getKeysAsListView(input.getBase)) { retView =>
+      retView.copyToColumnVector()
     }
   }
 }
@@ -249,13 +244,8 @@ case class GpuMapValues(child: Expression)
   override def prettyName: String = "map_values"
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    val base = input.getBase
-    withResource(base.getChildColumnView(0)) { structView =>
-      withResource(structView.getChildColumnView(1)) { valueView =>
-        withResource(GpuListUtils.replaceListDataColumnAsView(base, valueView)) { retView =>
-          retView.copyToColumnVector()
-        }
-      }
+    withResource(GpuMapUtils.getValuesAsListView(input.getBase)) { retView =>
+      retView.copyToColumnVector()
     }
   }
 }

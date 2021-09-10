@@ -295,6 +295,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.ToDegrees"></a>spark.rapids.sql.expression.ToDegrees|`degrees`|Converts radians to degrees|true|None|
 <a name="sql.expression.ToRadians"></a>spark.rapids.sql.expression.ToRadians|`radians`|Converts degrees to radians|true|None|
 <a name="sql.expression.ToUnixTimestamp"></a>spark.rapids.sql.expression.ToUnixTimestamp|`to_unix_timestamp`|Returns the UNIX timestamp of the given time|true|None|
+<a name="sql.expression.TransformKeys"></a>spark.rapids.sql.expression.TransformKeys|`transform_keys`|Transform keys in a map using a transform function|true|None|
 <a name="sql.expression.TransformValues"></a>spark.rapids.sql.expression.TransformValues|`transform_values`|Transform values in a map using a transform function|true|None|
 <a name="sql.expression.UnaryMinus"></a>spark.rapids.sql.expression.UnaryMinus|`negative`|Negate a numeric value|true|None|
 <a name="sql.expression.UnaryPositive"></a>spark.rapids.sql.expression.UnaryPositive|`positive`|A numeric value with a + in front of it|true|None|

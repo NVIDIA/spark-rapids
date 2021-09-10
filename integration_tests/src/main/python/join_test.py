@@ -372,7 +372,7 @@ def test_left_broadcast_nested_loop_join_with_ast_condition(data_gen, batch_size
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Cross'], ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_type, batch_size):
@@ -382,20 +382,20 @@ def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_ty
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
-        # AST does not support logical AND, so this must be implemented as a post-filter
-        return left.join(broadcast(right), (left.a >= right.r_a) & (left.b >= right.r_b), join_type)
+        # AST does not support cast or logarithm yet, so this must be implemented as a post-filter
+        return left.join(broadcast(right), left.a > f.log(right.r_a), join_type)
     conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-@allow_non_gpu('And', 'BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'CheckOverflow', 'Divide', 'GreaterThanOrEqual')
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'Cast', 'GreaterThan', 'Log')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
-        # AST does not support logical AND yet
-        return broadcast(left).join(right, (left.a >= right.r_a) & (left.b >= right.r_b), join_type)
+        # AST does not support cast or logarithm yet
+        return broadcast(left).join(right, left.a > f.log(right.r_a), join_type)
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_fallback_collect(do_join, 'BroadcastNestedLoopJoinExec', conf=conf)
 
