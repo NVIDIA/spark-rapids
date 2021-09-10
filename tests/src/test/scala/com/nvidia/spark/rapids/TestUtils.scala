@@ -140,7 +140,6 @@ object TestUtils extends Assertions with Arm {
         SparkSession.clearActiveSession()
         SparkSession.clearDefaultSession()
       }
-      GpuShuffleEnv.setRapidsShuffleManager(None)
     }
   }
 }

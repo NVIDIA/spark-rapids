@@ -29,28 +29,25 @@ _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
 
-_no_nans_float_smallbatch_conf = _no_nans_float_conf.copy()
-_no_nans_float_smallbatch_conf.update(
-    {'spark.rapids.sql.batchSizeBytes' : '1000'})
+_no_nans_float_smallbatch_conf = copy_and_update(_no_nans_float_conf,
+        {'spark.rapids.sql.batchSizeBytes' : '1000'})
 
-_no_nans_float_conf_partial = _no_nans_float_conf.copy()
-_no_nans_float_conf_partial.update(
-    {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
+_no_nans_float_conf_partial = copy_and_update(_no_nans_float_conf,
+        {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
 
-_no_nans_float_conf_final = _no_nans_float_conf.copy()
-_no_nans_float_conf_final.update({'spark.rapids.sql.hashAgg.replaceMode': 'final'})
+_no_nans_float_conf_final = copy_and_update(_no_nans_float_conf,
+        {'spark.rapids.sql.hashAgg.replaceMode': 'final'})
 
 _nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                     'spark.rapids.sql.hasNans': 'true',
                     'spark.rapids.sql.castStringToFloat.enabled': 'true'
                    }
 
-_nans_float_conf_partial = _nans_float_conf.copy()
-_nans_float_conf_partial.update(
-    {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
+_nans_float_conf_partial = copy_and_update(_nans_float_conf,
+        {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
 
-_nans_float_conf_final = _nans_float_conf.copy()
-_nans_float_conf_final.update({'spark.rapids.sql.hashAgg.replaceMode': 'final'})
+_nans_float_conf_final = copy_and_update(_nans_float_conf,
+        {'spark.rapids.sql.hashAgg.replaceMode': 'final'})
 
 # The input lists or schemas that are used by StructGen.
 
@@ -266,11 +263,11 @@ def test_hash_grpby_avg(data_gen, conf):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 def test_hash_grpby_avg_nulls(data_gen, conf, ansi_enabled):
-    conf.update({'spark.sql.ansi.enabled': ansi_enabled})
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a')
           .agg(f.avg('c')),
-        conf=conf
+        conf=local_conf
     )
 
 @ignore_order
@@ -278,11 +275,11 @@ def test_hash_grpby_avg_nulls(data_gen, conf, ansi_enabled):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
 def test_hash_reduction_avg_nulls(data_gen, conf, ansi_enabled):
-    conf.update({'spark.sql.ansi.enabled': ansi_enabled})
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
           .agg(f.avg('c')),
-        conf=conf
+        conf=local_conf
     )
 
 # tracks https://github.com/NVIDIA/spark-rapids/issues/154
@@ -522,9 +519,9 @@ def test_hash_groupby_collect_with_multi_distinct(data_gen):
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 def test_hash_groupby_collect_partial_replace_fallback(data_gen, conf, aqe_enabled, use_obj_hash_agg):
-    local_conf = conf.copy()
-    local_conf.update({'spark.sql.adaptive.enabled': aqe_enabled,
-                       'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg})
+    local_conf = copy_and_update(conf, {
+        'spark.sql.adaptive.enabled': aqe_enabled,
+        'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg})
     # test without Distinct
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -616,7 +613,7 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
     condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, parameterless):
-    conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
+    local_conf = copy_and_update(conf, {'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=100),
         "hash_agg_table",
@@ -630,7 +627,7 @@ def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, paramet
         'sum(a),' +
         'min(a),'+
         'max(a) from hash_agg_table group by a',
-        conf)
+        conf=local_conf)
 
 
 @approximate_float
@@ -642,7 +639,7 @@ def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf, paramet
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
     condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_hash_query_max_with_multiple_distincts(data_gen, conf, parameterless):
-    conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
+    local_conf = copy_and_update(conf, {'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=100),
         "hash_agg_table",
@@ -650,7 +647,7 @@ def test_hash_query_max_with_multiple_distincts(data_gen, conf, parameterless):
         'sum(distinct a),' +
         'count(),' +
         'count(distinct b) from hash_agg_table group by a',
-        conf)
+        conf=local_conf)
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
@@ -696,7 +693,7 @@ def test_hash_query_max_nan_fallback(data_gen):
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
     condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_hash_agg_with_nan_keys(data_gen, parameterless):
-    _no_nans_float_conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
+    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
@@ -710,14 +707,13 @@ def test_hash_agg_with_nan_keys(data_gen, parameterless):
         'count(distinct c) as count_distinct_cees, '
         'avg(c) as average_seas '
         'from hash_agg_table group by a',
-        _no_nans_float_conf)
+        local_conf)
 
 @ignore_order
 @pytest.mark.parametrize('data_gen',  [_grpkey_structs_with_non_nested_children,
                                        _grpkey_nested_structs], ids=idfn)
 def test_hash_agg_with_struct_keys(data_gen):
-    conf = _no_nans_float_conf.copy()
-    conf.update({'spark.sql.legacy.allowParameterlessCount': 'true'})
+    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
@@ -731,7 +727,7 @@ def test_hash_agg_with_struct_keys(data_gen):
         'count(distinct c) as count_distinct_cees, '
         'avg(c) as average_seas '
         'from hash_agg_table group by a',
-        conf)
+        conf=local_conf)
 
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Avg', 'Count', 'Max', 'Min', 'Sum', 'Average',
@@ -739,8 +735,7 @@ def test_hash_agg_with_struct_keys(data_gen):
                'ShuffleExchangeExec', 'HashPartitioning')
 @pytest.mark.parametrize('data_gen',  [_grpkey_nested_structs_with_array_child], ids=idfn)
 def test_hash_agg_with_struct_of_array_fallback(data_gen):
-    conf = _no_nans_float_conf.copy()
-    conf.update({'spark.sql.legacy.allowParameterlessCount': 'true'})
+    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark : gen_df(spark, data_gen, length=100),
         'select a, '
@@ -755,7 +750,7 @@ def test_hash_agg_with_struct_of_array_fallback(data_gen):
         "hash_agg_table",
         exist_classes='HashAggregateExec',
         non_exist_classes='GpuHashAggregateExec',
-        conf=conf)
+        conf=local_conf)
 
 
 @approximate_float
@@ -808,7 +803,7 @@ def test_first_last_reductions_nested_types_fallback(data_gen):
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(
     condition=not is_before_spark_311(), reason="parameterless count not supported by default in Spark 3.1+"))])
 def test_generic_reductions(data_gen, parameterless):
-    _no_nans_float_conf.update({'spark.sql.legacy.allowParameterlessCount': parameterless})
+    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': parameterless})
     assert_gpu_and_cpu_are_equal_collect(
             # Coalesce and sort are to make sure that first and last, which are non-deterministic
             # become deterministic
@@ -821,7 +816,7 @@ def test_generic_reductions(data_gen, parameterless):
                 'count(a)',
                 'count()',
                 'count(1)'),
-            conf = _no_nans_float_conf)
+            conf = local_conf)
 
 @pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
 @pytest.mark.parametrize('parameterless', ['true', pytest.param('false', marks=pytest.mark.xfail(

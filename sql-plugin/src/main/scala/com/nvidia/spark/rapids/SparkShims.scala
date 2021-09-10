@@ -254,6 +254,8 @@ trait SparkShims {
   def isCustomReaderExec(x: SparkPlan): Boolean
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
+
+  def leafNodeDefaultParallelism(ss: SparkSession): Int
 }
 
 abstract class SparkCommonShims extends SparkShims {

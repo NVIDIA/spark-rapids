@@ -66,8 +66,7 @@ def test_cache_join(data_gen, join_type, enable_vectorized_conf):
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count() # populates cache
         return cached
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -85,8 +84,7 @@ def test_cached_join_filter(data_gen, join_type, enable_vectorized_conf):
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count() #populates the cache
         return cached.filter("a is not null")
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -100,8 +98,7 @@ def test_cache_broadcast_hash_join(data_gen, join_type, enable_vectorized_conf):
         cached.count()
         return cached
 
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
 shuffled_conf = {"spark.sql.autoBroadcastJoinThreshold": "160",
@@ -118,8 +115,7 @@ def test_cache_shuffled_hash_join(data_gen, join_type, enable_vectorized_conf):
         cached = left.join(right, left.a == right.r_a, join_type).cache()
         cached.count()
         return cached
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -132,8 +128,7 @@ def test_cache_broadcast_nested_loop_join(data_gen, join_type, enable_vectorized
         cached = left.crossJoin(right.hint("broadcast")).cache()
         cached.count()
         return cached
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf = conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -147,8 +142,7 @@ def test_cache_expand_exec(data_gen, enable_vectorized_conf):
         cached.count() # populate the cache
         return cached.rollup(f.col("a"), f.col("b")).agg(f.col("b"))
 
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = conf)
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
@@ -160,8 +154,7 @@ def test_cache_partial_load(data_gen, enable_vectorized_conf):
         def partial_return_cache(spark):
             return two_col_df(spark, data_gen, string_gen).select(f.col("a"), f.col("b")).cache().limit(50).select(col)
         return partial_return_cache
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("a")), conf)
     assert_gpu_and_cpu_are_equal_collect(partial_return(f.col("b")), conf)
 
@@ -226,8 +219,7 @@ def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
 
         return df.selectExpr("a")
 
-    conf = enable_vectorized_conf.copy()
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(enable_vectorized_conf, allow_negative_scale_of_decimal_conf)
     assert_gpu_and_cpu_are_equal_collect(func, conf)
 
 @pytest.mark.parametrize('enable_vectorized', ['false', 'true'], ids=idfn)
@@ -314,9 +306,9 @@ def function_to_test_on_cached_df(with_x_session, func, data_gen, test_conf):
 @pytest.mark.parametrize('batch_size', [{"spark.rapids.sql.batchSizeBytes": "100"}, {}], ids=idfn)
 @ignore_order
 def test_cache_count(data_gen, with_x_session, enable_vectorized_conf, batch_size):
-    test_conf = enable_vectorized_conf.copy()
-    test_conf.update(allow_negative_scale_of_decimal_conf)
-    test_conf.update(batch_size)
+    test_conf = copy_and_update(enable_vectorized_conf, 
+            allow_negative_scale_of_decimal_conf,
+            batch_size)
 
     function_to_test_on_cached_df(with_x_session, lambda df: df.count(), data_gen, test_conf)
 
@@ -332,8 +324,8 @@ def test_cache_count(data_gen, with_x_session, enable_vectorized_conf, batch_siz
 # condition therefore we must allow it in all cases
 @allow_non_gpu('ColumnarToRowExec')
 def test_cache_multi_batch(data_gen, with_x_session, enable_vectorized_conf, batch_size):
-    test_conf = enable_vectorized_conf.copy()
-    test_conf.update(allow_negative_scale_of_decimal_conf)
-    test_conf.update(batch_size)
+    test_conf = copy_and_update(enable_vectorized_conf,
+            allow_negative_scale_of_decimal_conf,
+            batch_size)
 
     function_to_test_on_cached_df(with_x_session, lambda df: df.collect(), data_gen, test_conf)
