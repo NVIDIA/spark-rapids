@@ -456,10 +456,7 @@ class GpuHashAggregateIterator(
   private def concatenateAndMerge(
       batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
     withResource(batches) { _ =>
-      withResource(concatenateBatches(batches)) { concatVectors =>
-        val concatBatch = new ColumnarBatch(
-          concatVectors.toArray,
-          concatVectors.head.getRowCount.toInt)
+      withResource(concatenateBatches(batches)) { concatBatch =>
         withResource(computeAggregate(concatBatch, merge = true)) { mergedBatch =>
           LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
         }
@@ -619,22 +616,22 @@ class GpuHashAggregateIterator(
   }
 
   /**
-   * Concatenates batches by concatenating the corresponding column vectors within the batches.
+   * Concatenates batches after extracting them from `LazySpillableColumnarBatch`
    * @note the input batches are not closed as part of this operation
-   * @param batchesToConcat batches to concatenate
-   * @return concatenated vectors that together represent the concatenated batch result
+   * @param spillableBatchesToConcat lazy spillable batches to concatenate
+   * @return concatenated batch result
    */
   private def concatenateBatches(
-      batchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch]): Seq[GpuColumnVector] = {
+      spillableBatchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch]): ColumnarBatch = {
     val concatTime = metrics.concatTime
     withResource(new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)) { _ =>
-      val numCols = batchesToConcat.head.numCols
-      (0 until numCols).safeMap { i =>
-        val columnType = batchesToConcat.head.getBatch.column(i).dataType()
-        val columnsToConcat = batchesToConcat.map {
-          _.getBatch.column(i).asInstanceOf[GpuColumnVector].getBase
-        }
-        GpuColumnVector.from(cudf.ColumnVector.concatenate(columnsToConcat: _*), columnType)
+      val batchesToConcat = spillableBatchesToConcat.map(_.getBatch)
+      val numCols = batchesToConcat.head.numCols()
+      val dataTypes = (0 until numCols).map {
+        c => batchesToConcat.head.column(c).dataType
+      }.toArray
+      withResource(batchesToConcat.map(GpuColumnVector.from)) { tbl =>
+        GpuColumnVector.from(cudf.Table.concatenate(tbl:_*), dataTypes)
       }
     }
   }
