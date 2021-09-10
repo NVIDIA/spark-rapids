@@ -1033,6 +1033,16 @@
                 </configuration>
             </plugin>
             <plugin>
+                <!--
+                This is an alternative implementation of the scalastyle check invocation,
+                a replacement for scalastyle-maven-plugin. It's motivated to address the following:
+                - All scala files are checked at once regardless of the module, so the developer
+                  can focus on addressing violations without being distracted by the build issues
+                  in-between
+                - We don't have to hardcode the source code roots added dynamically by other maven
+                  plugins to the project
+                - The scalastyle launch cost is amortized across all modules
+                -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
                 <inherited>false</inherited>
