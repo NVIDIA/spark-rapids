@@ -203,7 +203,7 @@ class RapidsCachingWriter[K, V](
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
 abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
-    extends VisibleShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
+    extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
 
@@ -424,6 +424,44 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   }
 }
 
-trait VisibleShuffleManager extends ShuffleManager {
+trait VisibleShuffleManager {
   def isDriver: Boolean
+}
+
+abstract class ProxyRapidsShuffleInternalManagerBase(
+    conf: SparkConf,
+    override val isDriver: Boolean
+) extends ShuffleManager with VisibleShuffleManager with Proxy {
+
+  // touched in the plugin code after the shim initialization
+  // is complete
+  override lazy val self: ShuffleManager =
+    ShimLoader.newInternalShuffleManager(conf, isDriver)
+        .asInstanceOf[ShuffleManager]
+
+  //
+  // Signatures unchanged since 3.0.1 follow
+  //
+
+  override def getWriter[K, V](
+      handle: ShuffleHandle,
+      mapId: Long,
+      context: TaskContext,
+      metrics: ShuffleWriteMetricsReporter
+  ): ShuffleWriter[K, V] = {
+    self.getWriter(handle, mapId, context, metrics)
+  }
+
+  override def registerShuffle[K, V, C](
+      shuffleId: Int,
+      dependency: ShuffleDependency[K, V, C]
+  ): ShuffleHandle = {
+    self.registerShuffle(shuffleId, dependency)
+  }
+
+  override def unregisterShuffle(shuffleId: Int): Boolean = self.unregisterShuffle(shuffleId)
+
+  override def shuffleBlockResolver: ShuffleBlockResolver = self.shuffleBlockResolver
+
+  override def stop(): Unit = self.stop()
 }

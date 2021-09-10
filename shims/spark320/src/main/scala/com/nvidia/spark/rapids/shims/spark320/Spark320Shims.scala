@@ -142,6 +142,8 @@ class Spark320Shims extends Spark32XShims {
           }
           super.tagExprForGpu()
         }
+
+        override def stringToDateAnsiModeEnabled: Boolean = true
       }),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
@@ -234,7 +236,7 @@ class Spark320Shims extends Spark32XShims {
           GpuStringReplace(subject, regexp, rep)
         }
       }),
-    // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
+    // Spark 3.2.0-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
       ExprChecks.windowOnly(
@@ -257,7 +259,7 @@ class Spark320Shims extends Spark32XShims {
         override def convertToGpu(): GpuExpression =
           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
       }),
-    // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
+    // Spark 3.2.0-specific LAG expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
       ExprChecks.windowOnly(

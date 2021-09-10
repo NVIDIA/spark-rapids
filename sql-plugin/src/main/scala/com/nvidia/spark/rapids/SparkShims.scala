@@ -264,6 +264,8 @@ trait SparkShims {
    * to bypass the check for those.
    */
   def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
+
+  def leafNodeDefaultParallelism(ss: SparkSession): Int
 }
 
 abstract class SparkCommonShims extends SparkShims {

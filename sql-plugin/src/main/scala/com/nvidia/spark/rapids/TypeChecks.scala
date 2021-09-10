@@ -2019,10 +2019,12 @@ object SupportedOpsForTools {
     val conf = new RapidsConf(Map.empty[String, String])
     val types = TypeEnum.values.toSeq
     val header = Seq("Format", "Direction") ++ types
+    val writeOps: Array[String] = Array.fill(types.size)("NA")
     println(header.mkString(","))
     GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
       case (format, ioMap) =>
-        val formatEnabled = format.toString.toLowerCase match {
+        val formatLowerCase = format.toString.toLowerCase
+        val formatEnabled = formatLowerCase match {
           case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
           case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
@@ -2059,8 +2061,13 @@ object SupportedOpsForTools {
             read.support(t).text
           }
         }
-        // only support reads for now
+        // print read formats and types
         println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
+
+        // print write formats and NA for types. Cannot determine types from event logs.
+        if (!formatLowerCase.equals("csv")) {
+          println(s"${(Seq(format, "write") ++ writeOps).mkString(",")}")
+        }
     }
   }
 

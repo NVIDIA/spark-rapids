@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2021, NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.nvidia</groupId>
+        <artifactId>rapids-4-spark-parent</artifactId>
+        <version>21.10.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+    <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
+    <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
+    <version>21.10.0-SNAPSHOT</version>
+
+    <properties>
+        <rapids.shade.package>com.nvidia.shaded.${spark.version.classifier}.spark</rapids.shade.package>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <!-- Unfortunately have to have 2 executions here to get dependency reduced pom.
+                         The shade plugin won't generate it when using the classifier and shadedArtifactAttached=true.
+                    -->
+                    <execution>
+                        <id>main</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                        <artifactSet>
+                            <excludes>org.slf4j:*</excludes>
+                        </artifactSet>
+                        <transformers>
+                            <transformer
+                                    implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                        </transformers>
+                        <createDependencyReducedPom>true</createDependencyReducedPom>
+                        <shadedArtifactAttached>false</shadedArtifactAttached>
+                        <relocations>
+                            <relocation>
+                                <pattern>org.apache.orc.</pattern>
+                                <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
+                            </relocation>
+                            <relocation>
+                                <pattern>org.apache.hadoop.hive.</pattern>
+                                <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
+                                <excludes>
+                                    <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
+                                    <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                                    <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
+                                </excludes>
+                            </relocation>
+                            <relocation>
+                                <pattern>org.apache.hive.</pattern>
+                                <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>
+                            </relocation>
+                            <relocation>
+                                <pattern>io.airlift.compress.</pattern>
+                                <shadedPattern>${rapids.shade.package}.io.airlift.compress.</shadedPattern>
+                            </relocation>
+                            <relocation>
+                                <pattern>org.apache.commons.codec.</pattern>
+                                <shadedPattern>${rapids.shade.package}.org.apache.commons.codec.</shadedPattern>
+                            </relocation>
+                            <relocation>
+                                <pattern>org.apache.commons.lang.</pattern>
+                                <shadedPattern>${rapids.shade.package}.org.apache.commons.lang.</shadedPattern>
+                            </relocation>
+                            <relocation>
+                                <pattern>com.google</pattern>
+                                <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
+                            </relocation>
+                        </relocations>
+                            <filters>
+                                <filter>
+                                    <artifact>com.nvidia:rapids-4-spark-aggregator_2.12</artifact>
+                                    <includes>
+                                        <include>META-INF/**</include>
+                                    </includes>
+                                    <excludes>
+                                        <exclude>META-INF/services/**</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>classifierversion</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                    <artifactSet>
+                        <excludes>org.slf4j:*</excludes>
+                    </artifactSet>
+                    <transformers>
+                        <transformer
+                                implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                    </transformers>
+                    <!-- note that the classifier version won't generate dependency reduce pom due to shadedArtifactAttached=true -->
+                    <createDependencyReducedPom>true</createDependencyReducedPom>
+                    <shadedArtifactAttached>true</shadedArtifactAttached>
+                    <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
+                    <relocations>
+                        <relocation>
+                            <pattern>org.apache.orc.</pattern>
+                            <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>org.apache.hadoop.hive.</pattern>
+                            <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
+                            <excludes>
+                                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
+                            </excludes>
+                        </relocation>
+                        <relocation>
+                            <pattern>org.apache.hive.</pattern>
+                            <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>io.airlift.compress.</pattern>
+                            <shadedPattern>${rapids.shade.package}.io.airlift.compress.</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>org.apache.commons.codec.</pattern>
+                            <shadedPattern>${rapids.shade.package}.org.apache.commons.codec.</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>org.apache.commons.lang.</pattern>
+                            <shadedPattern>${rapids.shade.package}.org.apache.commons.lang.</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>com.google</pattern>
+                            <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
+                        </relocation>
+                    </relocations>
+                            <filters>
+                                <filter>
+                                    <artifact>com.nvidia:rapids-4-spark-aggregator_2.12</artifact>
+                                    <includes>
+                                        <include>META-INF/**</include>
+                                    </includes>
+                                    <excludes>
+                                        <exclude>META-INF/services/**</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
