@@ -1035,10 +1035,10 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   override def convertToGpu(): GpuExec = {
     GpuHashAggregateExec(
       requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
-      groupingExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
-      aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-      resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
+      groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+      aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
+      aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
+      resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
       childPlans.head.convertIfNeeded(),
       conf.gpuTargetBatchSizeBytes)
   }
@@ -1116,10 +1116,10 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
       }
       GpuHashAggregateExec(
         requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
-        groupingExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-        aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
-        aggAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-        retExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
+        groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+        aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
+        aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
+        retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
         childPlans.head.convertIfNeeded(),
         conf.gpuTargetBatchSizeBytes)
     } else {
