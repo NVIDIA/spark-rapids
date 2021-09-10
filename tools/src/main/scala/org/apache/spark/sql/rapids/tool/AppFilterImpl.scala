@@ -89,14 +89,6 @@ class AppFilterImpl(
       apps
     }
 
-   // If `any` is specified as logicFilter config, then store the value in variable which is used
-   // later for final computation.
-   val appNameFilteredForDisjunction = if (filterAppName.nonEmpty && appArgs.any()) {
-     appNameFiltered
-   } else {
-     Seq.empty[AppFilterReturnParameters]
-   }
-
     val userNameFiltered = if (userName.nonEmpty) {
       val appNamelogicFiltered = if (appArgs.any()) {
         apps
@@ -169,10 +161,37 @@ class AppFilterImpl(
       configFiltered
     }
 
+    // If `any` is specified as logicFilter config, then store the value in variable which is used
+    // later for final computation. These are computed separately for all filters.
+    val appNameFilteredForDisjunction = if (filterAppName.nonEmpty && appArgs.any()) {
+      appNameFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
+    }
+
+    val userNameFilteredForDisjunction = if (userName.nonEmpty && appArgs.any()) {
+      userNameFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
+    }
+
+    val configFilteredForDisjunction = if (sparkProperties.nonEmpty && appArgs.any()) {
+      configFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
+    }
+
+    val appTimeFilteredForDisjunction = if (appArgs.startAppTime.isSupplied && appArgs.any()) {
+      appTimeFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
+    }
+
     // If `any` is specified as logicFilter, add all filtered results which is equivalent to
     // applying OR on filters.
     val finalLogicFiltered = if (appArgs.any()) {
-      (userNameFiltered ++ appTimeFiltered ++ appNameFilteredForDisjunction).toSet.toSeq
+      (userNameFilteredForDisjunction ++ configFilteredForDisjunction ++
+          appTimeFilteredForDisjunction ++ appNameFilteredForDisjunction).toSet.toSeq
     } else {
       appTimeFiltered
     }

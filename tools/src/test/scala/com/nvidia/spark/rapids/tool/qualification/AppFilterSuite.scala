@@ -595,6 +595,11 @@ class AppFilterSuite extends FunSuite {
       7, "any")
   }
 
+  test("Test disjunction only startTime no match") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      startTimePeriod("10min"), 0, "any")
+  }
+
   test("Test conjunction all filters") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++
@@ -640,21 +645,31 @@ class AppFilterSuite extends FunSuite {
       3, "all")
   }
 
-  test("Test conjunction match filename and config") {
+  test("Test conjunction match appName and config") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      matchFileName("app-nds") ++ filterConfigs("spark.driver.port:43492"), 2, "all")
+      filterAppName("nds") ++ filterConfigs("spark.driver.port:43492"), 1, "all")
   }
 
-  test("Test disjunction match multiple configs") {
+  test("Test conjunction match filename and config") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
-      filterConfigs("spark.driver.host:10.10.19.19")
-          ++ filterConfigs("spark.driver.port:43492"), 7, "any")
+      matchFileName("app-nds") ++ filterConfigs("spark.app.name:Ndsweeks"), 1, "all")
   }
 
   test("Test conjunction match fileName and appName with configs") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       matchFileName("app-nds") ++ filterConfigs("spark.driver.port:43492")
           ++ filterAppName("Nds"), 1, "all")
+  }
+
+  test("Test disjunction match multiple configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterConfigs("spark.driver.host:10.10.19.13")
+          ++ filterConfigs("spark.driver.port:43492"), 4, "any")
+  }
+
+  test("Test disjunction with multiple configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("Nds") ++ filterConfigs("spark.driver.port:43491"), 4, "any")
   }
 
   test("Test disjunction match appName and config") {
@@ -718,7 +733,7 @@ class AppFilterSuite extends FunSuite {
           val supText =
             s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
                |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"${app.userName}"}
-               |{"Event":"SparkListenerEnvironmentUpdate","JVM Information":{"Java Home":"/usr/lib/jvm/java-8-openjdk-amd64/jre"},"Spark Properties":{"spark.driver.host":"10.10.19.19","spark.eventLog.enabled":"true","spark.driver.port":"4349${app.uniqueId}"},"Hadoop Properties":{"hadoop.service.shutdown.timeout":"30s"},"System Properties":{"java.io.tmpdir":"/tmp"},"Classpath Entries":{"/home/user1/runspace/spark311/spark-3.1.1-bin-hadoop3.2/jars/hive-exec-2.3.7-core.jar":"System Classpath"}}""".stripMargin
+               |{"Event":"SparkListenerEnvironmentUpdate","JVM Information":{"Java Home":"/usr/lib/jvm/java-8-openjdk-amd64/jre"},"Spark Properties":{"spark.driver.host":"10.10.19.1${app.uniqueId}","spark.app.name":"${app.appName}","spark.driver.port":"4349${app.uniqueId}","spark.eventLog.enabled":"true"},"Hadoop Properties":{"hadoop.service.shutdown.timeout":"30s"},"System Properties":{"java.io.tmpdir":"/tmp"},"Classpath Entries":{"/home/user1/runspace/spark311/spark-3.1.1-bin-hadoop3.2/jars/hive-exec-2.3.7-core.jar":"System Classpath"}}""".stripMargin
           // scalastyle:on line.size.limit
           Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
           new File(elogFile.toString).setLastModified(app.fsTime)
