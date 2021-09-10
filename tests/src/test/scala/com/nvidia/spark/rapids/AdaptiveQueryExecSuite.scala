@@ -159,7 +159,6 @@ class AdaptiveQueryExecSuite
 
   test("Join partitioned tables DPP fallback") {
     assumeSpark301orLater
-    assumePriorToSpark320 // In 3.2.0 AQE works with DPP
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
