@@ -156,6 +156,13 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
   }
 
+  final def inputFilePreventsRunningOnGpu(): Unit = {
+    if (canThisBeReplaced) {
+      willNotWorkOnGpu("Removed by InputFileBlockRule preventing plans " +
+        "[SparkPlan(with input_file_xxx), FileScan) running on GPU")
+    }
+  }
+
   /**
    * Call this to indicate that this should not be replaced with a GPU enabled version
    * @param because why it should not be replaced.
@@ -636,7 +643,14 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // have to be very careful to avoid loops in the rules.
 
     // RULES:
-    // 1) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
+    // 1) If file scan plan runs on the CPU, and the following plans run on GPU, then
+    // GpuRowToColumnar will be inserted. GpuRowToColumnar will invalid input_file_xxx operations,
+    // So input_file_xxx in the following GPU operators will get empty value.
+    // InputFileBlockRule is to prevent the SparkPlans
+    // [SparkPlan (with first input_file_xxx expression), FileScan) to run on GPU
+    InputFileBlockRule.apply(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
+
+    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
     // feeding them are either all on the GPU or all on the CPU, because the hashing is not
     // consistent between the two implementations. This is okay because it is only impacting
     // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on

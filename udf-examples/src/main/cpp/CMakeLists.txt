@@ -14,16 +14,19 @@
 # limitations under the License.
 #=============================================================================
 
-cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.20.1 FATAL_ERROR)
+
+file(DOWNLOAD https://raw.githubusercontent.com/rapidsai/rapids-cmake/branch-21.10/RAPIDS.cmake
+     ${CMAKE_BINARY_DIR}/RAPIDS.cmake)
+include(${CMAKE_BINARY_DIR}/RAPIDS.cmake)
+
+include(rapids-cuda)
 
 # Use GPU_ARCHS if it is defined
 if(DEFINED GPU_ARCHS)
-  if (GPU_ARCHS STREQUAL "ALL")
-    set(CUDF_BUILD_FOR_ALL_ARCHS TRUE)
-  else()
-    set(CMAKE_CUDA_ARCHITECTURES ${GPU_ARCHS})
-  endif()
+  set(CMAKE_CUDA_ARCHITECTURES "${GPU_ARCHS}")
 endif()
+rapids_cuda_init_architectures(UDFEXAMPLESJNI)
 
 project(UDFEXAMPLESJNI VERSION 21.10.0 LANGUAGES C CXX CUDA)
 
@@ -53,11 +56,11 @@ set(DEFAULT_BUILD_TYPE "Release")
 # - compiler options ------------------------------------------------------------------------------
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_COMPILER $ENV{CXX})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 if(CMAKE_COMPILER_IS_GNUCXX)

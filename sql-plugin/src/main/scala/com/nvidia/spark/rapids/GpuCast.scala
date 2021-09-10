@@ -43,6 +43,12 @@ class CastExprMeta[INPUT <: CastBase](
   val toType: DataType = cast.dataType
   val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
 
+  // stringToDate supports ANSI mode from Spark v3.2.0.  Here is the details.
+  //     https://github.com/apache/spark/commit/6e862792fb
+  // We do not want to create a shim class for this small change, so define a method
+  // to support both cases in a single class.
+  protected def stringToDateAnsiModeEnabled: Boolean = false
+
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
   private def recursiveTagExprForGpuCheck(
@@ -114,7 +120,8 @@ class CastExprMeta[INPUT <: CastBase](
   }
 
   override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString)
+    GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString,
+      stringToDateAnsiModeEnabled)
 }
 
 object GpuCast extends Arm {
@@ -297,7 +304,8 @@ object GpuCast extends Arm {
       fromDataType: DataType,
       toDataType: DataType,
       ansiMode: Boolean,
-      legacyCastToString: Boolean): ColumnVector = {
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
     if (DataType.equalsStructurally(fromDataType, toDataType)) {
       return input.copyToColumnVector()
@@ -353,7 +361,8 @@ object GpuCast extends Arm {
         castTimestampToString(input)
 
       case (StructType(fields), StringType) =>
-        castStructToString(input, fields, ansiMode, legacyCastToString)
+        castStructToString(input, fields, ansiMode, legacyCastToString,
+          stringToDateAnsiModeEnabled)
 
       // ansi cast from larger-than-integer integral types, to integer
       case (LongType, IntegerType) if ansiMode =>
@@ -458,7 +467,11 @@ object GpuCast extends Arm {
             case BooleanType =>
               castStringToBool(trimmed, ansiMode)
             case DateType =>
-              castStringToDate(trimmed)
+              if (stringToDateAnsiModeEnabled) {
+                castStringToDateAnsi(trimmed, ansiMode)
+              } else {
+                castStringToDate(trimmed)
+              }
             case TimestampType =>
               castStringToTimestamp(trimmed, ansiMode)
             case FloatType | DoubleType =>
@@ -489,16 +502,17 @@ object GpuCast extends Arm {
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
           withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo,
-            ansiMode, legacyCastToString)) { childColumnVector =>
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) { childColumnVector =>
             withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
           }
         }
 
       case (from: StructType, to: StructType) =>
-        castStructToStruct(from, to, input, ansiMode, legacyCastToString)
+        castStructToStruct(from, to, input, ansiMode, legacyCastToString,
+          stringToDateAnsiModeEnabled)
 
       case (from: MapType, to: MapType) =>
-        castMapToMap(from, to, input, ansiMode, legacyCastToString)
+        castMapToMap(from, to, input, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -603,7 +617,8 @@ object GpuCast extends Arm {
       input: ColumnView,
       inputSchema: Array[StructField],
       ansiMode: Boolean,
-      legacyCastToString: Boolean): ColumnVector = {
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
     val (leftStr, rightStr) = if (legacyCastToString) ("[", "]") else ("{", "}")
     val emptyStr = ""
@@ -626,7 +641,7 @@ object GpuCast extends Arm {
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
           columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType, StringType,
-            ansiMode, legacyCastToString)
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
           withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
@@ -634,7 +649,8 @@ object GpuCast extends Arm {
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
             val nonFirstColumn = recursiveDoColumnar(nonFirstColumnView,
-              inputSchema(nonFirstIndex).dataType, StringType, ansiMode, legacyCastToString)
+              inputSchema(nonFirstIndex).dataType, StringType, ansiMode, legacyCastToString,
+                stringToDateAnsiModeEnabled)
             if (legacyCastToString) {
               // " " if non-null
               columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
@@ -880,6 +896,24 @@ object GpuCast extends Arm {
     }
   }
 
+  private def checkResultForAnsiMode(input: ColumnVector, result: ColumnVector,
+      errMessage: String): ColumnVector = {
+    closeOnExcept(result) { finalResult =>
+      withResource(input.isNotNull) { wasNotNull =>
+        withResource(finalResult.isNull) { isNull =>
+          withResource(wasNotNull.and(isNull)) { notConverted =>
+            withResource(notConverted.any()) { notConvertedAny =>
+              if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
+                throw new DateTimeException(errMessage)
+              }
+            }
+          }
+        }
+      }
+    }
+    result
+  }
+
   /**
    * Trims and parses a given UTF8 date string to a corresponding [[Int]] value.
    * The return type is [[Option]] in order to distinguish between 0 and null. The following
@@ -906,6 +940,18 @@ object GpuCast extends Arm {
       // handle special dates like "epoch", "now", etc.
       specialDates.foldLeft(converted)((prev, specialDate) =>
         specialDateOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+    }
+  }
+
+  private def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+    val result = castStringToDate(input)
+    if (ansiMode) {
+      // When ANSI mode is enabled, we need to throw an exception if any values could not be
+      // converted
+      checkResultForAnsiMode(input, result,
+        "One or more values could not be converted to DateType")
+    } else {
+      result
     }
   }
 
@@ -1050,26 +1096,14 @@ object GpuCast extends Arm {
       val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
         specialTimestampOr(sanitizedInput, specialDate._1, specialDate._2, prev))
 
-      // When ANSI mode is enabled, we need to throw an exception if any values could not be
-      // converted
       if (ansiMode) {
-        closeOnExcept(finalResult) { finalResult =>
-          withResource(input.isNotNull) { wasNotNull =>
-            withResource(finalResult.isNull) { isNull =>
-              withResource(wasNotNull.and(isNull)) { notConverted =>
-                withResource(notConverted.any()) { notConvertedAny =>
-                  if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
-                    throw new DateTimeException(
-                      "One or more values could not be converted to TimestampType")
-                  }
-                }
-              }
-            }
-          }
-        }
+        // When ANSI mode is enabled, we need to throw an exception if any values could not be
+        // converted
+        checkResultForAnsiMode(input, finalResult,
+          "One or more values could not be converted to TimestampType")
+      } else {
+        finalResult
       }
-
-      finalResult
     }
   }
 
@@ -1101,17 +1135,19 @@ object GpuCast extends Arm {
       to: MapType,
       input: ColumnView,
       ansiMode: Boolean,
-      legacyCastToString: Boolean): ColumnVector = {
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
     // For cudf a map is a list of (key, value) structs, but lets keep it in ColumnView as much
     // as possible
     withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        recursiveDoColumnar(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString)
+        recursiveDoColumnar(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
+          stringToDateAnsiModeEnabled)
       }
       withResource(castKey) { castKey =>
         val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
           recursiveDoColumnar(valueColumn, from.valueType, to.valueType,
-            ansiMode, legacyCastToString)
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         withResource(castValue) { castValue =>
           withResource(ColumnView.makeStructView(castKey, castValue)) { castKvStructColumn =>
@@ -1131,7 +1167,8 @@ object GpuCast extends Arm {
       to: StructType,
       input: ColumnView,
       ansiMode: Boolean,
-      legacyCastToString: Boolean): ColumnVector = {
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
     withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
       from.indices.foreach { index =>
         childColumns += recursiveDoColumnar(
@@ -1139,7 +1176,7 @@ object GpuCast extends Arm {
           from(index).dataType,
           to(index).dataType,
           ansiMode,
-          legacyCastToString)
+          legacyCastToString, stringToDateAnsiModeEnabled)
       }
       withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
         if (input.getNullCount == 0) {
@@ -1388,7 +1425,8 @@ case class GpuCast(
     dataType: DataType,
     ansiMode: Boolean = false,
     timeZoneId: Option[String] = None,
-    legacyCastToString: Boolean = false)
+    legacyCastToString: Boolean = false,
+    stringToDateAnsiModeEnabled: Boolean = false)
   extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
 
   import GpuCast._
@@ -1445,6 +1483,7 @@ case class GpuCast(
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
-    recursiveDoColumnar(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString)
+    recursiveDoColumnar(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString,
+      stringToDateAnsiModeEnabled)
 
 }
