@@ -208,3 +208,45 @@ def test_transform_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it, 
             conf=allow_negative_scale_of_decimal_conf)
 
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_transform_keys(data_gen):
+    # The processing here is very limited, because we need to be sure we do not create duplicate keys.
+    # This can happen because of integer overflow, round off errors in floating point, etc. So for now
+    # we really are only looking at a very basic transformation.
+    def do_it(spark):
+        columns = ['a',
+                'transform_keys(a, (key, value) -> key) as ident']
+        key_type = data_gen.data_type.keyType
+        if isinstance(key_type, StringType):
+            columns.extend(['transform_keys(a, (key, value) -> concat(key, "-test")) as con'])
+
+        return unary_op_df(spark, data_gen).selectExpr(columns)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, 
+            conf=allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_transform_keys_null_fail(data_gen):
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'transform_keys(a, (key, value) -> CAST(null as INT))').collect(),
+                conf={},
+                error_message='Cannot use null as map key')
+
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_transform_keys_duplicate_fail(data_gen):
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'transform_keys(a, (key, value) -> 1)').collect(),
+            conf={},
+            error_message='Duplicate map key')
+
+
+@allow_non_gpu('ProjectExec,Alias,TransformKeys,Literal,LambdaFunction,NamedLambdaVariable')
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_transform_keys_last_win_fallback(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> 1)'),
+            'TransformKeys',
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
