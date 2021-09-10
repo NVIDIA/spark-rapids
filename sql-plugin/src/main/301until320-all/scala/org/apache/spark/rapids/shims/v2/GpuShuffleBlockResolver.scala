@@ -18,10 +18,9 @@ package org.apache.spark.sql.rapids.shims.v2
 
 import com.nvidia.spark.rapids.ShuffleBufferCatalog
 
-import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.sql.rapids.GpuShuffleBlockResolverBase
-import org.apache.spark.storage.ShuffleBlockId
 
 class GpuShuffleBlockResolver(resolver: IndexShuffleBlockResolver, catalog: ShuffleBufferCatalog)
     extends GpuShuffleBlockResolverBase(resolver, catalog)
+
