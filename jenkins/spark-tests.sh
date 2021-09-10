@@ -43,7 +43,7 @@ else
 fi
 export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
-// TODO - this is now spark version specific, hardcode to spark301 for now
+# TODO - this is now spark version specific, hardcode to spark301 for now
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-spark301.jar"
 
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
