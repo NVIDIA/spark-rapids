@@ -50,10 +50,15 @@ case class GpuScalaUDFLogical(udf: ScalaUDF) extends ShimExpression with Logging
       }
     } catch {
       case e: SparkException =>
-        logDebug("UDF compilation failure: " + e)
+        val udfName = udf.udfName.getOrElse("<unknown>")
+        logDebug(s"UDF $udfName compilation failure: $e")
         if (isTestEnabled) {
           throw e
         }
+        udf
+      case e: Exception =>
+        val udfName = udf.udfName.getOrElse("<unknown>")
+        logWarning(s"Unable to translate UDF $udfName: $e")
         udf
     }
   }
