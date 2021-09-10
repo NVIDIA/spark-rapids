@@ -610,13 +610,16 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       inputTable: Table,
       filePath: String,
       clippedSchema: MessageType): Table = {
+    convertToUnsigned(convertToDecimal(inputTable, filePath, clippedSchema))
+  }
 
+  private def convertToDecimal(inputTable: Table, filePath: String, clippedSchema: MessageType) = {
     val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
     // check if there are cols with precision that can be stored in an int
     val typeCastingNeeded = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
     if (readDataSchema.length > inputTable.getNumberOfColumns || typeCastingNeeded) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
-      // To type casting or anyting like that
+      // To type casting or anything like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
       try {
@@ -654,6 +657,73 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     } else {
       inputTable
     }
+  }
+
+  /**
+   * Convert cudf unsigned integer to wider signed integer that parquet expects
+   * After spark 3.2.0, parquet read uint8 as int16, uint16 as int32, uint32 as int64
+   *
+   * @param inputTable
+   * @return
+   */
+  private def convertToUnsigned(inputTable: Table) = {
+    var typeCastingNeeded = needUnsignedCast(inputTable, readDataSchema)
+    if (typeCastingNeeded) {
+      val newColumns = new Array[ColumnVector](readDataSchema.length)
+      try {
+        withResource(inputTable) { table =>
+          (0 until readDataSchema.length).foreach(i => {
+            val readField = readDataSchema(i)
+            val origCol = table.getColumn(i)
+            val col: ColumnVector =
+              ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
+                (dt, cv) => needUnsignedToSignedCastFunction(cv, dt),
+                (dt, cv) => cv.castTo(
+                  DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId)))
+            newColumns(i) = col
+          })
+        }
+        new Table(newColumns: _*)
+      } finally {
+        newColumns.safeClose()
+      }
+    } else {
+      inputTable
+    }
+  }
+
+ def needUnsignedCast(table: Table, schema: StructType): Boolean = {
+    var b = false
+    for (i <- 0 until table.getNumberOfColumns) {
+      if (needUnsignedToSignedCast(table.getColumn(i), schema.fields(i).dataType)) {
+        b =true
+      }
+    }
+    b
+  }
+
+  def needUnsignedToSignedCast(cv: ColumnView, dataType: DataType): Boolean = {
+    dataType match {
+      case a: ArrayType =>
+        val child = cv.getChildColumnView(0)
+        return needUnsignedToSignedCast(child, a.elementType)
+      case s: StructType =>
+        for( i <- 0 until cv.getNumChildren) {
+          val child = cv.getChildColumnView(i)
+          if (needUnsignedToSignedCast(child, s(i).dataType)) {
+            return true
+          }
+        }
+      case _ =>
+        return needUnsignedToSignedCastFunction(cv, dataType)
+    }
+    return false
+  }
+
+  def needUnsignedToSignedCastFunction(cv: ColumnView, dataType: DataType): Boolean = {
+    (cv.getType.equals(DType.UINT8) && dataType.isInstanceOf[ShortType]) ||
+        (cv.getType.equals(DType.UINT16) && dataType.isInstanceOf[IntegerType]) ||
+        (cv.getType.equals(DType.UINT32) && dataType.isInstanceOf[LongType])
   }
 
   protected def readPartFile(

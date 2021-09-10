@@ -90,4 +90,9 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
       StructField("c3_long", LongType),
       StructField("c1_int", IntegerType))))) { frame => frame }
+
+  testSparkResultsAreEqual("Test Parquet unsigned int: uint8, uint16, uint32",
+    frameFromParquet("unsigned-int.parquet")) {
+    frame => frame.select(col("*"))
+  }
 }
