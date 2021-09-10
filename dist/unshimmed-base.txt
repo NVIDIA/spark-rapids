@@ -12,7 +12,6 @@ com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
 com/nvidia/spark/rapids/RapidsExecutorStartupMsg*
 com/nvidia/spark/rapids/RapidsExecutorUpdateMsg*
 org/apache/spark/sql/rapids/VisibleShuffleManager*
-org/apache/spark/sql/rapids/RapidsShuffleInternalManagerBase*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
 com/nvidia/spark/udf/Plugin*
 com/nvidia/shaded/**
