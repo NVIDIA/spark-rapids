@@ -283,6 +283,14 @@ object GpuDivModLike extends Arm {
     }
   }
 
+  /**
+   * This is for the case as below.
+   *
+   *   left : [1,  2,  Long.MinValue,  3, Long.MinValue]
+   *   right: [2, -1,             -1, -1,             6]
+   *
+   * The 3rd row (Long.MinValue, -1) will cause an overflow of the integral division.
+   */
   def isDivOverflow(left: GpuColumnVector, right: GpuColumnVector): Boolean = {
     left.dataType() match {
       case LongType =>
@@ -306,7 +314,7 @@ object GpuDivModLike extends Arm {
   def isDivOverflow(left: GpuColumnVector, right: GpuScalar): Boolean = {
     left.dataType() match {
       case LongType =>
-        (right.getValue == -1) && {
+        (right.isValid && right.getValue == -1) && {
           withResource(Scalar.fromLong(Long.MinValue)) { minLong =>
             left.getBase.contains(minLong)
           }
@@ -316,7 +324,7 @@ object GpuDivModLike extends Arm {
   }
 
   def isDivOverflow(left: GpuScalar, right: GpuColumnVector): Boolean = {
-    (left.getValue == Long.MinValue) && {
+    (left.isValid && left.getValue == Long.MinValue) && {
       withResource(Scalar.fromInt(-1)) { minusOne =>
         right.getBase.contains(minusOne)
       }
