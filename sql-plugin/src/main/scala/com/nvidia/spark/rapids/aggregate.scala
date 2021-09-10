@@ -228,7 +228,7 @@ object AggregateModeInfo {
  * `buildSortFallbackIterator` is used to sort the aggregated batches by the grouping keys and
  * performs a final merge aggregation pass on the sorted batches.
  *
- * @param cbIter iterator providing the nput columnar batches
+ * @param cbIter iterator providing the input columnar batches
  * @param groupingExpressions expressions used for producing the grouping keys
  * @param aggregateExpressions GPU aggregate expressions used to produce the aggregations
  * @param aggregateAttributes attribute references to each aggregate expression
