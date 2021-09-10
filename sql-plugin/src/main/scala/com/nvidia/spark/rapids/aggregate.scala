@@ -216,7 +216,7 @@ object AggregateModeInfo {
  */
 class GpuHashAggregateIterator(
     cbIter: Iterator[ColumnarBatch],
-    groupingExpressions: Seq[Expression],
+    groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
@@ -466,7 +466,7 @@ class GpuHashAggregateIterator(
 
     val shims = ShimLoader.getSparkShims
     val ordering = groupingExpressions.map(shims.sortOrder(_, Ascending, NullsFirst))
-    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val groupingAttributes = groupingExpressions.map(_.toAttribute)
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -630,7 +630,7 @@ class GpuHashAggregateIterator(
    *         expression in allExpressions
    */
   private def setupReferences(childAttr: AttributeSeq): BoundExpressionsModeAggregates = {
-    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val groupingAttributes = groupingExpressions.map(_.toAttribute)
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val mergeBufferAttributes = groupingAttributes ++
@@ -779,7 +779,7 @@ class GpuHashAggregateIterator(
       toAggregateBatch: ColumnarBatch,
       merge: Boolean,
       isSorted: Boolean = false): ColumnarBatch  = {
-    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val groupingAttributes = groupingExpressions.map(_.toAttribute)
 
     val aggBufferAttributes = groupingAttributes ++
       aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
@@ -995,7 +995,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   override def convertToGpu(): GpuExec = {
     GpuHashAggregateExec(
       requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
-      groupingExpressions.map(_.convertToGpu()),
+      groupingExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
       aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
@@ -1076,7 +1076,7 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
       }
       GpuHashAggregateExec(
         requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
-        groupingExpressions.map(_.convertToGpu()),
+        groupingExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
         aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
         aggAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
         retExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
@@ -1401,7 +1401,7 @@ class GpuObjectHashAggregateExecMeta(
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
-    groupingExpressions: Seq[Expression],
+    groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
