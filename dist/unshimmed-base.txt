@@ -14,7 +14,7 @@ com/nvidia/spark/rapids/RapidsExecutorUpdateMsg*
 org/apache/spark/sql/rapids/VisibleShuffleManager*
 org/apache/spark/sql/rapids/RapidsShuffleInternalManagerBase*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
-com/nvidia/spark/rapids/RapidsShuffleHeartbeatHandler
+com/nvidia/spark/rapids/RapidsShuffleHeartbeatHandler*
 com/nvidia/spark/udf/Plugin*
 com/nvidia/shaded/**
 libjucx.so
