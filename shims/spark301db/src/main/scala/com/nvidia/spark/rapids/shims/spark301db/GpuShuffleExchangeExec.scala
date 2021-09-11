@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,8 @@ case class GpuShuffleExchangeExec(
     override val outputPartitioning: Partitioning,
     child: SparkPlan,
     canChangeNumPartitions: Boolean)
-  extends GpuShuffleExchangeExecBaseWithMetrics(outputPartitioning, child) with ShuffleExchangeLike {
+  extends GpuShuffleExchangeExecBaseWithMetrics(outputPartitioning, child)
+      with ShuffleExchangeLike {
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 

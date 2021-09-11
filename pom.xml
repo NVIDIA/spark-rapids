@@ -801,6 +801,27 @@
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>1.8</version>
+                  <executions>
+                    <execution>
+                        <id>generate-build-info</id>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <!-- Execute the shell script to generate the plugin build information. -->
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <mkdir dir="${project.build.directory}/tmp"/>
+                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${user.dir}/build/build-info"/>
+                                    <arg value="${project.version}"/>
+                                    <arg value="${cudf.version}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                  </executions>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
@@ -902,30 +923,6 @@
                     </executions>
                 </plugin>
                 <plugin>
-                    <groupId>org.scalastyle</groupId>
-                    <artifactId>scalastyle-maven-plugin</artifactId>
-                    <version>1.0.0</version>
-                    <configuration>
-                        <verbose>false</verbose>
-                        <failOnViolation>true</failOnViolation>
-                        <includeTestSourceDirectory>false</includeTestSourceDirectory>
-                        <failOnWarning>false</failOnWarning>
-                        <sourceDirectory>${basedir}/src/main/scala</sourceDirectory>
-                        <testSourceDirectory>${basedir}/src/test/scala</testSourceDirectory>
-                        <configLocation>scalastyle-config.xml</configLocation>
-                        <outputFile>${basedir}/target/scalastyle-output.xml</outputFile>
-                        <inputEncoding>${project.build.sourceEncoding}</inputEncoding>
-                        <outputEncoding>${project.reporting.outputEncoding}</outputEncoding>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <goals>
-                                <goal>check</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
                     <groupId>org.apache.rat</groupId>
                     <artifactId>apache-rat-plugin</artifactId>
                     <version>0.13</version>
@@ -1001,28 +998,55 @@
                 </configuration>
             </plugin>
             <plugin>
+                <!--
+                This is an alternative implementation of the scalastyle check invocation,
+                a replacement for scalastyle-maven-plugin. It's motivated to address the following:
+                - All scala files are checked at once regardless of the module, so the developer
+                  can focus on addressing violations without being distracted by the build issues
+                  in-between
+                - We don't have to hardcode the source code roots added dynamically by other maven
+                  plugins to the project
+                - The scalastyle launch cost is amortized across all modules
+                -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
+                <inherited>false</inherited>
                 <executions>
                     <execution>
-                        <phase>generate-resources</phase>
+                        <id>scalastyle-all-modules</id>
+                        <phase>verify</phase>
+                        <goals><goal>run</goal></goals>
                         <configuration>
-                            <!-- Execute the shell script to generate the plugin build information. -->
                             <target>
-                                <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${user.dir}/build/build-info"/>
-                                    <arg value="${project.version}"/>
-                                    <arg value="${cudf.version}"/>
-                                </exec>
+                                <pathconvert property="scalastyle.dirs" pathsep=" ">
+                                    <dirset dir="${project.basedir}" includes="**/src/main/scala"/>
+                                    <dirset dir="${project.basedir}" includes="**/src/main/*/scala"/>
+                                    <dirset dir="${project.basedir}" includes="**/src/test/scala"/>
+                                    <dirset dir="${project.basedir}" includes="**/src/test/*/scala"/>
+                                </pathconvert>
+                                <echo>Checking scalastyle for all modules using following paths:
+                                    ${scalastyle.dirs}
+                                </echo>
+                                <java classname="org.scalastyle.Main" failonerror="true">
+                                    <arg line="--verbose false"/>
+                                    <arg line="--warnings false"/>
+                                    <arg line="--config scalastyle-config.xml"/>
+                                    <arg line="--xmlOutput ${project.basedir}/target/scalastyle-output.xml"/>
+                                    <arg line="--inputEncoding ${project.build.sourceEncoding}"/>
+                                    <arg line="--xmlEncoding ${project.reporting.outputEncoding}"/>
+                                    <arg line="${scalastyle.dirs}"/>
+                                </java>
                             </target>
                         </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
                     </execution>
                 </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.scalastyle</groupId>
+                        <artifactId>scalastyle_${scala.binary.version}</artifactId>
+                        <version>1.0.0</version>
+                    </dependency>
+                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>

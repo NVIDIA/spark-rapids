@@ -46,7 +46,6 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 
 /**
  * Group Map UDF specific serializer for Databricks because they have a special GroupUDFSerializer.
@@ -72,7 +71,8 @@ class GpuGroupUDFArrowPythonRunner(
     onDataWriteFinished: () => Unit,
     override val pythonOutSchema: StructType,
     minReadTargetBatchSize: Int)
-    extends GpuArrowPythonRunner(funcs, evalType, argOffsets, pythonInSchema, timeZoneId, conf, batchSize, onDataWriteFinished, pythonOutSchema, minReadTargetBatchSize) {
+    extends GpuArrowPythonRunner(funcs, evalType, argOffsets, pythonInSchema, timeZoneId, conf,
+      batchSize, onDataWriteFinished, pythonOutSchema, minReadTargetBatchSize) {
 
   protected override def newWriterThread(
       env: SparkEnv,
