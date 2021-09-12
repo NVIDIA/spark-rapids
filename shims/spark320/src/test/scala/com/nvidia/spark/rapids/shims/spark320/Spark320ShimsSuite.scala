@@ -17,8 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark320;
 
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
-
-import org.scalatest.FunSuite;
+import org.scalatest.FunSuite
 
 class Spark320ShimsSuite extends FunSuite {
   val sparkShims: SparkShims = new SparkShimServiceProvider().buildShim

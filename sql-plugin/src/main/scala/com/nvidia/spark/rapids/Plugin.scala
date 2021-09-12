@@ -309,6 +309,7 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
+
     val gpuPlan = getResultWithTimeout(timeoutMs=timeoutMs)
     assert(gpuPlan.isDefined, "Did not capture a GPU plan")
     assertDidFallBack(gpuPlan.get, fallbackCpuClass)
@@ -348,15 +349,17 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
-    !exp.isInstanceOf[GpuExpression] &&
+    !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
       PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
       exp.children.exists(didFallBack(_, fallbackCpuClass))
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
+    ShimLoader.getSparkShims.getSparkShimVersion.toString
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
-    !executedPlan.isInstanceOf[GpuExec] && PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
-      executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
+    !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
+    PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
+    executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
   private def containsExpression(exp: Expression, className: String): Boolean = {
