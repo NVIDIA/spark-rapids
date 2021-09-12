@@ -973,7 +973,8 @@ object RapidsConf {
       "\"all\" (try to replace all aggregates, default), " +
       "\"complete\" (exclusively replace complete aggregates), " +
       "\"partial\" (exclusively replace partial aggregates), " +
-      "\"final\" (exclusively replace final aggregates)")
+      "\"final\" (exclusively replace final aggregates)." +
+      " These modes can be connected with &(AND) or |(OR) to form sophisticated patterns.")
     .internal()
     .stringConf
     .createWithDefault("all")

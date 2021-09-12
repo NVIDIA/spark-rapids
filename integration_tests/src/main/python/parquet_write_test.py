@@ -21,6 +21,7 @@ from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session
 import pyspark.sql.functions as f
+import pyspark.sql.utils
 import random
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
@@ -313,3 +314,27 @@ def test_write_map_nullable(spark_tmp_path):
             generate_map_with_empty_validity,
             lambda spark, path: spark.read.parquet(path),
             data_path)
+
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", "HiveTableScanExec")
+@pytest.mark.parametrize('allow_non_empty', [True, False])
+def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty):
+    data_path = spark_tmp_path + "/CTAS"
+    conf = {
+        "spark.sql.hive.convertCTAS": "true",
+        "spark.sql.legacy.allowNonEmptyLocationInCTAS": str(allow_non_empty)
+    }
+    def test_it(spark):
+        src_name = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE {}(id string) LOCATION '{}/src1'".format(src_name, data_path))
+        spark.sql("INSERT INTO TABLE {} SELECT 'A'".format(src_name))
+        ctas1_name = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE {}(id string) LOCATION '{}/ctas/ctas1'".format(ctas1_name, data_path))
+        spark.sql("INSERT INTO TABLE {} SELECT 'A'".format(ctas1_name))
+        try:
+            ctas_with_existing_name = spark_tmp_table_factory.get()
+            spark.sql("CREATE TABLE {} LOCATION '{}/ctas' AS SELECT * FROM {}".format(
+                ctas_with_existing_name, data_path, src_name))
+        except pyspark.sql.utils.AnalysisException as e:
+            if allow_non_empty or e.desc.find('non-empty directory') == -1:
+                raise e
+    with_gpu_session(test_it, conf)

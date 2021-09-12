@@ -1712,7 +1712,7 @@ object GpuOverrides extends Logging {
       }),
     expr[And](
       "Logical AND",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[And](a, conf, p, r) {
@@ -1721,7 +1721,7 @@ object GpuOverrides extends Logging {
       }),
     expr[Or](
       "Logical OR",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[Or](a, conf, p, r) {
@@ -2661,6 +2661,33 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[ArrayTransform](in, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuArrayTransform(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
+        }
+      }),
+    expr[TransformKeys](
+      "Transform keys in a map using a transform function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function",
+            // We need to be able to check for duplicate keys (equality)
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+            TypeSig.all - TypeSig.MAP.nested()))),
+      (in, conf, p, r) => new ExprMeta[TransformKeys](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
+            case "EXCEPTION" => // Good we can support this
+            case other =>
+              willNotWorkOnGpu(s"$other is not supported for config setting" +
+                  s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
+          }
+        }
+        override def convertToGpu(): GpuExpression = {
+          GpuTransformKeys(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
     expr[TransformValues](
