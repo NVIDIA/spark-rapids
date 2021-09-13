@@ -55,8 +55,9 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, TrampolineUtil}
 import org.apache.spark.sql.rapids.execution.python.{GpuFlatMapGroupsInPandasExecMeta, GpuPythonUDF}
+import org.apache.spark.sql.rapids.execution.python.shims.spark301db._
 import org.apache.spark.sql.rapids.shims.spark301db._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
