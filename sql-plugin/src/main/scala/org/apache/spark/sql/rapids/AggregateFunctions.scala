@@ -280,10 +280,14 @@ class CudfTDigest(
 }
 
 object CudfTDigest {
-  val dataType: DataType = ArrayType(StructType(Array(
-    StructField("mean", DataTypes.DoubleType),
-    StructField("weight", DataTypes.DoubleType)
-  )), containsNull = false)
+  val dataType: DataType = StructType(Array(
+    StructField("centroids", ArrayType(StructType(Array(
+      StructField("mean", DataTypes.DoubleType, nullable = false),
+      StructField("weight", DataTypes.DoubleType, nullable = false)
+    )), containsNull = false)),
+    StructField("min", DataTypes.DoubleType, nullable = false),
+    StructField("max", DataTypes.DoubleType, nullable = false)
+  ))
 }
 
 class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {
