@@ -34,13 +34,18 @@ trait GpuCachedBatchSerializer extends CachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch]
-
 }
 
+/**
+ * User facing wrapper class that calls into the proper shim version.
+ */
 class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   val minSupportedVer = "3.1.1"
   val sparkVersion = ShimLoader.getSparkVersion
+  // Note that since the config to set the serializer wasn't added until
+  // Spark 3.1.0 (https://issues.apache.org/jira/browse/SPARK-32274) this shouldn't
+  // ever throw.
   if (sparkVersion < minSupportedVer) {
     throw new IllegalArgumentException("ParquetCachedBaatchSerializer only supported for Spark " +
       s"versions > 3.1.1, version found was: $sparkVersion")
@@ -168,7 +173,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     realSerializer.convertCachedBatchToInternalRow(input, cacheAttributes, selectedAttributes, conf)
   }
 
-  def gpuConvertCachedBatchToColumnarBatch(
+  override def gpuConvertCachedBatchToColumnarBatch(
       input: RDD[CachedBatch],
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
