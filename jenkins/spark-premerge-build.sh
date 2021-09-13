@@ -38,7 +38,7 @@ mvn_verify() {
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     mvn -U -B $MVN_URM_MIRROR '-Pindividual,pre-merge' clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=5 -Dcuda.version=$CUDA_CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
 
     # Run the unit tests for other Spark versions but don't run full python integration tests
     # NOT ALL TESTS NEEDED FOR PREMERGE
@@ -94,9 +94,12 @@ ci_2() {
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
+    export TEST_PARALLEL=4
     # separate process to avoid OOM kill
-    TEST_PARALLEL=4 TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST_PARALLEL=5 TEST='not conditionals_test and not window_function_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST_PARALLEL=5 TEST='struct_test or time_window_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='not conditionals_test and not window_function_test and not struct_test and not time_window_test' \
+      ./integration_tests/run_pyspark_from_build.sh
 }
 
 
