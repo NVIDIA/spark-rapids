@@ -72,7 +72,7 @@ parquet_write_gens_list = [
     parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
-@pytest.mark.order(1) # only take effect when pytest-order is installed
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -118,7 +118,7 @@ parquet_part_write_gens = [
 
 # There are race conditions around when individual files are read in for partitioned data
 @ignore_order
-@pytest.mark.order(1) # only take effect when pytest-order is installed
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])

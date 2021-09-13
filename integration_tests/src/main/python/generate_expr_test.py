@@ -50,7 +50,7 @@ conf_to_enforce_split_input = {'spark.rapids.sql.batchSizeBytes': '8192',
         'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'}
 
 @ignore_order(local=True)
-@pytest.mark.order(1) # only take effect when pytest-order is installed
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gen + struct_gens_sample + array_gens_sample + map_gens_sample, ids=idfn)
 def test_explode_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
@@ -82,7 +82,7 @@ def test_explode_nested_array_data(spark_tmp_path, data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.order(1) # only take effect when pytest-order is installed
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gen + struct_gens_sample + array_gens_sample + map_gens_sample, ids=idfn)
 def test_explode_outer_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
@@ -132,7 +132,7 @@ def test_posexplode_litarray(data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.order(1) # only take effect when pytest-order is installed
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gen + struct_gens_sample + array_gens_sample + map_gens_sample, ids=idfn)
 def test_posexplode_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
@@ -164,7 +164,7 @@ def test_posexplode_nested_array_data(spark_tmp_path, data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.order(1) # only take effect when pytest-order is installed
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gen + struct_gens_sample + array_gens_sample + map_gens_sample, ids=idfn)
 def test_posexplode_outer_array_data(spark_tmp_path, data_gen):
     data_gen = [int_gen, ArrayGen(data_gen)]
