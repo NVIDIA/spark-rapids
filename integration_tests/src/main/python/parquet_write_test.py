@@ -72,6 +72,7 @@ parquet_write_gens_list = [
     parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -117,6 +118,7 @@ parquet_part_write_gens = [
 
 # There are race conditions around when individual files are read in for partitioned data
 @ignore_order
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -180,6 +182,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, re
             data_path,
             conf=all_confs)
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
@@ -198,6 +201,7 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
     write_cmd = 'CREATE TABLE `{}` USING PARQUET location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
     spark.sql(write_cmd)
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):

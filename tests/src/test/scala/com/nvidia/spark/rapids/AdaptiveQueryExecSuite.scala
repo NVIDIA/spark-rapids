@@ -159,7 +159,6 @@ class AdaptiveQueryExecSuite
 
   test("Join partitioned tables DPP fallback") {
     assumeSpark301orLater
-    assumePriorToSpark320 // In 3.2.0 AQE works with DPP
 
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -195,8 +194,14 @@ class AdaptiveQueryExecSuite
       )
       df.collect()
 
-      // assert that DPP did cause this to run as a non-AQE plan
-      assert(!df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec])
+      val isAdaptiveQuery = df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec]
+      if (cmpSparkVersion(3, 2, 0) < 0) {
+        // assert that DPP did cause this to run as a non-AQE plan prior to Spark 3.2.0
+        assert(!isAdaptiveQuery)
+      } else {
+        // In 3.2.0 AQE works with DPP
+        assert(isAdaptiveQuery)
+      }
 
       // assert that both inputs to the SHJ are coalesced
       val shj = TestUtils.findOperator(df.queryExecution.executedPlan,

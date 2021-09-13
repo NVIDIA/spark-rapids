@@ -226,7 +226,7 @@ case class GpuMultiply(
   }
 }
 
-object GpuDivModLike {
+object GpuDivModLike extends Arm {
   def replaceZeroWithNull(v: GpuColumnVector): ColumnVector = {
     var zeroScalar: Scalar = null
     var nullScalar: Scalar = null
@@ -282,6 +282,54 @@ object GpuDivModLike {
       case t => throw new IllegalArgumentException(s"Unexpected type: $t")
     }
   }
+
+  /**
+   * This is for the case as below.
+   *
+   *   left : [1,  2,  Long.MinValue,  3, Long.MinValue]
+   *   right: [2, -1,             -1, -1,             6]
+   *
+   * The 3rd row (Long.MinValue, -1) will cause an overflow of the integral division.
+   */
+  def isDivOverflow(left: GpuColumnVector, right: GpuColumnVector): Boolean = {
+    left.dataType() match {
+      case LongType =>
+        withResource(Scalar.fromLong(Long.MinValue)) { minLong =>
+          withResource(left.getBase.equalTo(minLong)) { eqToMinLong =>
+            withResource(Scalar.fromInt(-1)) { minusOne =>
+              withResource(right.getBase.equalTo(minusOne)) { eqToMinusOne =>
+                withResource(eqToMinLong.and(eqToMinusOne)) { overFlowVector =>
+                  withResource(overFlowVector.any()) { isOverFlow =>
+                    isOverFlow.isValid && isOverFlow.getBoolean
+                  }
+                }
+              }
+            }
+          }
+        }
+      case _ => false
+    }
+  }
+
+  def isDivOverflow(left: GpuColumnVector, right: GpuScalar): Boolean = {
+    left.dataType() match {
+      case LongType =>
+        (right.isValid && right.getValue == -1) && {
+          withResource(Scalar.fromLong(Long.MinValue)) { minLong =>
+            left.getBase.contains(minLong)
+          }
+        }
+      case _ => false
+    }
+  }
+
+  def isDivOverflow(left: GpuScalar, right: GpuColumnVector): Boolean = {
+    (left.isValid && left.getValue == Long.MinValue) && {
+      withResource(Scalar.fromInt(-1)) { minusOne =>
+        right.getBase.contains(minusOne)
+      }
+    }
+  }
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
@@ -290,10 +338,17 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 
   override def nullable: Boolean = true
 
+  // Whether we should check overflow or not in ANSI mode.
+  protected def checkDivideOverflow: Boolean = false
+
   import GpuDivModLike._
 
   private def divByZeroError(): Nothing = {
     throw new ArithmeticException("divide by zero")
+  }
+
+  private def divOverflowError(): Nothing = {
+    throw new ArithmeticException("Overflow in integral divide.")
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
@@ -301,11 +356,16 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
         if (rhs.getBase.contains(zeroScalar)) {
           divByZeroError()
-        } else {
-          super.doColumnar(lhs, rhs)
         }
+        if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+          divOverflowError()
+        }
+        super.doColumnar(lhs, rhs)
       }
     } else {
+      if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+        divOverflowError()
+      }
       withResource(replaceZeroWithNull(rhs)) { replaced =>
         super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
       }
@@ -313,6 +373,9 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+      divOverflowError()
+    }
     withResource(replaceZeroWithNull(rhs)) { replaced =>
       super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
     }
@@ -328,6 +391,9 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
         }
       }
     } else {
+      if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+        divOverflowError()
+      }
       super.doColumnar(lhs, rhs)
     }
   }
@@ -459,6 +525,14 @@ case class GpuDivide(left: Expression, right: Expression,
 
 case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
+
+  lazy val failOnOverflow: Boolean =
+    ShimLoader.getSparkShims.shouldFailDivOverflow()
+
+  override def checkDivideOverflow: Boolean = left.dataType match {
+    case LongType if failOnOverflow => true
+    case _ => false
+  }
 
   override def dataType: DataType = LongType
   override def outputTypeOverride: DType = DType.INT64

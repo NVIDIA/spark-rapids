@@ -219,6 +219,8 @@ trait SparkShims {
 
   def shouldFailDivByZero(): Boolean
 
+  def shouldFailDivOverflow(): Boolean
+
   def createTable(table: CatalogTable,
     sessionCatalog: SessionCatalog,
     tableLocation: Option[URI],
