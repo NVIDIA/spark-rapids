@@ -91,4 +91,6 @@ trait Spark30XShims extends SparkShims {
   override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     ss.sparkContext.defaultParallelism
   }
+
+  override def shouldFailDivOverflow(): Boolean = false
 }
