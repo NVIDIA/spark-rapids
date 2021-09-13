@@ -27,3 +27,4 @@ If you have to change the contents of the uber jar the following files control w
 
 1. `unshimmed-base.txt` - this has classes and files that should go into the base jar with their normal package name (not shaded). This includes user visible classes (ie com/nvidia/spark/SQLPlugin), python files, and other files that aren't version specific. Uses Spark 3.0.1 built jar for these base classes.
 2. `unshimmed-extras.txt` - This is applied to all the individual Spark specific verson jars to pull any files that need to go into the base of the jar and not into the Spark specific directory from all of the other Spark version jars.
+3. `unshimmed-spark311.txt` - This is applied to all the Spark 3.1.1 specific verson to pull any files that need to go into the base of the jar and not into the Spark specific directory from all of the other Spark version jars.

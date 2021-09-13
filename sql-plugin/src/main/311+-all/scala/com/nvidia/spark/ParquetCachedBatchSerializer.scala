@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -173,6 +173,17 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     realSerializer.convertCachedBatchToInternalRow(input, cacheAttributes, selectedAttributes, conf)
   }
 
+  /**
+   * This method decodes the CachedBatch leaving it on the GPU to avoid the extra copying back to
+   * the host
+   *
+   * @param input              the cached batches that should be converted.
+   * @param cacheAttributes    the attributes of the data in the batch.
+   * @param selectedAttributes the fields that should be loaded from the data and the order they
+   *                           should appear in the output batch.
+   * @param conf               the configuration for the job.
+   * @return an RDD of the input cached batches transformed into the ColumnarBatch format.
+   */
   override def gpuConvertCachedBatchToColumnarBatch(
       input: RDD[CachedBatch],
       cacheAttributes: Seq[Attribute],
