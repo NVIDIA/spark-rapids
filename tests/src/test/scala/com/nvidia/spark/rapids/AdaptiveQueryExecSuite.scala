@@ -24,7 +24,7 @@ import org.scalatest.BeforeAndAfterEach
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
-import org.apache.spark.sql.execution.{PartialReducerPartitionSpec, SparkPlan}
+import org.apache.spark.sql.execution.{LocalTableScanExec, PartialReducerPartitionSpec, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
@@ -92,6 +92,12 @@ class AdaptiveQueryExecSuite
   private def findTopLevelGpuShuffleHashJoin(plan: SparkPlan): Seq[GpuShuffledHashJoinBase] = {
     collect(plan) {
       case j: GpuShuffledHashJoinBase => j
+    }
+  }
+
+  private def findTopLevelSort(plan: SparkPlan): Seq[SortExec] = {
+    collect(plan) {
+      case s: SortExec => s
     }
   }
 
@@ -527,6 +533,32 @@ class AdaptiveQueryExecSuite
 
       val (plan, adaptivePlan) = runAdaptiveAndVerifyResult(spark,
         "SELECT df1.properties from df1, df2 where df1.name=df2.name")
+    }, conf)
+  }
+
+  test("SPARK-35585: Support propagate empty relation through project/filter") {
+    logError("SPARK-35585: Support propagate empty relation through project/filter")
+    assumeSpark320orLater
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+          "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
+
+    withGpuSparkSession(spark => {
+      testData(spark)
+
+      val (plan1, adaptivePlan1) = runAdaptiveAndVerifyResult(spark,
+        "SELECT key FROM testData WHERE key = 0 ORDER BY key, value")
+      assert(findTopLevelSort(plan1).size == 1)
+      assert(stripAQEPlan(adaptivePlan1).isInstanceOf[LocalTableScanExec])
+
+      val (plan2, adaptivePlan2) = runAdaptiveAndVerifyResult(spark,
+        "SELECT key FROM (SELECT * FROM testData WHERE value = 'no_match' ORDER BY key)" +
+            " WHERE key > rand()")
+      assert(findTopLevelSort(plan2).size == 1)
+      assert(stripAQEPlan(adaptivePlan2).isInstanceOf[LocalTableScanExec])
     }, conf)
   }
 
