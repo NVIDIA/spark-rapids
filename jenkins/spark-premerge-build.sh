@@ -96,7 +96,7 @@ ci_2() {
     export TEST_TYPE="pre-commit"
     # separate process to avoid OOM kill
     TEST_PARALLEL=4 TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST_PARALLEL=5 TEST='not conditionals_test and not window_function_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST_PARALLEL=4 TEST='not conditionals_test and not window_function_test' ./integration_tests/run_pyspark_from_build.sh
 }
 
 
