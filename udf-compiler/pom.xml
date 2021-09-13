@@ -104,6 +104,12 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>JsonAST</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
