@@ -283,12 +283,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     can be provided where the filtering is done if any of the
                                     config is present in the eventlog.
                                     filter on specific configuration(key:value):
-                                    --conf-names=spark.eventLog.enabled:true
+                                    --spark-property=spark.eventLog.enabled:true
                                     filter all eventlogs which has config(key):
-                                    --conf-names=spark.driver.port
+                                    --spark-property=spark.driver.port
                                     Multiple configs:
-                                    --conf-names=spark.eventLog.enabled:true
-                                    --conf-names=spark.driver.port.
+                                    --spark-property=spark.eventLog.enabled:true
+                                    --spark-property=spark.driver.port.
   -t, --timeout  <arg>              Maximum time in seconds to wait for the
                                     event logs to be processed. Default is 24
                                     hours (86400 seconds) and must be greater

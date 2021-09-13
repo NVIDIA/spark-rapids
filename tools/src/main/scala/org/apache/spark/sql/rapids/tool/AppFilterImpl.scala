@@ -107,7 +107,7 @@ class AppFilterImpl(
         userNameFiltered
       }
 
-      // check if key:value pair is provided in the confNames filter. If those are provided
+      // check if key:value pair is provided in the sparkProperty filter. If those are provided
       // along with just the key configs, then we have to make sure we consider both variations
       // i.e key:pair and key configs to filter the event logs.
       if (filterSparkProperties.toString.contains(":")) {

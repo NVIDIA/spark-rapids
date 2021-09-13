@@ -117,10 +117,10 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
           "launch of the application. It can filter based on key:value pair or just based on " +
           "keys. Multiple configs can be provided where the filtering is done if any of the" +
           "config is present in the eventlog. " +
-          "filter on specific configuration: --conf-names=spark.eventLog.enabled:true" +
-          "filter all eventlogs which has config:  --conf-names=spark.driver.port" +
-          "Multiple configs: --conf-names=spark.eventLog.enabled:true " +
-          "--conf-names=spark.driver.port")
+          "filter on specific configuration: --spark-property=spark.eventLog.enabled:true" +
+          "filter all eventlogs which has config: --spark-property=spark.driver.port" +
+          "Multiple configs: --spark-property=spark.eventLog.enabled:true " +
+          "--spark-property=spark.driver.port")
   val timeout: ScallopOption[Long] =
     opt[Long](required = false,
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +
