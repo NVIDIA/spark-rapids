@@ -219,18 +219,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     only logs for which all conditions are satisfied.
                                     Example: <Filter1> <Filter2> <Filter3> --all -> result
                                     is <Filter1> AND <Filter2> AND <Filter3>. Default is all=true.
-  -c, --conf-names <arg>            Filter applications based on certain Spark properties that were
-                                    set during launch of the application. It can filter based
-                                    on key:value pair or just based on keys. Multiple configs
-                                    can be provided where the filtering is done if any of the
-                                    config is present in the eventlog.
-                                    filter on specific configuration(key:value):
-                                    --conf-names=spark.eventLog.enabled:true
-                                    filter all eventlogs which has config(key):
-                                    --conf-names=spark.driver.port
-                                    Multiple configs:
-                                    --conf-names=spark.eventLog.enabled:true
-                                    --conf-names=spark.driver.port.
   -f, --filter-criteria  <arg>      Filter newest or oldest N eventlogs based on
                                     application start timestamp, unique
                                     application name or filesystem timestamp.
@@ -289,6 +277,18 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                     min(minute),h(hours),d(days),w(weeks),m(months).
                                     If a period is not specified it defaults to
                                     days.
+      --spark-property <arg>        Filter applications based on certain Spark properties that were
+                                    set during launch of the application. It can filter based
+                                    on key:value pair or just based on keys. Multiple configs
+                                    can be provided where the filtering is done if any of the
+                                    config is present in the eventlog.
+                                    filter on specific configuration(key:value):
+                                    --conf-names=spark.eventLog.enabled:true
+                                    filter all eventlogs which has config(key):
+                                    --conf-names=spark.driver.port
+                                    Multiple configs:
+                                    --conf-names=spark.eventLog.enabled:true
+                                    --conf-names=spark.driver.port.
   -t, --timeout  <arg>              Maximum time in seconds to wait for the
                                     event logs to be processed. Default is 24
                                     hours (86400 seconds) and must be greater

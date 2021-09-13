@@ -88,16 +88,6 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[String](required = false,
       descr = "Filter event logs whose filenames contain the input string. Filesystem " +
               "based filtering happens before any application based filtering.")
-  val confNames: ScallopOption[List[String]] =
-    opt[List[String]](required = false,
-      descr = "Filter applications based on certain Spark properties that were set during " +
-          "launch of the application. It can filter based on key:value pair or just based on " +
-          "keys. Multiple configs can be provided where the filtering is done if any of the" +
-          "config is present in the eventlog. " +
-          "filter on specific configuration: --conf-names=spark.eventLog.enabled:true" +
-          "filter all eventlogs which has config:  --conf-names=spark.driver.port" +
-          "Multiple configs: --conf-names=spark.eventLog.enabled:true " +
-          "--conf-names=spark.driver.port")
   val numOutputRows: ScallopOption[Int] =
     opt[Int](required = false,
       descr = "Number of output rows in the summary report. Default is 1000.",
@@ -121,6 +111,16 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       descr = "Whether to output the read formats and datatypes to the CSV file. This can " +
         "be very long. Default is false.",
       default = Some(false))
+  val sparkProperty: ScallopOption[List[String]] =
+    opt[List[String]](required = false,
+      descr = "Filter applications based on certain Spark properties that were set during " +
+          "launch of the application. It can filter based on key:value pair or just based on " +
+          "keys. Multiple configs can be provided where the filtering is done if any of the" +
+          "config is present in the eventlog. " +
+          "filter on specific configuration: --conf-names=spark.eventLog.enabled:true" +
+          "filter all eventlogs which has config:  --conf-names=spark.driver.port" +
+          "Multiple configs: --conf-names=spark.eventLog.enabled:true " +
+          "--conf-names=spark.driver.port")
   val timeout: ScallopOption[Long] =
     opt[Long](required = false,
       descr = "Maximum time in seconds to wait for the event logs to be processed. " +

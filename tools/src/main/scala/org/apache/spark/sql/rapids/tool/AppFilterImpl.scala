@@ -75,7 +75,7 @@ class AppFilterImpl(
     val filterAppName = appArgs.applicationName.getOrElse("")
     val filterCriteria = appArgs.filterCriteria.getOrElse("")
     val userName = appArgs.userName.getOrElse("")
-    val sparkProperties = appArgs.confNames.getOrElse(List.empty[String])
+    val filterSparkProperties = appArgs.sparkProperty.getOrElse(List.empty[String])
 
     val appNameFiltered = if (filterAppName.nonEmpty) {
       val filtered = if (filterAppName.startsWith(NEGATE)) {
@@ -100,7 +100,7 @@ class AppFilterImpl(
       appNameFiltered
     }
 
-    val configFiltered = if (sparkProperties.nonEmpty) {
+    val configFiltered = if (filterSparkProperties.nonEmpty) {
       val userNameLogicFiltered = if (appArgs.any()) {
         apps
       } else {
@@ -110,14 +110,13 @@ class AppFilterImpl(
       // check if key:value pair is provided in the confNames filter. If those are provided
       // along with just the key configs, then we have to make sure we consider both variations
       // i.e key:pair and key configs to filter the event logs.
-      if (sparkProperties.toString.contains(":")) {
+      if (filterSparkProperties.toString.contains(":")) {
+        val individualConfigs = filterSparkProperties.map(str => str.split(":"))
+        val keyValueConfigs = individualConfigs.filter(kvConfig => kvConfig.size == 2)
+        val keysOnlyConfigs = individualConfigs.filter(kconfig => kconfig.size != 2)
+
         val configFilteredResult = userNameLogicFiltered.filter { appFilterReturnParameters =>
-          val individualConfigs = sparkProperties.map(str => str.split(":"))
-
           appFilterReturnParameters.appInfo.sparkProperties.exists { sparkProp =>
-            val keyValueConfigs = individualConfigs.filter(kvConfig => kvConfig.size == 2)
-            val keysOnlyConfigs = individualConfigs.filter(kconfig => kconfig.size != 2)
-
             if (keyValueConfigs.nonEmpty || keysOnlyConfigs.nonEmpty) {
               val validConfigsMap = keyValueConfigs.map(a => a(0) -> a(1)).toMap
               val allConfigs = sparkProp.configName // all configs from eventlog
@@ -129,7 +128,7 @@ class AppFilterImpl(
               validConfigsMap.filter { configArgs =>
                 commonConfigs.exists(eventLogConf =>
                   configArgs._1 == eventLogConf._1 && configArgs._2 == eventLogConf._2)
-              }.nonEmpty || sparkProperties.intersect(allConfigKeys).nonEmpty
+              }.nonEmpty || filterSparkProperties.intersect(allConfigKeys).nonEmpty
             } else {
               false
             }
@@ -140,7 +139,7 @@ class AppFilterImpl(
         val configFilteredResult = userNameLogicFiltered.filter { appFilterReturnParameters =>
           appFilterReturnParameters.appInfo.sparkProperties.exists { sparkProp =>
             val allConfigsKeys = sparkProp.configName.keys.toList
-            sparkProperties.intersect(allConfigsKeys).nonEmpty
+            filterSparkProperties.intersect(allConfigsKeys).nonEmpty
           }
         }
         configFilteredResult
@@ -175,7 +174,7 @@ class AppFilterImpl(
       Seq.empty[AppFilterReturnParameters]
     }
 
-    val configFilteredForDisjunction = if (sparkProperties.nonEmpty && appArgs.any()) {
+    val configFilteredForDisjunction = if (filterSparkProperties.nonEmpty && appArgs.any()) {
       configFiltered
     } else {
       Seq.empty[AppFilterReturnParameters]
