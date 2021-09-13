@@ -610,10 +610,11 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       inputTable: Table,
       filePath: String,
       clippedSchema: MessageType): Table = {
-    convertToUnsigned(convertToDecimal(inputTable, filePath, clippedSchema))
+    convertToUnsigned(evolveSchemaIfNeededAndCloseImp(inputTable, filePath, clippedSchema))
   }
 
-  private def convertToDecimal(inputTable: Table, filePath: String, clippedSchema: MessageType) = {
+  private def evolveSchemaIfNeededAndCloseImp(
+      inputTable: Table, filePath: String, clippedSchema: MessageType) = {
     val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
     // check if there are cols with precision that can be stored in an int
     val typeCastingNeeded = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
@@ -663,11 +664,11 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * Convert cudf unsigned integer to wider signed integer that parquet expects
    * After spark 3.2.0, parquet read uint8 as int16, uint16 as int32, uint32 as int64
    *
-   * @param inputTable
-   * @return
+   * @param inputTable the input table
+   * @return converted table if the input table has unsigned integer
    */
   private def convertToUnsigned(inputTable: Table) = {
-    var typeCastingNeeded = needUnsignedCast(inputTable, readDataSchema)
+    val typeCastingNeeded = needUnsignedCast(inputTable, readDataSchema)
     if (typeCastingNeeded) {
       val newColumns = new Array[ColumnVector](readDataSchema.length)
       try {
@@ -692,32 +693,23 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     }
   }
 
- def needUnsignedCast(table: Table, schema: StructType): Boolean = {
-    var b = false
-    for (i <- 0 until table.getNumberOfColumns) {
-      if (needUnsignedToSignedCast(table.getColumn(i), schema.fields(i).dataType)) {
-        b =true
-      }
-    }
-    b
+  def needUnsignedCast(table: Table, schema: StructType): Boolean = {
+    (0 until table.getNumberOfColumns).exists(i =>
+      needUnsignedToSignedCast(table.getColumn(i), schema.fields(i).dataType))
   }
 
   def needUnsignedToSignedCast(cv: ColumnView, dataType: DataType): Boolean = {
     dataType match {
       case a: ArrayType =>
         val child = cv.getChildColumnView(0)
-        return needUnsignedToSignedCast(child, a.elementType)
+        needUnsignedToSignedCast(child, a.elementType)
       case s: StructType =>
-        for( i <- 0 until cv.getNumChildren) {
-          val child = cv.getChildColumnView(i)
-          if (needUnsignedToSignedCast(child, s(i).dataType)) {
-            return true
-          }
-        }
+        (0 until cv.getNumChildren).exists(i =>
+          needUnsignedToSignedCast(cv.getChildColumnView(i), s(i).dataType)
+        )
       case _ =>
-        return needUnsignedToSignedCastFunction(cv, dataType)
+        needUnsignedToSignedCastFunction(cv, dataType)
     }
-    return false
   }
 
   def needUnsignedToSignedCastFunction(cv: ColumnView, dataType: DataType): Boolean = {
