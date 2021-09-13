@@ -790,6 +790,8 @@ class FileFormatChecks private (
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit =
     throw new IllegalStateException("Internal Error not supported")
+
+  def getFileFormat: TypeSig = sig
 }
 
 object FileFormatChecks {
@@ -2064,8 +2066,9 @@ object SupportedOpsForTools {
         // print read formats and types
         println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
 
-        // print write formats and NA for types. Cannot determine types from event logs.
-        if (!formatLowerCase.equals("csv")) {
+        val writeFileFormat = ioMap(WriteFileOp).getFileFormat
+        // print supported write formats and NA for types. Cannot determine types from event logs.
+        if (writeFileFormat != TypeSig.none) {
           println(s"${(Seq(format, "write") ++ writeOps).mkString(",")}")
         }
     }

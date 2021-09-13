@@ -136,6 +136,20 @@ class QualAppInfo(
     probNotDataset.values.flatten.toSet.mkString(":")
   }
 
+  private def getAllPotentialProblems(getPotentialProb: String, nestedComplex: String): String = {
+    val nestedComplexT = if (nestedComplex.nonEmpty) "NESTED COMPLEX" else ""
+    val result = if (getPotentialProb.nonEmpty) {
+      if (nestedComplex.nonEmpty) {
+        s"$getPotentialProb:$nestedComplexT"
+      } else {
+        getPotentialProb
+      }
+    } else {
+      nestedComplexT
+    }
+    result
+  }
+
   private def getSQLDurationProblematic: Long = {
     probNotDataset.keys.map { sqlId =>
       sqlDurationTime.getOrElse(sqlId, 0L)
@@ -198,7 +212,6 @@ class QualAppInfo(
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframeDuration
-      val problems = getPotentialProblems
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
@@ -217,6 +230,7 @@ class QualAppInfo(
       }.mkString(";")
       val writeFormat = writeFormatNotSupported(writeDataFormat)
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
+      val problems = getAllPotentialProblems(getPotentialProblems, nestedComplexTypes)
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
