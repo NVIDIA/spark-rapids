@@ -115,6 +115,8 @@ object TypeEnum extends Enumeration {
   val MAP: Value = Value
   val STRUCT: Value = Value
   val UDT: Value = Value
+  val DAYTIME: Value = Value
+  val YEARMONTH:Value = Value
 }
 
 /**
@@ -122,12 +124,12 @@ object TypeEnum extends Enumeration {
  * a set of base types and a separate set of types that can be nested under the base types
  * (child types). It can also express if a particular base type has to be a literal or not.
  */
-final class TypeSig private(
-    private val initialTypes: TypeEnum.ValueSet,
-    private val maxAllowedDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
-    private val childTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
-    private val litOnlyTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
-    private val notes: Map[TypeEnum.Value, String] = Map.empty) {
+class TypeSig (
+    protected[rapids] val initialTypes: TypeEnum.ValueSet,
+    protected[rapids] val maxAllowedDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
+    protected[rapids] val childTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
+    protected[rapids] val litOnlyTypes: TypeEnum.ValueSet = TypeEnum.ValueSet(),
+    protected[rapids] val notes: Map[TypeEnum.Value, String] = Map.empty) {
 
   /**
    * Add a literal restriction to the signature
@@ -257,7 +259,7 @@ final class TypeSig private(
   def isSupportedByPlugin(dataType: DataType, allowDecimal: Boolean): Boolean =
     isSupported(initialTypes, dataType, allowDecimal)
 
-  private [this] def isLitOnly(dataType: DataType): Boolean = dataType match {
+  protected [this] def isLitOnly(dataType: DataType): Boolean = dataType match {
     case BooleanType => litOnlyTypes.contains(TypeEnum.BOOLEAN)
     case ByteType => litOnlyTypes.contains(TypeEnum.BYTE)
     case ShortType => litOnlyTypes.contains(TypeEnum.SHORT)
@@ -281,7 +283,7 @@ final class TypeSig private(
   def isSupportedBySpark(dataType: DataType): Boolean =
     isSupported(initialTypes, dataType, allowDecimal = true)
 
-  private[this] def isSupported(
+  protected[this] def isSupported(
       check: TypeEnum.ValueSet,
       dataType: DataType,
       allowDecimal: Boolean): Boolean =
@@ -324,7 +326,7 @@ final class TypeSig private(
     msg
   }
 
-  private[this] def basicNotSupportedMessage(dataType: DataType,
+  protected[this] def basicNotSupportedMessage(dataType: DataType,
       te: TypeEnum.Value, check: TypeEnum.ValueSet, isChild: Boolean): Seq[String] = {
     if (check.contains(te)) {
       Seq.empty
@@ -333,7 +335,7 @@ final class TypeSig private(
     }
   }
 
-  private[this] def reasonNotSupported(
+  protected[this] def reasonNotSupported(
       check: TypeEnum.ValueSet,
       dataType: DataType,
       isChild: Boolean,
@@ -551,6 +553,16 @@ object TypeSig {
    * User Defined Type (We don't support these in the plugin yet)
    */
   val UDT: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.UDT))
+
+  /**
+   * DayTimeIntervalType support from Spark 3.2.0+
+   */
+  val DAYTIME: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.DAYTIME))
+
+  /**
+   * YearMonthIntervalType support from Spark 3.2.0+
+   */
+  val YEARMONTH: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.YEARMONTH))
 
   /**
    * A signature for types that are generally supported by the plugin/CUDF. Please make sure to

@@ -16,8 +16,11 @@
 
 package com.nvidia.spark.rapids.shims.spark320;
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion, TypeSig}
+import com.nvidia.spark.rapids.shims.v2.TypeSig320
 import org.scalatest.FunSuite
+
+import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
 class Spark320ShimsSuite extends FunSuite {
   val sparkShims: SparkShims = new SparkShimServiceProvider().buildShim
@@ -28,5 +31,11 @@ class Spark320ShimsSuite extends FunSuite {
   test("shuffle manager class") {
     assert(sparkShims.getRapidsShuffleManagerClass ===
       classOf[com.nvidia.spark.rapids.spark320.RapidsShuffleManager].getCanonicalName)
+  }
+
+  test("TypeSig320") {
+    val check = TypeSig320(TypeSig.DAYTIME + TypeSig.YEARMONTH)
+    assert(check.isSupportedByPlugin(DayTimeIntervalType(), false) == true)
+    assert(check.isSupportedByPlugin(YearMonthIntervalType(), false) == true)
   }
 }
