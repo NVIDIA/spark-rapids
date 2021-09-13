@@ -37,11 +37,6 @@ only needed when testing integration with pandas.
 integration and interoperability with pandas, NumPy, and other software in the Python ecosystem. This is used
 to test improved transfer performance to pandas based user defined functions.
 
-### pytest-order
-`pip install pytest-order`
-
-`pytest-order` allows you to customize the order in which your tests are run. This is optional.
-
 ## pytest-xdist and findspark
 
 `pytest-xdist` and `findspark` can be used to speed up running the tests by running them in parallel.

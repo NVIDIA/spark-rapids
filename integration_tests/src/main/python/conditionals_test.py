@@ -66,7 +66,7 @@ def test_if_else_map(data_gen):
                 'IF(a, b, c)'),
             conf = allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.order(1) # put expensive test case at the head of the xdist worker queue
+@pytest.mark.order(1) # only take effect when pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)
 def test_case_when(data_gen):
     num_cmps = 20
