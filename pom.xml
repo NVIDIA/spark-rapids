@@ -103,7 +103,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
@@ -138,7 +138,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
@@ -182,7 +182,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
@@ -221,7 +221,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/301until310-all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
@@ -317,7 +317,6 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301db/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
