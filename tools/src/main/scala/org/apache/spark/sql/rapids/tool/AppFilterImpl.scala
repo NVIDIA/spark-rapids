@@ -113,22 +113,20 @@ class AppFilterImpl(
       if (filterSparkProperties.toString.contains(":")) {
         val individualConfigs = filterSparkProperties.map(str => str.split(":"))
         val keyValueConfigs = individualConfigs.filter(kvConfig => kvConfig.size == 2)
-        val keysOnlyConfigs = individualConfigs.filter(kconfig => kconfig.size != 2)
+        val keysOnlyConfigs = individualConfigs.filter(kconfig => kconfig.size != 2).flatten(x => x)
+        val validConfigsMap = keyValueConfigs.map(a => a(0) -> a(1)).toMap
 
         val configFilteredResult = userNameLogicFiltered.filter { appFilterReturnParameters =>
           appFilterReturnParameters.appInfo.sparkProperties.exists { sparkProp =>
             if (keyValueConfigs.nonEmpty || keysOnlyConfigs.nonEmpty) {
-              val validConfigsMap = keyValueConfigs.map(a => a(0) -> a(1)).toMap
               val allConfigs = sparkProp.configName // all configs from eventlog
-              val allConfigKeys = sparkProp.configName.keys.toList // for keys only confs
               //Intersection of configs provided in the filter args with event log configs.
               val commonConfigs = validConfigsMap.keySet.intersect(allConfigs.keySet).map(
                 k => (k, allConfigs(k))).toMap
 
-              validConfigsMap.filter { configArgs =>
-                commonConfigs.exists(eventLogConf =>
-                  configArgs._1 == eventLogConf._1 && configArgs._2 == eventLogConf._2)
-              }.nonEmpty || filterSparkProperties.intersect(allConfigKeys).nonEmpty
+              commonConfigs.keys.filter { key =>
+                commonConfigs(key) == validConfigsMap(key)
+              }.nonEmpty || filterSparkProperties.intersect(keysOnlyConfigs).nonEmpty
             } else {
               false
             }
