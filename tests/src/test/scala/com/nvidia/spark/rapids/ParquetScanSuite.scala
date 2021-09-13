@@ -93,6 +93,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Test Parquet unsigned int: uint8, uint16, uint32",
     frameFromParquet("unsigned-int.parquet")) {
+    assumeSpark320orLater
     frame => frame.select(col("*"))
   }
 }
