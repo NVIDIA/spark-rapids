@@ -27,7 +27,17 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
 
-class ParquetCachedBatchSerializer extends CachedBatchSerializer {
+
+trait GpuCachedBatchSerializer extends CachedBatchSerializer {
+  def gpuConvertCachedBatchToColumnarBatch(
+      input: RDD[CachedBatch],
+      cacheAttributes: Seq[Attribute],
+      selectedAttributes: Seq[Attribute],
+      conf: SQLConf): RDD[ColumnarBatch]
+
+}
+
+class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   val minSupportedVer = "3.1.1"
   val sparkVersion = ShimLoader.getSparkVersion
@@ -35,8 +45,10 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer {
     throw new IllegalArgumentException("ParquetCachedBaatchSerializer only supported for Spark " +
       s"versions > 3.1.1, version found was: $sparkVersion")
   }
-  private lazy val realSerializer: CachedBatchSerializer =
+
+  private lazy val realSerializer: GpuCachedBatchSerializer = {
     ShimLoader.newInstanceOf("com.nvidia.spark.rapids.shims.v2.ParquetCachedBatchSerializer")
+  }
 
   /**
    * Can `convertColumnarBatchToCachedBatch()` be called instead of
@@ -154,6 +166,14 @@ class ParquetCachedBatchSerializer extends CachedBatchSerializer {
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[InternalRow] = {
     realSerializer.convertCachedBatchToInternalRow(input, cacheAttributes, selectedAttributes, conf)
+  }
+
+  def gpuConvertCachedBatchToColumnarBatch(
+      input: RDD[CachedBatch],
+      cacheAttributes: Seq[Attribute],
+      selectedAttributes: Seq[Attribute],
+      conf: SQLConf): RDD[ColumnarBatch] = {
+    realSerializer.gpuConvertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes, conf)
   }
 
 }

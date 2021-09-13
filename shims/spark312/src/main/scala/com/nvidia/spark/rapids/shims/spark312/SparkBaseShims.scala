@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids.shims.spark312
 import java.net.URI
 import java.nio.ByteBuffer
 
+import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids.shims.v2.Spark30XShims
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector

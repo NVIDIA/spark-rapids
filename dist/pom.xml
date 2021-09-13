@@ -254,7 +254,10 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
-                                            <patternset refid="excludeMeta"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
@@ -519,13 +522,19 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="includeMeta"/>
+                                            <patternset id="includes-spark311">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
-                                            <patternset refid="excludeMeta"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
@@ -1026,7 +1035,10 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
-                                            <patternset refid="excludeMeta"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
@@ -1348,13 +1360,19 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="includeMeta"/>
+                                            <patternset id="includes-spark311">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
-                                            <patternset refid="excludeMeta"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
@@ -1628,6 +1646,7 @@
                                             <patternset id="sharedWorld">
                                                 <includesfile name="${project.basedir}/unshimmed-base.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
