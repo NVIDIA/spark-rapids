@@ -22,9 +22,6 @@ from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_spark_session
 from parquet_test import _nested_pruning_schemas
 
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = pytest.mark.premerge_ci_1
-
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
 
@@ -123,6 +120,7 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
             conf={disable_conf: 'false',
                 "spark.sql.sources.useV1SourceList": "orc"})
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
@@ -147,6 +145,7 @@ orc_pred_push_gens = [
         # timestamp_gen 
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gen', orc_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
