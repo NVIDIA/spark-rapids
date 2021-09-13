@@ -253,7 +253,7 @@ object ShimLoader extends Logging {
     shimProviderClass = classname
   }
 
-  private def newInstanceOf[T](className: String): T = {
+  def newInstanceOf[T](className: String): T = {
     val loader = getShimClassLoader()
     logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
     instantiateClass(loader.loadClass(className)).asInstanceOf[T]
@@ -303,4 +303,5 @@ object ShimLoader extends Logging {
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
+
 }
