@@ -1,0 +1,6 @@
+com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider
+com.nvidia.spark.rapids.shims.spark302.SparkShimServiceProvider
+com.nvidia.spark.rapids.shims.spark303.SparkShimServiceProvider
+com.nvidia.spark.rapids.shims.spark311.SparkShimServiceProvider
+com.nvidia.spark.rapids.shims.spark312.SparkShimServiceProvider
+com.nvidia.spark.rapids.shims.spark311cdh.SparkShimServiceProvider

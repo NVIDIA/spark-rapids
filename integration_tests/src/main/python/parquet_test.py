@@ -561,3 +561,115 @@ def test_disorder_read_schema(spark_tmp_table_factory, reader_confs, v1_enabled_
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c.c_2,c.c_1,b,a FROM {}".format(table_name)),
         all_confs)
+
+
+# SPARK-34859 put in a fix for handling column indexes with vectorized parquet
+# This is a version of those same tests to verify that we are parsing
+# the data correctly.
+# These tests really only matter for Spark 3.2.0 and above, but they should run
+# on any version, but might not test the exact same thing.
+# Based off of ParquetColumnIndexSuite.
+# Timestamp generation was modified because the original tests were written
+# that to cast a long to a a timestamp the long was stored in ms, but it is
+# stored in seconds, which resulted in dates/timetamps past what python can handle
+# We also modified decimal generation to be at most DECIMAL64 until we can support
+# DECIMAL128
+
+filters = ["_1 = 500",
+        "_1 = 500 or _1 = 1500",
+        "_1 = 500 or _1 = 501 or _1 = 1500",
+        "_1 = 500 or _1 = 501 or _1 = 1000 or _1 = 1500",
+        "_1 >= 500 and _1 < 1000",
+        "(_1 >= 500 and _1 < 1000) or (_1 >= 1500 and _1 < 1600)"]
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_reading_from_unaligned_pages_basic_filters(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
+    with_cpu_session(lambda spark : spark.range(0, 2000)\
+            .selectExpr("id as _1", "concat(id, ':', repeat('o', id DIV 100)) as _2")\
+            .coalesce(1)\
+            .write\
+            .option("parquet.page.size", "4096")
+            .option("parquet.enable.dictionary", enable_dictionary)
+            .parquet(data_path))
+    for filter_str in filters:
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark : spark.read.parquet(data_path).filter(filter_str),
+                all_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_reading_from_unaligned_pages_all_types(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
+    with_cpu_session(lambda spark : spark.range(0, 2000)\
+            .selectExpr("id as _1",
+                "cast(id as short) as _3",
+                "cast(id as int) as _4",
+                "cast(id as float) as _5",
+                "cast(id as double) as _6",
+                # DECIMAL128 IS NOT SUPPORTED YET "cast(id as decimal(20,0)) as _7",
+                "cast(id as decimal(10,0)) as _7",
+                "cast(cast(1618161925 + (id * 60 * 60 * 24) as timestamp) as date) as _9",
+                "cast(1618161925 + id as timestamp) as _10")\
+            .coalesce(1)\
+            .write\
+            .option("parquet.page.size", "4096")
+            .option("parquet.enable.dictionary", enable_dictionary)
+            .parquet(data_path))
+    for filter_str in filters:
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark : spark.read.parquet(data_path).filter(filter_str),
+                all_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_reading_from_unaligned_pages_all_types_dict_optimized(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
+    with_cpu_session(lambda spark : spark.range(0, 2000)\
+            .selectExpr("id as _1",
+                "cast(id % 10 as byte) as _2",
+                "cast(id % 10 as short) as _3",
+                "cast(id % 10 as int) as _4",
+                "cast(id % 10 as float) as _5",
+                "cast(id % 10 as double) as _6",
+                # DECIMAL128 IS NOT SUPPORTED YET "cast(id % 10 as decimal(20,0)) as _7",
+                "cast(id % 10 as decimal(10,0)) as _7",
+                "cast(id % 2 as boolean) as _8",
+                "cast(cast(1618161925 + ((id % 10) * 60 * 60 * 24) as timestamp) as date) as _9",
+                "cast(1618161925 + (id % 10) as timestamp) as _10")\
+            .coalesce(1)\
+            .write\
+            .option("parquet.page.size", "4096")
+            .option("parquet.enable.dictionary", enable_dictionary)
+            .parquet(data_path))
+    for filter_str in filters:
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark : spark.read.parquet(data_path).filter(filter_str),
+                all_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('enable_dictionary', ["true", "false"], ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp_path, reader_confs, enable_dictionary, v1_enabled_list):
+    # insert 50 null values in [400, 450) to verify that they are skipped during processing row
+    # range [500, 1000) against the second page of col_2 [400, 800)
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    data_path = spark_tmp_path + '/PARQUET_UNALIGNED_DATA'
+    with_cpu_session(lambda spark : spark.range(0, 2000)\
+            .selectExpr("id as _1", "IF(id >= 400 AND id < 450, null, concat(id, ':', repeat('o', id DIV 100))) as _2")\
+            .coalesce(1)\
+            .write\
+            .option("parquet.page.size", "4096")
+            .option("parquet.enable.dictionary", enable_dictionary)
+            .parquet(data_path))
+    for filter_str in filters:
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark : spark.read.parquet(data_path).filter(filter_str),
+                all_confs)

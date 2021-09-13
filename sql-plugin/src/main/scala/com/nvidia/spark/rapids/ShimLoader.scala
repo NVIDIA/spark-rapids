@@ -193,7 +193,7 @@ object ShimLoader extends Logging {
         )
       } catch {
         case cnf: ClassNotFoundException =>
-          logWarning(cnf + ": Could not load the provider", cnf)
+          logDebug(cnf + ": Could not load the provider, likely a dev build", cnf)
           None
       }
     }.find { case (shimServiceProvider, _) =>
@@ -276,13 +276,12 @@ object ShimLoader extends Logging {
   // Reflection-based API with Spark to switch the classloader used by the caller
   //
 
-  def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): VisibleShuffleManager = {
+  def newInternalShuffleManager(conf: SparkConf, isDriver: Boolean): Any = {
     val shuffleClassLoader = getShimClassLoader()
     val shuffleClassName = getRapidsShuffleInternalClass
     val shuffleClass = shuffleClassLoader.loadClass(shuffleClassName)
     shuffleClass.getConstructor(classOf[SparkConf], java.lang.Boolean.TYPE)
         .newInstance(conf, java.lang.Boolean.valueOf(isDriver))
-        .asInstanceOf[VisibleShuffleManager]
   }
 
   def newDriverPlugin(): DriverPlugin = {
