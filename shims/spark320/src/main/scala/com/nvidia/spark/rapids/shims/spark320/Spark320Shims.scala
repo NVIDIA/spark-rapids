@@ -503,9 +503,8 @@ class Spark320Shims extends Spark32XShims {
             Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
           override def tagPlanForGpu(): Unit = {
-            // Only Scan with SupportsRuntimeFiltering can support DPP.
             if (!p.runtimeFilters.isEmpty) {
-              willNotWorkOnGpu("The DPP has not been supported")
+              willNotWorkOnGpu("Runtime filtering (DPP) on datasource V2 is not supported")
             }
           }
 
@@ -521,8 +520,10 @@ class Spark320Shims extends Spark32XShims {
       (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = {
           GpuParquetScanBase.tagSupport(this)
+          // we are being overly cautious and that Parquet does not support this yet
           if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("DPP has not been supported by GPU ParquetScan")
+            willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
           }
         }
 
@@ -545,8 +546,10 @@ class Spark320Shims extends Spark32XShims {
       (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = {
           GpuOrcScanBase.tagSupport(this)
+          // we are being overly cautious and that Orc does not support this yet
           if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("DPP has not been supported by GPU OrcScan")
+            willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
           }
         }
 
@@ -568,8 +571,10 @@ class Spark320Shims extends Spark32XShims {
       (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
         override def tagSelfForGpu(): Unit = {
           GpuCSVScan.tagSupport(this)
+          // we are being overly cautious and that Csv does not support this yet
           if (a.isInstanceOf[SupportsRuntimeFiltering]) {
-            willNotWorkOnGpu("DPP has not been supported by GPU CSVScan")
+            willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
           }
         }
 
