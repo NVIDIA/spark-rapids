@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 import scala.util.Random
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.{col, expr}
 import org.apache.spark.sql.types.{DataType, DataTypes}
@@ -58,9 +59,12 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
     }
 
-    val approxPercentilesGpu = withGpuSparkSession { spark =>
+    val conf = new SparkConf()
+      .set(RapidsConf.ENABLE_APPROX_PERCENTILE.key, "true")
+
+    val approxPercentilesGpu = withGpuSparkSession(spark =>
       calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
-    }
+    , conf)
 
     val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet
 

@@ -1271,6 +1271,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_APPROX_PERCENTILE = conf("spark.rapids.approxPercentileEnabled")
+    .doc("The GPU implementation of approx_percentile is not bit-for-bit compatible with " +
+      "Apache Spark and is disabled by default. Set this to true to enable it.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1695,6 +1702,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isApproxPercentileEnabled: Boolean = get(ENABLE_APPROX_PERCENTILE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

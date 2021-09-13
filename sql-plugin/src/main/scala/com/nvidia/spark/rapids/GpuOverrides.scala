@@ -2809,7 +2809,10 @@ object GpuOverrides {
       (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
 
         override def tagExprForGpu(): Unit = {
-          if (!childExprs.tail.forall(_.wrapped match {
+          if (!conf.isApproxPercentileEnabled) {
+            willNotWorkOnGpu(s"approx_percentile on GPU is disabled. " +
+              s"Set ${RapidsConf.ENABLE_APPROX_PERCENTILE}=true to enable it")
+          } else if (!childExprs.tail.forall(_.wrapped match {
             case lit: Literal => lit.value != null
             case _ => false
           })) {
