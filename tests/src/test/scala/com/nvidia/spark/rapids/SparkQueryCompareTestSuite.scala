@@ -1846,7 +1846,11 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     assume(cmpSparkVersion(3, 2, 0) < 0, "Spark version not before 3.2.0")
 
   def assumeSpark320orLater =
-    assume(cmpSparkVersion(3, 2, 0) >= 0, "Spark version not 3.2.0+")
+    assume(spark320orLater, "Spark version not 3.2.0+")
+
+  def spark320orLater: Boolean = {
+    cmpSparkVersion(3, 2, 0) >= 0
+  }
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
