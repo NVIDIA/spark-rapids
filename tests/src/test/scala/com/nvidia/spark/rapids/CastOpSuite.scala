@@ -147,15 +147,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.DoubleType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to date using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/3478
+  test("Cast from string to date using random inputs") {
     testCastStringTo(DataTypes.DateType, generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8))
   }
 
-  ignore("Cast from string to date using random inputs with valid year prefix") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/3478
+  test("Cast from string to date using random inputs with valid year prefix") {
     testCastStringTo(DataTypes.DateType,
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
@@ -269,9 +265,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  ignore("Test all supported casts with in-range values") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/3478
+  test("Test all supported casts with in-range values") {
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 

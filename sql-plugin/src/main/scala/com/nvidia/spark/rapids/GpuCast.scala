@@ -950,7 +950,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertVarLenTimestampOr(
+  private def convertTimestampOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -1022,8 +1022,8 @@ object GpuCast extends Arm {
       // convert dates that are in valid timestamp formats
       val converted =
         convertFullTimestampOr(sanitizedInput,
-          convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
               convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
