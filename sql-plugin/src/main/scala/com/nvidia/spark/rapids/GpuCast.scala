@@ -814,7 +814,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  def convertVarLenDateOrNull(
+  def convertDateOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
@@ -835,7 +835,7 @@ object GpuCast extends Arm {
   }
 
     /** This method does not close the `input` ColumnVector. */
-  def convertVarLenDateOr(
+  def convertDateOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -891,9 +891,9 @@ object GpuCast extends Arm {
     val specialDates = DateUtils.specialDatesDays
 
     // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-    val converted = convertVarLenDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-      convertVarLenDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
-        convertVarLenDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
+    val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+      convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
+        convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
 
     // handle special dates like "epoch", "now", etc.
     specialDates.foldLeft(converted)((prev, specialDate) =>
@@ -934,7 +934,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertVarLenTimestampOrNull(
+  private def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
@@ -954,7 +954,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertVarLenTimestampOr(
+  private def convertTimestampOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -1047,9 +1047,9 @@ object GpuCast extends Arm {
       // convert dates that are in valid timestamp formats
       val converted =
         convertFullTimestampOr(sanitizedInput,
-          convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-              convertVarLenTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
+          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
       val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
