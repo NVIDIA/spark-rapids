@@ -1859,7 +1859,7 @@ object GpuOverrides extends Logging {
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
-          val boolExpr :: trueExpr :: falseExpr :: Nil = childExprs.map(_.convertToGpu())
+          val Seq(boolExpr, trueExpr, falseExpr) = childExprs.map(_.convertToGpu())
           GpuIf(boolExpr, trueExpr, falseExpr)
         }
       }),
