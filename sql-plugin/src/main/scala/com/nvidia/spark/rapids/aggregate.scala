@@ -637,7 +637,9 @@ class GpuHashAggregateIterator(
         c => batchesToConcat.head.column(c).dataType
       }.toArray
       withResource(batchesToConcat.map(GpuColumnVector.from)) { tbl =>
-        GpuColumnVector.from(cudf.Table.concatenate(tbl:_*), dataTypes)
+        withResource(cudf.Table.concatenate(tbl: _*)) { concatenated =>
+          GpuColumnVector.from(concatenated, dataTypes)
+        }
       }
     }
   }
