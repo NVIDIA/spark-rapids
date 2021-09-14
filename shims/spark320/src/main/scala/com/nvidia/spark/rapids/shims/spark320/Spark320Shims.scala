@@ -532,10 +532,6 @@ class Spark320Shims extends Spark32XShims {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
 
-  override def getShuffleManagerShims(): ShuffleManagerShimBase = {
-    new ShuffleManagerShim
-  }
-
   override def getPartitionFileNames(
       partitions: Seq[PartitionDirectory]): Seq[String] = {
     val files = partitions.flatMap(partition => partition.files)
