@@ -60,6 +60,12 @@ case class GpuScalarSubquery(
     updated = true
   }
 
+  override lazy val canonicalized: Expression = {
+    GpuScalarSubquery(
+      plan.canonicalized.asInstanceOf[BaseSubqueryExec],
+      ExprId(0))
+  }
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     require(updated, s"$this has not finished")
     GpuScalar(result, dataType)

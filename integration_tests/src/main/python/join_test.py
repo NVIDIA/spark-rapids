@@ -615,7 +615,6 @@ def test_sortmerge_join_struct_mixed_key(data_gen, join_type):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3429')
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Left', 'Right', 'Cross', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_sortmerge_join_struct_mixed_key_with_null_filter(data_gen, join_type):
