@@ -59,7 +59,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
 
   // Test removed temporarily due to known issues
-  // https://github.com/NVIDIA/spark-rapids/issues/2889
+  // https://github.com/NVIDIA/spark-rapids/issues/3478
   /*
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
@@ -105,7 +105,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
   // Test removed temporarily due to known issues
-  // https://github.com/NVIDIA/spark-rapids/issues/2889
+  // https://github.com/NVIDIA/spark-rapids/issues/3478
   /*
   testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
       timestampsAsStrings,
@@ -127,7 +127,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
   // Test removed temporarily due to known issues
-  // https://github.com/NVIDIA/spark-rapids/issues/2889
+  // https://github.com/NVIDIA/spark-rapids/issues/3478
   /*
   testSparkResultsAreEqual("unix_timestamp parse date",
       timestampsAsStrings,

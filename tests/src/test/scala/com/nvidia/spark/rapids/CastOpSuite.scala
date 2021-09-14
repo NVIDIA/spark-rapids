@@ -266,7 +266,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   ignore("Test all supported casts with in-range values") {
     // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/2889
+    // https://github.com/NVIDIA/spark-rapids/issues/3478
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
