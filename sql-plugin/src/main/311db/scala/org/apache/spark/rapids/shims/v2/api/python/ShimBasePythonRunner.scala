@@ -41,5 +41,6 @@ abstract class ShimBasePythonRunner[IN, OUT](
     pid: Option[Int],
     releasedOrClosed: AtomicBoolean,
     context: TaskContext
-  ) extends ReaderIterator(stream, writerThread, startTime, env, worker, pid, releasedOrClosed, context)
+  ) extends ReaderIterator(stream, writerThread, startTime, env, worker, pid, releasedOrClosed,
+    context)
 }

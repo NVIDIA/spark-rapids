@@ -62,8 +62,8 @@ class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    self.getReaderForRange(handle, startMapIndex, endMapIndex, startPartition, endPartition, context,
-      metrics)
+    self.getReaderForRange(handle, startMapIndex, endMapIndex, startPartition, endPartition,
+      context, metrics)
   }
 
   def getReader[K, C](

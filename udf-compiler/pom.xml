@@ -104,6 +104,12 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>JsonAST</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
@@ -236,13 +242,6 @@
             <plugin>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.scalastyle</groupId>
-                <artifactId>scalastyle-maven-plugin</artifactId>
-                <configuration>
-                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
-                </configuration>
             </plugin>
         </plugins>
     </build>

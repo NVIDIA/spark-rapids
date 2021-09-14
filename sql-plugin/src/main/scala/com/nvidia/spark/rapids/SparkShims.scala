@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExcha
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -150,8 +150,6 @@ trait SparkShims {
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
 
-  def getShuffleManagerShims(): ShuffleManagerShimBase
-
   def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
 
   def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
@@ -218,6 +216,8 @@ trait SparkShims {
     replaceFunc: Path => Path): Seq[Path]
 
   def shouldFailDivByZero(): Boolean
+
+  def shouldFailDivOverflow(): Boolean
 
   def createTable(table: CatalogTable,
     sessionCatalog: SessionCatalog,

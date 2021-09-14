@@ -500,13 +500,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "read_dsv2_expectation.csv")
   }
 
-  /*
-   * Temporarily comment out and fix in followup
   test("test dsv1 complex and decimal") {
     val logFiles = Array(s"$logDir/complex_dec_eventlog.zstd")
     runQualificationTest(logFiles, "complex_dec_expectation.csv")
   }
-  */
 
   test("test dsv2 nested complex") {
     val logFiles = Array(s"$logDir/eventlog_nested_dsv2")
