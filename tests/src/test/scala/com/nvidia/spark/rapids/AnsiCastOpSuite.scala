@@ -713,23 +713,28 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
 
   private def assertContainsAnsiCast(df: DataFrame, expected: Int = 1): DataFrame = {
-    var count = 0
-    df.queryExecution.sparkPlan.foreach {
-      case p: ProjectExec => count += p.projectList.count {
-        // ansiEnabled is protected so we rely on CastBase.toString
-        case c: CastBase => c.toString().startsWith("ansi_cast")
-        case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast")
-        case _ => false
-      }
-      case p: GpuProjectExec => count += p.projectList.count {
-        case c: GpuCast => c.ansiMode
-        case _ => false
-      }
-      case _ =>
-    }
+    val projections = ShimLoader.getSparkShims.findOperators(df.queryExecution.executedPlan, {
+      case _: ProjectExec | _: GpuProjectExec => true
+      case _ => false
+    })
+    val count = projections.map {
+        case p: ProjectExec => p.projectList.count {
+          // ansiEnabled is protected so we rely on CastBase.toString
+          case c: CastBase => c.toString().startsWith("ansi_cast")
+          case Alias(c: CastBase, _) => c.toString().startsWith("ansi_cast")
+          case _ => false
+        }
+        case p: GpuProjectExec => p.projectList.count {
+          case c: GpuCast => c.ansiMode
+          case GpuAlias(c: GpuCast, _) => c.ansiMode
+          case _ => false
+        }
+        case _ => 0
+    }.sum
+
     if (count != expected) {
-      throw new IllegalStateException("Plan does not contain the expected number of " +
-        "ansi_cast expressions")
+      throw new IllegalStateException(s"Expected $expected " +
+        s"ansi_cast expressions, found $count")
     }
     df
   }

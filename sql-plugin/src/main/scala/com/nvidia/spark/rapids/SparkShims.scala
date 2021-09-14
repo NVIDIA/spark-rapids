@@ -253,6 +253,18 @@ trait SparkShims {
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 
+  /**
+   * Walk the plan recursively and return a list of operators that match the predicate
+   */
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
+
+  /**
+   * Our tests, by default, will check that all operators are running on the GPU, but
+   * there are some operators that we do not translate to GPU plans, so we need a way
+   * to bypass the check for those.
+   */
+  def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
+
   def leafNodeDefaultParallelism(ss: SparkSession): Int
 }
 
