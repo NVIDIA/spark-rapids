@@ -152,7 +152,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    realSerializer.convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes, conf)
+    realSerializer.convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes,
+      conf)
   }
 
   /**
@@ -189,7 +190,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    realSerializer.gpuConvertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes, conf)
+    realSerializer.gpuConvertCachedBatchToColumnarBatch(input, cacheAttributes,
+      selectedAttributes, conf)
   }
 
 }
