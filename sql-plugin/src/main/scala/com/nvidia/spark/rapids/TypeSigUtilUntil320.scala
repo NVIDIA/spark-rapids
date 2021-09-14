@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.v2
-
-import com.nvidia.spark.rapids.{TypeEnum, TypeSig, TypeSigUtil}
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.types.DataType
 
@@ -55,9 +53,9 @@ object TypeSigUtilUntil320 extends TypeSigUtil {
    * @return the reason
    */
   override def reasonNotSupported(
-      check: TypeEnum.ValueSet,
-      dataType: DataType,
-      allowDecimal: Boolean, notSupportedReason: Seq[String]): Seq[String] = notSupportedReason
+    check: TypeEnum.ValueSet,
+    dataType: DataType,
+    allowDecimal: Boolean, notSupportedReason: Seq[String]): Seq[String] = notSupportedReason
 
   /**
    * Get checks from TypeEnum
@@ -77,7 +75,7 @@ object TypeSigUtilUntil320 extends TypeSigUtil {
    * @return the TypeSigs
    */
   override def getCastChecksAndSigs(
-      from: DataType,
-      default: TypeSig,
-      sparkDefault: TypeSig): (TypeSig, TypeSig) = (default, sparkDefault)
+    from: DataType,
+    default: TypeSig,
+    sparkDefault: TypeSig): (TypeSig, TypeSig) = (default, sparkDefault)
 }
