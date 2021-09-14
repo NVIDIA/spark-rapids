@@ -41,7 +41,14 @@
             <modules><module>${shim.module.name}</module></modules>
         </profile>
 
-        <!-- For easy switching in IDE -->
+        <!-- For easy switching in IDE: provide consistently named profiles
+        throughout submodules for easier single-checkbox activation in GUI.
+
+        Passing a proper flag such as -Dbuildver=320 to a Maven importer via
+        advanced settings is cumbersome and for this particular module seems
+        to fail to activate the right shim module in case of IDEA as of
+        2021.2.1
+        -->
         <profile>
             <id>release301</id>
             <modules><module>spark301</module></modules>

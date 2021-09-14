@@ -18,6 +18,14 @@
 set -ex
 
 # Install all the versions we support
+
+# First loop over all supported versions except for 301 skipping expensive plugins that
+# - either deferred to 301 because the check is identical in all shim profiles such as scalastyle
+# - or deferred to 301 because we currently don't require it per shim such as javadoc generation
+# - or there is a dedicated step to run against a particular shim jar such as unit tests, in
+#   the near future we will run unit tests against a combined multi-shim jar to catch classloading
+#   regressions even before pytest-based integration_tests
+#
 SPARK_SHIM_VERSIONS="
   302
   303
@@ -28,7 +36,6 @@ SPARK_SHIM_VERSIONS="
   313
   320
 "
-
 for sparkver in ${SPARK_SHIM_VERSIONS} ; do
   mvn -U clean install \
     -Dbuildver="$sparkver" \
@@ -40,5 +47,5 @@ for sparkver in ${SPARK_SHIM_VERSIONS} ; do
     -pl aggregator -am
 done
 
-# install 301 without "skips" above
+# install 301 skipping only tests
 mvn -U -Dbuildver=301 clean install -DskipTests -Psnapshots

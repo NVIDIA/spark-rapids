@@ -112,8 +112,12 @@ The version-specific directory names have one of the following forms / use cases
 ### Setting up an Integrated Development Environment
 
 Our project currently uses `build-helper-maven-plugin` for shimming against conflicting definitions of superclasses 
-in upstream versions that cannot be resolved without significant code duplication otherwise. This may require some 
-modifications to IDEs' standard Maven import functionality.
+in upstream versions that cannot be resolved without significant code duplication otherwise. To this end different 
+source directories with differently implemented same-named classes are 
+[added](https://www.mojohaus.org/build-helper-maven-plugin/add-source-mojo.html) 
+for compilation depending on the targeted Spark version.
+
+This may require some modifications to IDEs' standard Maven import functionality.
 
 #### IntelliJ IDEA
 
