@@ -20,6 +20,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
+import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark311db._
 import com.nvidia.spark.rapids.shims.v2.Spark30XShims
@@ -59,6 +60,7 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuB
 import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExecMeta, GpuArrowEvalPythonExec, GpuMapInPandasExecMeta, GpuPythonUDF}
 import org.apache.spark.sql.rapids.execution.python.shims.spark311db._
 import org.apache.spark.sql.rapids.shims.spark311db._
+import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
