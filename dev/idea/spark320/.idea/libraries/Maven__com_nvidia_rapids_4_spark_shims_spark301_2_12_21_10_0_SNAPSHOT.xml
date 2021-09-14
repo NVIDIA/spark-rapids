@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: com.nvidia:rapids-4-spark-shims-spark301_2.12:21.10.0-SNAPSHOT">
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/com/nvidia/rapids-4-spark-shims-spark301_2.12/21.10.0-SNAPSHOT/rapids-4-spark-shims-spark301_2.12-21.10.0-SNAPSHOT.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/com/nvidia/rapids-4-spark-shims-spark301_2.12/21.10.0-SNAPSHOT/rapids-4-spark-shims-spark301_2.12-21.10.0-SNAPSHOT-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/com/nvidia/rapids-4-spark-shims-spark301_2.12/21.10.0-SNAPSHOT/rapids-4-spark-shims-spark301_2.12-21.10.0-SNAPSHOT-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

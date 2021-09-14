@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: org.datanucleus:datanucleus-rdbms:4.1.19">
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/datanucleus/datanucleus-rdbms/4.1.19/datanucleus-rdbms-4.1.19.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/org/datanucleus/datanucleus-rdbms/4.1.19/datanucleus-rdbms-4.1.19-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/datanucleus/datanucleus-rdbms/4.1.19/datanucleus-rdbms-4.1.19-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

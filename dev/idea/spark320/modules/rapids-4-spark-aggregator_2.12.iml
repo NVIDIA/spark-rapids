@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module org.jetbrains.idea.maven.project.MavenProjectsManager.isMavenModule="true" type="JAVA_MODULE" version="4">
+  <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_1_8">
+    <output url="file://$MODULE_DIR$/../../../../aggregator/target/classes" />
+    <output-test url="file://$MODULE_DIR$/../../../../aggregator/target/test-classes" />
+    <content url="file://$MODULE_DIR$/../../../../aggregator">
+      <excludeFolder url="file://$MODULE_DIR$/../../../../aggregator/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="rapids-4-spark-sql_2.12" />
+    <orderEntry type="library" name="Maven: com.google.flatbuffers:flatbuffers-java:1.11.0" level="project" />
+    <orderEntry type="library" name="Maven: org.apache.orc:orc-core:1.5.8" level="project" />
+    <orderEntry type="library" name="Maven: org.apache.orc:orc-shims:1.5.8" level="project" />
+    <orderEntry type="library" name="Maven: commons-lang:commons-lang:2.6" level="project" />
+    <orderEntry type="library" name="Maven: io.airlift:aircompressor:0.10" level="project" />
+    <orderEntry type="library" name="Maven: org.apache.orc:orc-mapreduce:1.5.8" level="project" />
+    <orderEntry type="library" name="Maven: commons-codec:commons-codec:1.4" level="project" />
+    <orderEntry type="library" name="Maven: com.google.guava:guava:11.0.2" level="project" />
+    <orderEntry type="library" name="Maven: org.apache.hive:hive-storage-api:2.6.0" level="project" />
+    <orderEntry type="library" name="Maven: com.google.protobuf:protobuf-java:2.5.0" level="project" />
+    <orderEntry type="module" module-name="rapids-4-spark-shuffle_2.12" />
+    <orderEntry type="library" name="Maven: org.openucx:jucx:1.11" level="project" />
+    <orderEntry type="module" module-name="rapids-4-spark-udf_2.12" />
+    <orderEntry type="library" name="Maven: com.nvidia:rapids-4-spark-shims-spark301_2.12:21.10.0-SNAPSHOT" level="project" />
+    <orderEntry type="library" name="Maven: org.scala-lang:scala-library:2.12.8" level="project" />
+  </component>
+</module>

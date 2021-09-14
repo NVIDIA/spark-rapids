@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: org.apache.hive:hive-exec:core:2.3.9">
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/apache/hive/hive-exec/2.3.9/hive-exec-2.3.9-core.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/org/apache/hive/hive-exec/2.3.9/hive-exec-2.3.9-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/apache/hive/hive-exec/2.3.9/hive-exec-2.3.9-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

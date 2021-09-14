@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: org.apache.spark:spark-sql_2.12:3.2.0-SNAPSHOT">
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/apache/spark/spark-sql_2.12/3.2.0-SNAPSHOT/spark-sql_2.12-3.2.0-20210819.003229-230.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/org/apache/spark/spark-sql_2.12/3.2.0-SNAPSHOT/spark-sql_2.12-3.2.0-20210819.003229-230-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/apache/spark/spark-sql_2.12/3.2.0-SNAPSHOT/spark-sql_2.12-3.2.0-20210819.003229-230-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

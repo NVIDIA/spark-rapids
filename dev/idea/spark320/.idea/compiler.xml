@@ -7,8 +7,8 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="rapids-4-spark-sql_2.12" />
-        <module name="rapids-4-spark-integration-tests_2.12" />
         <module name="rapids-4-spark-api-validation" />
+        <module name="rapids-4-spark-integration-tests_2.12" />
         <module name="rapids-4-spark-udf_2.12" />
         <module name="rapids-4-spark-udf-examples_2.12" />
         <module name="rapids-4-spark-shuffle_2.12" />

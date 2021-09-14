@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module org.jetbrains.idea.maven.project.MavenProjectsManager.isMavenModule="true" type="JAVA_MODULE" version="4">
+  <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_1_8">
+    <output url="file://$MODULE_DIR$/../../../../shims/target/classes" />
+    <output-test url="file://$MODULE_DIR$/../../../../shims/target/test-classes" />
+    <content url="file://$MODULE_DIR$/../../../../shims">
+      <excludeFolder url="file://$MODULE_DIR$/../../../../shims/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="rapids-4-spark-sql_2.12" scope="PROVIDED" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: com.google.flatbuffers:flatbuffers-java:1.11.0" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: org.apache.orc:orc-core:1.5.8" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: org.apache.orc:orc-shims:1.5.8" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: commons-lang:commons-lang:2.6" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: io.airlift:aircompressor:0.10" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: org.apache.orc:orc-mapreduce:1.5.8" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: commons-codec:commons-codec:1.4" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: com.google.guava:guava:11.0.2" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: org.apache.hive:hive-storage-api:2.6.0" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: com.google.protobuf:protobuf-java:2.5.0" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: ai.rapids:cudf:cuda11:21.10.0-SNAPSHOT" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: org.slf4j:slf4j-api:1.7.30" level="project" />
+    <orderEntry type="library" scope="TEST" name="Maven: org.scalatest:scalatest_2.12:3.0.5" level="project" />
+    <orderEntry type="library" scope="PROVIDED" name="Maven: org.scala-lang:scala-library:2.12.8" level="project" />
+    <orderEntry type="library" scope="TEST" name="Maven: org.scalactic:scalactic_2.12:3.0.5" level="project" />
+    <orderEntry type="library" scope="TEST" name="Maven: org.scala-lang:scala-reflect:2.12.4" level="project" />
+    <orderEntry type="library" scope="TEST" name="Maven: org.scala-lang.modules:scala-xml_2.12:1.0.6" level="project" />
+  </component>
+</module>

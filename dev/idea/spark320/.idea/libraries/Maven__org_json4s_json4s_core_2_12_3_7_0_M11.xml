@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: org.json4s:json4s-core_2.12:3.7.0-M11">
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/json4s/json4s-core_2.12/3.7.0-M11/json4s-core_2.12-3.7.0-M11.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/org/json4s/json4s-core_2.12/3.7.0-M11/json4s-core_2.12-3.7.0-M11-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/org/json4s/json4s-core_2.12/3.7.0-M11/json4s-core_2.12-3.7.0-M11-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
