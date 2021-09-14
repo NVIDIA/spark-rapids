@@ -48,6 +48,26 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     doTest(DataTypes.DoubleType, 0, None)
   }
 
+  test("fall back to CPU for reduction") {
+
+    val conf = new SparkConf()
+      .set(RapidsConf.ENABLE_APPROX_PERCENTILE.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,ObjectHashAggregateExec," +
+        "AggregateExpression,ApproximatePercentile,Literal,Alias")
+
+    withGpuSparkSession(spark => {
+      salaries(spark, DataTypes.DoubleType, 50)
+        .createOrReplaceTempView("salaries")
+
+      val df = spark.sql("SELECT approx_percentile(salary, Array(0.5)) FROM salaries")
+      df.collect()
+
+      assert(TestUtils.findOperator(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuHashAggregateExec]).isEmpty)
+
+    }, conf)
+  }
+
   private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Option[Int]) {
 
     val percentiles = withCpuSparkSession { spark =>
