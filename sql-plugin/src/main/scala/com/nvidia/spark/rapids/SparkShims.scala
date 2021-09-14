@@ -45,7 +45,7 @@ import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExcha
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -150,8 +150,6 @@ trait SparkShims {
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
 
-  def getShuffleManagerShims(): ShuffleManagerShimBase
-
   def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
 
   def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
@@ -254,6 +252,18 @@ trait SparkShims {
   def isCustomReaderExec(x: SparkPlan): Boolean
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
+
+  /**
+   * Walk the plan recursively and return a list of operators that match the predicate
+   */
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
+
+  /**
+   * Our tests, by default, will check that all operators are running on the GPU, but
+   * there are some operators that we do not translate to GPU plans, so we need a way
+   * to bypass the check for those.
+   */
+  def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int
 }

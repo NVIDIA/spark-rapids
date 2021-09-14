@@ -564,10 +564,6 @@ abstract class SparkBaseShims extends Spark30XShims {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
   }
 
-  override def getShuffleManagerShims(): ShuffleManagerShimBase = {
-    new ShuffleManagerShim
-  }
-
   override def getPartitionFileNames(
       partitions: Seq[PartitionDirectory]): Seq[String] = {
     val files = partitions.flatMap(partition => partition.files)
