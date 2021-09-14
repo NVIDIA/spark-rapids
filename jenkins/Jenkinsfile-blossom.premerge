@@ -30,18 +30,64 @@ def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
+def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks")
 def PREMERGE_TAG
 def skipped = false
+def db_build = false
 def PROJECT_VER // project version retrieved from 'version-def.sh' to determine compatible stages
 def major_ver // major version extracted from project version
 def minor_ver // minor version extracted from project version
 def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running from stage of Premerge CI 2
+
+// constant parameters for aws and azure databricks cluster
+// CSP params
+ID_HOST = 0
+ID_TOKEN = 1
+ID_DRIVER = 2
+ID_WORKER = 3
+PARAM_MAP = [
+        'aws'  : [
+                "${common.AWS_DATABRICKS_URL}",
+                'SPARK_AWS_DATABRICKS_TOKEN',
+                'g4dn.2xlarge',
+                'g4dn.2xlarge'
+        ],
+        'azure': [
+                "${common.AZURE_DATABRICKS_URL}",
+                'SPARK_AZURE_DATABRICKS_TOKEN',
+                'Standard_NC6s_v3',
+                'Standard_NC6s_v3'
+        ]
+]
+// runtime params
+ID_RUNTIME = 0
+ID_SPARK = 1
+ID_INITSCRIPTS = 2
+ID_PROFILES = 3
+ID_INSTALL = 4
+RUNTIME_MAP = [
+        '7.3': [
+                '7.3.x-gpu-ml-scala2.12',
+                '3.0.1',
+                'init_cudf_udf.sh,init_cuda11_runtime.sh',
+                'databricks301,!snapshot-shims',
+                '3.0.1'
+        ],
+        '8.2': [
+                '8.2.x-gpu-ml-scala2.12',
+                '3.1.1',
+                'init_cudf_udf.sh',
+                'databricks311,!snapshot-shims',
+                '3.1.1'
+        ]
+]
 
 pipeline {
     agent {
         kubernetes {
             label "premerge-init-${BUILD_TAG}"
             cloud 'sc-ipp-blossom-prod'
+            yaml "${IMAGE_DB}"
         }
     }
 
@@ -49,8 +95,7 @@ pipeline {
         ansiColor('xterm')
         buildDiscarder(logRotator(numToKeepStr: '50'))
         skipDefaultCheckout true
-        // TODO: improve resource management
-        timeout(time: 12, unit: 'HOURS') // long enough to make sure we won't timeout GPU scheduling w/ too many concurrent builds
+        timeout(time: 12, unit: 'HOURS')
     }
 
     environment {
@@ -65,6 +110,16 @@ pipeline {
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         CUDA_CLASSIFIER = 'cuda11'
+        // DB related ENVs
+        IDLE_TIMEOUT = '180' // 3 hours
+        NUM_WORKERS = '0'
+        DB_TYPE = getDbType()
+        DATABRICKS_HOST = "${PARAM_MAP["$DB_TYPE"][ID_HOST]}"
+        DATABRICKS_TOKEN = credentials("${PARAM_MAP["$DB_TYPE"][ID_TOKEN]}")
+        DATABRICKS_PUBKEY = credentials("SPARK_DATABRICKS_PUBKEY")
+        DATABRICKS_DRIVER = "${PARAM_MAP["$DB_TYPE"][ID_DRIVER]}"
+        DATABRICKS_WORKER = "${PARAM_MAP["$DB_TYPE"][ID_WORKER]}"
+        INIT_SCRIPTS_DIR = "dbfs:/databricks/init_scripts/${BUILD_TAG}"
     }
 
     stages {
@@ -80,6 +135,10 @@ pipeline {
                         currentBuild.result == "SUCCESS"
                         skipped = true
                         return
+                    }
+                    // check if need trigger databricks CI build
+                    if (title ==~ /.*\[databricks\].*/) {
+                        db_build = true
                     }
                 }
             }
@@ -110,13 +169,12 @@ pipeline {
                             changelog: false,
                             poll: true,
                             scm: [
-                                    $class: 'GitSCM', branches: [[name: githubHelper.getMergedSHA()]],
-                                    doGenerateSubmoduleConfigurations: false,
-                                    submoduleCfg: [],
+                                    $class           : 'GitSCM', branches: [[name: githubHelper.getMergedSHA()]],
+                                    submoduleCfg     : [],
                                     userRemoteConfigs: [[
-                                        credentialsId: 'github-token',
-                                        url: githubHelper.getCloneUrl(),
-                                        refspec: '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
+                                                                credentialsId: 'github-token',
+                                                                url          : githubHelper.getCloneUrl(),
+                                                                refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']]
                             ]
                     )
 
@@ -184,6 +242,34 @@ pipeline {
             }
         }
 
+        stage('Init DB') {
+            when {
+                beforeAgent true
+                expression {
+                    db_build
+                }
+            }
+            agent {
+                kubernetes {
+                    label "premerge-ci-db-init-${BUILD_NUMBER}"
+                    cloud 'sc-ipp-blossom-prod'
+                    yaml "${IMAGE_DB}"
+                }
+            }
+            steps {
+                script {
+                    container('cpu') {
+                        unstash "source_tree"
+                        sh """
+                            bash -c 'dbfs mkdirs $INIT_SCRIPTS_DIR'
+                            bash -c 'dbfs cp --overwrite jenkins/databricks/init_cudf_udf.sh $INIT_SCRIPTS_DIR'
+                            bash -c 'dbfs cp --overwrite jenkins/databricks/init_cuda11_runtime.sh $INIT_SCRIPTS_DIR'
+                        """
+                    }
+                }
+            }
+        }
+
         stage('Premerge Test') {
             when {
                 beforeAgent true
@@ -192,7 +278,6 @@ pipeline {
                     !skipped
                 }
             }
-
             // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
             // If any one is failed will abort another if not finish yet and will upload failure log to Github
             failFast true
@@ -207,7 +292,7 @@ pipeline {
                         kubernetes {
                             label "premerge-ci-1-${BUILD_TAG}"
                             cloud 'sc-ipp-blossom-prod'
-                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
+                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}"
                         }
@@ -240,15 +325,13 @@ pipeline {
                     }
 
                     options {
-                        // We have to use params to pass the resource label in options block,
-                        // this is a limitation of declarative pipeline. And we need to lock resource before agent start
                         lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
                     }
                     agent {
                         kubernetes {
                             label "premerge-ci-2-${BUILD_TAG}"
                             cloud 'sc-ipp-blossom-prod'
-                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi') // cpu: 8, memory: 32Gi
+                            yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
                             workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
                             customWorkspace "${CUSTOM_WORKSPACE}-ci-2" // Use different workspace to avoid conflict with IT
                         }
@@ -266,6 +349,74 @@ pipeline {
                         }
                     }
                 } // end of Unit Test stage
+
+                stage('DB runtime 7.3') {
+                    when {
+                        beforeAgent true
+                        expression {
+                            db_build
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-7.3-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '7.3'
+                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
+                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
+                        BUILD_PROFILES = "${RUNTIME_MAP["$DB_RUNTIME"][ID_PROFILES]}"
+                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
+                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 3, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 7.3
+
+                stage('DB runtime 8.2') {
+                    when {
+                        beforeAgent true
+                        expression {
+                            db_build
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-8.2-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '8.2'
+                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
+                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
+                        BUILD_PROFILES = "${RUNTIME_MAP["$DB_RUNTIME"][ID_PROFILES]}"
+                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
+                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 3, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 8.2
             } // end of parallel
         } // end of Premerge Test
     } // end of stages
@@ -281,12 +432,18 @@ pipeline {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Success", GitHubCommitState.SUCCESS)
                 } else {
                     // upload log only in case of build failure
-                    def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com"]
+                    def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com",
+                                      "dbc-.*?azuredatabricks\\.net", "adb-.*?databricks\\.com"]
                     guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
-
                     githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
                     githubHelper.updateCommitStatus("$BUILD_URL", "Fail", GitHubCommitState.FAILURE)
+                }
+
+                if (db_build) {
+                    container('cpu') {
+                        sh "bash -c 'dbfs rm -r $INIT_SCRIPTS_DIR || true'"
+                    }
                 }
 
                 if (TEMP_IMAGE_BUILD) {
@@ -298,10 +455,79 @@ pipeline {
 
 } // end of pipeline
 
+// params.DATABRICKS_TYPE: 'aws' or 'azure', para can be defined through the jenkins webUI
+String getDbType() {
+    return params.DATABRICKS_TYPE ? params.DATABRICKS_TYPE : 'aws'
+}
+
+// foo.sh,bar.sh --> /dbfs/path/foo.sh,/dbfs/path/bar.sh
+String getInitScripts(String rootDir, String files) {
+    return rootDir + '/' + files.replace(',', ',' + rootDir + '/')
+}
+
+void databricksBuild() {
+    def CLUSTER_ID = ''
+    def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
+    try {
+        stage("Create $SPARK_MAJOR DB") {
+            script {
+                container('cpu') {
+                    sh "rm -rf spark-rapids-ci.tgz"
+                    sh "tar -zcf spark-rapids-ci.tgz *"
+                    def CREATE_PARAMS = " -r $DATABRICKS_RUNTIME -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN" +
+                            " -s $DB_TYPE -n CI-GPU-${BUILD_NUMBER}-${BASE_SPARK_VERSION} -k \"$DATABRICKS_PUBKEY\" -i $IDLE_TIMEOUT" +
+                            " -d $DATABRICKS_DRIVER -o $DATABRICKS_WORKER -e $NUM_WORKERS -f $INIT_SCRIPTS"
+                    CLUSTER_ID = sh(script: "python3 ./jenkins/databricks/create.py $CREATE_PARAMS",
+                            returnStdout: true).trim()
+                    echo CLUSTER_ID
+                }
+            }
+        }
+
+        stage("Build against $SPARK_MAJOR DB") {
+            script {
+                container('cpu') {
+                    withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                        def BUILD_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -z ./spark-rapids-ci.tgz" +
+                                " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/build.sh -d /home/ubuntu/build.sh" +
+                                " -b $BUILD_PROFILES -v $BASE_SPARK_VERSION -i $BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
+                        sh "python3 ./jenkins/databricks/run-build.py $BUILD_PARAMS"
+                    }
+                }
+            }
+        }
+
+        stage("Test agaist $SPARK_MAJOR DB") {
+            script {
+                container('cpu') {
+                    withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                        def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID" +
+                                " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
+                        if (params.SPARK_CONF) {
+                            TEST_PARAMS += " -f ${params.SPARK_CONF}"
+                        }
+                        sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
+                    }
+                }
+            }
+        }
+
+    } finally {
+        if (CLUSTER_ID) {
+            container('cpu') {
+                retry(3) {
+                    sleep(time: 5, unit: "SECONDS")
+                    sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
+                }
+            }
+        }
+    }
+}
+
 void uploadDocker(String IMAGE_NAME) {
     def DOCKER_CMD = "docker --config $WORKSPACE/.docker"
     retry(3) {
-        sleep(time: 30, unit: "SECONDS")
+        sleep(time: 10, unit: "SECONDS")
         sh """
             echo $URM_CREDS_PSW | $DOCKER_CMD login $ARTIFACTORY_NAME -u $URM_CREDS_USR --password-stdin
             $DOCKER_CMD push $IMAGE_NAME
