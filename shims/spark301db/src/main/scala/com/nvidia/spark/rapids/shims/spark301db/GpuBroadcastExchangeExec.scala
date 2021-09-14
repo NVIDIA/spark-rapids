@@ -25,7 +25,9 @@ import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBaseWithFut
 
 case class GpuBroadcastExchangeExec(
     override val mode: BroadcastMode,
-    child: SparkPlan) extends GpuBroadcastExchangeExecBaseWithFuture(mode, child) with BroadcastExchangeLike {
+    child: SparkPlan)
+    extends GpuBroadcastExchangeExecBaseWithFuture(mode, child)
+        with BroadcastExchangeLike {
 
   override def runId: UUID = _runId
 

@@ -1837,16 +1837,16 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   /** most of the AQE tests requires Spark 3.0.1 or later */
   def assumeSpark301orLater =
-    assume(cmpSparkVersion(3, 0, 1) >= 0)
+    assume(cmpSparkVersion(3, 0, 1) >= 0, "Spark version not 3.0.1+")
 
   def assumeSpark311orLater =
-    assume(cmpSparkVersion(3, 1, 1) >= 0)
+    assume(cmpSparkVersion(3, 1, 1) >= 0, "Spark version not 3.1.1+")
 
   def assumePriorToSpark320 =
-    assume(cmpSparkVersion(3, 2, 0) < 0)
+    assume(cmpSparkVersion(3, 2, 0) < 0, "Spark version not before 3.2.0")
 
   def assumeSpark320orLater =
-    assume(cmpSparkVersion(3, 2, 0) >= 0)
+    assume(cmpSparkVersion(3, 2, 0) >= 0, "Spark version not 3.2.0+")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion

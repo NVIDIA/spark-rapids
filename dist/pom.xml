@@ -1768,6 +1768,7 @@
                 <configuration>
                     <excludes>
                         <exclude>com.nvidia.spark.rapids.SparkShimServiceProvider.*</exclude>
+                        <exclude>dependency-reduced-pom.xml</exclude>
                         <exclude>*.txt</exclude>
                         <exclude>*.md</exclude>
                     </excludes>
