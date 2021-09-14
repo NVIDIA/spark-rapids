@@ -16,14 +16,14 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{TypeEnum, TypeSig, TypeSigUtil}
+import com.nvidia.spark.rapids.{TypeEnum, TypeSig}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
 
 /**
  * Add DayTimeIntervalType and YearMonthIntervalType support
  */
-object TypeSigUtilFrom320 extends TypeSigUtil {
+object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
 
   override def isSupported(
       check: TypeEnum.ValueSet,

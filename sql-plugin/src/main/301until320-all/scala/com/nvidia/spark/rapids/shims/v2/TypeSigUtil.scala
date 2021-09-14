@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims.v2
+
+import com.nvidia.spark.rapids.{TypeEnum, TypeSig}
 
 import org.apache.spark.sql.types.DataType
 
-/**
- * This TypeSigUtil is for [spark 3.0.1, spark 3.2.0)
- */
-object TypeSigUtilUntil320 extends TypeSigUtil {
+object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
+
   /**
    * Check if this type of Spark-specific is supported by the plugin or not.
    *
@@ -78,4 +78,5 @@ object TypeSigUtilUntil320 extends TypeSigUtil {
     from: DataType,
     default: TypeSig,
     sparkDefault: TypeSig): (TypeSig, TypeSig) = (default, sparkDefault)
+
 }

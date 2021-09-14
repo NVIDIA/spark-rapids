@@ -267,8 +267,6 @@ trait SparkShims {
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int
 
-  def getTypeSigUtil(): TypeSigUtil
-
 }
 
 abstract class SparkCommonShims extends SparkShims {

@@ -19,13 +19,15 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
-import ai.rapids.cudf.DType
 import scala.collection.mutable
+
+import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
-/** TypeSigUtil for different shim layers */
+/** TypeSigUtil for different spark versions */
 trait TypeSigUtil {
 
   /**
@@ -329,7 +331,7 @@ final class TypeSig private(
     case _: ArrayType => litOnlyTypes.contains(TypeEnum.ARRAY)
     case _: MapType => litOnlyTypes.contains(TypeEnum.MAP)
     case _: StructType => litOnlyTypes.contains(TypeEnum.STRUCT)
-    case _ => ShimLoader.getSparkShims.getTypeSigUtil().isSupported(litOnlyTypes, dataType, false)
+    case _ => TypeSigUtil.isSupported(litOnlyTypes, dataType, false)
   }
 
   def isSupportedBySpark(dataType: DataType): Boolean =
@@ -366,7 +368,7 @@ final class TypeSig private(
         fields.map(_.dataType).forall { t =>
           isSupported(childTypes, t, allowDecimal)
         }
-      case _ => ShimLoader.getSparkShims.getTypeSigUtil().isSupported(check, dataType, allowDecimal)
+      case _ => TypeSigUtil.isSupported(check, dataType, allowDecimal)
     }
 
   def reasonNotSupported(dataType: DataType, allowDecimal: Boolean): Seq[String] =
@@ -462,7 +464,7 @@ final class TypeSig private(
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.STRUCT, check, isChild)
         }
-      case _ => ShimLoader.getSparkShims.getTypeSigUtil().reasonNotSupported(check, dataType,
+      case _ => TypeSigUtil.reasonNotSupported(check, dataType,
         allowDecimal, Seq(withChild(isChild, s"$dataType is not supported")))
     }
 
@@ -558,7 +560,7 @@ object TypeSig {
    * All types nested and not nested
    */
   val all: TypeSig = {
-    val allSupportedTypes = ShimLoader.getSparkShims.getTypeSigUtil().getAllSupportedTypes()
+    val allSupportedTypes = TypeSigUtil.getAllSupportedTypes()
     new TypeSig(allSupportedTypes, DecimalType.MAX_PRECISION, allSupportedTypes)
   }
 
@@ -1339,7 +1341,7 @@ class CastChecks extends ExprChecks {
     case _: MapType => (mapChecks, sparkMapSig)
     case _: StructType => (structChecks, sparkStructSig)
     case _ =>
-      ShimLoader.getSparkShims.getTypeSigUtil().getCastChecksAndSigs(from, udtChecks, sparkUdtSig)
+      TypeSigUtil.getCastChecksAndSigs(from, udtChecks, sparkUdtSig)
   }
 
   private[this] def getChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) = from match {
@@ -1358,7 +1360,7 @@ class CastChecks extends ExprChecks {
     case TypeEnum.MAP => (mapChecks, sparkMapSig)
     case TypeEnum.STRUCT => (structChecks, sparkStructSig)
     case TypeEnum.UDT => (udtChecks, sparkUdtSig)
-    case _ => ShimLoader.getSparkShims.getTypeSigUtil().getCastChecksAndSigs(from)
+    case _ => TypeSigUtil.getCastChecksAndSigs(from)
   }
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
@@ -1636,7 +1638,7 @@ object ExprChecks {
  */
 object SupportedOpsDocs {
   private lazy val allSupportedTypes =
-    ShimLoader.getSparkShims.getTypeSigUtil().getAllSupportedTypes()
+    TypeSigUtil.getAllSupportedTypes()
 
   private def execChecksHeaderLine(): Unit = {
     println("<tr>")
@@ -2089,7 +2091,7 @@ object SupportedOpsDocs {
 object SupportedOpsForTools {
 
   private lazy val allSupportedTypes =
-    ShimLoader.getSparkShims.getTypeSigUtil().getAllSupportedTypes()
+    TypeSigUtil.getAllSupportedTypes()
 
   private def outputSupportIO() {
     // Look at what we have for defaults for some configs because if the configs are off

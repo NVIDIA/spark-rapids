@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig, TypeSigUtil, TypeSigUtilUntil320}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 
@@ -94,5 +94,4 @@ trait Spark30XShims extends SparkShims {
 
   override def shouldFailDivOverflow(): Boolean = false
 
-  override def getTypeSigUtil(): TypeSigUtil = TypeSigUtilUntil320
 }
