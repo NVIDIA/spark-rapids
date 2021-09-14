@@ -1362,9 +1362,10 @@ object CastOpSuite {
     values ++ valuesWithWhitespace
   }
 
-  def timestampsAsStrings(session: SparkSession,
-                          castStringToTimestamp: Boolean,
-                          validOnly: Boolean): DataFrame = {
+  def timestampsAsStrings(
+      session: SparkSession,
+      castStringToTimestamp: Boolean,
+      validOnly: Boolean): DataFrame = {
     import session.sqlContext.implicits._
     timestampsAsStringsSeq(castStringToTimestamp, validOnly).toDF("c0")
   }
