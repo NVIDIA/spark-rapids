@@ -213,11 +213,11 @@ class ConditionalNestedLoopJoinIterator(
           case GpuBuildRight => (streamTable, builtTable)
         }
         joinType match {
-          case _: InnerLike =>left.conditionalInnerJoinRowCount(right, condition, false)
-          case LeftOuter => left.conditionalLeftJoinRowCount(right, condition, false)
-          case RightOuter => right.conditionalLeftJoinRowCount(left, condition, false)
-          case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition, false)
-          case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition, false)
+          case _: InnerLike =>left.conditionalInnerJoinRowCount(right, condition)
+          case LeftOuter => left.conditionalLeftJoinRowCount(right, condition)
+          case RightOuter => right.conditionalLeftJoinRowCount(left, condition)
+          case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition)
+          case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition)
           case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
         }
       }
@@ -253,36 +253,36 @@ class ConditionalNestedLoopJoinIterator(
     joinType match {
       case _: InnerLike =>
         numJoinRows.map { rowCount =>
-          left.conditionalInnerJoinGatherMaps(right, condition, false, rowCount)
+          left.conditionalInnerJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
-          left.conditionalInnerJoinGatherMaps(right, condition, false)
+          left.conditionalInnerJoinGatherMaps(right, condition)
         }
       case LeftOuter =>
         numJoinRows.map { rowCount =>
-          left.conditionalLeftJoinGatherMaps(right, condition, false, rowCount)
+          left.conditionalLeftJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
-          left.conditionalLeftJoinGatherMaps(right, condition, false)
+          left.conditionalLeftJoinGatherMaps(right, condition)
         }
       case RightOuter =>
         val maps = numJoinRows.map { rowCount =>
-          right.conditionalLeftJoinGatherMaps(left, condition, false, rowCount)
+          right.conditionalLeftJoinGatherMaps(left, condition, rowCount)
         }.getOrElse {
-          right.conditionalLeftJoinGatherMaps(left, condition, false)
+          right.conditionalLeftJoinGatherMaps(left, condition)
         }
         // Reverse the output of the join, because we expect the right gather map to
         // always be on the right
         maps.reverse
       case LeftSemi =>
         numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, false, rowCount))
+          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount))
         }.getOrElse {
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, false))
+          Array(left.conditionalLeftSemiJoinGatherMap(right, condition))
         }
       case LeftAnti =>
         numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, false, rowCount))
+          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount))
         }.getOrElse {
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, false))
+          Array(left.conditionalLeftAntiJoinGatherMap(right, condition))
         }
       case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
     }

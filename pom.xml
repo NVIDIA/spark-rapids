@@ -80,87 +80,11 @@
         <module>udf-compiler</module>
         <module>udf-examples</module>
     </modules>
-
     <profiles>
         <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <modules>
-                <module>api_validation</module>
-                <module>tools</module>
-            </modules>
-       </profile>
-       <profile>
-            <id>no-buildver-default</id>
-            <activation>
-                <property>
-                    <name>!buildver</name>
-                </property>
-            </activation>
-           <properties>
-               <spark.version.classifier/>
-           </properties>
-           <build>
-               <plugins>
-                   <plugin>
-                       <groupId>org.codehaus.mojo</groupId>
-                       <artifactId>build-helper-maven-plugin</artifactId>
-                       <executions>
-                           <execution>
-                               <id>add-profile-src-default</id>
-                               <goals><goal>add-source</goal></goals>
-                               <phase>generate-sources</phase>
-                               <configuration>
-                                   <sources>
-                                       <source>${project.basedir}/src/main/spark30+all/scala</source>
-                                       <source>${project.basedir}/src/main/spark30+all/java</source>
-                                   </sources>
-                               </configuration>
-                           </execution>
-                       </executions>
-                   </plugin>
-               </plugins>
-           </build>
-       </profile>
-
-       <profile>
-           <id>buildver-default</id>
-           <activation>
-               <property>
-                   <name>buildver</name>
-               </property>
-           </activation>
-           <build>
-               <plugins>
-                   <plugin>
-                       <groupId>org.codehaus.mojo</groupId>
-                       <artifactId>build-helper-maven-plugin</artifactId>
-                       <executions>
-                           <execution>
-                               <id>add-profile-src-default</id>
-                               <goals><goal>add-source</goal></goals>
-                               <phase>generate-sources</phase>
-                               <configuration>
-                                   <sources>
-                                       <source>${project.basedir}/src/main/spark${buildver}/scala</source>
-                                       <source>${project.basedir}/src/main/spark${buildver}/java</source>
-                                   </sources>
-                               </configuration>
-                           </execution>
-                       </executions>
-                   </plugin>
-               </plugins>
-           </build>
-       </profile>
-       <profile>
             <id>release301</id>
             <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301</value>
-                </property>
+                <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
                 <spark.version>${spark301.version}</spark.version>
@@ -178,7 +102,9 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -188,40 +114,8 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>aggregator</module>
             </modules>
-        </profile>
-        <profile>
-            <id>release301emr</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>301emr</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version>${spark301emr.version}</spark.version>
-                <spark.test.version>${spark301emr.version}</spark.test.version>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-30+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>generate-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
         <profile>
             <id>release302</id>
@@ -243,7 +137,9 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -254,8 +150,10 @@
             <properties>
                 <spark.version>${spark302.version}</spark.version>
                 <spark.test.version>${spark302.version}</spark.test.version>
+                <spark.version.classifier>spark302</spark.version.classifier>
             </properties>
             <modules>
+                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -283,7 +181,9 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -293,6 +193,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -319,7 +220,9 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
+                                        <source>${project.basedir}/src/main/301until310-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -329,6 +232,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -355,9 +259,11 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
-                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
-                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-apache/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -368,6 +274,7 @@
             <modules>
                 <module>api_validation</module>
                 <module>tools</module>
+                <module>aggregator</module>
             </modules>
         </profile>
         <profile>
@@ -383,7 +290,7 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark301db</shim.module.name>
-                <spark.version.classifier>spark301-databricks</spark.version.classifier>
+                <spark.version.classifier>spark301db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
                      The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
@@ -396,6 +303,30 @@
                 <hive.storage.api.version>${spark301db.version}</hive.storage.api.version>
                 <protobuf.java.version>${spark301db.version}</protobuf.java.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/301db/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <!-- Note databricks requires 2 properties -Ddatabricks and -Dbuildver=[301db,311db] -->
@@ -410,7 +341,7 @@
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark311db</shim.module.name>
-                <spark.version.classifier>spark311-databricks</spark.version.classifier>
+                <spark.version.classifier>spark311db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
                      The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
@@ -423,6 +354,33 @@
                 <hive.storage.api.version>${spark311db.version}</hive.storage.api.version>
                 <protobuf.java.version>${spark311db.version}</protobuf.java.version>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/311db/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-apache/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <id>release312</id>
@@ -448,9 +406,11 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
-                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
-                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-apache/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -459,6 +419,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -486,9 +447,11 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
-                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
-                                        <source>${project.basedir}/src/main/spark31+apache/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-apache/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -497,6 +460,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -524,7 +488,8 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                        <source>${project.basedir}/src/main/320/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -532,6 +497,9 @@
                     </plugin>
                 </plugins>
             </build>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <id>release311cdh</id>
@@ -557,8 +525,11 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/spark30+all/scala</source>
-                                        <source>${project.basedir}/src/main/spark31+all/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311cdh/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>
@@ -566,6 +537,15 @@
                     </plugin>
                 </plugins>
             </build>
+            <repositories>
+                <repository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </repository>
+            </repositories>
+            <modules>
+                <module>aggregator</module>
+            </modules>
         </profile>
         <profile>
             <id>udf-compiler</id>
@@ -609,101 +589,15 @@
                 </plugins>
             </build>
         </profile>
-        <profile>
-            <id>databricks301</id>
-            <properties>
-                <rat.consoleOutput>true</rat.consoleOutput>
-            </properties>
-        </profile>
-        <profile>
-            <id>databricks311</id>
-            <properties>
-                <rat.consoleOutput>true</rat.consoleOutput>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark301dbtests</id>
-            <properties>
-                <spark.test.version>${spark301db.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark311dbtests</id>
-            <properties>
-                <spark.test.version>${spark311db.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark301tests</id>
-            <properties>
-                <spark.test.version>${spark301.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark302tests</id>
-            <properties>
-                <spark.test.version>${spark302.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark303tests</id>
-            <properties>
-                <spark.test.version>${spark303.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark304tests</id>
-            <properties>
-                <spark.test.version>${spark304.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark311tests</id>
-            <properties>
-                <spark.test.version>${spark311.version}</spark.test.version>
-            </properties>
-            <modules>
-                <module>tests-spark310+</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>spark311cdhtests</id>
-            <properties>
-                <spark.test.version>${spark311cdh.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark312tests</id>
-            <properties>
-                <spark.test.version>${spark312.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark313tests</id>
-            <properties>
-                <spark.test.version>${spark313.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>spark320tests</id>
-            <properties>
-                <spark.test.version>${spark320.version}</spark.test.version>
-            </properties>
-        </profile>
-        <profile>
-            <id>cuda11</id>
-            <properties>
-                <cuda.version>cuda11</cuda.version>
-            </properties>
-        </profile>
     </profiles>
 
     <properties>
+        <buildver>301</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <spark.version>${spark301.version}</spark.version>
+        <spark.test.version>${spark.version}</spark.test.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
-        <spark.test.version>${spark301.version}</spark.test.version>
         <cuda.version>cuda11</cuda.version>
         <cudf.version>21.10.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -714,7 +608,7 @@
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
              so code coverage does not include the shaded classes.
         -->
-        <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
+        <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
         <test.exclude.tags/>
         <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
@@ -730,7 +624,6 @@
          please update the snapshot-shims profile as well so it is accurate -->
         <spark301.version>3.0.1</spark301.version>
         <spark301db.version>3.0.1-databricks</spark301db.version>
-        <spark301emr.version>3.0.1-amzn</spark301emr.version>
         <spark302.version>3.0.2</spark302.version>
         <spark303.version>3.0.3</spark303.version>
         <spark304.version>3.0.4-SNAPSHOT</spark304.version>
@@ -917,6 +810,27 @@
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>1.8</version>
+                  <executions>
+                    <execution>
+                        <id>generate-build-info</id>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <!-- Execute the shell script to generate the plugin build information. -->
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <mkdir dir="${project.build.directory}/tmp"/>
+                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${user.dir}/build/build-info"/>
+                                    <arg value="${project.version}"/>
+                                    <arg value="${cudf.version}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                  </executions>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
@@ -1018,30 +932,6 @@
                     </executions>
                 </plugin>
                 <plugin>
-                    <groupId>org.scalastyle</groupId>
-                    <artifactId>scalastyle-maven-plugin</artifactId>
-                    <version>1.0.0</version>
-                    <configuration>
-                        <verbose>false</verbose>
-                        <failOnViolation>true</failOnViolation>
-                        <includeTestSourceDirectory>false</includeTestSourceDirectory>
-                        <failOnWarning>false</failOnWarning>
-                        <sourceDirectory>${basedir}/src/main/scala</sourceDirectory>
-                        <testSourceDirectory>${basedir}/src/test/scala</testSourceDirectory>
-                        <configLocation>scalastyle-config.xml</configLocation>
-                        <outputFile>${basedir}/target/scalastyle-output.xml</outputFile>
-                        <inputEncoding>${project.build.sourceEncoding}</inputEncoding>
-                        <outputEncoding>${project.reporting.outputEncoding}</outputEncoding>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <goals>
-                                <goal>check</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
                     <groupId>org.apache.rat</groupId>
                     <artifactId>apache-rat-plugin</artifactId>
                     <version>0.13</version>
@@ -1108,6 +998,8 @@
                         <exclude>**/.*/**</exclude>
                         <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>**/*.csv</exclude>
+                        <exclude>dist/*.txt</exclude>
+                        <exclude>dist/com.nvidia.spark.rapids.SparkShimServiceProvider.*</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
@@ -1115,28 +1007,55 @@
                 </configuration>
             </plugin>
             <plugin>
+                <!--
+                This is an alternative implementation of the scalastyle check invocation,
+                a replacement for scalastyle-maven-plugin. It's motivated to address the following:
+                - All scala files are checked at once regardless of the module, so the developer
+                  can focus on addressing violations without being distracted by the build issues
+                  in-between
+                - We don't have to hardcode the source code roots added dynamically by other maven
+                  plugins to the project
+                - The scalastyle launch cost is amortized across all modules
+                -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
+                <inherited>false</inherited>
                 <executions>
                     <execution>
-                        <phase>generate-resources</phase>
+                        <id>scalastyle-all-modules</id>
+                        <phase>verify</phase>
+                        <goals><goal>run</goal></goals>
                         <configuration>
-                            <!-- Execute the shell script to generate the plugin build information. -->
                             <target>
-                                <mkdir dir="${project.build.directory}/extra-resources"/>
-                                <mkdir dir="${project.build.directory}/tmp"/>
-                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${user.dir}/build/build-info"/>
-                                    <arg value="${project.version}"/>
-                                    <arg value="${cudf.version}"/>
-                                </exec>
+                                <pathconvert property="scalastyle.dirs" pathsep=" ">
+                                    <dirset dir="${project.basedir}" includes="**/src/main/scala"/>
+                                    <dirset dir="${project.basedir}" includes="**/src/main/*/scala"/>
+                                    <dirset dir="${project.basedir}" includes="**/src/test/scala"/>
+                                    <dirset dir="${project.basedir}" includes="**/src/test/*/scala"/>
+                                </pathconvert>
+                                <echo>Checking scalastyle for all modules using following paths:
+                                    ${scalastyle.dirs}
+                                </echo>
+                                <java classname="org.scalastyle.Main" failonerror="true">
+                                    <arg line="--verbose false"/>
+                                    <arg line="--warnings false"/>
+                                    <arg line="--config scalastyle-config.xml"/>
+                                    <arg line="--xmlOutput ${project.basedir}/target/scalastyle-output.xml"/>
+                                    <arg line="--inputEncoding ${project.build.sourceEncoding}"/>
+                                    <arg line="--xmlEncoding ${project.reporting.outputEncoding}"/>
+                                    <arg line="${scalastyle.dirs}"/>
+                                </java>
                             </target>
                         </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
                     </execution>
                 </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.scalastyle</groupId>
+                        <artifactId>scalastyle_${scala.binary.version}</artifactId>
+                        <version>1.0.0</version>
+                    </dependency>
+                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
@@ -1183,10 +1102,6 @@
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
-        </repository>
-        <repository>
-            <id>cloudera-repo</id>
-            <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
         </repository>
     </repositories>
 </project>

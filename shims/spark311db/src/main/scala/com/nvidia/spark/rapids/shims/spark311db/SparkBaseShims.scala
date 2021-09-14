@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.spark311db._
 import com.nvidia.spark.rapids.shims.v2.Spark30XShims
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -51,12 +52,12 @@ import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
-import org.apache.spark.sql.rapids.execution.python.shims.spark311db._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
-import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.{GpuAggregateInPandasExecMeta, GpuArrowEvalPythonExec, GpuMapInPandasExecMeta, GpuPythonUDF}
+import org.apache.spark.sql.rapids.execution.python.shims.spark311db._
 import org.apache.spark.sql.rapids.shims.spark311db._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -558,10 +559,6 @@ abstract class SparkBaseShims extends Spark30XShims {
 
   override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
-  override def getShuffleManagerShims(): ShuffleManagerShimBase = {
-    new ShuffleManagerShim
   }
 
   override def getPartitionFileNames(

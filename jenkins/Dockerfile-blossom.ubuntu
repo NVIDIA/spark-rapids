@@ -26,7 +26,7 @@
 ARG CUDA_VER=11.0
 ARG UBUNTU_VER=18.04
 ARG UCX_VER=v1.11.0
-FROM nvidia/cuda:${CUDA_VER}-devel-ubuntu${UBUNTU_VER}
+FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
 ARG UBUNTU_VER
 ARG UCX_VER
@@ -42,10 +42,9 @@ RUN python3.8 -m easy_install pip
 
 # Set default jdk as 1.8.0
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
-ENV JAVA_HOME "/usr/lib/jvm/java-8-openjdk-amd64/"
 
 RUN ln -s /usr/bin/python3.8 /usr/bin/python
-RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit
+RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order
 
 # libnuma1 and libgomp1 are required by ucx packaging
 RUN apt install -y inetutils-ping expect wget libnuma1 libgomp1
@@ -55,12 +54,3 @@ RUN mkdir -p /tmp/ucx && \
     wget https://github.com/openucx/ucx/releases/download/${UCX_VER}/ucx-${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5.x-cuda${CUDA_VER}.deb && \
     dpkg -i *.deb && \
     rm -rf /tmp/ucx
-
-ARG CMAKE_VERSION=3.20.5
-RUN cd /usr/local/ && wget --quiet https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz && \
-   tar zxf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz && \
-   rm cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
-ENV PATH /usr/local/cmake-${CMAKE_VERSION}-linux-x86_64/bin:$PATH
-
-# used to build rapids ml submodule
-RUN apt install ninja-build -y

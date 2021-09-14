@@ -721,6 +721,9 @@ object GpuOverrides extends Logging {
     }
   }
 
+  private val nanAggPsNote = "Input must not contain NaNs and" +
+      s" ${RapidsConf.HAS_NANS} must be false."
+
   def expr[INPUT <: Expression](
       desc: String,
       pluginChecks: ExprChecks,
@@ -1712,7 +1715,7 @@ object GpuOverrides extends Logging {
       }),
     expr[And](
       "Logical AND",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[And](a, conf, p, r) {
@@ -1721,7 +1724,7 @@ object GpuOverrides extends Logging {
       }),
     expr[Or](
       "Logical OR",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[Or](a, conf, p, r) {
@@ -1859,7 +1862,7 @@ object GpuOverrides extends Logging {
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
-          val boolExpr :: trueExpr :: falseExpr :: Nil = childExprs.map(_.convertToGpu())
+          val Seq(boolExpr, trueExpr, falseExpr) = childExprs.map(_.convertToGpu())
           GpuIf(boolExpr, trueExpr, falseExpr)
         }
       }),
@@ -2036,7 +2039,9 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Seq(ParamCheck(
           "pivotColumn",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
+              .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+              .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
           TypeSig.all),
           ParamCheck("valueColumn",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
@@ -2075,13 +2080,19 @@ object GpuOverrides extends Logging {
         ExprChecks.fullAgg(
           TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            (TypeSig.commonCudfTypes + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+            TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable,
             Seq(ParamCheck("input",
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable))
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
@@ -2098,13 +2109,19 @@ object GpuOverrides extends Logging {
         ExprChecks.fullAgg(
           TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            (TypeSig.commonCudfTypes + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+            TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable,
             Seq(ParamCheck("input",
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable))
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
@@ -2503,7 +2520,9 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL -
-            TypeSig.STRING),
+            TypeSig.STRING)
+            .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+            .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2521,7 +2540,9 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL
-            - TypeSig.STRING),
+            - TypeSig.STRING)
+            .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+            .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMax](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2545,7 +2566,12 @@ object GpuOverrides extends Logging {
         TypeSig.BOOLEAN,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
           TypeSig.ARRAY.nested(TypeSig.all)),
-        ("key", TypeSig.commonCudfTypes, TypeSig.all)),
+        ("key", TypeSig.commonCudfTypes
+            .withPsNote(TypeEnum.DOUBLE, "NaN literals are not supported. Columnar input" +
+                s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false.")
+            .withPsNote(TypeEnum.FLOAT, "NaN literals are not supported. Columnar input" +
+                s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false."),
+            TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // do not support literal arrays as LHS
@@ -2661,6 +2687,33 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[ArrayTransform](in, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuArrayTransform(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
+        }
+      }),
+    expr[TransformKeys](
+      "Transform keys in a map using a transform function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function",
+            // We need to be able to check for duplicate keys (equality)
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+            TypeSig.all - TypeSig.MAP.nested()))),
+      (in, conf, p, r) => new ExprMeta[TransformKeys](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
+            case "EXCEPTION" => // Good we can support this
+            case other =>
+              willNotWorkOnGpu(s"$other is not supported for config setting" +
+                  s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
+          }
+        }
+        override def convertToGpu(): GpuExpression = {
+          GpuTransformKeys(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
     expr[TransformValues](
@@ -3425,6 +3478,7 @@ object GpuOverrides extends Logging {
   val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.postColToRowProcessing")
 }
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan) :SparkPlan = {

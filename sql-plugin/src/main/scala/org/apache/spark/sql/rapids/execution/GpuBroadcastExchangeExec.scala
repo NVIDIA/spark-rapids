@@ -39,6 +39,7 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
+import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
@@ -129,7 +130,6 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   override def close(): Unit = {
     data.safeClose()
-    buffers.safeClose()
     if (batchInternal != null) {
       batchInternal.close()
     }
@@ -320,9 +320,10 @@ abstract class GpuBroadcastExchangeExecBase(
               val dataSize = batch.dataSize
 
               gpuLongMetric("dataSize") += dataSize
-              if (dataSize >= (8L << 30)) {
+              if (dataSize >= MAX_BROADCAST_TABLE_BYTES) {
                 throw new SparkException(
-                  s"Cannot broadcast the table that is larger than 8GB: ${dataSize >> 30} GB")
+                  s"Cannot broadcast the table that is larger than" +
+                      s"${MAX_BROADCAST_TABLE_BYTES >> 30}GB: ${dataSize >> 30} GB")
               }
             }
             val broadcasted = withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,

@@ -62,7 +62,7 @@
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
+            <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
@@ -82,48 +82,14 @@
           <artifactId>junit-jupiter-api</artifactId>
           <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.test.version}</version>
+        </dependency>
     </dependencies>
 
     <profiles>
-        <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark.test.version}</version>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>with-classifier</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                        <configuration>
-                            <classifier>${spark.version.classifier}</classifier>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-            <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark.test.version}</version>
-                </dependency>
-            </dependencies>
-        </profile>
         <profile>
             <id>release311cdh</id>
             <activation>
@@ -133,11 +99,6 @@
                 </property>
             </activation>
             <dependencies>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
-                </dependency>
                 <dependency>
                     <!-- it seems CDH jars pull an old version of Guava but need new version
                          to run with, so here we override Guava version for testing -->
@@ -163,6 +124,17 @@
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
                     <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
                 </dependency>
             </dependencies>
         </profile>
@@ -271,19 +243,19 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <classifier>${spark.version.classifier}</classifier>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.scalastyle</groupId>
-                <artifactId>scalastyle-maven-plugin</artifactId>
-                <configuration>
-                  <sourceDirectory>${project.basedir}/src/test/scala</sourceDirectory>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>

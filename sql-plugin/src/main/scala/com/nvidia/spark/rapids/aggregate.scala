@@ -121,7 +121,13 @@ object AggregateUtils {
   }
 
   /**
-   * Bind cuDF aggregate expressions depending on the aggregate expression mode
+   * Bind cuDF aggregate expressions depending on the aggregate expression mode.
+   * This binds `CudfAggregate` instances that are needed to realize each `GpuAggregateExpression`,
+   * where the shape the `CudfAggregate` expect is different for update vs merge.
+   *
+   * The only difference right now is in `CudfMergeM2`, in all other cases aggBufferAttributes
+   * and mergeBufferAttributes are the same. `CudfMergeM2` wants a struct to be passed to cuDF
+   * `MERGE_M2`, hence we handle it differently.
    * @param aggExpressions the aggregate expressions
    * @param aggBufferAttributes attributes to be bound to the aggregate expressions
    * @param mergeBufferAttributes merge attributes to be bound to the merge expressions
@@ -155,6 +161,30 @@ object AggregateUtils {
   }
 }
 
+/**
+ * Structure containing the original expressions, and a seq of `CudfAggregate`
+ * that corresponds to such a `GpuAggregateExpression.` For example, a
+ * `GpuAverage` aggregate, means we have two `CudfAggregate` instances, one
+ * for the count and one for the sum (hence the sequence).
+ *
+ * `boundCudfAggregate` items have a reference that is bound to either the
+ * update or merge buffer attributes, so it can mean different things depending
+ * on the stage of the aggregate.
+ *
+ * For example, the `GpuM2` aggregate can have either a `CudfM2` or a `CudfMergeM2`
+ * `CudfAggregate`. The reference used for `CudfM2` is that of 3 columns
+ * (n, mean, m2), but the reference used for `CudfMergeM2` is that of a struct 
+ * (m2struct). In other words, this is the shape cuDF expects.
+ *
+ * In the update case, `boundCudfAggregate` follows Spark, for the aggregates we have
+ * currently implemented. The update case must match the shape outputted by the preUpdate
+ * step.
+ *
+ * In the merge case, `boundCudfAggregate` shape needs to be the result of the preMerge
+ * step. In the case of `CudfMergeM2`, preMerge takes 3 columns and turns them
+ * into the desired struct.
+ *
+ */
 case class BoundCudfAggregate(
     aggExpression: GpuAggregateExpression,
     boundCudfAggregate: Seq[CudfAggregate])
@@ -204,7 +234,7 @@ object AggregateModeInfo {
  * `buildSortFallbackIterator` is used to sort the aggregated batches by the grouping keys and
  * performs a final merge aggregation pass on the sorted batches.
  *
- * @param cbIter iterator providing the nput columnar batches
+ * @param cbIter iterator providing the input columnar batches
  * @param groupingExpressions expressions used for producing the grouping keys
  * @param aggregateExpressions GPU aggregate expressions used to produce the aggregations
  * @param aggregateAttributes attribute references to each aggregate expression
@@ -216,7 +246,7 @@ object AggregateModeInfo {
  */
 class GpuHashAggregateIterator(
     cbIter: Iterator[ColumnarBatch],
-    groupingExpressions: Seq[Expression],
+    groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
@@ -432,10 +462,7 @@ class GpuHashAggregateIterator(
   private def concatenateAndMerge(
       batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
     withResource(batches) { _ =>
-      withResource(concatenateBatches(batches)) { concatVectors =>
-        val concatBatch = new ColumnarBatch(
-          concatVectors.toArray,
-          concatVectors.head.getRowCount.toInt)
+      withResource(concatenateBatches(batches)) { concatBatch =>
         withResource(computeAggregate(concatBatch, merge = true)) { mergedBatch =>
           LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
         }
@@ -466,7 +493,7 @@ class GpuHashAggregateIterator(
 
     val shims = ShimLoader.getSparkShims
     val ordering = groupingExpressions.map(shims.sortOrder(_, Ascending, NullsFirst))
-    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val groupingAttributes = groupingExpressions.map(_.toAttribute)
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
@@ -595,22 +622,24 @@ class GpuHashAggregateIterator(
   }
 
   /**
-   * Concatenates batches by concatenating the corresponding column vectors within the batches.
+   * Concatenates batches after extracting them from `LazySpillableColumnarBatch`
    * @note the input batches are not closed as part of this operation
-   * @param batchesToConcat batches to concatenate
-   * @return concatenated vectors that together represent the concatenated batch result
+   * @param spillableBatchesToConcat lazy spillable batches to concatenate
+   * @return concatenated batch result
    */
   private def concatenateBatches(
-      batchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch]): Seq[GpuColumnVector] = {
+      spillableBatchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch]): ColumnarBatch = {
     val concatTime = metrics.concatTime
     withResource(new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)) { _ =>
-      val numCols = batchesToConcat.head.numCols
-      (0 until numCols).safeMap { i =>
-        val columnType = batchesToConcat.head.getBatch.column(i).dataType()
-        val columnsToConcat = batchesToConcat.map {
-          _.getBatch.column(i).asInstanceOf[GpuColumnVector].getBase
+      val batchesToConcat = spillableBatchesToConcat.map(_.getBatch)
+      val numCols = batchesToConcat.head.numCols()
+      val dataTypes = (0 until numCols).map {
+        c => batchesToConcat.head.column(c).dataType
+      }.toArray
+      withResource(batchesToConcat.map(GpuColumnVector.from)) { tbl =>
+        withResource(cudf.Table.concatenate(tbl: _*)) { concatenated =>
+          GpuColumnVector.from(concatenated, dataTypes)
         }
-        GpuColumnVector.from(cudf.ColumnVector.concatenate(columnsToConcat: _*), columnType)
       }
     }
   }
@@ -630,7 +659,7 @@ class GpuHashAggregateIterator(
    *         expression in allExpressions
    */
   private def setupReferences(childAttr: AttributeSeq): BoundExpressionsModeAggregates = {
-    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val groupingAttributes = groupingExpressions.map(_.toAttribute)
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val mergeBufferAttributes = groupingAttributes ++
@@ -779,7 +808,7 @@ class GpuHashAggregateIterator(
       toAggregateBatch: ColumnarBatch,
       merge: Boolean,
       isSorted: Boolean = false): ColumnarBatch  = {
-    val groupingAttributes = groupingExpressions.map(_.asInstanceOf[NamedExpression].toAttribute)
+    val groupingAttributes = groupingExpressions.map(_.toAttribute)
 
     val aggBufferAttributes = groupingAttributes ++
       aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
@@ -795,7 +824,7 @@ class GpuHashAggregateIterator(
         // For example: GpuAverage has an update version of: (CudfSum, CudfCount)
         // and CudfCount has an update version of AggregateOp.COUNT and a
         // merge version of AggregateOp.COUNT.
-        var dataTypes = new mutable.ArrayBuffer[DataType]()
+        val dataTypes = new mutable.ArrayBuffer[DataType]()
         val cudfAggregates = new mutable.ArrayBuffer[GroupByAggregationOnColumn]()
 
         // `GpuAggregateFunction` can add a pre and post step for update
@@ -948,17 +977,49 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     }
   }
 
-  /** Tagging checks tied to configs that control the aggregation modes that are replaced */
+  /**
+   * Tagging checks tied to configs that control the aggregation modes that are replaced.
+   *
+   * The rule of replacement is determined by `spark.rapids.sql.hashAgg.replaceMode`, which
+   * is a string configuration consisting of AggregateMode names in lower cases connected by
+   * &(AND) and |(OR). The default value of this config is `all`, which indicates replacing all
+   * aggregates if possible.
+   *
+   * The `|` serves as the outer connector, which represents patterns of both sides are able to be
+   * replaced. For instance, `final|partialMerge` indicates that aggregate plans purely in either
+   * Final mode or PartialMerge mode can be replaced. But aggregate plans also contain
+   * AggExpressions of other mode will NOT be replaced, such as: stage 3 of single distinct
+   * aggregate who contains both Partial and PartialMerge.
+   *
+   * On the contrary, the `&` serves as the inner connector, which intersects modes of both sides
+   * to form a mode pattern. The replacement only takes place for aggregate plans who have the
+   * exact same mode pattern as what defined the rule. For instance, `partial&partialMerge` means
+   * that aggregate plans can be only replaced if they contain AggExpressions of Partial and
+   * contain AggExpressions of PartialMerge and don't contain AggExpressions of other modes.
+   *
+   * In practice, we need to combine `|` and `&` to form some sophisticated patterns. For instance,
+   * `final&complete|final|partialMerge` represents aggregate plans in three different patterns are
+   * GPU-replaceable: plans contain both Final and Complete modes; plans only contain Final mode;
+   * plans only contain PartialMerge mode.
+   */
   private def tagForReplaceMode(): Unit = {
-    val hashAggModes = agg.aggregateExpressions.map(_.mode).distinct
-    val hashAggReplaceMode = conf.hashAggReplaceMode.toLowerCase
-    hashAggReplaceMode match {
-      case "all" =>
-      case "partial" =>
-        if (hashAggModes.contains(Final) || hashAggModes.contains(Complete)) {
-          // replacing only Partial hash aggregates, so a Final or Complete one should not replace
-          willNotWorkOnGpu("Replacing Final or Complete hash aggregates disabled")
-        }
+    val aggPattern = agg.aggregateExpressions.map(_.mode).toSet
+    val strPatternToReplace = conf.hashAggReplaceMode.toLowerCase
+
+    if (aggPattern.nonEmpty && strPatternToReplace != "all") {
+      val aggPatternsCanReplace = strPatternToReplace.split("\\|").map { subPattern =>
+        subPattern.split("&").map {
+          case "partial" => Partial
+          case "partialmerge" => PartialMerge
+          case "final" => Final
+          case "complete" => Complete
+          case s => throw new IllegalArgumentException(s"Invalid Aggregate Mode $s")
+        }.toSet
+      }
+      if (!aggPatternsCanReplace.contains(aggPattern)) {
+        val message = aggPattern.map(_.toString).mkString(",")
+        willNotWorkOnGpu(s"Replacing mode pattern `$message` hash aggregates disabled")
+      } else if (aggPattern == Set(Partial)) {
         // In partial mode, if there are non-distinct functions and multiple distinct functions,
         // non-distinct functions are computed using the First operator. The final result would be
         // incorrect for non-distinct functions for partition size > 1. Reason for this is - if
@@ -970,23 +1031,10 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
               "functions are non-deterministic for non-distinct functions as it is " +
               "computed using First.")
         }
-      case "final" =>
-        if (hashAggModes.contains(Partial) || hashAggModes.contains(Complete)) {
-          // replacing only Final hash aggregates, so a Partial or Complete one should not replace
-          willNotWorkOnGpu("Replacing Partial or Complete hash aggregates disabled")
-        }
-      case "complete" =>
-        if (hashAggModes.contains(Partial) || hashAggModes.contains(Final)) {
-          // replacing only Complete hash aggregates, so a Partial or Final one should not replace
-          willNotWorkOnGpu("Replacing Partial or Final hash aggregates disabled")
-        }
-      case _ =>
-        throw new IllegalArgumentException(s"The hash aggregate replacement mode " +
-            s"$hashAggReplaceMode is not valid. Valid options are: 'partial', " +
-            s"'final', 'complete', or 'all'")
+      }
     }
 
-    if (!conf.partialMergeDistinctEnabled && hashAggModes.contains(PartialMerge)) {
+    if (!conf.partialMergeDistinctEnabled && aggPattern.contains(PartialMerge)) {
       willNotWorkOnGpu("Replacing Partial Merge aggregates disabled. " +
           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
     }
@@ -995,10 +1043,10 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
   override def convertToGpu(): GpuExec = {
     GpuHashAggregateExec(
       requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
-      groupingExpressions.map(_.convertToGpu()),
-      aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
-      aggregateAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-      resultExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
+      groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+      aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
+      aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
+      resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
       childPlans.head.convertIfNeeded(),
       conf.gpuTargetBatchSizeBytes)
   }
@@ -1076,10 +1124,10 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
       }
       GpuHashAggregateExec(
         requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
-        groupingExpressions.map(_.convertToGpu()),
-        aggregateExpressions.map(_.convertToGpu()).asInstanceOf[Seq[GpuAggregateExpression]],
-        aggAttributes.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-        retExpressions.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
+        groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
+        aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
+        aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
+        retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
         childPlans.head.convertIfNeeded(),
         conf.gpuTargetBatchSizeBytes)
     } else {
@@ -1401,7 +1449,7 @@ class GpuObjectHashAggregateExecMeta(
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
-    groupingExpressions: Seq[Expression],
+    groupingExpressions: Seq[NamedExpression],
     aggregateExpressions: Seq[GpuAggregateExpression],
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],

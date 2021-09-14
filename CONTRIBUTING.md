@@ -39,14 +39,46 @@ mvn verify
 ```
 
 After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
+This will build the plugin for a single version of Spark.  By default this is Apache Spark
+3.0.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
+to Maven. For instance to build Spark 3.1.1 you would use:
 
-### Building Shims for Spark Snapshot Versions
+```shell script
+mvn -Dbuildver=311 verify
+```
+You can find all available build versions in the top level pom.xml file. If you are building
+for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
+the version you want.
 
-By default the build will only include shims for released versions of Spark. To include shims
-for snapshot versions of Spark still under development, use the `snapshot-shims` Maven profile
-(e.g.: add `-Psnapshot-shims` to the Maven command-line). Note that when a snapshot Spark version
-later becomes an official release, the snapshot shim for that version may no longer build due to
-missing snapshot artifacts for that Spark version.
+To get an uber jar with more than 1 version you have to `mvn install` each version
+and then use one of the defined profiles in the dist module. See the next section
+for more details.
+
+### Building a Distribution for Multiple Versions of Spark
+
+By default the distribution jar only includes code for a single version of Spark. If you want
+to create a jar with multiple versions we currently have 4 options.
+
+1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
+2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
+3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
+4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
+
+You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
+
+There is a build script `build/buildall` to build everything with snapshots and this will have more options to build later.
+
+You can also install some manually and build a combined jar. For instance to build non-snapshot versions:
+
+```shell script
+mvn -Dbuildver=301 clean install -DskipTests
+mvn -Dbuildver=302 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=303 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=312 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
+mvn -pl dist -PnoSnapshots package -DskipTests
+```
 
 ### Building against different CUDA Toolkit versions
 
@@ -54,6 +86,27 @@ You can build against different versions of the CUDA Toolkit by using one of the
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
 ## Code contributions
+
+### Source code layout
+
+Conventional code locations in Maven modules are found under `src/main/<language>`. In addition to
+that and in order to support multiple versions of Apache Spark with the minimum amount of source
+code we maintain Spark-version-specific locations within non-shim modules if necessary. This allows
+us to switch between incompatible parent classes inside without copying the shared code to
+dedicated shim modules.
+
+Thus, the conventional source code root directories `src/main/<language>` contain the files that
+are source-compatible with all supported Spark releases, both upstream and vendor-specific.
+
+The version-specific directory names have one of the following forms / use cases:
+- `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
+- `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
+   only beginning with version Spark 3.1.2, and + signifies there is no upper version boundary
+   among the supported versions
+- `src/main/302until312-all` contains code that applies to all shims between 3.0.2 *inclusive*,
+3.1.2 *exclusive*
+- `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
+   3.1.2 *inclusive*
 
 ### Your first issue
 
