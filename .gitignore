@@ -1,8 +1,5 @@
 *#*#
 *.#*
-*.iml
-*.ipr
-*.iws
 *.pyc
 *.pyo
 *.swp
@@ -14,8 +11,6 @@
 .ensime_cache/
 .ensime_lucene
 .generated-mima*
-.idea/
-.idea_modules/
 .project
 .pydevproject
 .scala_dependencies

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/../../.." charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../api_validation/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../python" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../shims/spark301/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../shims/spark301/target/extra-resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../shuffle-plugin/target/extra-resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../sql-plugin/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../sql-plugin/target/extra-resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../udf-compiler/target/extra-resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../udf-examples/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/../../../udf-examples/target/extra-resources" charset="UTF-8" />
+  </component>
+</project>
