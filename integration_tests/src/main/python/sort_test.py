@@ -261,6 +261,7 @@ def test_large_orderby(data_gen, stable_sort):
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
+@pytest.mark.order(2)
 def test_large_orderby_nested_ridealong(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
     #  results, especially on distributed clusters.
@@ -278,6 +279,7 @@ def test_large_orderby_nested_ridealong(data_gen):
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
+@pytest.mark.order(2)
 def test_orderby_nested_ridealong_limit(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
     #  results, especially on distributed clusters.

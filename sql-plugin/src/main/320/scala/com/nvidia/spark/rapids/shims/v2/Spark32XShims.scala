@@ -131,6 +131,8 @@ trait Spark32XShims extends SparkShims {
       enableAddPartitions = true,
       enableDropPartitions = false)
 
+  override def shouldFailDivOverflow(): Boolean = SQLConf.get.ansiEnabled
+
   override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
   }
