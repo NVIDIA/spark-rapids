@@ -440,8 +440,8 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
-                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-apache/scala</source>
                                     </sources>
@@ -1017,6 +1017,7 @@
                         <phase>verify</phase>
                         <goals><goal>run</goal></goals>
                         <configuration>
+                            <skip>${maven.scalastyle.skip}</skip>
                             <target>
                                 <pathconvert property="scalastyle.dirs" pathsep=" ">
                                     <dirset dir="${project.basedir}" includes="**/src/main/scala"/>

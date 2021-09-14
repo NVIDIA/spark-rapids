@@ -18,12 +18,27 @@
 set -ex
 
 # Install all the versions we support
-mvn -U -Dbuildver=302 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
-mvn -U -Dbuildver=303 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
-mvn -U -Dbuildver=304 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
-mvn -U -Dbuildver=311 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
-mvn -U -Dbuildver=312 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
-mvn -U -Dbuildver=313 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
-mvn -U -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
-mvn -U -Dbuildver=320 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -pl aggregator -am
+SPARK_SHIM_VERSIONS="
+  302
+  303
+  304
+  311
+  311cdh
+  312
+  313
+  320
+"
+
+for sparkver in ${SPARK_SHIM_VERSIONS} ; do
+  mvn -U clean install \
+    -Dbuildver="$sparkver" \
+    -Drat.skip=true \
+    -DskipTests \
+    -Dmaven.javadoc.skip=true \
+    -Dskip \
+    -Dmaven.scalastyle.skip=true \
+    -pl aggregator -am
+done
+
+# install 301 without "skips" above
 mvn -U -Dbuildver=301 clean install -DskipTests -Psnapshots
