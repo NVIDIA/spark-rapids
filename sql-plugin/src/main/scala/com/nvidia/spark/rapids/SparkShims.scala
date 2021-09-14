@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URI
 import java.nio.ByteBuffer
 
+import ai.rapids.cudf.{DType, Scalar}
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -256,6 +257,8 @@ trait SparkShims {
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int
+
+  def getSpecialDate(name: String, unit: DType): Scalar
 }
 
 abstract class SparkCommonShims extends SparkShims {

@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
@@ -27,7 +28,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuToTimestamp.{daysEqual, daysScalarDays, daysScalarMicros}
+import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.rapids.RegexReplace
 import org.apache.spark.sql.types._
 
@@ -916,33 +917,16 @@ object GpuCast extends Arm {
           convertFixedLenDateOrNull(sanitizedInput, 4, "%Y")))
 
       // handle special dates like "epoch", "now", etc.
-      withResource(daysEqual(sanitizedInput, DateUtils.EPOCH)) { isEpoch =>
-        withResource(daysEqual(sanitizedInput, DateUtils.NOW)) { isNow =>
-          withResource(daysEqual(sanitizedInput, DateUtils.TODAY)) { isToday =>
-            withResource(daysEqual(sanitizedInput, DateUtils.YESTERDAY)) { isYesterday =>
-              withResource(daysEqual(sanitizedInput, DateUtils.TOMORROW)) { isTomorrow =>
-                withResource(daysScalarDays(DateUtils.EPOCH)) { epoch =>
-                  withResource(daysScalarDays(DateUtils.NOW)) { now =>
-                    withResource(daysScalarDays(DateUtils.TODAY)) { today =>
-                      withResource(daysScalarDays(DateUtils.YESTERDAY)) { yesterday =>
-                        withResource(daysScalarDays(DateUtils.TOMORROW)) { tomorrow =>
-                          withResource(isTomorrow.ifElse(tomorrow, converted)) { a =>
-                            withResource(isYesterday.ifElse(yesterday, a)) { b =>
-                              withResource(isToday.ifElse(today, b)) { c =>
-                                withResource(isNow.ifElse(now, c)) { d =>
-                                  isEpoch.ifElse(epoch, d)
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+      // `converted` will be closed in replaceSpecialDates. We wrap it with closeOnExcept in case
+      // of exception before replaceSpecialDates.
+      closeOnExcept(converted) { timeStampVector =>
+        val specialDates = Seq(DateUtils.EPOCH, DateUtils.NOW, DateUtils.TODAY,
+          DateUtils.YESTERDAY, DateUtils.TOMORROW)
+        val specialValues = mutable.ListBuffer.empty[Scalar]
+        withResource(specialValues) { _ =>
+          specialDates.foreach(
+            specialValues += ShimLoader.getSparkShims.getSpecialDate(_, DType.TIMESTAMP_DAYS))
+          replaceSpecialDates(sanitizedInput, timeStampVector, specialDates, specialValues)
         }
       }
     }
@@ -1043,7 +1027,6 @@ object GpuCast extends Arm {
     val today = DateUtils.currentDate()
     val todayStr = new SimpleDateFormat("yyyy-MM-dd")
         .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
-    val specialDates = DateUtils.specialDatesMicros
 
     var sanitizedInput = input.incRefCount()
 
@@ -1077,33 +1060,17 @@ object GpuCast extends Arm {
               convertFixedLenTimestampOrNull(sanitizedInput, 4, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
-      val finalResult = withResource(daysEqual(sanitizedInput, DateUtils.EPOCH)) { isEpoch =>
-        withResource(daysEqual(sanitizedInput, DateUtils.NOW)) { isNow =>
-          withResource(daysEqual(sanitizedInput, DateUtils.TODAY)) { isToday =>
-            withResource(daysEqual(sanitizedInput, DateUtils.YESTERDAY)) { isYesterday =>
-              withResource(daysEqual(sanitizedInput, DateUtils.TOMORROW)) { isTomorrow =>
-                withResource(daysScalarMicros(DateUtils.EPOCH)) { epoch =>
-                  withResource(daysScalarMicros(DateUtils.NOW)) { now =>
-                    withResource(daysScalarMicros(DateUtils.TODAY)) { today =>
-                      withResource(daysScalarMicros(DateUtils.YESTERDAY)) { yesterday =>
-                        withResource(daysScalarMicros(DateUtils.TOMORROW)) { tomorrow =>
-                          withResource(isTomorrow.ifElse(tomorrow, converted)) { a =>
-                            withResource(isYesterday.ifElse(yesterday, a)) { b =>
-                              withResource(isToday.ifElse(today, b)) { c =>
-                                withResource(isNow.ifElse(now, c)) { d =>
-                                  isEpoch.ifElse(epoch, d)
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+      // `converted` will be closed in replaceSpecialDates. We wrap it with closeOnExcept in case
+      // of exception before replaceSpecialDates.
+      val finalResult = closeOnExcept(converted) { timeStampVector =>
+        val specialDates = Seq(DateUtils.EPOCH, DateUtils.NOW, DateUtils.TODAY,
+          DateUtils.YESTERDAY, DateUtils.TOMORROW)
+        val specialValues = mutable.ListBuffer.empty[Scalar]
+        withResource(specialValues) { _ =>
+          specialDates.foreach(
+            specialValues +=
+                ShimLoader.getSparkShims.getSpecialDate(_, DType.TIMESTAMP_MICROSECONDS))
+          replaceSpecialDates(sanitizedInput, timeStampVector, specialDates, specialValues)
         }
       }
 

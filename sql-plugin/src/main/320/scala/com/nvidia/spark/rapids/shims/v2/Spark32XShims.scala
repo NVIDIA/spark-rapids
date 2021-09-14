@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
+import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
@@ -137,6 +138,12 @@ trait Spark32XShims extends SparkShims {
     Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
   }
 
+  override def getSpecialDate(name: String, unit: DType): Scalar = unit match {
+    case DType.TIMESTAMP_DAYS => Scalar.fromNull(DType.TIMESTAMP_DAYS)
+    case DType.TIMESTAMP_SECONDS => Scalar.fromNull(DType.TIMESTAMP_SECONDS)
+    case DType.TIMESTAMP_MICROSECONDS => Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)
+    case _ => throw new IllegalArgumentException(s"unsupported DType: $unit")
+  }
 }
 
 // TODO dedupe utils inside shims

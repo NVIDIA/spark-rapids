@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
+import ai.rapids.cudf.{DType, Scalar}
+import com.nvidia.spark.rapids.{DateUtils, ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 
@@ -101,6 +102,17 @@ trait Spark30XShims extends SparkShims {
 
   override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     ss.sparkContext.defaultParallelism
+  }
+
+  override def getSpecialDate(name: String, unit: DType): Scalar = unit match {
+    case DType.TIMESTAMP_DAYS =>
+      Scalar.timestampDaysFromInt(DateUtils.specialDatesDays(name))
+    case DType.TIMESTAMP_SECONDS =>
+      Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
+    case DType.TIMESTAMP_MICROSECONDS =>
+      Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
+    case _ =>
+      throw new IllegalArgumentException(s"unsupported DType: $unit")
   }
 
 }
