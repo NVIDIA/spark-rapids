@@ -154,7 +154,8 @@ class Spark320Shims extends Spark32XShims {
         override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val fpChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
+        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
+            .withPsNote(TypeEnum.STRING, fpToStringPsNote)
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
