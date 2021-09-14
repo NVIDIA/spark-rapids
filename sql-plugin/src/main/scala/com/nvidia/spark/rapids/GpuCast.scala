@@ -133,13 +133,9 @@ object GpuCast extends Arm {
   private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
+  private val TIMESTAMP_REGEX_FULL =
+    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
-
-  /**
-   * The length of a timestamp with 6 digits for microseconds followed by 'Z', such
-   * as "2020-01-01T12:34:56.123456Z".
-   */
-  private val FULL_TIMESTAMP_LENGTH = 27
 
   /**
    * Regex to match timestamps with or without trailing zeros.
@@ -825,8 +821,8 @@ object GpuCast extends Arm {
       }
     }
 
-    withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { orElse =>
-      withResource(isValidDate) { _ =>
+    withResource(isValidDate) { _ =>
+      withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { orElse =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           isValidDate.ifElse(asDays, orElse)
         }
@@ -847,8 +843,8 @@ object GpuCast extends Arm {
       }
     }
 
-    withResource(orElse) { orElse =>
-      withResource(isValidDate) { _ =>
+    withResource(isValidDate) { _ =>
+      withResource(orElse) { _ =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           isValidDate.ifElse(asDays, orElse)
         }
@@ -954,7 +950,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertTimestampOr(
+  private def convertVarLenTimestampOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -992,19 +988,14 @@ object GpuCast extends Arm {
       }
 
       val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
-        val isValidLength = withResource(Scalar.fromInt(FULL_TIMESTAMP_LENGTH)) { requiredLen =>
-          withResource(input.getCharLengths) { actualLen =>
-            requiredLen.equalTo(actualLen)
-          }
-        }
-        withResource(isValidLength) { isValidLength =>
-          isValidLength.and(isCudfMatch)
+        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+          isCudfMatch.and(isRegexMatch)
         }
       }
 
       // we only need to parse with one of the cuDF formats because the parsing code ignores
       // the ' ' or 'T' between the date and time components
-      withResource(isValidTimestamp) { isValidTimestamp =>
+      withResource(isValidTimestamp) { _ =>
         withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
           isValidTimestamp.ifElse(asDays, orElse)
         }
@@ -1022,22 +1013,6 @@ object GpuCast extends Arm {
 
     var sanitizedInput = input.incRefCount()
 
-    // replace partial months
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs("-([0-9])-", "-0\\1-")
-    }
-
-    // replace partial month or day at end of string
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs("-([0-9])[ ]?\\Z", "-0\\1")
-    }
-
-    // replace partial day in timestamp formats without dates
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs(
-        "-([0-9])([ T]\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z", "-0\\1\\2")
-    }
-
     // prepend today's date to timestamp formats without dates
     sanitizedInput = withResource(sanitizedInput) { _ =>
       sanitizedInput.stringReplaceWithBackrefs(TIMESTAMP_REGEX_NO_DATE, s"${todayStr}T\\1")
@@ -1047,8 +1022,8 @@ object GpuCast extends Arm {
       // convert dates that are in valid timestamp formats
       val converted =
         convertFullTimestampOr(sanitizedInput,
-          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+          convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
               convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
