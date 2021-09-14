@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig, TypeSigUtil}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 
@@ -126,4 +126,5 @@ trait Spark30XShims extends SparkShims {
     ss.sparkContext.defaultParallelism
   }
 
+  override def getTypeSigUtil(): TypeSigUtil = TypeSigUtilUntil320
 }

@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.spark320;
 
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion, TypeSig}
-import com.nvidia.spark.rapids.shims.v2.TypeSig320
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
@@ -34,7 +33,7 @@ class Spark320ShimsSuite extends FunSuite {
   }
 
   test("TypeSig320") {
-    val check = TypeSig320(TypeSig.DAYTIME + TypeSig.YEARMONTH)
+    val check = TypeSig.DAYTIME + TypeSig.YEARMONTH
     assert(check.isSupportedByPlugin(DayTimeIntervalType(), false) == true)
     assert(check.isSupportedByPlugin(YearMonthIntervalType(), false) == true)
   }

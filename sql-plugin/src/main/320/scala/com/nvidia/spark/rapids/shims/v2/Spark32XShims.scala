@@ -137,6 +137,7 @@ trait Spark32XShims extends SparkShims {
     Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
   }
 
+  override def getTypeSigUtil(): TypeSigUtil = TypeSigUtilFrom320
 }
 
 // TODO dedupe utils inside shims
