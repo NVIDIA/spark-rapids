@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids.shims.spark311db
 import scala.concurrent.Future
 
 import org.apache.spark.MapOutputStatistics
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning

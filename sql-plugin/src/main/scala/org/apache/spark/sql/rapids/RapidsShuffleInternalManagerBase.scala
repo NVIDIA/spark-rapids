@@ -203,7 +203,7 @@ class RapidsCachingWriter[K, V](
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
 abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
-    extends VisibleShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
+    extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
 
@@ -424,20 +424,20 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   }
 }
 
-trait VisibleShuffleManager extends ShuffleManager {
+trait VisibleShuffleManager {
   def isDriver: Boolean
 }
 
 abstract class ProxyRapidsShuffleInternalManagerBase(
     conf: SparkConf,
     override val isDriver: Boolean
-) extends VisibleShuffleManager with Proxy {
+) extends ShuffleManager with VisibleShuffleManager with Proxy {
 
   // touched in the plugin code after the shim initialization
   // is complete
-  override lazy val self: VisibleShuffleManager =
+  override lazy val self: ShuffleManager =
     ShimLoader.newInternalShuffleManager(conf, isDriver)
-
+        .asInstanceOf[ShuffleManager]
 
   //
   // Signatures unchanged since 3.0.1 follow
