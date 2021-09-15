@@ -20,13 +20,12 @@ import java.net.URL
 
 import scala.collection.JavaConverters._
 
-import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf}
+import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
-import org.apache.spark.sql.rapids.VisibleShuffleManager
 import org.apache.spark.util.{MutableURLClassLoader, ParentClassLoader}
 
 /*
@@ -173,10 +172,22 @@ object ShimLoader extends Logging {
     // ShimServiceProvider API definition is not shared via parent and we run
     // into ClassCastExceptions. If we find a way to solve this then we can revert to ServiceLoader
 
+    // IMPORTANT don't use RapidsConf as it transitively references classes that must remain
+    // in parallel worlds
+    val shimServiceProviderOverrideClassName = Option(SparkEnv.get) // Spark-less RapidsConf.help
+      .flatMap(_.conf.getOption("spark.rapids.shims-provider-override"))
+    shimServiceProviderOverrideClassName.foreach { shimProviderClass =>
+      logWarning(s"Overriding Spark shims provider to $shimProviderClass. " +
+        "This may be an untested configuration!")
+    }
+
     val serviceProviderListPath = SERVICE_LOADER_PREFIX + classOf[SparkShimServiceProvider].getName
-    val serviceProviderList = thisClassLoader.getResources(serviceProviderListPath)
-        .asScala.map(scala.io.Source.fromURL)
-        .flatMap(_.getLines())
+    val serviceProviderList = shimServiceProviderOverrideClassName
+      .map(clsName => Seq(clsName)).getOrElse {
+        thisClassLoader.getResources(serviceProviderListPath)
+          .asScala.map(scala.io.Source.fromURL)
+          .flatMap(_.getLines())
+      }
 
     assert(serviceProviderList.nonEmpty, "Classpath should contain the resource for " +
         serviceProviderListPath)
@@ -197,7 +208,8 @@ object ShimLoader extends Logging {
           None
       }
     }.find { case (shimServiceProvider, _) =>
-      shimServiceProvider.matchesVersion(sparkVersion)
+      shimServiceProviderOverrideClassName.nonEmpty ||
+        shimServiceProvider.matchesVersion(sparkVersion)
     }.map { case (inst, url) =>
       shimURL = url
       // this class will be loaded again by the real executor classloader

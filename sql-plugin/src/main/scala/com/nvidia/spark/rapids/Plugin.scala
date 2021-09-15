@@ -148,9 +148,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
-    if (conf.shimsProviderOverride.isDefined) { // TODO test it, probably not working yet
-      ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
-    }
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable &&
         conf.shuffleTransportEarlyStart) {
@@ -174,9 +171,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: java.util.Map[String, String]): Unit = {
     try {
       val conf = new RapidsConf(extraConf.asScala.toMap)
-      if (conf.shimsProviderOverride.isDefined) {
-        ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
-      }
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
