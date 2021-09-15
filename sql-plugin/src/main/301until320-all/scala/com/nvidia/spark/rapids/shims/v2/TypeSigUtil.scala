@@ -58,25 +58,11 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
     allowDecimal: Boolean, notSupportedReason: Seq[String]): Seq[String] = notSupportedReason
 
   /**
-   * Get checks from TypeEnum
+   * Map DataType to TypeEnum
    *
-   * @param from the TypeEnum to be matched
-   * @return the TypeSigs
+   * @param dataType the data type to be mapped
+   * @return the TypeEnum
    */
-  override def getCastChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) =
-    throw new RuntimeException("Unsupported " + from)
-
-  /**
-   * Get TypeSigs from DataType
-   *
-   * @param from         the data type to be matched
-   * @param default      the default TypeSig
-   * @param sparkDefault the default Spark TypeSig
-   * @return the TypeSigs
-   */
-  override def getCastChecksAndSigs(
-    from: DataType,
-    default: TypeSig,
-    sparkDefault: TypeSig): (TypeSig, TypeSig) = (default, sparkDefault)
+  override def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value = TypeEnum.UDT
 
 }

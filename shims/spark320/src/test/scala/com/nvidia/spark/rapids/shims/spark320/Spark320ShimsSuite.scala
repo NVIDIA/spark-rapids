@@ -37,4 +37,5 @@ class Spark320ShimsSuite extends FunSuite {
     assert(check.isSupportedByPlugin(DayTimeIntervalType(), false) == true)
     assert(check.isSupportedByPlugin(YearMonthIntervalType(), false) == true)
   }
+
 }

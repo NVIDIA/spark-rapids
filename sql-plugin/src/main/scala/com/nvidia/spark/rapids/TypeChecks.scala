@@ -60,23 +60,11 @@ trait TypeSigUtil {
     notSupportedReason: Seq[String]): Seq[String]
 
   /**
-   * Get TypeSigs from DataType
-   * @param from the data type to be matched
-   * @param default the default TypeSig
-   * @param sparkDefault the default Spark TypeSig
-   * @return the TypeSigs
+   * Map DataType to TypeEnum
+   * @param dataType the data type to be mapped
+   * @return the TypeEnum
    */
-  def getCastChecksAndSigs(
-    from: DataType,
-    default: TypeSig,
-    sparkDefault: TypeSig): (TypeSig, TypeSig)
-
-  /**
-   * Get checks from TypeEnum
-   * @param from the TypeEnum to be matched
-   * @return the TypeSigs
-   */
-  def getCastChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig)
+  def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value
 
 }
 
@@ -1326,6 +1314,12 @@ class CastChecks extends ExprChecks {
   val udtChecks: TypeSig = none
   val sparkUdtSig: TypeSig = STRING + UDT
 
+  val daytimeChecks: TypeSig = none
+  val sparkDaytimeChecks: TypeSig = DAYTIME + STRING
+
+  val yearmonthChecks: TypeSig = none
+  val sparkYearmonthChecks: TypeSig = YEARMONTH + STRING
+
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
     case NullType => (nullChecks, sparkNullSig)
     case BooleanType => (booleanChecks, sparkBooleanSig)
@@ -1340,8 +1334,7 @@ class CastChecks extends ExprChecks {
     case _: ArrayType => (arrayChecks, sparkArraySig)
     case _: MapType => (mapChecks, sparkMapSig)
     case _: StructType => (structChecks, sparkStructSig)
-    case _ =>
-      TypeSigUtil.getCastChecksAndSigs(from, udtChecks, sparkUdtSig)
+    case _ => getChecksAndSigs(TypeSigUtil.mapDataTypeToTypeEnum(from))
   }
 
   private[this] def getChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) = from match {
@@ -1360,7 +1353,8 @@ class CastChecks extends ExprChecks {
     case TypeEnum.MAP => (mapChecks, sparkMapSig)
     case TypeEnum.STRUCT => (structChecks, sparkStructSig)
     case TypeEnum.UDT => (udtChecks, sparkUdtSig)
-    case _ => TypeSigUtil.getCastChecksAndSigs(from)
+    case TypeEnum.DAYTIME => (daytimeChecks, sparkDaytimeChecks)
+    case TypeEnum.YEARMONTH => (yearmonthChecks, sparkYearmonthChecks)
   }
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {

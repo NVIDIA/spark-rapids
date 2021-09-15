@@ -52,27 +52,12 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
     }
   }
 
-  override def getCastChecksAndSigs(
-      from: DataType,
-      default: TypeSig,
-      sparkDefault: TypeSig): (TypeSig, TypeSig) = {
-    from match {
-      case _: DayTimeIntervalType => (daytimeChecks, sparkDaytimeSig)
-      case _: YearMonthIntervalType =>(yearmonthChecks, sparkYearmonthSig)
-      case _ => (default, sparkDefault)
+  override def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value = {
+    dataType match {
+      case _: DayTimeIntervalType => TypeEnum.DAYTIME
+      case _: YearMonthIntervalType => TypeEnum.YEARMONTH
+      case _ => TypeEnum.UDT // default to UDT
     }
   }
 
-  override def getCastChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) = {
-    from match {
-      case TypeEnum.DAYTIME => (daytimeChecks, sparkDaytimeSig)
-      case TypeEnum.YEARMONTH => (yearmonthChecks, sparkYearmonthSig)
-    }
-  }
-
-  def daytimeChecks: TypeSig = TypeSig.none
-  def sparkDaytimeSig: TypeSig = TypeSig.DAYTIME + TypeSig.STRING
-
-  def yearmonthChecks: TypeSig = TypeSig.none
-  def sparkYearmonthSig: TypeSig = TypeSig.YEARMONTH + TypeSig.STRING
 }
