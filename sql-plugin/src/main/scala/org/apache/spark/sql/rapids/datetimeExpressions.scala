@@ -481,55 +481,22 @@ object GpuToTimestamp extends Arm {
   // tests for.
   val LEGACY_COMPATIBLE_FORMATS = Map(
     "yyyy-MM-dd" -> LegacyParseFormat('-', isTimestamp = false,
-      raw"\A\d{4}-\d{2}-\d{2}(\D|\s|\Z)"),
+      raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
     "yyyy/MM/dd" -> LegacyParseFormat('/', isTimestamp = false,
-      raw"\A\d{4}/\d{2}/\d{2}(\D|\s|\Z)"),
+      raw"\A\d{4}/\d{1,2}/\d{1,2}(\D|\s|\Z)"),
     "dd-MM-yyyy" -> LegacyParseFormat('-', isTimestamp = false,
-      raw"\A\d{2}-\d{2}-\d{4}(\D|\s|\Z)"),
+      raw"\A\d{1,2}-\d{1,2}-\d{4}(\D|\s|\Z)"),
     "dd/MM/yyyy" -> LegacyParseFormat('/', isTimestamp = false,
-      raw"\A\d{2}/\d{2}/\d{4}(\D|\s|\Z)"),
+      raw"\A\d{1,2}/\d{1,2}/\d{4}(\D|\s|\Z)"),
     "yyyy-MM-dd HH:mm:ss" -> LegacyParseFormat('-', isTimestamp = true,
-      raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)"),
+      raw"\A\d{4}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)"),
     "yyyy/MM/dd HH:mm:ss" -> LegacyParseFormat('/', isTimestamp = true,
-      raw"\A\d{4}/\d{2}/\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)")
+      raw"\A\d{4}/\d{1,2}/\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)")
   )
 
   /** remove whitespace before month and day */
   val REMOVE_WHITESPACE_FROM_MONTH_DAY: RegexReplace =
     RegexReplace(raw"(\A\d+)-([ \t]*)(\d+)-([ \t]*)(\d+)", raw"\1-\3-\5")
-
-  /** Regex rule to replace "yyyy-m-" with "yyyy-mm-" */
-  val FIX_SINGLE_DIGIT_MONTH: RegexReplace =
-    RegexReplace(raw"(\A\d+)-(\d{1}-)", raw"\1-0\2")
-
-  /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
-  val FIX_SINGLE_DIGIT_DAY: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2})-(\d{1})([\D\s]|\Z)", raw"\1-0\2\3")
-
-  /** Regex rule to replace "yyyy-mm-dd[ T]h:" with "yyyy-mm-dd hh:" */
-  val FIX_SINGLE_DIGIT_HOUR: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2})[ T](\d{1}:)", raw"\1 0\2")
-
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh:m:" with "yyyy-mm-dd[ T]hh:mm:" */
-  val FIX_SINGLE_DIGIT_MINUTE: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}):(\d{1}:)", raw"\1:0\2")
-
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh:mm:s" with "yyyy-mm-dd[ T]hh:mm:ss" */
-  val FIX_SINGLE_DIGIT_SECOND: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1})([\D\s]|\Z)", raw"\1:0\2\3")
-
-  /** Convert dates to standard format */
-  val FIX_DATES = Seq(
-    REMOVE_WHITESPACE_FROM_MONTH_DAY,
-    FIX_SINGLE_DIGIT_MONTH,
-    FIX_SINGLE_DIGIT_DAY)
-
-  /** Convert timestamps to standard format */
-  val FIX_TIMESTAMPS = Seq(
-    FIX_SINGLE_DIGIT_HOUR,
-    FIX_SINGLE_DIGIT_MINUTE,
-    FIX_SINGLE_DIGIT_SECOND
-  )
 
   def daysScalarSeconds(name: String): Scalar = {
     Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
@@ -634,13 +601,7 @@ object GpuToTimestamp extends Arm {
     val format = LEGACY_COMPATIBLE_FORMATS.getOrElse(sparkFormat,
       throw new IllegalStateException(s"Unsupported format $sparkFormat"))
 
-    // optimization to apply only the necessary rules depending on whether we are
-    // parsing to a date or timestamp
-    val regexReplaceRules = if (format.isTimestamp) {
-      FIX_DATES ++ FIX_TIMESTAMPS
-    } else {
-      FIX_DATES
-    }
+    val regexReplaceRules = Seq(REMOVE_WHITESPACE_FROM_MONTH_DAY)
 
     // we support date formats using either `-` or `/` to separate year, month, and day and the
     // regex rules are written with '-' so we need to replace '-' with '/' here as necessary
