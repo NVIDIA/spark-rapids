@@ -15461,7 +15461,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td> </td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
+<td><em>PS<br/>Conversion may produce different results and requires spark.rapids.sql.castFloatToString.enabled to be true.</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
@@ -15482,7 +15482,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td> </td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
+<td><em>PS<br/>Conversion may produce different results and requires spark.rapids.sql.castFloatToString.enabled to be true.</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
@@ -15865,7 +15865,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td> </td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
+<td><em>PS<br/>Conversion may produce different results and requires spark.rapids.sql.castFloatToString.enabled to be true.</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
@@ -15886,7 +15886,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td> </td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
+<td><em>PS<br/>Conversion may produce different results and requires spark.rapids.sql.castFloatToString.enabled to be true.</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
 <td> </td>
