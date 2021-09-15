@@ -26,7 +26,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
-import org.apache.spark.sql.rapids.VisibleShuffleManager
 import org.apache.spark.util.{MutableURLClassLoader, ParentClassLoader}
 
 /*
@@ -63,7 +62,7 @@ import org.apache.spark.util.{MutableURLClassLoader, ParentClassLoader}
     by incompatible Scala / Spark dependencies.
  */
 object ShimLoader extends Logging {
-  logDebug(s"ShimLoader object instance: ${this} loaded by ${getClass.getClassLoader}")
+  logDebug(s"ShimLoader object instance: $this loaded by ${getClass.getClassLoader}")
   private val shimRootURL = {
     val thisClassFile = getClass.getName.replace(".", "/") + ".class"
     val url = getClass.getClassLoader.getResource(thisClassFile)
@@ -123,6 +122,8 @@ object ShimLoader extends Logging {
     // TODO propose a proper addClassPathURL API to Spark similar to addJar but
     //  accepting non-file-based URI
     val contextClassLoader = Thread.currentThread().getContextClassLoader
+    // First check if we can get a MutableURLClassLoader to update. This works on the
+    // executor and in some cases for the driver (when there is no REPL)
     Option(contextClassLoader).collect {
       case mutable: MutableURLClassLoader => mutable
       case replCL if replCL.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" =>
@@ -135,6 +136,24 @@ object ShimLoader extends Logging {
       mutable.addURL(shimURL)
       mutable.addURL(shimCommonURL)
     }
+
+    if (pluginClassLoader == null) {
+      // Next we should check for the scala built in REPL interpreter class loader.
+      // This happens on the driver side as a part of the REPL. It does not use a
+      // MutableURLClassLoader, but has essentially done the same thing.
+      Option(contextClassLoader).foreach { loader =>
+        if (loader.getClass.getName ==
+            "scala.tools.nsc.interpreter.IMain$TranslatingClassLoader") {
+          val parentLoader = loader.getParent
+          // Unfortunately this class is internal to scala and so we will add URLs through
+          // reflection.
+          val addURL = parentLoader.getClass.getDeclaredMethod("addURL", classOf[java.net.URL])
+          addURL.invoke(parentLoader, shimURL)
+          addURL.invoke(parentLoader, shimCommonURL)
+          pluginClassLoader = contextClassLoader
+        }
+      }
+    }
   }
 
   private def getShimClassLoader(): ClassLoader = {
@@ -146,6 +165,9 @@ object ShimLoader extends Logging {
       if (tmpClassLoader == null) {
         tmpClassLoader = new MutableURLClassLoader(Array(shimURL, shimCommonURL),
           getClass.getClassLoader)
+        logWarning("Found an unexpected context classloader " +
+            s"${Thread.currentThread().getContextClassLoader}. We will try to recover from this, " +
+            "but it may cause class loading problems.")
       }
       tmpClassLoader
     } else {
@@ -253,7 +275,7 @@ object ShimLoader extends Logging {
     shimProviderClass = classname
   }
 
-  private def newInstanceOf[T](className: String): T = {
+  def newInstanceOf[T](className: String): T = {
     val loader = getShimClassLoader()
     logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
     instantiateClass(loader.loadClass(className)).asInstanceOf[T]
@@ -303,4 +325,5 @@ object ShimLoader extends Logging {
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
+
 }
