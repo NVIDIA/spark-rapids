@@ -463,34 +463,44 @@ object GpuToTimestamp extends Arm {
   // We are compatible with Spark for these formats when the timeParserPolicy is CORRECTED
   // or EXCEPTION. It is possible that other formats may be supported but these are the only
   // ones that we have tests for.
-  val CORRECTED_COMPATIBLE_FORMATS = Seq(
-    "yyyy-MM-dd",
-    "yyyy-MM",
-    "yyyy/MM/dd",
-    "yyyy/MM",
-    "dd/MM/yyyy",
-    "yyyy-MM-dd HH:mm:ss",
-    "MM-dd",
-    "MM/dd",
-    "dd-MM",
-    "dd/MM"
+  val CORRECTED_COMPATIBLE_FORMATS = Map(
+    "yyyy-MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{4}-\d{2}-\d{2}\Z"),
+    "yyyy/MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{4}/\d{1,2}/\d{1,2}\Z"),
+    "yyyy-MM" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{4}-\d{2}\Z"),
+    "yyyy/MM" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{4}/\d{2}\Z"),
+    "dd/MM/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{2}/\d{2}/\d{4}\Z"),
+    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta('-', isTimestamp = true,
+      raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\Z"),
+    "MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{2}-\d{2}\Z"),
+    "MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{2}/\d{2}\Z"),
+    "dd-MM" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{2}-\d{2}\Z"),
+    "dd/MM" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{2}/\d{2}\Z")
   )
 
   // We are compatible with Spark for these formats when the timeParserPolicy is LEGACY. It
   // is possible that other formats may be supported but these are the only ones that we have
   // tests for.
   val LEGACY_COMPATIBLE_FORMATS = Map(
-    "yyyy-MM-dd" -> LegacyParseFormat('-', isTimestamp = false,
+    "yyyy-MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
       raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
-    "yyyy/MM/dd" -> LegacyParseFormat('/', isTimestamp = false,
+    "yyyy/MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
       raw"\A\d{4}/\d{1,2}/\d{1,2}(\D|\s|\Z)"),
-    "dd-MM-yyyy" -> LegacyParseFormat('-', isTimestamp = false,
+    "dd-MM-yyyy" -> ParseFormatMeta('-', isTimestamp = false,
       raw"\A\d{1,2}-\d{1,2}-\d{4}(\D|\s|\Z)"),
-    "dd/MM/yyyy" -> LegacyParseFormat('/', isTimestamp = false,
+    "dd/MM/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
       raw"\A\d{1,2}/\d{1,2}/\d{4}(\D|\s|\Z)"),
-    "yyyy-MM-dd HH:mm:ss" -> LegacyParseFormat('-', isTimestamp = true,
+    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta('-', isTimestamp = true,
       raw"\A\d{4}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)"),
-    "yyyy/MM/dd HH:mm:ss" -> LegacyParseFormat('/', isTimestamp = true,
+    "yyyy/MM/dd HH:mm:ss" -> ParseFormatMeta('/', isTimestamp = true,
       raw"\A\d{4}/\d{1,2}/\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)")
   )
 
@@ -513,25 +523,22 @@ object GpuToTimestamp extends Arm {
   }
 
   def isTimestamp(col: ColumnVector, sparkFormat: String, strfFormat: String) : ColumnVector = {
-    if (CORRECTED_COMPATIBLE_FORMATS.contains(sparkFormat)) {
-      // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
-      // and ToUnixTime and will support parsing a subset of a string so we check the length of
-      // the string as well which works well for fixed-length formats but if/when we want to
-      // support variable-length formats (such as timestamps with milliseconds) then we will need
-      // to use regex instead.
-      withResource(col.getCharLengths) { actualLen =>
-        withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
-          withResource(actualLen.equalTo(expectedLen)) { lengthOk =>
-            withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
-              isTimestamp.and(lengthOk)
-            }
+    CORRECTED_COMPATIBLE_FORMATS.get(sparkFormat) match {
+      case Some(fmt) =>
+        // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
+        // and ToUnixTime and will support parsing a subset of a string so we check the length of
+        // the string as well which works well for fixed-length formats but if/when we want to
+        // support variable-length formats (such as timestamps with milliseconds) then we will need
+        // to use regex instead.
+        withResource(col.matchesRe(fmt.validRegex)) { matches =>
+          withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
+            isTimestamp.and(matches)
           }
         }
-      }
-    } else {
-      // this is the incompatibleDateFormats case where we do not guarantee compatibility with
-      // Spark and assume that all non-null inputs are valid
-      ColumnVector.fromScalar(Scalar.fromBool(true), col.getRowCount.toInt)
+      case _ =>
+        // this is the incompatibleDateFormats case where we do not guarantee compatibility with
+        // Spark and assume that all non-null inputs are valid
+        ColumnVector.fromScalar(Scalar.fromBool(true), col.getRowCount.toInt)
     }
   }
 
@@ -669,7 +676,7 @@ object GpuToTimestamp extends Arm {
 
 }
 
-case class LegacyParseFormat(separator: Char, isTimestamp: Boolean, validRegex: String)
+case class ParseFormatMeta(separator: Char, isTimestamp: Boolean, validRegex: String)
 
 case class RegexReplace(search: String, replace: String)
 
