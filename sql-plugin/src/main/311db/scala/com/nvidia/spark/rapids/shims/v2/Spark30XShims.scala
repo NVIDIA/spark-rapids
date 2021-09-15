@@ -93,5 +93,4 @@ trait Spark30XShims extends SparkShims {
   }
 
   override def shouldFailDivOverflow(): Boolean = false
-
 }

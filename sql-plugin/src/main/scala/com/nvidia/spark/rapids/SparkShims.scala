@@ -266,7 +266,6 @@ trait SparkShims {
   def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int
-
 }
 
 abstract class SparkCommonShims extends SparkShims {

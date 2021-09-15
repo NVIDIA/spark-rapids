@@ -116,5 +116,4 @@ trait Spark30XShims extends SparkShims {
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = false
 
   override def shouldFailDivOverflow(): Boolean = false
-
 }

@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.{TypeEnum, TypeSig}
 
 import org.apache.spark.sql.types.DataType
 
+/** TypeSig Support for [3.0.1, 3.2.0) */
 object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
 
   /**
