@@ -91,6 +91,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
       StructField("c3_long", LongType),
       StructField("c1_int", IntegerType))))) { frame => frame }
 
+  // Column schema of unsigned-int.parquet is: [INT32 a(UINT_8), INT32 b(UINT_16), INT32 c(UINT_32)]
   testSparkResultsAreEqual("Test Parquet unsigned int: uint8, uint16, uint32",
     frameFromParquet("unsigned-int.parquet"),
     assumeCondition = (_ => (isSpark320OrLater, "Spark version not 3.2.0+"))) {
