@@ -627,26 +627,12 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
-
-              var col: ColumnVector = origCol
-              if (!(decimalCastingNeeded || unsignedCastingNeeded)) {
-                col = origCol.incRefCount()
+              val col: ColumnVector = if (decimalCastingNeeded || unsignedCastingNeeded) {
+                ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
+                  (dt, cv) => needDecimalCast(cv, dt) || needUnsignedToSignedCast(cv, dt),
+                  (dt, cv) => decimalCastOrUnsignedCast(cv, dt))
               } else {
-                if (decimalCastingNeeded) {
-                  col = ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(
-                    col, readField.dataType,
-                    (dt, cv) => cv.getType.isDecimalType &&
-                        !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
-                    (dt, cv) =>
-                      cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType])))
-                }
-                if (unsignedCastingNeeded) {
-                  col = ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(
-                    col, readField.dataType,
-                    (dt, cv) => needUnsignedToSignedCast(cv, dt),
-                    (dt, cv) =>
-                      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId)))
-                }
+                origCol.incRefCount()
               }
 
               newColumns(writeAt) = col
@@ -691,10 +677,25 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     )
   }
 
-  def needUnsignedToSignedCast(cv: ColumnView, dataType: DataType): Boolean = {
-    (cv.getType.equals(DType.UINT8) && dataType.isInstanceOf[ShortType]) ||
-        (cv.getType.equals(DType.UINT16) && dataType.isInstanceOf[IntegerType]) ||
-        (cv.getType.equals(DType.UINT32) && dataType.isInstanceOf[LongType])
+  def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
+    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType())
+  }
+
+  def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {
+    (cv.getType.equals(DType.UINT8) && dt.isInstanceOf[ShortType]) ||
+      (cv.getType.equals(DType.UINT16) && dt.isInstanceOf[IntegerType]) ||
+      (cv.getType.equals(DType.UINT32) && dt.isInstanceOf[LongType])
+  }
+
+  def decimalCastOrUnsignedCast(cv: ColumnView, dt: DataType): ColumnView = {
+    if (needDecimalCast(cv, dt)) {
+      cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
+    } else if (needUnsignedToSignedCast(cv, dt)) {
+      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
+    } else {
+      throw new IllegalStateException("Logical error: should only be " +
+        "decimal cast or unsigned to signed cast")
+    }
   }
 
   protected def readPartFile(
