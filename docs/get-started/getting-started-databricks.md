@@ -157,30 +157,32 @@ option before starting the cluster to capture the logs.
 
 ## Limitations
 
-1. Adaptive query execution(AQE) and Delta optimization write do not work. 
-[issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059)
+1. Adaptive query execution(AQE) and Delta optimization write do not work.  These should be disabled
+when using the plugin. See [issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059) for more
+detail. 
 
-```bash
-spark.databricks.delta.optimizeWrite.enabled false
-spark.sql.adaptive.enabled false
-```
+    ```bash 
+    spark.databricks.delta.optimizeWrite.enabled false
+    spark.sql.adaptive.enabled false
+    ```
 
-2. Dynamic partition pruning(DPP) does not work.
-[issue-3143](https://github.com/NVIDIA/spark-rapids/issues/3143)   
+2. Dynamic partition pruning(DPP) does not work.  This results in poor performance for queries which
+   would normally benefit from DPP.  See
+   [issue-3143](https://github.com/NVIDIA/spark-rapids/issues/3143) for more detail.
 
-This results in poor performance for queries which should have benefit from DPP.
-
-3. A GPU driver node is required other than a CPU node.
+3. When selecting GPU nodes, Databricks requires the driver node to be a GPU node.  Outside of
+   Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
 
 4. Cannot spin off multiple executors on a multi-GPU node. 
 
-Databricks overrides the `spark.executor.resource.gpu.amount=1` even though 
-users set in Spark Configuration tab to `spark.executor.resource.gpu.amount=N` 
-where N is the number of GPUs per node. 
-This will result in failed executors when starting the cluster.
+	Even though it is possible to set `spark.executor.resource.gpu.amount=N` (where N is the number
+    of GPUs per node) in the in Spark Configuration tab, Databricks overrides this to
+    `spark.executor.resource.gpu.amount=1`.  This will result in failed executors when starting the
+    cluster.
 
 5. Databricks makes changes to the runtime without notification.
 
-[issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example 
-and we have to fix it in our plugin once those types of issues are detected.
-
+    Databricks makes changes to existing runtimes, applying patches, without notification.
+	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
+	regular integration tests on the Databricks environment to catch these issues and fix them once
+	detected.
