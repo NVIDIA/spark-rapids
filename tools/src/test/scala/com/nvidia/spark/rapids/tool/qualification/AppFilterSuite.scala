@@ -595,6 +595,11 @@ class AppFilterSuite extends FunSuite {
       7, "any")
   }
 
+  test("Test disjunction only startTime no match") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      startTimePeriod("10min"), 0, "any")
+  }
+
   test("Test conjunction all filters") {
     testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
       filterCriteria("10-newest") ++ filterAppName("nds") ++
@@ -640,6 +645,92 @@ class AppFilterSuite extends FunSuite {
       3, "all")
   }
 
+  test("Test conjunction match appName and config") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("nds") ++ filterSparkProperty("spark.driver.port:43492"), 1, "all")
+  }
+
+  test("Test conjunction match filename and config") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterSparkProperty("spark.app.name:Ndsweeks"), 1, "all")
+  }
+
+  test("Test conjunction match filename and spark hive metastore config") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterSparkProperty("spark.sql.hive.metastore.sharedPrefixes:" +
+          "com.mysql.jdbc,org.postgresql,com.microsoft.sqlserver"), 5, "all")
+  }
+
+  test("Test conjunction match fileName and appName with configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterSparkProperty("spark.driver.port:43492")
+          ++ filterAppName("Nds"), 1, "all")
+  }
+
+  test("Test conjunction match redaction regex config and appName") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterSparkProperty("spark.redaction.regex") ++ filterAppName("Nds"), 2, "all")
+  }
+
+  test("Test conjunction where spark-rapids is enabled") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterSparkProperty("spark.plugins:com.nvidia.spark.SQLPlugin") ++
+          filterSparkProperty("spark.rapids.sql.enabled:true"), 7, "all")
+  }
+
+  test("Test conjunction spark shuffle configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterSparkProperty("spark.shuffle.io.maxRetries:2") ++
+          filterSparkProperty("spark.shuffle.registration.maxAttempts:3"), 2, "all")
+  }
+
+  test("Test disjunction match multiple configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterSparkProperty("spark.driver.host:10.10.19.13")
+        ++ filterSparkProperty("spark.driver.port:43492"), 4, "any")
+  }
+
+  test("Test disjunction match multiple special case configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterSparkProperty("spark.eventLog.dir:file:///tmp/spark-events-1")
+        ++ filterSparkProperty("spark.master:spark://5.6.7.8:7076"), 5, "any")
+  }
+
+  test("Test disjunction match config containing url") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterSparkProperty("spark.sql.maven.additionalRemoteRepositories:" +
+          "https://maven-central.storage-download.googleapis.com/maven2/")
+      ++ filterSparkProperty("spark.eventLog.dir:file:///tmp/spark-events-1"), 7, "any")
+  }
+
+  test("Test disjunction with appName and config") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("Nds") ++ filterSparkProperty("spark.driver.port:43491"), 4, "any")
+  }
+
+  test("Test disjunction match appName and config") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("nds") ++ filterSparkProperty("spark.driver.port:43492"), 6, "any")
+  }
+
+  test("Test disjunction match appName and mix match configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      filterAppName("nds") ++ filterSparkProperty("spark.driver.port:43492") ++
+          filterSparkProperty("spark.driver.host"), 7, "any")
+  }
+
+  test("Test conjunction match fileName and appName with non existent configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterSparkProperty("spark.driver.hosta")
+          ++ filterSparkProperty("spark.driver.porta") ++ filterAppName("Nds"), 0, "all")
+  }
+
+  test("Test disjunction match fileName and appName with non existent configs") {
+    testConjunctionAndDisjunction(appsNameConjunctionAndDisjunctionToTest,
+      matchFileName("app-nds") ++ filterSparkProperty("spark.driver.hosta")
+          ++ filterSparkProperty("spark.driver.porta") ++ filterAppName("Nds"), 5, "any")
+  }
+
   def filterCriteria(filterCrit: String): Array[String] = {
     Array("--filter-criteria", filterCrit)
   }
@@ -660,6 +751,10 @@ class AppFilterSuite extends FunSuite {
     Array("--user-name", name)
   }
 
+  def filterSparkProperty(configNames: String): Array[String] = {
+    Array("--spark-property", configNames)
+  }
+
   private def testConjunctionAndDisjunction(
       apps: Array[TestConjunctionAndDisjunction],
       filtersToApply: Array[String],
@@ -673,7 +768,8 @@ class AppFilterSuite extends FunSuite {
           // scalastyle:off line.size.limit
           val supText =
             s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}
-               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"${app.userName}"}""".stripMargin
+               |{"Event":"SparkListenerApplicationStart","App Name":"${app.appName}", "App ID":"local-16261043003${app.uniqueId}","Timestamp":${app.appTime}, "User":"${app.userName}"}
+               |{"Event":"SparkListenerEnvironmentUpdate","JVM Information":{"Java Home":"/usr/lib/jvm/java-8-openjdk-amd64/jre"},"Spark Properties":{"spark.driver.host":"10.10.19.1${app.uniqueId}","spark.app.name":"${app.appName}","spark.driver.port":"4349${app.uniqueId}","spark.eventLog.enabled":"true","spark.master":"spark://5.6.7.8:707${app.uniqueId + 4}","spark.redaction.regex":"*********(redacted)","spark.eventLog.dir":"file:///tmp/spark-events-${app.uniqueId}","spark.sql.maven.additionalRemoteRepositories":"https://maven-central.storage-download.googleapis.com/maven2/","spark.sql.hive.metastore.sharedPrefixes":"com.mysql.jdbc,org.postgresql,com.microsoft.sqlserver","spark.plugins":"com.nvidia.spark.SQLPlugin","spark.rapids.sql.enabled":"true","spark.shuffle.io.maxRetries":"${app.uniqueId}","spark.shuffle.registration.maxAttempts":"${app.uniqueId + 1}"},"Hadoop Properties":{"hadoop.service.shutdown.timeout":"30s"},"System Properties":{"java.io.tmpdir":"/tmp"},"Classpath Entries":{"/home/user1/runspace/spark311/spark-3.1.1-bin-hadoop3.2/jars/hive-exec-2.3.7-core.jar":"System Classpath"}}""".stripMargin
           // scalastyle:on line.size.limit
           Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
           new File(elogFile.toString).setLastModified(app.fsTime)
@@ -686,7 +782,7 @@ class AppFilterSuite extends FunSuite {
           s"--$logicFilter"
         )
 
-        val appArgs = new QualificationArgs(allArgs ++ filtersToApply ++ fileNames)
+        val appArgs = new QualificationArgs(filtersToApply ++ allArgs ++ fileNames)
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
         assert(appSum.size == expectedFilterSize)
