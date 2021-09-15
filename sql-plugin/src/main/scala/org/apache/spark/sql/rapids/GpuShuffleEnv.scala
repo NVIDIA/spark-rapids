@@ -70,10 +70,14 @@ object GpuShuffleEnv extends Logging {
 
   def shutdown() = {
     // check for nulls in tests
-    val shuffleManager = Option(SparkEnv.get)
+    Option(SparkEnv.get)
       .map(_.shuffleManager)
       .collect { case sm: VisibleShuffleManager => sm }
       .foreach(_.stop())
+
+    // when we shut down, make sure we clear `env`, as the convention is that
+    // `GpuShuffleEnv.init` will be called to re-establish it
+    env = null
   }
 
   //
