@@ -152,12 +152,14 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
       ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
     }
 
-    if (GpuShuffleEnv.isRapidsShuffleAvailable &&
-        conf.shuffleTransportEarlyStart) {
-      rapidsShuffleHeartbeatManager =
+    if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+      GpuShuffleEnv.initShuffleManager()
+      if (conf.shuffleTransportEarlyStart) {
+        rapidsShuffleHeartbeatManager =
           new RapidsShuffleHeartbeatManager(
             conf.shuffleTransportEarlyStartHeartbeatInterval,
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
+      }
     }
     conf.rapidsConfMap
   }
@@ -188,11 +190,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
-        if (GpuShuffleEnv.isRapidsShuffleAvailable &&
-            conf.shuffleTransportEarlyStart) {
-          logInfo("Initializing shuffle manager heartbeats")
-          rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
-          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+        if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+          GpuShuffleEnv.initShuffleManager()
+          if (conf.shuffleTransportEarlyStart) {
+            logInfo("Initializing shuffle manager heartbeats")
+            rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+            rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+          }
         }
       }
 

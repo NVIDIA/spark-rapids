@@ -84,6 +84,19 @@ object GpuShuffleEnv extends Logging {
     SparkEnv.get.blockManager.externalShuffleServiceEnabled
   }
 
+  //
+  // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
+  // this forces the initialization when we know we are ready in the driver and executor.
+  //
+  def initShuffleManager(): Unit = {
+    SparkEnv.get.shuffleManager match {
+      case visibleMgr: VisibleShuffleManager=>
+        visibleMgr.initialize
+      case _ =>
+        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
+    }
+  }
+
   def isRapidsShuffleAvailable: Boolean = {
     // the driver has `mgr` defined when this is checked
     val sparkEnv = SparkEnv.get
