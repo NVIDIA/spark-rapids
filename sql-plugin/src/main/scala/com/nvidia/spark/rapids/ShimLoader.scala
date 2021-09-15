@@ -139,7 +139,7 @@ object ShimLoader extends Logging {
 
     if (pluginClassLoader == null) {
       // Next we should check for the scala built in REPL interpreter class loader.
-      // This happens ont he driver side as a part of the REPL. It does not use a
+      // This happens on the driver side as a part of the REPL. It does not use a
       // MutableURLClassLoader, but has essentially done the same thing.
       Option(contextClassLoader).foreach { loader =>
         if (loader.getClass.getName ==
