@@ -89,16 +89,20 @@ class SerializeConcatHostBuffersDeserializeBatch(
         val oin = new ObjectInputStream(new ByteArrayInputStream(barr))
         readObject(oin)
       }
-      assert(headers.length == 1 && buffers.length == 1)
+      assert(headers.length <= 1 && buffers.length <= 1)
       withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
-        withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) { tableInfo =>
-          val table = tableInfo.getContiguousTable
-          if (table == null) {
-            val numRows = tableInfo.getNumRows
-            this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
-          } else {
-            this.batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
-            GpuColumnVector.extractBases(this.batchInternal).foreach(_.noWarnLeakExpected())
+        if (headers.isEmpty) {
+          batchInternal = GpuColumnVector.emptyBatchFromTypes(dataTypes)
+        } else {
+          withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) { tableInfo =>
+            val table = tableInfo.getContiguousTable
+            if (table == null) {
+              val numRows = tableInfo.getNumRows
+              batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
+            } else {
+              batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
+              GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
+            }
           }
         }
 
