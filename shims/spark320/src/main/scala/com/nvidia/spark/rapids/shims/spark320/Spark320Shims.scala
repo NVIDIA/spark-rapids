@@ -21,6 +21,8 @@ import java.nio.ByteBuffer
 
 import scala.collection.mutable.ListBuffer
 
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2.Spark32XShims
@@ -891,5 +893,12 @@ class Spark320Shims extends Spark32XShims {
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = plan match {
     case _: CommandResultExec => true
     case _ => false
+  }
+
+  override def registerKryoClasses(kryo: Kryo): Unit = {
+    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
+      new KryoJavaSerializer())
+    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
+      new KryoJavaSerializer())
   }
 }
