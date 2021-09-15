@@ -447,6 +447,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
+                                        <source>${project.basedir}/src/main/301until320-nondb/scala</source>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
