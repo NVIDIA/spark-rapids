@@ -537,6 +537,7 @@ case class GpuSum(child: Expression, resultType: DataType)
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum))
+  override lazy val preUpdate: Seq[Expression] = Seq(GpuCast(cudfSum, resultType))
   override lazy val mergeExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum))
   override lazy val evaluateExpression: Expression = cudfSum
 
