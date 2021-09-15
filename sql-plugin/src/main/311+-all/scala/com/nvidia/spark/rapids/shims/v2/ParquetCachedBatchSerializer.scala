@@ -27,6 +27,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
+import com.nvidia.spark.GpuCachedBatchSerializer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -258,7 +259,7 @@ private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) e
 /**
  * This class assumes, the data is Columnar and the plugin is on
  */
-class ParquetCachedBatchSerializer extends CachedBatchSerializer with Arm {
+class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
 
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = true
 

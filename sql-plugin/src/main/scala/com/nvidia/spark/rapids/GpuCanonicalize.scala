@@ -49,6 +49,7 @@ object GpuCanonicalize {
     case a: AttributeReference =>
       AttributeReference("none", TrampolineUtil.asNullable(a.dataType))(exprId = a.exprId)
     case GetStructField(child, ordinal, Some(_)) => GetStructField(child, ordinal, None)
+    case GpuGetStructField(child, ordinal, Some(_)) => GpuGetStructField(child, ordinal, None)
     case _ => e
   }
 
@@ -88,6 +89,12 @@ object GpuCanonicalize {
       orderCommutative(a, { case GpuAnd(l, r) if l.deterministic && r.deterministic => Seq(l, r)})
           .reduce(GpuAnd)
 
+    case o: GpuBitwiseOr =>
+      orderCommutative(o, { case GpuBitwiseOr(l, r) => Seq(l, r) }).reduce(GpuBitwiseOr)
+    case a: GpuBitwiseAnd =>
+      orderCommutative(a, { case GpuBitwiseAnd(l, r) => Seq(l, r) }).reduce(GpuBitwiseAnd)
+    case x: GpuBitwiseXor =>
+      orderCommutative(x, { case GpuBitwiseXor(l, r) => Seq(l, r) }).reduce(GpuBitwiseXor)
     case GpuEqualTo(l, r) if l.hashCode() > r.hashCode() => GpuEqualTo(r, l)
     case GpuEqualNullSafe(l, r) if l.hashCode() > r.hashCode() => GpuEqualNullSafe(r, l)
 
@@ -106,6 +113,13 @@ object GpuCanonicalize {
 
     // order the list in the In operator
     case GpuInSet(value, list) if list.length > 1 => GpuInSet(value, list.sortBy(_.hashCode()))
+
+    case g: GpuGreatest =>
+      val newChildren = orderCommutative(g, { case GpuGreatest(children) => children })
+      GpuGreatest(newChildren)
+    case l: GpuLeast =>
+      val newChildren = orderCommutative(l, { case GpuLeast(children) => children })
+      GpuLeast(newChildren)
 
     case _ => e
   }
