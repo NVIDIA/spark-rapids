@@ -246,7 +246,7 @@ pipeline {
             when {
                 beforeAgent true
                 expression {
-                    db_build
+                    db_build && major_ver >= 21
                 }
             }
             agent {
@@ -306,8 +306,14 @@ pipeline {
                                     step([$class                : 'JacocoPublisher',
                                           execPattern           : '**/target/jacoco.exec',
                                           classPattern          : 'target/jacoco_classes/',
-                                          sourcePattern         : 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,sql-plugin/src/main/java/,sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,shims/spark313/src/main/scala/',
-                                          sourceInclusionPattern: '**/*.java,**/*.scala'
+                                          sourceInclusionPattern: '**/*.java,**/*.scala',
+                                          sourcePattern         : 'shuffle-plugin/src/main/scala/,' +
+                                                  'udf-compiler/src/main/scala/,sql-plugin/src/main/java/,' +
+                                                  'sql-plugin/src/main/scala/,shims/spark311/src/main/scala/,' +
+                                                  'shims/spark301db/src/main/scala/,shims/spark301/src/main/scala/,' +
+                                                  'shims/spark302/src/main/scala/,shims/spark303/src/main/scala/,' +
+                                                  'shims/spark304/src/main/scala/,shims/spark312/src/main/scala/,' +
+                                                  'shims/spark313/src/main/scala/'
                                     ])
                                 }
                             }
@@ -354,7 +360,7 @@ pipeline {
                     when {
                         beforeAgent true
                         expression {
-                            db_build
+                            db_build && major_ver >= 21
                         }
                     }
 
@@ -388,7 +394,7 @@ pipeline {
                     when {
                         beforeAgent true
                         expression {
-                            db_build
+                            db_build && major_ver >= 21 && minor_ver >= 6
                         }
                     }
 
@@ -433,7 +439,7 @@ pipeline {
                 } else {
                     // upload log only in case of build failure
                     def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com",
-                                      "dbc-.*?azuredatabricks\\.net", "adb-.*?databricks\\.com"]
+                                      "dbc.*?azuredatabricks\\.net", "adb.*?databricks\\.com"]
                     guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
                     githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
