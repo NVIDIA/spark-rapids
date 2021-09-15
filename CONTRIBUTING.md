@@ -108,6 +108,36 @@ The version-specific directory names have one of the following forms / use cases
 - `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
    3.1.2 *inclusive*
 
+
+### Setting up an Integrated Development Environment
+
+Our project currently uses `build-helper-maven-plugin` for shimming against conflicting definitions of superclasses 
+in upstream versions that cannot be resolved without significant code duplication otherwise. To this end different 
+source directories with differently implemented same-named classes are 
+[added](https://www.mojohaus.org/build-helper-maven-plugin/add-source-mojo.html) 
+for compilation depending on the targeted Spark version.
+
+This may require some modifications to IDEs' standard Maven import functionality.
+
+#### IntelliJ IDEA
+
+_Last tested with 2021.2.1 Community Edition_
+
+To start working with the project in IDEA is as easy as 
+[opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent) 
+[pom.xml](pom.xml). 
+
+In order to make sure that IDEA handles profile-specific source code roots within a single Maven module correctly,
+[unselect](https://www.jetbrains.com/help/idea/2021.2/maven-importing.html) "Keep source and test folders on reimport".
+
+If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
+Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2021.2/maven-projects-tool-window.html) and
+select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0, and click "Reload" 
+if not triggered automatically.
+
+#### Other IDEs
+We welcome pull requests with tips how to setup your favorite IDE!
+
 ### Your first issue
 
 1. Read the [Developer Overview](docs/dev/README.md) to understand how the RAPIDS Accelerator
