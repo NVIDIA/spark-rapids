@@ -2154,19 +2154,6 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuSum(child, a.dataType)
       }),
-    expr[Average](
-      "Average aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
-      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          val dataType = a.child.dataType
-          checkAndTagFloatAgg(dataType, conf, this)
-        }
-
-        override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
-      }),
     expr[First](
       "first aggregate operator", {
         val checks = ExprChecks.aggNotWindow(
