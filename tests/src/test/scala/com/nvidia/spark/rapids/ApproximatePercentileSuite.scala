@@ -26,14 +26,14 @@ import org.apache.spark.sql.types.{DataType, DataTypes}
 
 class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
-  val DEFAULT_PERCENTILES = Array(0.05, 0.25, 0.5, 0.75, 0.95)
+  val DEFAULT_PERCENTILES = Array(0.005, 0.05, 0.25, 0.45, 0.5, 0.55, 0.75, 0.95, 0.995)
+
+  test("1 row per group, delta 100, doubles") {
+    doTest(DataTypes.DoubleType, rowsPerGroup = 1, delta = Some(100))
+  }
 
   test("5 rows per group, delta 100, doubles") {
     doTest(DataTypes.DoubleType, rowsPerGroup = 5, delta = Some(100))
-  }
-
-  test("250 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, 250, None)
   }
 
   test("250 rows per group, delta 100, doubles") {
@@ -42,6 +42,18 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   test("2500 rows per group, delta 100, doubles") {
     doTest(DataTypes.DoubleType, 2500, Some(100))
+  }
+
+  test("250 rows per group, default delta, doubles") {
+    doTest(DataTypes.DoubleType, 250, None)
+  }
+
+  test("25000 rows per group, default delta, doubles") {
+    doTest(DataTypes.DoubleType, 25000, None)
+  }
+
+  test("50000 rows per group, default delta, doubles") {
+    doTest(DataTypes.DoubleType, 50000, None)
   }
 
   test("empty input set") {
@@ -89,20 +101,26 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet
 
     for (key <- keys) {
-      val cpuDiff = percentiles(key).zip(approxPercentilesCpu(key)).map {
-        case (p, ap) => (p - ap).abs
+      val p = percentiles(key)
+      val cpuApprox = approxPercentilesCpu(key)
+      val gpuApprox = approxPercentilesGpu(key)
+
+      val gpuAtLeastAsAccurate = p.zip(cpuApprox).zip(gpuApprox).map {
+        case ((percentile, cpu), gpu) =>
+          if ((gpu-percentile).abs <= (cpu-percentile).abs) {
+            // GPU was at least as close
+            true
+          } else {
+            // check that we are within some tolerance
+            (gpu-cpu).abs / percentile < 0.001
+          }
       }
-      val gpuDiff = percentiles(key).zip(approxPercentilesGpu(key)).map {
-        case (p, ap) => (p - ap).abs
-      }
-      val gpuAtLeastAsAccurate = cpuDiff.zip(gpuDiff).forall {
-        case (cpu, gpu) => gpu <= cpu
-      }
-      if (!gpuAtLeastAsAccurate) {
+
+      if (gpuAtLeastAsAccurate.contains(false)) {
         fail("GPU was less accurate than CPU:\n\n" +
-          s"Percentiles: ${percentiles(key).mkString(", ")}\n\n" +
-          s"CPU Approx Percentiles: ${approxPercentilesCpu(key).mkString(", ")}\n\n" +
-          s"GPU Approx Percentiles: ${approxPercentilesGpu(key).mkString(", ")}"
+          s"Percentiles: ${p.mkString(", ")}\n\n" +
+          s"CPU Approx Percentiles: ${cpuApprox.mkString(", ")}\n\n" +
+          s"GPU Approx Percentiles: ${gpuApprox.mkString(", ")}"
         )
       }
     }
@@ -165,7 +183,10 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       ("a", 1000 * base + rand.nextInt(1000)),
       ("b", 10000 * base + rand.nextInt(10000)),
       ("c", 100000 * base + rand.nextInt(100000)),
-      ("d", 1000000 * base + rand.nextInt(1000000))))
+      /// group 'd' has narrow range of values and many repeated values
+      ("d", 100000 * base + rand.nextInt(10)),
+      /// group 'e' has range of negative and positive values
+      ("e", base - 5 + rand.nextInt(10))))
       .toDF("dept", "salary").repartition(4)
   }
 
