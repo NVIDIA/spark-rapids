@@ -382,7 +382,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 3, unit: 'HOURS') {
+                            timeout(time: 4, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }
@@ -416,7 +416,7 @@ pipeline {
                     }
                     steps {
                         script {
-                            timeout(time: 3, unit: 'HOURS') {
+                            timeout(time: 4, unit: 'HOURS') {
                                 unstash "source_tree"
                                 databricksBuild()
                             }
@@ -461,12 +461,12 @@ pipeline {
 
 } // end of pipeline
 
-// params.DATABRICKS_TYPE: 'aws' or 'azure', para can be defined through the jenkins webUI
+// params.DATABRICKS_TYPE: 'aws' or 'azure', param can be defined through the jenkins webUI
 String getDbType() {
     return params.DATABRICKS_TYPE ? params.DATABRICKS_TYPE : 'aws'
 }
 
-// foo.sh,bar.sh --> /dbfs/path/foo.sh,/dbfs/path/bar.sh
+// e.g. foo.sh,bar.sh --> /dbfs/path/foo.sh,/dbfs/path/bar.sh
 String getInitScripts(String rootDir, String files) {
     return rootDir + '/' + files.replace(',', ',' + rootDir + '/')
 }
