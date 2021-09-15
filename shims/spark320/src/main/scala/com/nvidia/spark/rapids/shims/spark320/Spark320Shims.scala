@@ -41,12 +41,14 @@ import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.logical.CommandResult
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
-import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.execution.{CommandResultExec, FileSourceScanExec, PartitionedFileUtil, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
@@ -489,7 +491,26 @@ class Spark320Shims extends Spark32XShims {
             " the Java process and the Python process. It also supports scheduling GPU resources" +
             " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-        (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+        (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
+      GpuOverrides.exec[BatchScanExec](
+        "The backend for most file input",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+            TypeSig.DECIMAL_64).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
+          override val childScans: scala.Seq[ScanMeta[_]] =
+            Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
+
+          override def tagPlanForGpu(): Unit = {
+            if (!p.runtimeFilters.isEmpty) {
+              willNotWorkOnGpu("Runtime filtering (DPP) on datasource V2 is not supported")
+            }
+          }
+
+          override def convertToGpu(): GpuExec =
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
@@ -497,7 +518,14 @@ class Spark320Shims extends Spark32XShims {
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
       (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
+        override def tagSelfForGpu(): Unit = {
+          GpuParquetScanBase.tagSupport(this)
+          // we are being overly cautious and that Parquet does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
 
         override def convertToGpu(): Scan = {
           GpuParquetScan(a.sparkSession,
@@ -516,8 +544,14 @@ class Spark320Shims extends Spark32XShims {
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
       (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit =
+        override def tagSelfForGpu(): Unit = {
           GpuOrcScanBase.tagSupport(this)
+          // we are being overly cautious and that Orc does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
 
         override def convertToGpu(): Scan =
           GpuOrcScan(a.sparkSession,
@@ -531,6 +565,30 @@ class Spark320Shims extends Spark32XShims {
             a.partitionFilters,
             a.dataFilters,
             conf)
+      }),
+    GpuOverrides.scan[CSVScan](
+      "CSV parsing",
+      (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = {
+          GpuCSVScan.tagSupport(this)
+          // we are being overly cautious and that Csv does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
+
+        override def convertToGpu(): Scan =
+          GpuCSVScan(a.sparkSession,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf.maxReadBatchSizeRows,
+            conf.maxReadBatchSizeBytes)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
