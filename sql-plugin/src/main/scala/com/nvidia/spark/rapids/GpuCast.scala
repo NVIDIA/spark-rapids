@@ -134,8 +134,8 @@ object GpuCast extends Arm {
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
   private val TIMESTAMP_REGEX_FULL =
-    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
-  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
+    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
+  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
 
   /**
    * Regex to match timestamps with or without trailing zeros.
