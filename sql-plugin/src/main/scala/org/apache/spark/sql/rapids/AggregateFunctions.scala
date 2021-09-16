@@ -1043,8 +1043,6 @@ case class GpuCollectSet(
     RollingAggregation.collectSet().onColumn(inputs.head._2)
 }
 
-
-
 trait CpuToGpuAggregateBufferConverter {
   def createExpression(child: Expression): CpuToGpuBufferTransition
 }
