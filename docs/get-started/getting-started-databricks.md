@@ -158,8 +158,7 @@ option before starting the cluster to capture the logs.
 ## Limitations
 
 1. Adaptive query execution(AQE) and Delta optimization write do not work. These should be disabled
-when using the plugin. 
-Though queries may still see significant speedups even with AQE disabled.
+when using the plugin. Queries may still see significant speedups even with AQE disabled.
 
     ```bash 
     spark.databricks.delta.optimizeWrite.enabled false
