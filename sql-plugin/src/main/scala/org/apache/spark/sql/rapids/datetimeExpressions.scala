@@ -177,20 +177,6 @@ abstract class GpuTimeMath(
   def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector
 }
 
-case class GpuTimeAdd(start: Expression,
-                      interval: Expression,
-                      timeZoneId: Option[String] = None)
-  extends GpuTimeMath(start, interval, timeZoneId) {
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
-    copy(timeZoneId = Option(timeZoneId))
-  }
-
-  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
-    us.add(us_s)
-  }
-}
-
 case class GpuTimeSub(start: Expression,
                        interval: Expression,
                        timeZoneId: Option[String] = None)

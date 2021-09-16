@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.shims.v2
+
+import org.apache.spark.sql.SparkSession
 
 object Spark32XShimsUtils {
 
@@ -23,4 +25,3 @@ object Spark32XShimsUtils {
   }
 
 }
-
