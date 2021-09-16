@@ -19,11 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URI
 import java.nio.ByteBuffer
 
-<<<<<<< HEAD
-import ai.rapids.cudf.{DType, Scalar}
-=======
 import com.esotericsoftware.kryo.Kryo
->>>>>>> origin/branch-21.10
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -271,8 +267,6 @@ trait SparkShims {
   def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int
-
-  def getSpecialDate(name: String, unit: DType): Scalar
 
   def registerKryoClasses(kryo: Kryo): Unit
 }

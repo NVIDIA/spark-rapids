@@ -127,15 +127,4 @@ trait Spark30XShims extends SparkShims {
     ss.sparkContext.defaultParallelism
   }
 
-  override def getSpecialDate(name: String, unit: DType): Scalar = unit match {
-    case DType.TIMESTAMP_DAYS =>
-      Scalar.timestampDaysFromInt(DateUtils.specialDatesDays(name))
-    case DType.TIMESTAMP_SECONDS =>
-      Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
-    case DType.TIMESTAMP_MICROSECONDS =>
-      Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
-    case _ =>
-      throw new IllegalArgumentException(s"unsupported DType: $unit")
-  }
-
 }

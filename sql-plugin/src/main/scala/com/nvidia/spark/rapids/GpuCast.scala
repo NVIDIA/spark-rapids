@@ -790,27 +790,6 @@ object GpuCast extends Arm {
     }
   }
 
-  /**
-   * Replace special date strings such as "now" with timestampDays. This method does not
-   * close the `input` ColumnVector.
-   */
-  def specialDateOr(
-      input: ColumnVector,
-      special: String,
-      value: Int,
-      orColumnVector: ColumnVector): ColumnVector = {
-
-    withResource(orColumnVector) { other =>
-      withResource(Scalar.fromString(special)) { str =>
-        withResource(input.equalTo(str)) { isStr =>
-          withResource(Scalar.timestampDaysFromInt(value)) { date =>
-            isStr.ifElse(date, other)
-          }
-        }
-      }
-    }
-  }
-
   /** This method does not close the `input` ColumnVector. */
   def convertDateOrNull(
       input: ColumnVector,
@@ -886,40 +865,24 @@ object GpuCast extends Arm {
    */
   private def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
 
-/*
-    withResource(sanitizeStringToDate(input)) { sanitizedInput =>
-
-      // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-      val converted = convertVarLenDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-        convertFixedLenDateOr(sanitizedInput, 7, "%Y-%m",
-          convertFixedLenDateOrNull(sanitizedInput, 4, "%Y")))
-
-      // handle special dates like "epoch", "now", etc.
-      // `converted` will be closed in replaceSpecialDates. We wrap it with closeOnExcept in case
-      // of exception before replaceSpecialDates.
-      closeOnExcept(converted) { timeStampVector =>
-        val specialDates = Seq(DateUtils.EPOCH, DateUtils.NOW, DateUtils.TODAY,
-          DateUtils.YESTERDAY, DateUtils.TOMORROW)
-        val specialValues = mutable.ListBuffer.empty[Scalar]
-        withResource(specialValues) { _ =>
-          specialDates.foreach(
-            specialValues += ShimLoader.getSparkShims.getSpecialDate(_, DType.TIMESTAMP_DAYS))
-          replaceSpecialDates(sanitizedInput, timeStampVector, specialDates, specialValues)
-        }
-      }
-    }
-*/
-
-    val specialDates = DateUtils.specialDatesDays
-
     // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
     val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
       convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
         convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
 
     // handle special dates like "epoch", "now", etc.
-    specialDates.foldLeft(converted)((prev, specialDate) =>
-      specialDateOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+    closeOnExcept(converted) { tsVector =>
+      DateUtils.fetchSpecialDates(DType.TIMESTAMP_DAYS) match {
+        case dates if dates.nonEmpty =>
+          // `tsVector` will be closed in replaceSpecialDates
+          val (specialNames, specialValues) = dates.unzip
+          withResource(specialValues.toList) { scalars =>
+            replaceSpecialDates(sanitizedInput, tsVector, specialNames.toList, scalars)
+          }
+        case _ =>
+          tsVector
+      }
+    }
   }
 
   private def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
@@ -931,27 +894,6 @@ object GpuCast extends Arm {
         "One or more values could not be converted to DateType")
     } else {
       result
-    }
-  }
-
-  /**
-   * Replace special date strings such as "now" with timestampMicros. This method does not
-   * close the `input` ColumnVector.
-   */
-  private def specialTimestampOr(
-      input: ColumnVector,
-      special: String,
-      value: Long,
-      orColumnVector: ColumnVector): ColumnVector = {
-
-    withResource(orColumnVector) { other =>
-      withResource(Scalar.fromString(special)) { str =>
-        withResource(input.equalTo(str)) { isStr =>
-          withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
-            isStr.ifElse(date, other)
-          }
-        }
-      }
     }
   }
 
@@ -1052,17 +994,16 @@ object GpuCast extends Arm {
               convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
-      // `converted` will be closed in replaceSpecialDates. We wrap it with closeOnExcept in case
-      // of exception before replaceSpecialDates.
-      val finalResult = closeOnExcept(converted) { timeStampVector =>
-        val specialDates = Seq(DateUtils.EPOCH, DateUtils.NOW, DateUtils.TODAY,
-          DateUtils.YESTERDAY, DateUtils.TOMORROW)
-        val specialValues = mutable.ListBuffer.empty[Scalar]
-        withResource(specialValues) { _ =>
-          specialDates.foreach(
-            specialValues +=
-                ShimLoader.getSparkShims.getSpecialDate(_, DType.TIMESTAMP_MICROSECONDS))
-          replaceSpecialDates(sanitizedInput, timeStampVector, specialDates, specialValues)
+      val finalResult = closeOnExcept(converted) { tsVector =>
+        DateUtils.fetchSpecialDates(DType.TIMESTAMP_MICROSECONDS) match {
+          case dates if dates.nonEmpty =>
+            // `tsVector` will be closed in replaceSpecialDates.
+            val (specialNames, specialValues) = dates.unzip
+            withResource(specialValues.toList) { scalars =>
+              replaceSpecialDates(sanitizedInput, tsVector, specialNames.toList, scalars)
+            }
+          case _ =>
+            tsVector
         }
       }
 

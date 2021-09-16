@@ -598,15 +598,16 @@ object GpuToTimestamp extends Arm {
     // in addition to date/timestamp strings, we also need to check for special dates and null
     // values, since anything else is invalid and should throw an error or be converted to null
     // depending on the policy
-    val specialDates = Seq(DateUtils.EPOCH, DateUtils.NOW, DateUtils.TODAY,
-      DateUtils.YESTERDAY, DateUtils.TOMORROW)
-    val specialValues = mutable.ListBuffer.empty[Scalar]
-
-    withResource(specialValues) { _ =>
-      closeOnExcept(tsVector) { _ =>
-        specialDates.foreach(
-          specialValues += ShimLoader.getSparkShims.getSpecialDate(_, dtype))
-        replaceSpecialDates(lhs.getBase, tsVector, specialDates, specialValues)
+    closeOnExcept(tsVector) { tsVector =>
+      DateUtils.fetchSpecialDates(dtype) match {
+        case dates if dates.nonEmpty =>
+          // `tsVector` will be closed in replaceSpecialDates
+          val (specialNames, specialValues) = dates.unzip
+          withResource(specialValues.toList) { scalars =>
+            replaceSpecialDates(lhs.getBase, tsVector, specialNames.toList, scalars)
+          }
+        case _ =>
+          tsVector
       }
     }
   }
