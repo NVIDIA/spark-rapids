@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.udf
 
+import scala.util.control.NonFatal
+
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.SparkException
@@ -50,10 +52,15 @@ case class GpuScalaUDFLogical(udf: ScalaUDF) extends ShimExpression with Logging
       }
     } catch {
       case e: SparkException =>
-        logDebug("UDF compilation failure: " + e)
+        val udfName = udf.udfName.getOrElse("<unknown>")
+        logDebug(s"UDF $udfName compilation failure: $e")
         if (isTestEnabled) {
           throw e
         }
+        udf
+      case NonFatal(e) =>
+        val udfName = udf.udfName.getOrElse("<unknown>")
+        logWarning(s"Unable to translate UDF $udfName: $e")
         udf
     }
   }

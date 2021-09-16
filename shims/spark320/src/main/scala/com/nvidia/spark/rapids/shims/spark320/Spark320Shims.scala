@@ -39,6 +39,7 @@ import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, TimeAdd}
+import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
@@ -210,6 +211,22 @@ class Spark320Shims extends Spark32XShims {
           }
           super.tagExprForGpu()
         }
+      }),
+    GpuOverrides.expr[Average](
+      "Average aggregate operator",
+      ExprChecks.fullAgg(
+        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        // NullType is not technically allowed by Spark, but in practice in 3.2.0
+        // it can show up
+        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp + TypeSig.NULL,
+          TypeSig.numericAndInterval + TypeSig.NULL))),
+      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType = a.child.dataType
+          GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
     GpuOverrides.expr[RegExpReplace](
       "RegExpReplace support for string literal input patterns",
