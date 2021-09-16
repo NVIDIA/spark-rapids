@@ -25,7 +25,8 @@ import org.apache.spark.sql.types.DecimalType
 class WindowFunctionSuite extends SparkQueryCompareTestSuite {
   // The logical plan optimizer in Spark 3.0.x is non-deterministic when planning windows
   // over the same range, so avoid trying to compare canonicalized plans on Spark 3.0.x
-  private val skipRangeCanon = cmpSparkVersion(3, 1, 1) < 0
+  private val skipRangeCanon = ShimLoader.getSparkShims.getSparkShimVersion
+    .cmpSparkVersion(3, 1, 1) < 0
 
   def windowAggregationTester(windowSpec: WindowSpec): DataFrame => DataFrame =
     (df : DataFrame) => df.select(

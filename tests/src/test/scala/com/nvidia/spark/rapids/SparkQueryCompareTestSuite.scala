@@ -1836,34 +1836,32 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   /** most of the AQE tests requires Spark 3.0.1 or later */
-  def assumeSpark301orLater: Assertion =
-    assume(cmpSparkVersion(3, 0, 1) >= 0, "Spark version not 3.0.1+")
-
-  def assumeSpark311orLater: Assertion =
-    assume(cmpSparkVersion(3, 1, 1) >= 0, "Spark version not 3.1.1+")
-
-  def assumePriorToSpark320: Assertion =
-    assume(isPriorToSpark320, "Spark version not before 3.2.0")
-
-  def isPriorToSpark320: Boolean = cmpSparkVersion(3, 2, 0) < 0
-
-  def assumeSpark320orLater: Assertion =
-    assume(isSpark320OrLater, "Spark version not 3.2.0+")
-
-  def isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
-
-  def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
-    val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
-      case SparkShimVersion(a, b, c) => (a, b, c)
-      case DatabricksShimVersion(a, b, c) => (a, b, c)
-      case ClouderaShimVersion(a, b, c, _) => (a, b, c)
-      case EMRShimVersion(a, b, c) => (a, b, c)
-    }
-    val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
-    val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
-    sparkFullVersion.compareTo(fullVersion)
+  def assumeSpark301orLater: Assertion = {
+    val version = ShimLoader.getSparkShims.getSparkShimVersion
+    assume(version.cmpSparkVersion(3, 0, 1) >= 0, "Spark version not 3.0.1+")
   }
 
+  def assumeSpark311orLater: Assertion = {
+    val version = ShimLoader.getSparkShims.getSparkShimVersion
+    assume(version.cmpSparkVersion(3, 1, 1) >= 0, "Spark version not 3.1.1+")
+  }
+
+  def assumePriorToSpark320: Assertion = {
+    assume(isPriorToSpark320, "Spark version not before 3.2.0")
+  }
+
+  def isPriorToSpark320: Boolean = {
+    val version = ShimLoader.getSparkShims.getSparkShimVersion
+    version.cmpSparkVersion(3, 2, 0) < 0
+  }
+
+  def assumeSpark320orLater: Assertion = {
+    assume(isSpark320OrLater, "Spark version not 3.2.0+")
+  }
+
+  def isSpark320OrLater: Boolean = {
+    val version = ShimLoader.getSparkShims.getSparkShimVersion
+    version.cmpSparkVersion(3, 2, 0) >= 0
+  }
 
 }

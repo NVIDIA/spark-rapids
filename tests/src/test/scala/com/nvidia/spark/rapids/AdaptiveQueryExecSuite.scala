@@ -129,7 +129,8 @@ class AdaptiveQueryExecSuite
       val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
       // Spark changed how skewed joins work and now the numbers are different
       // depending on the version being used
-      if (cmpSparkVersion(3,1,1) >= 0) {
+      val version = ShimLoader.getSparkShims.getSparkShimVersion
+      if (version.cmpSparkVersion(3,1,1) >= 0) {
         checkSkewJoin(innerSmj, 2, 1)
       } else {
         checkSkewJoin(innerSmj, 1, 1)
@@ -145,7 +146,8 @@ class AdaptiveQueryExecSuite
       val leftSmj = findTopLevelGpuShuffleHashJoin(leftAdaptivePlan)
       // Spark changed how skewed joins work and now the numbers are different
       // depending on the version being used
-      if (cmpSparkVersion(3,1,1) >= 0) {
+      val version = ShimLoader.getSparkShims.getSparkShimVersion
+      if (version.cmpSparkVersion(3,1,1) >= 0) {
         checkSkewJoin(leftSmj, 2, 0)
       } else {
         checkSkewJoin(leftSmj, 1, 0)
@@ -201,7 +203,8 @@ class AdaptiveQueryExecSuite
       df.collect()
 
       val isAdaptiveQuery = df.queryExecution.executedPlan.isInstanceOf[AdaptiveSparkPlanExec]
-      if (cmpSparkVersion(3, 2, 0) < 0) {
+      val version = ShimLoader.getSparkShims.getSparkShimVersion
+      if (version.cmpSparkVersion(3, 2, 0) < 0) {
         // assert that DPP did cause this to run as a non-AQE plan prior to Spark 3.2.0
         assert(!isAdaptiveQuery)
       } else {
