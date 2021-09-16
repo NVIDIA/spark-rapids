@@ -1273,7 +1273,8 @@ object RapidsConf {
 
   val ENABLE_APPROX_PERCENTILE = conf("spark.rapids.approxPercentileEnabled")
     .doc("The GPU implementation of approx_percentile is not bit-for-bit compatible with " +
-      "Apache Spark and is disabled by default. Set this to true to enable it.")
+      "Apache Spark and is disabled by default. Set this to true to enable it. See the " +
+      "compatibility guide for more information.")
     .internal()
     .booleanConf
     .createWithDefault(false)

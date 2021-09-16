@@ -561,3 +561,11 @@ double quotes around strings in JSON data, whereas Spark allows single quotes ar
 data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None` in PySpark or
 `Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
 updated in a future release to more closely match Spark.
+
+## Approximate Percentile
+
+The `approximate_percentile` operation is now supported on the GPU. The GPU implementation uses
+[t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
+distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
+`approximate_percentile`, this feature is disabled by default and can be enabled by setting
+`spark.rapids.approxPercentileEnabled=true`.
