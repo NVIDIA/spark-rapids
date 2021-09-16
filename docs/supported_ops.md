@@ -15013,16 +15013,16 @@ are limited.
 <td rowSpan="2">reduction</td>
 <td>input</td>
 <td> </td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15056,16 +15056,16 @@ are limited.
 <td rowSpan="2">aggregation</td>
 <td>input</td>
 <td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15099,16 +15099,16 @@ are limited.
 <td rowSpan="2">window</td>
 <td>input</td>
 <td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15146,16 +15146,16 @@ are limited.
 <td rowSpan="2">reduction</td>
 <td>input</td>
 <td> </td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15189,16 +15189,16 @@ are limited.
 <td rowSpan="2">aggregation</td>
 <td>input</td>
 <td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15232,16 +15232,16 @@ are limited.
 <td rowSpan="2">window</td>
 <td>input</td>
 <td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
 <td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
