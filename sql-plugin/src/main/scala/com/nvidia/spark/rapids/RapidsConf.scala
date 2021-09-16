@@ -1163,7 +1163,14 @@ object RapidsConf {
       "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
       "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
       "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
-      "then there is no guarantee the RAPIDS Accelerator will function properly.")
+      "then there is no guarantee the RAPIDS Accelerator will function properly." +
+      "When tested in a combined jar with other Shims, it's expected that the provided " +
+      "implementation follows the same convention as existing Spark shims. If its class" +
+      " name has the form com.nvidia.spark.rapids.shims.<shimId>.YourSparkShimServiceProvider. " +
+      "The last package name component, i.e., shimId, can be used in the combined jar as the root" +
+      " directory /shimId for any incompatible classes. When tested in isolation, no special " +
+      "jar root is required"
+    )
     .stringConf
     .createOptional
 
