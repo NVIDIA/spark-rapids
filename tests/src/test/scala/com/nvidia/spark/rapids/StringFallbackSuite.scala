@@ -34,7 +34,7 @@ class StringFallbackSuite extends SparkQueryCompareTestSuite {
       // since Spark 3.1.0 and gets replaced with a null literal instead
       val isValidTestForSparkVersion = ShimLoader.getSparkShims.getSparkShimVersion match {
         case SparkShimVersion(major, minor, _) => major == 3 && minor == 0
-        case DatabricksShimVersion(major, minor, _) => major == 3 && minor == 0
+        case DatabricksShimVersion(major, minor, _, _) => major == 3 && minor == 0
         case ClouderaShimVersion(major, minor, _, _) => major == 3 && minor == 0
         case _ => true
       }
