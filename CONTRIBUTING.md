@@ -295,5 +295,9 @@ Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
 If it fails, you can click the `Details` link of this check, and go to `Upload log -> Jenkins log for pull request xxx (click here)` to
 find the uploaded log.
 
+Options:
+1. Skip tests run by adding `[skip ci]` to title, this should only be used for doc-only change
+2. Run build and tests in databricks runtimes by adding `[databricks]` to title, this would add around 30-40 minutes
+
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md

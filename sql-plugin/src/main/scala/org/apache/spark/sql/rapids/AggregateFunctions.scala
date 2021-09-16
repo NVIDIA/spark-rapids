@@ -594,6 +594,9 @@ case class GpuSum(child: Expression, resultType: DataType)
 
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum))
+  // we need to cast to `resultType` here, since Spark is not widening types
+  // as done before Spark 3.2.0. See CudfSum for more info.
+  override lazy val preUpdate: Seq[Expression] = Seq(GpuCast(cudfSum, resultType))
   override lazy val mergeExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum))
   override lazy val evaluateExpression: Expression = cudfSum
 
