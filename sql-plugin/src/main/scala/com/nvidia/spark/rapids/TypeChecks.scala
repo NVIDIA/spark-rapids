@@ -19,12 +19,54 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
-import ai.rapids.cudf.DType
 import scala.collection.mutable
+
+import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
 
+/** TypeSigUtil for different spark versions */
+trait TypeSigUtil {
+
+  /**
+   * Check if this type of Spark-specific is supported by the plugin or not.
+   * @param check the Supported Types
+   * @param dataType the data type to be checked
+   * @param allowDecimal whether decimal support is enabled or not
+   * @return true if it is allowed else false.
+   */
+  def isSupported(check: TypeEnum.ValueSet, dataType: DataType, allowDecimal: Boolean): Boolean
+
+  /**
+   * Get all supported types for the spark-specific
+   * @return the all supported typ
+   */
+  def getAllSupportedTypes(): TypeEnum.ValueSet
+
+  /**
+   * Return the reason why this type is not supported.\
+   * @param check the Supported Types
+   * @param dataType the data type to be checked
+   * @param allowDecimal whether decimal support is enabled or not
+   * @param notSupportedReason the reason for not supporting
+   * @return the reason
+   */
+  def reasonNotSupported(
+    check: TypeEnum.ValueSet,
+    dataType: DataType,
+    allowDecimal: Boolean,
+    notSupportedReason: Seq[String]): Seq[String]
+
+  /**
+   * Map DataType to TypeEnum
+   * @param dataType the data type to be mapped
+   * @return the TypeEnum
+   */
+  def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value
+
+}
 
 /**
  * The level of support that the plugin has for a given type.  Used for documentation generation.
@@ -115,6 +157,8 @@ object TypeEnum extends Enumeration {
   val MAP: Value = Value
   val STRUCT: Value = Value
   val UDT: Value = Value
+  val DAYTIME: Value = Value
+  val YEARMONTH: Value = Value
 }
 
 /**
@@ -275,7 +319,7 @@ final class TypeSig private(
     case _: ArrayType => litOnlyTypes.contains(TypeEnum.ARRAY)
     case _: MapType => litOnlyTypes.contains(TypeEnum.MAP)
     case _: StructType => litOnlyTypes.contains(TypeEnum.STRUCT)
-    case _ => false
+    case _ => TypeSigUtil.isSupported(litOnlyTypes, dataType, false)
   }
 
   def isSupportedBySpark(dataType: DataType): Boolean =
@@ -312,7 +356,7 @@ final class TypeSig private(
         fields.map(_.dataType).forall { t =>
           isSupported(childTypes, t, allowDecimal)
         }
-      case _ => false
+      case _ => TypeSigUtil.isSupported(check, dataType, allowDecimal)
     }
 
   def reasonNotSupported(dataType: DataType, allowDecimal: Boolean): Seq[String] =
@@ -408,8 +452,8 @@ final class TypeSig private(
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.STRUCT, check, isChild)
         }
-      case _ =>
-        Seq(withChild(isChild, s"$dataType is not supported"))
+      case _ => TypeSigUtil.reasonNotSupported(check, dataType,
+        allowDecimal, Seq(withChild(isChild, s"$dataType is not supported")))
     }
 
   def areAllSupportedByPlugin(types: Seq[DataType], allowDecimal: Boolean): Boolean =
@@ -503,7 +547,10 @@ object TypeSig {
   /**
    * All types nested and not nested
    */
-  val all: TypeSig = new TypeSig(TypeEnum.values, DecimalType.MAX_PRECISION, TypeEnum.values)
+  val all: TypeSig = {
+    val allSupportedTypes = TypeSigUtil.getAllSupportedTypes()
+    new TypeSig(allSupportedTypes, DecimalType.MAX_PRECISION, allSupportedTypes)
+  }
 
   /**
    * No types supported at all
@@ -551,6 +598,16 @@ object TypeSig {
    * User Defined Type (We don't support these in the plugin yet)
    */
   val UDT: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.UDT))
+
+  /**
+   * DayTimeIntervalType of Spark 3.2.0+ support
+   */
+  val DAYTIME: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.DAYTIME))
+
+  /**
+   * YearMonthIntervalType of Spark 3.2.0+ support
+   */
+  val YEARMONTH: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.YEARMONTH))
 
   /**
    * A signature for types that are generally supported by the plugin/CUDF. Please make sure to
@@ -1212,7 +1269,10 @@ class CastChecks extends ExprChecks {
   val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
-  val fpChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING
+  val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
+      s"${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to be true."
+  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING)
+      .withPsNote(TypeEnum.STRING, fpToStringPsNote)
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val dateChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
@@ -1256,6 +1316,12 @@ class CastChecks extends ExprChecks {
   val udtChecks: TypeSig = none
   val sparkUdtSig: TypeSig = STRING + UDT
 
+  val daytimeChecks: TypeSig = none
+  val sparkDaytimeChecks: TypeSig = DAYTIME + STRING
+
+  val yearmonthChecks: TypeSig = none
+  val sparkYearmonthChecks: TypeSig = YEARMONTH + STRING
+
   private[this] def getChecksAndSigs(from: DataType): (TypeSig, TypeSig) = from match {
     case NullType => (nullChecks, sparkNullSig)
     case BooleanType => (booleanChecks, sparkBooleanSig)
@@ -1270,7 +1336,7 @@ class CastChecks extends ExprChecks {
     case _: ArrayType => (arrayChecks, sparkArraySig)
     case _: MapType => (mapChecks, sparkMapSig)
     case _: StructType => (structChecks, sparkStructSig)
-    case _ => (udtChecks, sparkUdtSig)
+    case _ => getChecksAndSigs(TypeSigUtil.mapDataTypeToTypeEnum(from))
   }
 
   private[this] def getChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) = from match {
@@ -1289,6 +1355,8 @@ class CastChecks extends ExprChecks {
     case TypeEnum.MAP => (mapChecks, sparkMapSig)
     case TypeEnum.STRUCT => (structChecks, sparkStructSig)
     case TypeEnum.UDT => (udtChecks, sparkUdtSig)
+    case TypeEnum.DAYTIME => (daytimeChecks, sparkDaytimeChecks)
+    case TypeEnum.YEARMONTH => (yearmonthChecks, sparkYearmonthChecks)
   }
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
@@ -1565,13 +1633,16 @@ object ExprChecks {
  * Used for generating the support docs.
  */
 object SupportedOpsDocs {
+  private lazy val allSupportedTypes =
+    TypeSigUtil.getAllSupportedTypes()
+
   private def execChecksHeaderLine(): Unit = {
     println("<tr>")
     println("<th>Executor</th>")
     println("<th>Description</th>")
     println("<th>Notes</th>")
     println("<th>Param(s)</th>")
-    TypeEnum.values.foreach { t =>
+    allSupportedTypes.foreach { t =>
       println(s"<th>$t</th>")
     }
     println("</tr>")
@@ -1585,7 +1656,7 @@ object SupportedOpsDocs {
     println("<th>Notes</th>")
     println("<th>Context</th>")
     println("<th>Param/Output</th>")
-    TypeEnum.values.foreach { t =>
+    allSupportedTypes.foreach { t =>
       println(s"<th>$t</th>")
     }
     println("</tr>")
@@ -1597,7 +1668,7 @@ object SupportedOpsDocs {
     println("<th>Description</th>")
     println("<th>Notes</th>")
     println("<th>Param</th>")
-    TypeEnum.values.foreach { t =>
+    allSupportedTypes.foreach { t =>
       println(s"<th>$t</th>")
     }
     println("</tr>")
@@ -1607,7 +1678,7 @@ object SupportedOpsDocs {
     println("<tr>")
     println("<th>Format</th>")
     println("<th>Direction</th>")
-    TypeEnum.values.foreach { t =>
+    allSupportedTypes.foreach { t =>
       println(s"<th>$t</th>")
     }
     println("</tr>")
@@ -1737,7 +1808,7 @@ object SupportedOpsDocs {
         }
         println("<tr>")
         val execChecks = checks.get.asInstanceOf[ExecChecks]
-        val allData = TypeEnum.values.map { t =>
+        val allData = allSupportedTypes.map { t =>
           (t, execChecks.support(t))
         }.toMap
 
@@ -1756,7 +1827,7 @@ object SupportedOpsDocs {
               .map(l => input + "<br/>(" + l.mkString(";<br/>") + ")")
               .getOrElse(input)
           println(s"<td>$named</td>")
-          TypeEnum.values.foreach { t =>
+          allSupportedTypes.foreach { t =>
             println(allData(t)(input).htmlTag)
           }
           println("</tr>")
@@ -1820,7 +1891,7 @@ object SupportedOpsDocs {
           ConfHelper.getSqlFunctionsForClass(rule.tag.runtimeClass).map(_.mkString(", "))
         val exprChecks = checks.get.asInstanceOf[ExprChecks]
         // Params can change between contexts, but should not
-        val allData = TypeEnum.values.map { t =>
+        val allData = allSupportedTypes.map { t =>
           (t, exprChecks.support(t))
         }.toMap
         // Now we should get the same keys for each type, so we are only going to look at the first
@@ -1842,7 +1913,7 @@ object SupportedOpsDocs {
             println("<td rowSpan=\"" + contextSpan + "\">" + s"$context</td>")
             data.keys.foreach { param =>
               println(s"<td>$param</td>")
-              TypeEnum.values.foreach { t =>
+              allSupportedTypes.foreach { t =>
                 println(allData(t)(context)(param).htmlTag)
               }
               println("</tr>")
@@ -1877,19 +1948,19 @@ object SupportedOpsDocs {
           println(s"### `${rule.tag.runtimeClass.getSimpleName}`")
           println()
           println("<table>")
-          val numTypes = TypeEnum.values.size
+          val numTypes = allSupportedTypes.size
           println("<tr><th rowSpan=\"2\" colSpan=\"2\"></th><th colSpan=\"" + numTypes + "\">TO</th></tr>")
           println("<tr>")
-          TypeEnum.values.foreach { t =>
+          allSupportedTypes.foreach { t =>
             println(s"<th>$t</th>")
           }
           println("</tr>")
 
           println("<tr><th rowSpan=\"" + numTypes + "\">FROM</th>")
           var count = 0
-          TypeEnum.values.foreach { from =>
+          allSupportedTypes.foreach { from =>
             println(s"<th>$from</th>")
-            TypeEnum.values.foreach { to =>
+            allSupportedTypes.foreach { to =>
               println(cc.support(from, to).htmlTag)
             }
             println("</tr>")
@@ -1924,7 +1995,7 @@ object SupportedOpsDocs {
           nextOutputAt = totalCount + headerEveryNLines
         }
         val partChecks = checks.get.asInstanceOf[PartChecks]
-        val allData = TypeEnum.values.map { t =>
+        val allData = allSupportedTypes.map { t =>
           (t, partChecks.support(t))
         }.toMap
         // Now we should get the same keys for each type, so we are only going to look at the first
@@ -1940,7 +2011,7 @@ object SupportedOpsDocs {
           var count = 0
           representative.keys.foreach { param =>
             println(s"<td>$param</td>")
-            TypeEnum.values.foreach { t =>
+            allSupportedTypes.foreach { t =>
               println(allData(t)(param).htmlTag)
             }
             println("</tr>")
@@ -1957,7 +2028,7 @@ object SupportedOpsDocs {
           println(s"<td>${rule.description}</td>")
           println(s"<td>${rule.notes().getOrElse("None")}</td>")
           println(NotApplicable.htmlTag) // param
-          TypeEnum.values.foreach { _ =>
+          allSupportedTypes.foreach { _ =>
             println(NotApplicable.htmlTag)
           }
           println("</tr>")
@@ -1987,13 +2058,13 @@ object SupportedOpsDocs {
         println("<tr>")
         println("<th rowSpan=\"2\">" + s"$format</th>")
         println("<th>Read</th>")
-        TypeEnum.values.foreach { t =>
+        allSupportedTypes.foreach { t =>
           println(read.support(t).htmlTag)
         }
         println("</tr>")
         println("<tr>")
         println("<th>Write</th>")
-        TypeEnum.values.foreach { t =>
+        allSupportedTypes.foreach { t =>
           println(write.support(t).htmlTag)
         }
         println("</tr>")
@@ -2015,11 +2086,14 @@ object SupportedOpsDocs {
 
 object SupportedOpsForTools {
 
+  private lazy val allSupportedTypes =
+    TypeSigUtil.getAllSupportedTypes()
+
   private def outputSupportIO() {
     // Look at what we have for defaults for some configs because if the configs are off
     // it likely means something isn't completely compatible.
     val conf = new RapidsConf(Map.empty[String, String])
-    val types = TypeEnum.values.toSeq
+    val types = allSupportedTypes.toSeq
     val header = Seq("Format", "Direction") ++ types
     val writeOps: Array[String] = Array.fill(types.size)("NA")
     println(header.mkString(","))

@@ -75,6 +75,7 @@ class AppFilterImpl(
     val filterAppName = appArgs.applicationName.getOrElse("")
     val filterCriteria = appArgs.filterCriteria.getOrElse("")
     val userName = appArgs.userName.getOrElse("")
+    val filterSparkProperties = appArgs.sparkProperty.getOrElse(List.empty[String])
 
     val appNameFiltered = if (filterAppName.nonEmpty) {
       val filtered = if (filterAppName.startsWith(NEGATE)) {
@@ -88,23 +89,51 @@ class AppFilterImpl(
       apps
     }
 
-   // If `any` is specified as logicFilter config, then store the value in variable which is used
-   // later for final computation.
-   val appNameFilteredForDisjunction = if (filterAppName.nonEmpty && appArgs.any()) {
-     appNameFiltered
-   } else {
-     Seq.empty[AppFilterReturnParameters]
-   }
-
     val userNameFiltered = if (userName.nonEmpty) {
       val appNamelogicFiltered = if (appArgs.any()) {
         apps
       } else {
         appNameFiltered
       }
-      appNamelogicFiltered.filter(_.appInfo.exists(_.userName.contains(userName)))
+      appNamelogicFiltered.filter(_.appInfo.appStartInfo.exists(_.userName.contains(userName)))
     } else {
       appNameFiltered
+    }
+
+    val configFiltered = if (filterSparkProperties.nonEmpty) {
+      val userNameLogicFiltered = if (appArgs.any()) {
+        apps
+      } else {
+        userNameFiltered
+      }
+
+      // check if key:value pair is provided in the sparkProperty filter. If those are provided
+      // along with just the key configs, then we have to make sure we consider both variations
+      // i.e key:pair and key configs to filter the event logs.
+      val individualConfigs = filterSparkProperties.map(str => str.split(":", 2))
+      val keyValueConfigs = individualConfigs.filter(kvConfig => kvConfig.size == 2)
+      val keysOnlyConfigs = individualConfigs.filter(kconfig => kconfig.size != 2).flatten
+      val validConfigsMap = keyValueConfigs.map(a => a(0) -> a(1)).toMap
+
+      val configFilteredResult = userNameLogicFiltered.filter { appFilterReturnParameters =>
+        appFilterReturnParameters.appInfo.sparkProperties.exists { sparkProp =>
+          if (keyValueConfigs.nonEmpty || keysOnlyConfigs.nonEmpty) {
+            val allConfigs = sparkProp.configName // all configs from eventlog
+            val allConfigKeys = sparkProp.configName.keys.toList // for keys only confs
+            // Intersection of configs provided in the filter args with event log configs.
+            val commonConfigsKeys = validConfigsMap.keySet.intersect(allConfigs.keySet)
+
+            commonConfigsKeys.filter { key =>
+              allConfigs(key) == validConfigsMap(key)
+            }.nonEmpty || keysOnlyConfigs.intersect(allConfigKeys).nonEmpty
+          } else {
+            false
+          }
+        }
+      }
+      configFilteredResult
+    } else {
+      userNameFiltered
     }
 
     val appTimeFiltered = if (appArgs.startAppTime.isSupplied) {
@@ -112,17 +141,44 @@ class AppFilterImpl(
       val logicFiltered = if (appArgs.any()) {
         apps
       } else {
-        userNameFiltered
+        configFiltered
       }
-      logicFiltered.filter(_.appInfo.exists(_.startTime >= msTimeToFilter))
+      logicFiltered.filter(_.appInfo.appStartInfo.exists(_.startTime >= msTimeToFilter))
     } else {
+      configFiltered
+    }
+
+    // If `any` is specified as logicFilter config, then store the value in variable which is used
+    // later for final computation. These are computed separately for all filters.
+    val appNameFilteredForDisjunction = if (filterAppName.nonEmpty && appArgs.any()) {
+      appNameFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
+    }
+
+    val userNameFilteredForDisjunction = if (userName.nonEmpty && appArgs.any()) {
       userNameFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
+    }
+
+    val configFilteredForDisjunction = if (filterSparkProperties.nonEmpty && appArgs.any()) {
+      configFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
+    }
+
+    val appTimeFilteredForDisjunction = if (appArgs.startAppTime.isSupplied && appArgs.any()) {
+      appTimeFiltered
+    } else {
+      Seq.empty[AppFilterReturnParameters]
     }
 
     // If `any` is specified as logicFilter, add all filtered results which is equivalent to
     // applying OR on filters.
     val finalLogicFiltered = if (appArgs.any()) {
-      (userNameFiltered ++ appTimeFiltered ++ appNameFilteredForDisjunction).toSet.toSeq
+      (userNameFilteredForDisjunction ++ configFilteredForDisjunction ++
+          appTimeFilteredForDisjunction ++ appNameFilteredForDisjunction).toSet.toSeq
     } else {
       appTimeFiltered
     }
@@ -133,21 +189,23 @@ class AppFilterImpl(
         val numberofEventLogs = filteredInfo(0).toInt
         val criteria = filteredInfo(1)
         val filtered = if (criteria.equals("oldest")) {
-          finalLogicFiltered.toSeq.sortBy(_.appInfo.get.startTime).take(numberofEventLogs)
+          finalLogicFiltered.toSeq.sortBy(
+            _.appInfo.appStartInfo.get.startTime).take(numberofEventLogs)
         } else {
-          finalLogicFiltered.toSeq.sortBy(_.appInfo.get.startTime).reverse.take(numberofEventLogs)
+          finalLogicFiltered.toSeq.sortBy(
+            _.appInfo.appStartInfo.get.startTime).reverse.take(numberofEventLogs)
         }
         filtered
       } else if (filterCriteria.endsWith("-per-app-name")) {
-        val distinctAppNameMap = finalLogicFiltered.groupBy(_.appInfo.get.appName)
+        val distinctAppNameMap = finalLogicFiltered.groupBy(_.appInfo.appStartInfo.get.appName)
         val filteredInfo = filterCriteria.split("-")
         val numberofEventLogs = filteredInfo(0).toInt
         val criteria = filteredInfo(1)
         val filtered = distinctAppNameMap.map { case (name, apps) =>
           val sortedApps = if (criteria.equals("oldest")) {
-            apps.toSeq.sortBy(_.appInfo.get.startTime).take(numberofEventLogs)
+            apps.toSeq.sortBy(_.appInfo.appStartInfo.get.startTime).take(numberofEventLogs)
           } else {
-            apps.toSeq.sortBy(_.appInfo.get.startTime).reverse.take(numberofEventLogs)
+            apps.toSeq.sortBy(_.appInfo.appStartInfo.get.startTime).reverse.take(numberofEventLogs)
           }
           (name, sortedApps)
         }
@@ -162,7 +220,7 @@ class AppFilterImpl(
   }
 
   private def containsAppName(app: AppFilterReturnParameters, filterAppName: String): Boolean = {
-    val appNameOpt = app.appInfo.map(_.appName)
+    val appNameOpt = app.appInfo.appStartInfo.map(_.appName)
     if (appNameOpt.isDefined) {
       if (appNameOpt.get.contains(filterAppName) || appNameOpt.get.matches(filterAppName)) {
         true
@@ -176,7 +234,7 @@ class AppFilterImpl(
   }
 
   case class AppFilterReturnParameters(
-      appInfo: Option[ApplicationStartInfo],
+      appInfo: FilterAppInfo,
       eventlog: EventLogInfo)
 
   private def filterEventLog(
@@ -185,7 +243,7 @@ class AppFilterImpl(
       hadoopConf: Configuration): Unit = {
 
     val startAppInfo = new FilterAppInfo(numRows, path, hadoopConf)
-    val appInfo = AppFilterReturnParameters(startAppInfo.appInfo, path)
+    val appInfo = AppFilterReturnParameters(startAppInfo, path)
     appsForFiltering.add(appInfo)
   }
 }

@@ -20,9 +20,6 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = pytest.mark.premerge_ci_1
-
 orc_write_gens_list = [
         [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
             string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
@@ -75,6 +72,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
             data_path,
             conf={'spark.sql.orc.compression.codec': compress, 'spark.rapids.sql.format.orc.write.enabled': True})
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 def test_write_save_table(spark_tmp_path, orc_gens, orc_impl, spark_tmp_table_factory):
@@ -95,6 +93,7 @@ def write_orc_sql_from(spark, df, data_path, write_to_table):
     write_cmd = 'CREATE TABLE `{}` USING ORC location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
     spark.sql(write_cmd)
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', ["TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"])
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])

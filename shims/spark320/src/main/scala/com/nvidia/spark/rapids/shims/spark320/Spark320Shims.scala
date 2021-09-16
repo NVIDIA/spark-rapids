@@ -19,8 +19,13 @@ package com.nvidia.spark.rapids.shims.spark320
 import java.net.URI
 import java.nio.ByteBuffer
 
+import scala.collection.mutable.ListBuffer
+
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
+import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
+import com.nvidia.spark.rapids.shims.v2.Spark32XShims
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -35,14 +40,17 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.logical.CommandResult
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
-import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.{FileSourceScanExec, PartitionedFileUtil, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
+import org.apache.spark.sql.execution.{CommandResultExec, FileSourceScanExec, PartitionedFileUtil, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
@@ -55,6 +63,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.v2._
+import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -154,7 +163,8 @@ class Spark320Shims extends Spark32XShims {
         override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val fpChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
+        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
+            .withPsNote(TypeEnum.STRING, fpToStringPsNote)
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
         override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
@@ -483,7 +493,26 @@ class Spark320Shims extends Spark32XShims {
             " the Java process and the Python process. It also supports scheduling GPU resources" +
             " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
-        (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
+        (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r)),
+      GpuOverrides.exec[BatchScanExec](
+        "The backend for most file input",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+            TypeSig.DECIMAL_64).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
+          override val childScans: scala.Seq[ScanMeta[_]] =
+            Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
+
+          override def tagPlanForGpu(): Unit = {
+            if (!p.runtimeFilters.isEmpty) {
+              willNotWorkOnGpu("Runtime filtering (DPP) on datasource V2 is not supported")
+            }
+          }
+
+          override def convertToGpu(): GpuExec =
+            GpuBatchScanExec(p.output, childScans.head.convertToGpu())
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 
@@ -491,7 +520,14 @@ class Spark320Shims extends Spark32XShims {
     GpuOverrides.scan[ParquetScan](
       "Parquet parsing",
       (a, conf, p, r) => new ScanMeta[ParquetScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit = GpuParquetScanBase.tagSupport(this)
+        override def tagSelfForGpu(): Unit = {
+          GpuParquetScanBase.tagSupport(this)
+          // we are being overly cautious and that Parquet does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Parquet does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
 
         override def convertToGpu(): Scan = {
           GpuParquetScan(a.sparkSession,
@@ -510,8 +546,14 @@ class Spark320Shims extends Spark32XShims {
     GpuOverrides.scan[OrcScan](
       "ORC parsing",
       (a, conf, p, r) => new ScanMeta[OrcScan](a, conf, p, r) {
-        override def tagSelfForGpu(): Unit =
+        override def tagSelfForGpu(): Unit = {
           GpuOrcScanBase.tagSupport(this)
+          // we are being overly cautious and that Orc does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Orc does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
 
         override def convertToGpu(): Scan =
           GpuOrcScan(a.sparkSession,
@@ -525,15 +567,35 @@ class Spark320Shims extends Spark32XShims {
             a.partitionFilters,
             a.dataFilters,
             conf)
+      }),
+    GpuOverrides.scan[CSVScan](
+      "CSV parsing",
+      (a, conf, p, r) => new ScanMeta[CSVScan](a, conf, p, r) {
+        override def tagSelfForGpu(): Unit = {
+          GpuCSVScan.tagSupport(this)
+          // we are being overly cautious and that Csv does not support this yet
+          if (a.isInstanceOf[SupportsRuntimeFiltering]) {
+            willNotWorkOnGpu("Csv does not support Runtime filtering (DPP)" +
+              " on datasource V2 yet.")
+          }
+        }
+
+        override def convertToGpu(): Scan =
+          GpuCSVScan(a.sparkSession,
+            a.fileIndex,
+            a.dataSchema,
+            a.readDataSchema,
+            a.readPartitionSchema,
+            a.options,
+            a.partitionFilters,
+            a.dataFilters,
+            conf.maxReadBatchSizeRows,
+            conf.maxReadBatchSizeBytes)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
 
   override def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide = {
     GpuJoinUtils.getGpuBuildSide(join.buildSide)
-  }
-
-  override def getShuffleManagerShims(): ShuffleManagerShimBase = {
-    new ShuffleManagerShim
   }
 
   override def getPartitionFileNames(
@@ -807,4 +869,36 @@ class Spark320Shims extends Spark32XShims {
   override def hasAliasQuoteFix: Boolean = true
 
   override def hasCastFloatTimestampUpcast: Boolean = true
+
+  override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
+    def recurse(
+        plan: SparkPlan,
+        predicate: SparkPlan => Boolean,
+        accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
+      if (predicate(plan)) {
+        accum += plan
+      }
+      plan match {
+        case a: AdaptiveSparkPlanExec => recurse(a.executedPlan, predicate, accum)
+        case qs: BroadcastQueryStageExec => recurse(qs.broadcast, predicate, accum)
+        case qs: ShuffleQueryStageExec => recurse(qs.shuffle, predicate, accum)
+        case c: CommandResultExec => recurse(c.commandPhysicalPlan, predicate, accum)
+        case other => other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
+  }
+
+  override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = plan match {
+    case _: CommandResultExec => true
+    case _ => false
+  }
+
+  override def registerKryoClasses(kryo: Kryo): Unit = {
+    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
+      new KryoJavaSerializer())
+    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
+      new KryoJavaSerializer())
+  }
 }
