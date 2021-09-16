@@ -94,7 +94,7 @@ object GpuShuffleEnv extends Logging {
   //
   def initShuffleManager(): Unit = {
     SparkEnv.get.shuffleManager match {
-      case visibleMgr: VisibleShuffleManager=>
+      case visibleMgr: VisibleShuffleManager =>
         visibleMgr.initialize
       case _ =>
         throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
