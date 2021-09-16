@@ -18,8 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 
 import scala.collection.mutable.ListBuffer
 
-import ai.rapids.cudf.{DType, Scalar}
-import com.nvidia.spark.rapids.{DateUtils, ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 

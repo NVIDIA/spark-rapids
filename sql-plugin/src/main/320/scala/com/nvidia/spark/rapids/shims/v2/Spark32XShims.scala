@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
