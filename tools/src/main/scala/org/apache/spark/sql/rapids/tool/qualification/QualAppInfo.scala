@@ -137,7 +137,7 @@ class QualAppInfo(
   }
 
   private def getAllPotentialProblems(getPotentialProb: String, nestedComplex: String): String = {
-    val nestedComplexT = if (nestedComplex.nonEmpty) "NESTED COMPLEX" else ""
+    val nestedComplexT = if (nestedComplex.nonEmpty) "NESTED COMPLEX TYPE" else ""
     val result = if (getPotentialProb.nonEmpty) {
       if (nestedComplex.nonEmpty) {
         s"$getPotentialProb:$nestedComplexT"
