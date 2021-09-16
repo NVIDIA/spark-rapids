@@ -3018,7 +3018,7 @@ object GpuOverrides extends Logging {
       "Aggregation computing population standard deviation",
       ExprChecks.aggNotReduction(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
-        Seq(ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric))),
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[StddevPop](c, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuStddevPop(child)
       }),
@@ -3026,7 +3026,7 @@ object GpuOverrides extends Logging {
       "Aggregation computing sample standard deviation",
       ExprChecks.aggNotReduction(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
-        Seq(ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric))),
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[StddevSamp](c, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuStddevSamp(child)
       }),

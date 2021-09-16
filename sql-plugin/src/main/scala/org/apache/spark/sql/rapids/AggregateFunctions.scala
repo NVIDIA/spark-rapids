@@ -452,7 +452,7 @@ class CudfM2(ref: Expression) extends CudfAggregate(ref) {
 
   override def toString(): String = "CudfM2"
   override def dataType: DataType = DoubleType
-  override def nullable: Boolean = true // TODO: Check nullable
+  override def nullable: Boolean = false
 }
 
 class CudfMergeM2(ref: Expression) extends CudfAggregate(ref) {
@@ -472,7 +472,7 @@ class CudfMergeM2(ref: Expression) extends CudfAggregate(ref) {
       StructField("n", IntegerType, nullable = true) ::
         StructField("avg", DoubleType, nullable = true) ::
         StructField("m2", DoubleType, nullable = true) :: Nil)
-  override def nullable: Boolean = true // TODO: Check all nullable
+  override def nullable: Boolean = false
 }
 
 case class GpuMin(child: Expression) extends GpuAggregateFunction
@@ -1109,7 +1109,8 @@ case class GpuToCpuCollectBufferTransition(
 
 /**
  * Base class for overriding standard deviation and variance aggregations.
- * This class is a GPU-based equivalent of `CentralMomentAgg` aggregation class in Spark.
+ * This is also a GPU-based implementation of 'CentralMomentAgg' aggregation class in Spark with
+ * the fixed 'momentOrder' variable set to '2'.
  */
 abstract class GpuM2(child: Expression)
   extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
@@ -1200,7 +1201,6 @@ case class GpuStddevPop(child: Expression) extends GpuM2(child) {
   override def children: Seq[Expression] = Seq(child)
   override def prettyName: String = "stddev_pop"
 }
-
 
 case class GpuStddevSamp(child: Expression) extends GpuM2(child) {
   override lazy val evaluateExpression: Expression = {
