@@ -535,7 +535,9 @@ case class GpuSum(child: Expression, resultType: DataType)
 
   private lazy val cudfSum = AttributeReference("sum", resultType)()
 
-  override lazy val inputProjection: Seq[Expression] = Seq(child)
+  // Prior to Spark 3.2 the input was cast to the result type for us. Now we have to do it
+  // manually to avoid overflow/etc.
+  override lazy val inputProjection: Seq[Expression] = Seq(GpuCast(child, resultType))
   override lazy val updateExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum))
   // we need to cast to `resultType` here, since Spark is not widening types
   // as done before Spark 3.2.0. See CudfSum for more info.
