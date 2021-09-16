@@ -259,7 +259,7 @@ efficient to stay on the CPU instead of going back and forth.
 
 Yes, DPP still works.  It might not be as efficient as it could be, and we are working to improve it.
 
-DPP is not supported on databricks with the plugin.
+DPP is not supported on Databricks with the plugin.
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
