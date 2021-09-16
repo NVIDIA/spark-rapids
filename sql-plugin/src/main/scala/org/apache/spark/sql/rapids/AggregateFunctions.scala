@@ -1125,11 +1125,11 @@ abstract class GpuM2(child: Expression)
 
   // Buffers for the update stage.
   protected lazy val bufferN: AttributeReference =
-  AttributeReference("n", DoubleType, nullable = false)()
+    AttributeReference("n", DoubleType, nullable = false)()
   protected lazy val bufferAvg: AttributeReference =
-  AttributeReference("avg", DoubleType, nullable = true)()
+    AttributeReference("avg", DoubleType, nullable = true)()
   protected lazy val bufferM2: AttributeReference =
-  AttributeReference("m2", DoubleType, nullable = true)()
+    AttributeReference("m2", DoubleType, nullable = true)()
   override lazy val aggBufferAttributes: Seq[AttributeReference] =
     bufferN :: bufferAvg :: bufferM2 :: Nil
 
