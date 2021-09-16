@@ -157,14 +157,15 @@ option before starting the cluster to capture the logs.
 
 ## Limitations
 
-1. Adaptive query execution(AQE) and Delta optimization write do not work.  These should be disabled
-when using the plugin. See [issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059) for more
-detail. 
+1. Adaptive query execution(AQE) and Delta optimization write do not work. These should be disabled
+when using the plugin. 
 
     ```bash 
     spark.databricks.delta.optimizeWrite.enabled false
     spark.sql.adaptive.enabled false
     ```
+    
+    See [issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059) for more detail. 
 
 2. Dynamic partition pruning(DPP) does not work.  This results in poor performance for queries which
    would normally benefit from DPP.  See
