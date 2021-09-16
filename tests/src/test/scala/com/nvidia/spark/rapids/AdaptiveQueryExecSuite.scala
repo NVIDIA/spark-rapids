@@ -106,8 +106,6 @@ class AdaptiveQueryExecSuite
   }
 
   test("get row counts from executed shuffle query stages") {
-    assumeSpark301orLater
-
     skewJoinTest { spark =>
       val (_, innerAdaptivePlan) = runAdaptiveAndVerifyResult(
         spark,
@@ -166,8 +164,6 @@ class AdaptiveQueryExecSuite
   }
 
   test("Join partitioned tables DPP fallback") {
-    assumeSpark301orLater
-
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1") // force shuffle exchange
@@ -398,8 +394,6 @@ class AdaptiveQueryExecSuite
 
   test("Exchange reuse") {
     logError("Exchange reuse")
-    assumeSpark301orLater
-
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
@@ -432,8 +426,6 @@ class AdaptiveQueryExecSuite
 
   test("Change merge join to broadcast join without local shuffle reader") {
     logError("Change merge join to broadcast join without local shuffle reader")
-    assumeSpark301orLater
-
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
@@ -464,8 +456,6 @@ class AdaptiveQueryExecSuite
 
   test("Verify the reader is LocalShuffleReaderExec") {
     logError("Verify the reader is LocalShuffleReaderExec")
-    assumeSpark301orLater
-
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
@@ -585,8 +575,6 @@ class AdaptiveQueryExecSuite
   }
 
   def skewJoinTest(fun: SparkSession => Unit) {
-    assumeSpark301orLater
-
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")

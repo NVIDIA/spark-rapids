@@ -471,7 +471,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Compute estimated row count nested joins no broadcast") {
-    assumeSpark301orLater
     logError("Compute estimated row count nested joins no broadcast")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -520,7 +519,6 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Compute estimated row count nested joins with broadcast") {
-    assumeSpark301orLater
     logError("Compute estimated row count nested joins with broadcast")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
