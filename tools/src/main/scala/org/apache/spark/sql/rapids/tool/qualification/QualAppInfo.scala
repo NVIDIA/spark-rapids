@@ -132,20 +132,26 @@ class QualAppInfo(
     validSums.values.map(dur => dur.totalTaskDuration).sum
   }
 
-  private def getPotentialProblems: String = {
+  private def getPotentialProblemsForDf: String = {
     probNotDataset.values.flatten.toSet.mkString(":")
   }
 
-  private def getAllPotentialProblems(getPotentialProb: String, nestedComplex: String): String = {
-    val nestedComplexT = if (nestedComplex.nonEmpty) "NESTED COMPLEX TYPE" else ""
-    val result = if (getPotentialProb.nonEmpty) {
+  // This is to append potential issues such as UDF, decimal type determined from
+  // SparkGraphPlan Node description and nested complex type determined from reading the
+  // event logs. If there are any complex nested types, then `NESTED COMPLEX TYPE` is mentioned
+  // in the `Potential Problems` section in the csv file. Section `Unsupported Nested Complex
+  // Types` has information on the exact nested complex types which are not supported for a
+  // particular application.
+  private def getAllPotentialProblems(dFPotentialProb: String, nestedComplex: String): String = {
+    val nestedComplexType = if (nestedComplex.nonEmpty) "NESTED COMPLEX TYPE" else ""
+    val result = if (dFPotentialProb.nonEmpty) {
       if (nestedComplex.nonEmpty) {
-        s"$getPotentialProb:$nestedComplexT"
+        s"$dFPotentialProb:$nestedComplexType"
       } else {
-        getPotentialProb
+        dFPotentialProb
       }
     } else {
-      nestedComplexT
+      nestedComplexType
     }
     result
   }
@@ -230,7 +236,7 @@ class QualAppInfo(
       }.mkString(";")
       val writeFormat = writeFormatNotSupported(writeDataFormat)
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
-      val problems = getAllPotentialProblems(getPotentialProblems, nestedComplexTypes)
+      val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
