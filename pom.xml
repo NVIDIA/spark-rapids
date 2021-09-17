@@ -799,6 +799,7 @@
     </dependencyManagement>
 
     <build>
+        <directory>target/${spark.version.classifier}</directory>
         <pluginManagement>
             <plugins>
                 <plugin>
