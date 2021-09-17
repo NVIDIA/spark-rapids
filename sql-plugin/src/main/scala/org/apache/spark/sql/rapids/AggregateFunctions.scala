@@ -336,10 +336,10 @@ class CudfTDigest(
     throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
   override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
-  override val updateAggregate: GroupByAggregationOnColumn =
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
     GroupByAggregation.createTDigest(accuracy)
       .onColumn(getOrdinal(ref))
-  override val mergeAggregate: GroupByAggregationOnColumn =
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
     GroupByAggregation.mergeTDigest(accuracy)
       .onColumn(getOrdinal(ref))
   override def toString(): String = "CudfTDigest"
