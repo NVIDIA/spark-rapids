@@ -93,11 +93,35 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
 
   /**
    * Column schema of unsigned-int.parquet is:
-   * TODO: nest type is blocked by issue: https://github.com/rapidsai/cudf/issues/9240
+   * TODO: array nest type is blocked by issue: https://github.com/rapidsai/cudf/issues/9240
+   *
    * message root {
-   *      required int32 a (UINT_8);      // uint_8
-   *      required int32 b (UINT_16);     // uint_16
-   *      required int32 c (UINT_32);     // uint_32
+   *   required int32 a (UINT_8);
+   *   required int32 b (UINT_16);
+   *   required int32 c (UINT_32);
+   *   required group g {
+   *     required int32 c1 (UINT_8);
+   *     required int32 c2 (UINT_16);
+   *     required int32 c3 (UINT_32);
+   *   }
+   *   required group m1 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_8);
+   *       optional int32 value (UINT_8);
+   *     }
+   *   }
+   *   required group m2 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_16);
+   *       optional int32 value (UINT_16);
+   *     }
+   *   }
+   *   required group m3 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_32);
+   *       optional int32 value (UINT_32);
+   *     }
+   *   }
    * }
    *
    */
