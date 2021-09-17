@@ -18,8 +18,10 @@ package org.apache.spark.sql.rapids
 
 import java.util.concurrent.TimeUnit
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, ShimLoader}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -508,17 +510,28 @@ object GpuToTimestamp extends Arm {
   val REMOVE_WHITESPACE_FROM_MONTH_DAY: RegexReplace =
     RegexReplace(raw"(\A\d+)-([ \t]*)(\d+)-([ \t]*)(\d+)", raw"\1-\3-\5")
 
-  def daysScalarSeconds(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
-  }
-
-  def daysScalarMicros(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
-  }
-
   def daysEqual(col: ColumnVector, name: String): ColumnVector = {
     withResource(Scalar.fromString(name)) { scalarName =>
       col.equalTo(scalarName)
+    }
+  }
+
+  /**
+   * Replace special date strings such as "now" with timestampDays. This method does not
+   * close the `stringVector`.
+   */
+  def replaceSpecialDates(
+      stringVector: ColumnVector,
+      chronoVector: ColumnVector,
+      specialDates: Map[String, () => Scalar]): ColumnVector = {
+    specialDates.foldLeft(chronoVector) { case (buffer, (name, scalarBuilder)) =>
+      withResource(buffer) { bufVector =>
+        withResource(daysEqual(stringVector, name)) { isMatch =>
+          withResource(scalarBuilder()) { scalar =>
+            isMatch.ifElse(scalar, bufVector)
+          }
+        }
+      }
     }
   }
 
@@ -546,50 +559,27 @@ object GpuToTimestamp extends Arm {
       lhs: GpuColumnVector,
       sparkFormat: String,
       strfFormat: String,
-      dtype: DType,
-      daysScalar: String => Scalar,
-      asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
+      dtype: DType): ColumnVector = {
+
+    // `tsVector` will be closed in replaceSpecialDates
+    val tsVector = withResource(isTimestamp(lhs.getBase, sparkFormat, strfFormat)) { isTs =>
+      withResource(Scalar.fromNull(dtype)) { nullValue =>
+        withResource(lhs.getBase.asTimestamp(dtype, strfFormat)) { tsVec =>
+          isTs.ifElse(tsVec, nullValue)
+        }
+      }
+    }
 
     // in addition to date/timestamp strings, we also need to check for special dates and null
     // values, since anything else is invalid and should throw an error or be converted to null
     // depending on the policy
-    withResource(isTimestamp(lhs.getBase, sparkFormat, strfFormat)) { isTimestamp =>
-      withResource(daysEqual(lhs.getBase, DateUtils.EPOCH)) { isEpoch =>
-        withResource(daysEqual(lhs.getBase, DateUtils.NOW)) { isNow =>
-          withResource(daysEqual(lhs.getBase, DateUtils.TODAY)) { isToday =>
-            withResource(daysEqual(lhs.getBase, DateUtils.YESTERDAY)) { isYesterday =>
-              withResource(daysEqual(lhs.getBase, DateUtils.TOMORROW)) { isTomorrow =>
-                withResource(lhs.getBase.isNull) { _ =>
-                  withResource(Scalar.fromNull(dtype)) { nullValue =>
-                    withResource(asTimestamp(lhs.getBase, strfFormat)) { converted =>
-                      withResource(daysScalar(DateUtils.EPOCH)) { epoch =>
-                        withResource(daysScalar(DateUtils.NOW)) { now =>
-                          withResource(daysScalar(DateUtils.TODAY)) { today =>
-                            withResource(daysScalar(DateUtils.YESTERDAY)) { yesterday =>
-                              withResource(daysScalar(DateUtils.TOMORROW)) { tomorrow =>
-                                withResource(isTomorrow.ifElse(tomorrow, nullValue)) { a =>
-                                  withResource(isYesterday.ifElse(yesterday, a)) { b =>
-                                    withResource(isToday.ifElse(today, b)) { c =>
-                                      withResource(isNow.ifElse(now, c)) { d =>
-                                        withResource(isEpoch.ifElse(epoch, d)) { e =>
-                                          isTimestamp.ifElse(converted, e)
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+    closeOnExcept(tsVector) { tsVector =>
+      DateUtils.fetchSpecialDates(dtype) match {
+        case specialDates if specialDates.nonEmpty =>
+          // `tsVector` will be closed in replaceSpecialDates
+          replaceSpecialDates(lhs.getBase, tsVector, specialDates)
+        case _ =>
+          tsVector
       }
     }
   }
@@ -728,9 +718,7 @@ abstract class GpuToTimestamp
           lhs,
           sparkFormat,
           strfFormat,
-          DType.TIMESTAMP_MICROSECONDS,
-          daysScalarMicros,
-          (col, strfFormat) => col.asTimestampMicroseconds(strfFormat))
+          DType.TIMESTAMP_MICROSECONDS)
       }
     } else { // Timestamp or DateType
       lhs.getBase.asTimestampMicroseconds()
@@ -779,9 +767,7 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
           lhs,
           sparkFormat,
           strfFormat,
-          DType.TIMESTAMP_SECONDS,
-          daysScalarSeconds,
-          (col, strfFormat) => col.asTimestampSeconds(strfFormat))
+          DType.TIMESTAMP_SECONDS)
       }
     } else if (lhs.dataType() == DateType){
       lhs.getBase.asTimestampSeconds()

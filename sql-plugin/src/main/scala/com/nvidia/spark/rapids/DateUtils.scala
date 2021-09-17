@@ -20,6 +20,9 @@ import java.time.LocalDate
 
 import scala.collection.mutable.ListBuffer
 
+import ai.rapids.cudf.{DType, Scalar}
+import com.nvidia.spark.rapids.VersionUtils.isSpark320OrLater
+
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
 
@@ -57,7 +60,9 @@ object DateUtils {
   val YESTERDAY = "yesterday"
   val TOMORROW = "tomorrow"
 
-  def specialDatesDays: Map[String, Int] = {
+  def specialDatesDays: Map[String, Int] = if (isSpark320OrLater) {
+    Map.empty
+  } else {
     val today = currentDate()
     Map(
       EPOCH -> 0,
@@ -68,7 +73,9 @@ object DateUtils {
     )
   }
 
-  def specialDatesSeconds: Map[String, Long] = {
+  def specialDatesSeconds: Map[String, Long] = if (isSpark320OrLater) {
+    Map.empty
+  } else {
     val today = currentDate()
     val now = DateTimeUtils.currentTimestamp()
     Map(
@@ -80,7 +87,9 @@ object DateUtils {
     )
   }
 
-  def specialDatesMicros: Map[String, Long] = {
+  def specialDatesMicros: Map[String, Long] = if (isSpark320OrLater) {
+    Map.empty
+  } else {
     val today = currentDate()
     val now = DateTimeUtils.currentTimestamp()
     Map(
@@ -90,6 +99,23 @@ object DateUtils {
       YESTERDAY -> (today - 1) * ONE_DAY_MICROSECONDS,
       TOMORROW -> (today + 1) * ONE_DAY_MICROSECONDS
     )
+  }
+
+  def fetchSpecialDates(unit: DType): Map[String, () => Scalar] = unit match {
+    case DType.TIMESTAMP_DAYS =>
+      DateUtils.specialDatesDays.map { case (k, v) =>
+        k -> (() => Scalar.timestampDaysFromInt(v))
+      }
+    case DType.TIMESTAMP_SECONDS =>
+      DateUtils.specialDatesSeconds.map { case (k, v) =>
+        k -> (() => Scalar.timestampFromLong(unit, v))
+      }
+    case DType.TIMESTAMP_MICROSECONDS =>
+      DateUtils.specialDatesMicros.map { case (k, v) =>
+        k -> (() => Scalar.timestampFromLong(unit, v))
+      }
+    case _ =>
+      throw new IllegalArgumentException(s"unsupported DType: $unit")
   }
 
   def currentDate(): Int = localDateToDays(LocalDate.now())
