@@ -1380,7 +1380,7 @@ object GpuOverrides extends Logging {
       ExprChecks.mathUnary,
       (a, conf, p, r) => new UnaryExprMeta[Log1p](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
-          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType)))
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), SQLConf.get.ansiEnabled))
       }),
     expr[Log2](
       "Log base 2",
@@ -1658,8 +1658,17 @@ object GpuOverrides extends Logging {
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          super.tagSelfForAst()
+          if (ansiEnabled) {
+            willNotWorkInAst("AST Addition does not support ansi mode.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuAdd(lhs, rhs)
+          GpuAdd(lhs, rhs, failOnError = ansiEnabled)
       }),
     expr[Subtract](
       "Subtraction",
@@ -1708,6 +1717,10 @@ object GpuOverrides extends Logging {
                     s" to fit on the GPU $intermediateResult")
               }
             case _ => // NOOP
+          }
+
+          if (SQLConf.get.ansiEnabled) {
+            willNotWorkOnGpu("GPU Multiplication does not support ansi mode")
           }
         }
 
