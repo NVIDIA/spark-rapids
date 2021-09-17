@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark304
 
-import com.nvidia.spark.rapids.GpuBuildSide
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
