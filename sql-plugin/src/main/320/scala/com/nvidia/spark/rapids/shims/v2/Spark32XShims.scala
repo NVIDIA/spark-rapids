@@ -138,14 +138,3 @@ trait Spark32XShims extends SparkShims {
   }
 
 }
-
-// TODO dedupe utils inside shims
-object GpuJoinUtils {
-  def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
-    buildSide match {
-      case BuildRight => GpuBuildRight
-      case BuildLeft => GpuBuildLeft
-      case _ => throw new Exception("unknown buildSide Type")
-    }
-  }
-}
