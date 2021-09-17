@@ -38,7 +38,7 @@ trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTy
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 }
 
 trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpression
@@ -47,7 +47,7 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }

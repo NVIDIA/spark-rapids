@@ -113,8 +113,10 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
   testSparkResultsAreEqual("to_date default pattern",
-      datesAsStrings,
-      CORRECTED_TIME_PARSER_POLICY) {
+    datesAsStrings,
+    CORRECTED_TIME_PARSER_POLICY
+        // All of the dates being parsed are valid for all of the versions of Spark supported.
+        .set(RapidsConf.ENABLE_EXTENDED_YEAR_PARSING.key, "true")) {
     df => df.withColumn("c1", to_date(col("c0")))
   }
 

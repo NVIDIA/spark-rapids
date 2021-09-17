@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from functools import reduce
-from spark_session import is_before_spark_311
+from spark_session import is_before_spark_311, is_before_spark_320
 from marks import allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
@@ -62,3 +62,36 @@ def test_cast_nested_fallback(data_gen, to_type):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)),
             'Cast')
+
+def test_cast_string_date_valid_format():
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(DateType())),
+            conf = {'spark.rapids.sql.parseExtendedYears.enabled': 'true'})
+
+def test_cast_string_ts_valid_format():
+    # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
+    # This provides values that are valid in all of those formats.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType())),
+            conf = {'spark.rapids.sql.parseExtendedYears.enabled': 'true',
+                'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+
+@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
+def test_cast_string_date_fallback():
+    assert_gpu_fallback_collect(
+            # Cast back to String because this goes beyond what python can support for years
+            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\+){4,12}')).select(f.col('a').cast(DateType()).cast(StringType())),
+            'Cast')
+
+@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ do we have issues with extended years")
+def test_cast_string_timestamp_fallback():
+    assert_gpu_fallback_collect(
+            # Cast back to String because this goes beyond what python can support for years
+            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\+){4,12}')).select(f.col('a').cast(TimestampType()).cast(StringType())),
+            'Cast',
+            conf = {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
+

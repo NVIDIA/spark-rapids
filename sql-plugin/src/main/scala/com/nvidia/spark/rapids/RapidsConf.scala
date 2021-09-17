@@ -630,6 +630,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_EXTENDED_YEAR_PARSING = conf("spark.rapids.sql.parseExtendedYears.enabled")
+      .doc("SPARK-35780 went into Spark 3.2.0+ and extended parsing of years in dates and " +
+          "timestamps to support the full range of possible values. Prior " +
+          "to this it was limited to a positive 4 digit year. When this config is enabled we " +
+          "will parse dates and timestamps on the GPU, even though we do not support the " +
+          "extended range yet.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
       .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
         "does NOT produce exact same string as spark produces, but producing strings which are " +
@@ -1513,6 +1522,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
+
+  lazy val isExtendedRangeYearParsingEnabled: Boolean = get(ENABLE_EXTENDED_YEAR_PARSING)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
