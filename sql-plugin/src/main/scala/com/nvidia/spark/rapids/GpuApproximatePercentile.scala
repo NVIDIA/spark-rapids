@@ -132,7 +132,8 @@ case class ApproxPercentileFromTDigestExpr(
           // cast cuDF Array[Double] to Array[finalDataType]
           withResource(percentiles.getChildColumnView(0)) { childView =>
             withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
-                ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false)) { childCv =>
+                ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
+                stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
               withResource(percentiles.replaceListChild(childCv)) { x =>
                 GpuColumnVector.from(x.copyToColumnVector(), dataType)
               }
