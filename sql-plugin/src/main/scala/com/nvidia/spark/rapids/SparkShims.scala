@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URI
 import java.nio.ByteBuffer
 
+import com.esotericsoftware.kryo.Kryo
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -253,7 +254,21 @@ trait SparkShims {
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 
+  /**
+   * Walk the plan recursively and return a list of operators that match the predicate
+   */
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
+
+  /**
+   * Our tests, by default, will check that all operators are running on the GPU, but
+   * there are some operators that we do not translate to GPU plans, so we need a way
+   * to bypass the check for those.
+   */
+  def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
+
   def leafNodeDefaultParallelism(ss: SparkSession): Int
+
+  def registerKryoClasses(kryo: Kryo): Unit
 }
 
 abstract class SparkCommonShims extends SparkShims {

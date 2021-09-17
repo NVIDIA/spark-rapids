@@ -31,9 +31,57 @@
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
     <version>21.10.0-SNAPSHOT</version>
 
-    <modules>
-        <module>${shim.module.name}</module>
-    </modules>
+    <profiles>
+        <!-- maven CLI and CI builds one at a time -->
+        <profile>
+            <id>with-classifier</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <modules><module>${shim.module.name}</module></modules>
+        </profile>
+
+        <!-- For easy switching in IDE: provide consistently named profiles
+        throughout submodules for easier single-checkbox activation in GUI.
+
+        Passing a proper flag such as -Dbuildver=320 to a Maven importer via
+        advanced settings is cumbersome and for this particular module seems
+        to fail to activate the right shim module in case of IDEA as of
+        2021.2.1
+        -->
+        <profile>
+            <id>release301</id>
+            <modules><module>spark301</module></modules>
+        </profile>
+        <profile>
+            <id>release302</id>
+            <modules><module>spark302</module></modules>
+        </profile>
+        <profile>
+            <id>release303</id>
+            <modules><module>spark303</module></modules>
+        </profile>
+        <profile>
+            <id>release304</id>
+            <modules><module>spark304</module></modules>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <modules><module>spark311</module></modules>
+        </profile>
+        <profile>
+            <id>release312</id>
+            <modules><module>spark312</module></modules>
+        </profile>
+        <profile>
+            <id>release313</id>
+            <modules><module>spark313</module></modules>
+        </profile>
+        <profile>
+            <id>release320</id>
+            <modules><module>spark320</module></modules>
+        </profile>
+    </profiles>
 
     <dependencies>
         <dependency>

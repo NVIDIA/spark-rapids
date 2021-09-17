@@ -38,9 +38,9 @@ Name | Description | Default Value
 <a name="memory.gpu.maxAllocFraction"></a>spark.rapids.memory.gpu.maxAllocFraction|The fraction of total GPU memory that limits the maximum size of the RMM pool. The value must be greater than or equal to the setting for spark.rapids.memory.gpu.allocFraction. Note that this limit will be reduced by the reserve memory configured in spark.rapids.memory.gpu.reserve.|1.0
 <a name="memory.gpu.minAllocFraction"></a>spark.rapids.memory.gpu.minAllocFraction|The fraction of total GPU memory that limits the minimum size of the RMM pool. The value must be less than or equal to the setting for spark.rapids.memory.gpu.allocFraction.|0.25
 <a name="memory.gpu.oomDumpDir"></a>spark.rapids.memory.gpu.oomDumpDir|The path to a local directory where a heap dump will be created if the GPU encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the form: "gpu-oom-<pid>.hprof" where <pid> is the process ID.|None
-<a name="memory.gpu.pool"></a>spark.rapids.memory.gpu.pool|Select the RMM pooling allocator to use. Valid values are "DEFAULT", "ARENA", and "NONE". With "DEFAULT", `rmm::mr::pool_memory_resource` is used; with "ARENA", `rmm::mr::arena_memory_resource` is used. If set to "NONE", pooling is disabled and RMM just passes through to CUDA memory allocation directly. Note: "ARENA" is the recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), as "DEFAULT" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)|ARENA
+<a name="memory.gpu.pool"></a>spark.rapids.memory.gpu.pool|Select the RMM pooling allocator to use. Valid values are "DEFAULT", "ARENA", "ASYNC", and "NONE". With "DEFAULT", the RMM pool allocator is used; with "ARENA", the RMM arena allocator is used; with "ASYNC", the new CUDA stream-ordered memory allocator in CUDA 11.2+ is used. If set to "NONE", pooling is disabled and RMM just passes through to CUDA memory allocation directly. Note: "ARENA" is the recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), as "DEFAULT" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)|ARENA
 <a name="memory.gpu.pooling.enabled"></a>spark.rapids.memory.gpu.pooling.enabled|Should RMM act as a pooling allocator for GPU memory, or should it just pass through to CUDA memory allocation directly. DEPRECATED: please use spark.rapids.memory.gpu.pool instead.|true
-<a name="memory.gpu.reserve"></a>spark.rapids.memory.gpu.reserve|The amount of GPU memory that should remain unallocated by RMM and left for system use such as memory needed for kernels, kernel launches or JIT compilation.|1073741824
+<a name="memory.gpu.reserve"></a>spark.rapids.memory.gpu.reserve|The amount of GPU memory that should remain unallocated by RMM and left for system use such as memory needed for kernels and kernel launches.|1073741824
 <a name="memory.gpu.unspill.enabled"></a>spark.rapids.memory.gpu.unspill.enabled|When a spilled GPU buffer is needed again, should it be unspilled, or only copied back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are needed frequently, for example, broadcast variables; however, it may also increase GPU memory usage|false
 <a name="memory.host.spillStorageSize"></a>spark.rapids.memory.host.spillStorageSize|Amount of off-heap host memory to use for buffering spilled GPU data before spilling to local disk|1073741824
 <a name="memory.pinnedPool.size"></a>spark.rapids.memory.pinnedPool.size|The size of the pinned memory pool in bytes unless otherwise specified. Use 0 to disable the pool.|0
@@ -378,20 +378,3 @@ Name | Description | Default Value | Notes
 <a name="sql.partitioning.RangePartitioning"></a>spark.rapids.sql.partitioning.RangePartitioning|Range partitioning|true|None|
 <a name="sql.partitioning.RoundRobinPartitioning"></a>spark.rapids.sql.partitioning.RoundRobinPartitioning|Round robin partitioning|true|None|
 <a name="sql.partitioning.SinglePartition$"></a>spark.rapids.sql.partitioning.SinglePartition$|Single partitioning|true|None|
-
-### JIT Kernel Cache Path
-
-  CUDF can compile GPU kernels at runtime using a just-in-time (JIT) compiler. The
-  resulting kernels are cached on the filesystem. The default location for this cache is
-  under the `.cudf` directory in the user's home directory. When running in an environment
-  where the user's home directory cannot be written, such as running in a container
-  environment on a cluster, the JIT cache path will need to be specified explicitly with
-  the `LIBCUDF_KERNEL_CACHE_PATH` environment variable.
-  The specified kernel cache path should be specific to the user to avoid conflicts with
-  others running on the same host. For example, the following would specify the path to a
-  user-specific location under `/tmp`:
-
-  ```
-  --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH="/tmp/cudf-$USER"
-  ```
-

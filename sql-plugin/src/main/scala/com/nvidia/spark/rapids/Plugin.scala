@@ -148,16 +148,15 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
-    if (conf.shimsProviderOverride.isDefined) { // TODO test it, probably not working yet
-      ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
-    }
 
-    if (GpuShuffleEnv.isRapidsShuffleAvailable &&
-        conf.shuffleTransportEarlyStart) {
-      rapidsShuffleHeartbeatManager =
+    if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+      GpuShuffleEnv.initShuffleManager()
+      if (conf.shuffleTransportEarlyStart) {
+        rapidsShuffleHeartbeatManager =
           new RapidsShuffleHeartbeatManager(
             conf.shuffleTransportEarlyStartHeartbeatInterval,
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
+      }
     }
     conf.rapidsConfMap
   }
@@ -174,9 +173,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: java.util.Map[String, String]): Unit = {
     try {
       val conf = new RapidsConf(extraConf.asScala.toMap)
-      if (conf.shimsProviderOverride.isDefined) {
-        ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
-      }
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
@@ -188,11 +184,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
-        if (GpuShuffleEnv.isRapidsShuffleAvailable &&
-            conf.shuffleTransportEarlyStart) {
-          logInfo("Initializing shuffle manager heartbeats")
-          rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
-          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+        if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+          GpuShuffleEnv.initShuffleManager()
+          if (conf.shuffleTransportEarlyStart) {
+            logInfo("Initializing shuffle manager heartbeats")
+            rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+            rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+          }
         }
       }
 

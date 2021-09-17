@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 import scala.collection.{mutable, SeqLike}
 import scala.collection.generic.CanBuildFrom
 import scala.reflect.ClassTag

@@ -70,10 +70,14 @@ object GpuShuffleEnv extends Logging {
 
   def shutdown() = {
     // check for nulls in tests
-    val shuffleManager = Option(SparkEnv.get)
+    Option(SparkEnv.get)
       .map(_.shuffleManager)
       .collect { case sm: VisibleShuffleManager => sm }
       .foreach(_.stop())
+
+    // when we shut down, make sure we clear `env`, as the convention is that
+    // `GpuShuffleEnv.init` will be called to re-establish it
+    env = null
   }
 
   //
@@ -82,6 +86,19 @@ object GpuShuffleEnv extends Logging {
 
   def isExternalShuffleEnabled: Boolean = {
     SparkEnv.get.blockManager.externalShuffleServiceEnabled
+  }
+
+  //
+  // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
+  // this forces the initialization when we know we are ready in the driver and executor.
+  //
+  def initShuffleManager(): Unit = {
+    SparkEnv.get.shuffleManager match {
+      case visibleMgr: VisibleShuffleManager =>
+        visibleMgr.initialize
+      case _ =>
+        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
+    }
   }
 
   def isRapidsShuffleAvailable: Boolean = {

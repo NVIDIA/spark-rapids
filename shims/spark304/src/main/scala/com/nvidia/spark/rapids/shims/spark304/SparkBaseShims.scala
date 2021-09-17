@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.shims.spark304
 import java.net.URI
 import java.nio.ByteBuffer
 
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2.Spark30XShims
 import org.apache.arrow.memory.ReferenceManager
@@ -35,6 +37,7 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
@@ -51,8 +54,8 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPythonExec, FlatMapGroupsInPandasExec, MapInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks}
+import org.apache.spark.sql.rapids.{GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 import org.apache.spark.sql.rapids.execution.python.shims.spark304._
 import org.apache.spark.sql.rapids.shims.spark304.GpuSchemaUtils
@@ -286,6 +289,19 @@ abstract class SparkBaseShims extends Spark30XShims {
         "Convert a column of one type of data into another type",
         new CastChecks(),
         (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
+      GpuOverrides.expr[Average](
+        "Average aggregate operator",
+        ExprChecks.fullAgg(
+          TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
+        (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            val dataType = a.child.dataType
+            GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
+          }
+
+          override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
+        }),
       GpuOverrides.expr[RegExpReplace](
         "RegExpReplace support for string literal input patterns",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
@@ -637,4 +653,11 @@ abstract class SparkBaseShims extends Spark30XShims {
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
+
+  override def registerKryoClasses(kryo: Kryo): Unit = {
+    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
+      new KryoJavaSerializer())
+    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
+      new KryoJavaSerializer())
+  }
 }

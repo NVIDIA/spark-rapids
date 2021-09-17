@@ -16,9 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType}
-import com.nvidia.spark.rapids.{Arm, GpuCast, GpuColumnVector, GpuExpression, GpuIf, GpuIsNan, GpuLiteral, GpuProjectExec, GpuUnaryExpression, GpuUnscaledValue}
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuProjectExec, GpuUnaryExpression}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.{HashUtils, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
 import org.apache.spark.sql.types._
@@ -31,17 +32,26 @@ case class GpuMd5(child: Expression)
   override def dataType: DataType = StringType
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(ColumnVector.md5Hash(input.getBase)) { fullResult =>
-      fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
+    withResource(HashUtils.normalizeInput(input.getBase)) { normalized =>
+      withResource(ColumnVector.md5Hash(normalized)) { fullResult =>
+        fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, normalized)
+      }
     }
   }
 }
 
 object GpuMurmur3Hash extends Arm {
-  def compute(batch: ColumnarBatch, boundExpr: Seq[Expression], seed: Int = 42): ColumnVector = {
+  def compute(batch: ColumnarBatch,
+      boundExpr: Seq[Expression],
+      seed: Int = 42): ColumnVector = {
     withResource(GpuProjectExec.project(batch, boundExpr)) { args =>
       val bases = GpuColumnVector.extractBases(args)
-      ColumnVector.spark32BitMurmurHash3(seed, bases.toArray[ColumnView])
+      val normalized = bases.safeMap { cv =>
+        HashUtils.normalizeInput(cv).asInstanceOf[ColumnView]
+      }
+      withResource(normalized) { _ =>
+        ColumnVector.spark32BitMurmurHash3(seed, normalized)
+      }
     }
   }
 }

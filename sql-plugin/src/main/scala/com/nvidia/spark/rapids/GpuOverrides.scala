@@ -721,6 +721,9 @@ object GpuOverrides extends Logging {
     }
   }
 
+  private val nanAggPsNote = "Input must not contain NaNs and" +
+      s" ${RapidsConf.HAS_NANS} must be false."
+
   def expr[INPUT <: Expression](
       desc: String,
       pluginChecks: ExprChecks,
@@ -2036,7 +2039,9 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Seq(ParamCheck(
           "pivotColumn",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
+              .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+              .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
           TypeSig.all),
           ParamCheck("valueColumn",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
@@ -2075,13 +2080,19 @@ object GpuOverrides extends Logging {
         ExprChecks.fullAgg(
           TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            (TypeSig.commonCudfTypes + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+            TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable,
             Seq(ParamCheck("input",
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable))
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
@@ -2098,13 +2109,19 @@ object GpuOverrides extends Logging {
         ExprChecks.fullAgg(
           TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            (TypeSig.commonCudfTypes + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+            TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable,
             Seq(ParamCheck("input",
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable))
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
@@ -2136,19 +2153,6 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuSum(child, a.dataType)
-      }),
-    expr[Average](
-      "Average aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
-      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          val dataType = a.child.dataType
-          checkAndTagFloatAgg(dataType, conf, this)
-        }
-
-        override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
     expr[First](
       "first aggregate operator", {
@@ -2503,7 +2507,9 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL -
-            TypeSig.STRING),
+            TypeSig.STRING)
+            .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+            .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2521,7 +2527,9 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
         TypeSig.orderable,
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL
-            - TypeSig.STRING),
+            - TypeSig.STRING)
+            .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+            .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMax](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2545,7 +2553,12 @@ object GpuOverrides extends Logging {
         TypeSig.BOOLEAN,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
           TypeSig.ARRAY.nested(TypeSig.all)),
-        ("key", TypeSig.commonCudfTypes, TypeSig.all)),
+        ("key", TypeSig.commonCudfTypes
+            .withPsNote(TypeEnum.DOUBLE, "NaN literals are not supported. Columnar input" +
+                s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false.")
+            .withPsNote(TypeEnum.FLOAT, "NaN literals are not supported. Columnar input" +
+                s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false."),
+            TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // do not support literal arrays as LHS
@@ -3444,6 +3457,7 @@ object GpuOverrides extends Logging {
   val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.postColToRowProcessing")
 }
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan) :SparkPlan = {
