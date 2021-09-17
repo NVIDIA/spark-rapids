@@ -73,7 +73,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       Some(DataTypes.LongType), nullable = false, Long.MaxValue))
   }
 
-  test("Avoid transition to GPU for trivial projection after CPU SMJ") {
+  // see https://github.com/NVIDIA/spark-rapids/issues/3526
+  ignore("Avoid transition to GPU for trivial projection after CPU SMJ") {
     logError("Avoid transition to GPU for trivial projection after CPU SMJ")
 
     val conf = createDefaultConf()
@@ -123,7 +124,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   }
 
-  test("Force section of plan back onto CPU, AQE on") {
+  // see https://github.com/NVIDIA/spark-rapids/issues/3526
+  ignore("Force section of plan back onto CPU, AQE on") {
     logError("Force section of plan back onto CPU, AQE on")
     assumeSpark311orLater
 
@@ -238,7 +240,8 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
   }
 
-  test("Force last section of plan back onto CPU, AQE on") {
+  // see https://github.com/NVIDIA/spark-rapids/issues/3526
+  ignore("Force last section of plan back onto CPU, AQE on") {
     logError("Force last section of plan back onto CPU, AQE on")
     assumeSpark311orLater
 

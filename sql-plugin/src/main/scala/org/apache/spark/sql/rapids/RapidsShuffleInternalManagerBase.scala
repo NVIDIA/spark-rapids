@@ -421,6 +421,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
 trait VisibleShuffleManager {
   def isDriver: Boolean
+  def initialize: Unit
 }
 
 abstract class ProxyRapidsShuffleInternalManagerBase(
@@ -433,6 +434,12 @@ abstract class ProxyRapidsShuffleInternalManagerBase(
   override lazy val self: ShuffleManager =
     ShimLoader.newInternalShuffleManager(conf, isDriver)
         .asInstanceOf[ShuffleManager]
+
+  // This function touches the lazy val `self` so we actually instantiate
+  // the manager. This is called from both the driver and executor.
+  // In the driver, it's mostly to display information on how to enable/disable the manager,
+  // in the executor, the UCXShuffleTransport starts and allocates memory at this time.
+  override def initialize: Unit = self
 
   //
   // Signatures unchanged since 3.0.1 follow
