@@ -25,7 +25,7 @@ import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializ
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.spark311db._
-import com.nvidia.spark.rapids.shims.v2.Spark30XShims
+import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
