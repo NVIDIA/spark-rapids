@@ -40,8 +40,8 @@ case class GpuTimeAdd(start: Expression,
   override def left: Expression = start
   override def right: Expression = interval
 
-  override def toString: String = s"$left - $right"
-  override def sql: String = s"${left.sql} - ${right.sql}"
+  override def toString: String = s"$left + $right"
+  override def sql: String = s"${left.sql} + ${right.sql}"
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
