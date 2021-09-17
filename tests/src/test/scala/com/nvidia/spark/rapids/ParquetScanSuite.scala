@@ -122,6 +122,16 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
    *       optional int32 value (UINT_32);
    *     }
    *   }
+   *   optional group m4 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_32);
+   *       required group value {
+   *         required int32 c1 (UINT_8);
+   *         required int32 c2 (UINT_16);
+   *         required int32 c3 (UINT_32);
+   *       }
+   *     }
+   *   }
    * }
    *
    */
