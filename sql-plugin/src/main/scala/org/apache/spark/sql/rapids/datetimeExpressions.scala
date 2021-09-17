@@ -518,17 +518,18 @@ object GpuToTimestamp extends Arm {
 
   /**
    * Replace special date strings such as "now" with timestampDays. This method does not
-   * close the `stringVector` and `specialValues`.
+   * close the `stringVector`.
    */
   def replaceSpecialDates(
       stringVector: ColumnVector,
       chronoVector: ColumnVector,
-      specialNames: Seq[String],
-      specialValues: Seq[Scalar]): ColumnVector = {
-    specialValues.zip(specialNames).foldLeft(chronoVector) { case (buffer, (scalar, name)) =>
+      specialDates: Map[String, () => Scalar]): ColumnVector = {
+    specialDates.foldLeft(chronoVector) { case (buffer, (name, scalarBuilder)) =>
       withResource(buffer) { bufVector =>
         withResource(daysEqual(stringVector, name)) { isMatch =>
-          isMatch.ifElse(scalar, bufVector)
+          withResource(scalarBuilder()) { scalar =>
+            isMatch.ifElse(scalar, bufVector)
+          }
         }
       }
     }
@@ -574,12 +575,9 @@ object GpuToTimestamp extends Arm {
     // depending on the policy
     closeOnExcept(tsVector) { tsVector =>
       DateUtils.fetchSpecialDates(dtype) match {
-        case dates if dates.nonEmpty =>
+        case specialDates if specialDates.nonEmpty =>
           // `tsVector` will be closed in replaceSpecialDates
-          val (specialNames, specialValues) = dates.unzip
-          withResource(specialValues.toList) { scalars =>
-            replaceSpecialDates(lhs.getBase, tsVector, specialNames.toList, scalars)
-          }
+          replaceSpecialDates(lhs.getBase, tsVector, specialDates)
         case _ =>
           tsVector
       }

@@ -21,6 +21,7 @@ import java.time.LocalDate
 import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{DType, Scalar}
+import com.nvidia.spark.rapids.VersionUtils.isSpark320OrLater
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
@@ -58,10 +59,6 @@ object DateUtils {
   val TODAY = "today"
   val YESTERDAY = "yesterday"
   val TOMORROW = "tomorrow"
-
-  private lazy val isSpark320OrLater: Boolean = {
-    ShimLoader.getSparkShims.getSparkShimVersion.toString >= "3.2"
-  }
 
   def specialDatesDays: Map[String, Int] = if (isSpark320OrLater) {
     Map.empty
@@ -104,13 +101,19 @@ object DateUtils {
     )
   }
 
-  def fetchSpecialDates(unit: DType): Map[String, Scalar] = unit match {
+  def fetchSpecialDates(unit: DType): Map[String, () => Scalar] = unit match {
     case DType.TIMESTAMP_DAYS =>
-      DateUtils.specialDatesDays.map { case (k, v) => k -> Scalar.timestampDaysFromInt(v) }
+      DateUtils.specialDatesDays.map { case (k, v) =>
+        k -> (() => Scalar.timestampDaysFromInt(v))
+      }
     case DType.TIMESTAMP_SECONDS =>
-      DateUtils.specialDatesSeconds.map { case (k, v) => k -> Scalar.timestampFromLong(unit, v) }
+      DateUtils.specialDatesSeconds.map { case (k, v) =>
+        k -> (() => Scalar.timestampFromLong(unit, v))
+      }
     case DType.TIMESTAMP_MICROSECONDS =>
-      DateUtils.specialDatesMicros.map { case (k, v) => k -> Scalar.timestampFromLong(unit, v) }
+      DateUtils.specialDatesMicros.map { case (k, v) =>
+        k -> (() => Scalar.timestampFromLong(unit, v))
+      }
     case _ =>
       throw new IllegalArgumentException(s"unsupported DType: $unit")
   }

@@ -873,12 +873,9 @@ object GpuCast extends Arm {
     // handle special dates like "epoch", "now", etc.
     closeOnExcept(converted) { tsVector =>
       DateUtils.fetchSpecialDates(DType.TIMESTAMP_DAYS) match {
-        case dates if dates.nonEmpty =>
+        case specialDates if specialDates.nonEmpty =>
           // `tsVector` will be closed in replaceSpecialDates
-          val (specialNames, specialValues) = dates.unzip
-          withResource(specialValues.toList) { scalars =>
-            replaceSpecialDates(sanitizedInput, tsVector, specialNames.toList, scalars)
-          }
+          replaceSpecialDates(sanitizedInput, tsVector, specialDates)
         case _ =>
           tsVector
       }
@@ -996,12 +993,9 @@ object GpuCast extends Arm {
       // handle special dates like "epoch", "now", etc.
       val finalResult = closeOnExcept(converted) { tsVector =>
         DateUtils.fetchSpecialDates(DType.TIMESTAMP_MICROSECONDS) match {
-          case dates if dates.nonEmpty =>
+          case specialDates if specialDates.nonEmpty =>
             // `tsVector` will be closed in replaceSpecialDates.
-            val (specialNames, specialValues) = dates.unzip
-            withResource(specialValues.toList) { scalars =>
-              replaceSpecialDates(sanitizedInput, tsVector, specialNames.toList, scalars)
-            }
+            replaceSpecialDates(sanitizedInput, tsVector, specialDates)
           case _ =>
             tsVector
         }

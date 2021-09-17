@@ -35,7 +35,7 @@ class ScalarSubquerySuite extends SparkQueryCompareTestSuite {
     // In Spark 3.2.0+ canonicalization for ScalarSubquery was fixed. Because it is a bug fix
     // we have fixed it on our end for all versions of Spark, but the canonicalization check
     // only works if both have the fix or both don't have it.
-    skipCanonicalizationCheck = isPriorToSpark320) {
+    skipCanonicalizationCheck = !VersionUtils.isSpark320OrLater) {
     frame => {
       frame.createOrReplaceTempView("table")
       val ret = frame.sparkSession.sql(
