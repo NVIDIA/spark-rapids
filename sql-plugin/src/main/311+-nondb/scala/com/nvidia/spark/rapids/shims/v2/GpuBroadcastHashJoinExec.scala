@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
+import com.nvidia.spark.rapids.shims.v2._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -126,9 +126,10 @@ case class GpuBroadcastHashJoinExec(
   }
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
-    case BroadcastQueryStageExec(_, gpu: GpuBroadcastExchangeExec) => gpu
-    case BroadcastQueryStageExec(_, reused: ReusedExchangeExec) =>
-      reused.child.asInstanceOf[GpuBroadcastExchangeExec]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
+      bqse.plan.asInstanceOf[GpuBroadcastExchangeExec]
+    case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
+      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
   }

@@ -200,7 +200,7 @@ abstract class GpuShuffleExchangeExecBase(
    */
   @transient
   lazy val shuffleDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
-    GpuShuffleExchangeExec.prepareBatchShuffleDependency(
+    GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
       outputPartitioning,
@@ -230,7 +230,7 @@ abstract class GpuShuffleExchangeExecBase(
     }
 }
 
-object GpuShuffleExchangeExec {
+object GpuShuffleExchangeExecBase {
   def prepareBatchShuffleDependency(
       rdd: RDD[ColumnarBatch],
       outputAttributes: Seq[Attribute],
