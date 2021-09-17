@@ -689,6 +689,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
   // Will do cast if needDecimalCast or needUnsignedToSignedCast test is true
   // in ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB
+  // Note: The behavior of unsigned to signed is decided by the spark parquet, this means the parameter dt
+  // is from spark meta module. Here is only following the behavior accordingly for GPU.
+  // This is suitable for all spark versions, no need to add to shim layer.
   private def decimalCastOrUnsignedCast(cv: ColumnView, dt: DataType): ColumnView = {
     if (needDecimalCast(cv, dt)) {
       cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
