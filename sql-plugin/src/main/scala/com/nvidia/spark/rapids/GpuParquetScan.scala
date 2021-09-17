@@ -610,12 +610,13 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       inputTable: Table,
       filePath: String,
       clippedSchema: MessageType): Table = {
+
     val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
     // check if there are cols with precision that can be stored in an int
-    val decimalCastingNeeded = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
-    val unsignedCastingNeeded = existsUnsignedType(clippedSchema.asGroupType())
+    val hasDecimalAsInt = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
+    val hasUnsignedType = existsUnsignedType(clippedSchema.asGroupType())
     if (readDataSchema.length > inputTable.getNumberOfColumns
-        || decimalCastingNeeded || unsignedCastingNeeded) {
+        || hasDecimalAsInt || hasUnsignedType) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
       // To type casting or anything like that
       val clippedGroups = clippedSchema.asGroupType()
@@ -627,14 +628,13 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
-              val col: ColumnVector = if (decimalCastingNeeded || unsignedCastingNeeded) {
+              val col: ColumnVector = if (hasDecimalAsInt || hasUnsignedType) {
                 ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
                   (dt, cv) => needDecimalCast(cv, dt) || needUnsignedToSignedCast(cv, dt),
                   (dt, cv) => decimalCastOrUnsignedCast(cv, dt))
               } else {
                 origCol.incRefCount()
               }
-
               newColumns(writeAt) = col
               readAt += 1
             } else {
@@ -687,7 +687,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       (cv.getType.equals(DType.UINT32) && dt.isInstanceOf[LongType])
   }
 
-  def decimalCastOrUnsignedCast(cv: ColumnView, dt: DataType): ColumnView = {
+  // Will do cast if needDecimalCast or needUnsignedToSignedCast test is true
+  // in ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB
+  private def decimalCastOrUnsignedCast(cv: ColumnView, dt: DataType): ColumnView = {
     if (needDecimalCast(cv, dt)) {
       cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
     } else if (needUnsignedToSignedCast(cv, dt)) {
