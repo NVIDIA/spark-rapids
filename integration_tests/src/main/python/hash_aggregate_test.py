@@ -1088,3 +1088,57 @@ def test_agg_nested_map():
         df = two_col_df(spark, StringGen('k{1,5}'), ArrayGen(MapGen(StringGen('a{1,5}', nullable=False), StringGen('[ab]{1,5}'))))
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+# Tests for standard deviation and variance aggregations
+@approximate_float
+@ignore_order
+#@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_grpby_std(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.stddev('b')),
+        conf=conf
+    )
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_hash_grpby_std_nulls(data_gen, conf, ansi_enabled):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a')
+          .agg(f.stddev('c')),
+        conf=local_conf
+    )
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_hash_reduction_std_nulls(data_gen, conf, ansi_enabled):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+          .agg(f.stddev('c')),
+        conf=local_conf
+    )
+
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.allow_non_gpu(
+    'HashAggregateExec', 'AggregateExpression',
+    'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
+    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'EqualTo', 'First', 'SortAggregateExec')
+@pytest.mark.parametrize('data_gen', [
+    StructGen(children=[('a', int_gen), ('b', int_gen)],nullable=False,
+        special_cases=[((None, None), 400.0), ((None, -1542301795), 100.0)])], ids=idfn)
+def test_hash_std_nulls_partial_only(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=2).agg(f.stddev('b')),
+        conf=_no_nans_float_conf_partial
+    )
