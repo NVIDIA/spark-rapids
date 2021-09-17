@@ -41,6 +41,7 @@ class QualAppInfo(
   var isPluginEnabled = false
   var lastJobEndTime: Option[Long] = None
   var lastSQLEndTime: Option[Long] = None
+  val writeDataFormat: ArrayBuffer[String] = ArrayBuffer[String]()
 
   var appInfo: Option[QualApplicationInfo] = None
   val sqlStart: HashMap[Long, QualSQLExecutionInfo] = HashMap[Long, QualSQLExecutionInfo]()
@@ -184,6 +185,15 @@ class QualAppInfo(
     }.getOrElse(1.0)
   }
 
+  def reportComplexTypes: (String, String) = {
+    if (dataSourceInfo.size != 0) {
+      val schema = dataSourceInfo.map { ds => ds.schema }
+      QualAppInfo.parseReadSchemaForNestedTypes(schema)
+    } else {
+      ("", "")
+    }
+  }
+
   def aggregateStats(): Option[QualificationSummaryInfo] = {
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
@@ -205,12 +215,14 @@ class QualAppInfo(
         val typeString = types.mkString(":").replace(",", ":")
         s"${format}[$typeString]"
       }.mkString(";")
+      val writeFormat = writeFormatNotSupported(writeDataFormat)
+      val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
         endDurationEstimated, sqlDurProblem, failedIds, readScorePercent,
         readScoreHumanPercentRounded, notSupportFormatAndTypesString,
-        getAllReadFileFormats)
+        getAllReadFileFormats, writeFormat, allComplexTypes, nestedComplexTypes)
     }
   }
 
@@ -228,7 +240,21 @@ class QualAppInfo(
         val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
         sqlIDtoProblematic(sqlID) = existingIssues ++ issues
       }
+      // Get the write data format
+      if (node.name.contains("InsertIntoHadoopFsRelationCommand")) {
+        val writeFormat = node.desc.split(",")(2)
+        writeDataFormat += writeFormat
+      }
     }
+  }
+
+  def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
+    // Filter unsupported write data format
+    val unSupportedWriteFormat = pluginTypeChecker.map { checker =>
+      checker.isWriteFormatsupported(writeFormat)
+    }.getOrElse(ArrayBuffer[String]())
+
+    unSupportedWriteFormat.distinct.mkString(";").toUpperCase
   }
 }
 
@@ -273,7 +299,10 @@ case class QualificationSummaryInfo(
     readScorePercent: Int,
     readFileFormatScore: Double,
     readFileFormatAndTypesNotSupported: String,
-    readFileFormats: String)
+    readFileFormats: String,
+    writeDataFormat: String,
+    complexTypes: String,
+    nestedComplexTypes: String)
 
 object QualAppInfo extends Logging {
   def createApp(
@@ -299,5 +328,97 @@ object QualAppInfo extends Logging {
           None
       }
     app
+  }
+
+  def parseReadSchemaForNestedTypes(schema: ArrayBuffer[String]): (String, String) = {
+    val tempStringBuilder = new StringBuilder()
+    val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
+    var angleBracketsCount = 0
+    var parenthesesCount = 0
+    val distinctSchema = schema.distinct.filter(_.nonEmpty).mkString(",")
+
+    // Get the nested types i.e everything between < >
+    for (char <- distinctSchema) {
+      char match {
+        case '<' => angleBracketsCount += 1
+        case '>' => angleBracketsCount -= 1
+        // If the schema has decimals, Example decimal(6,2) then we have to make sure it has both
+        // opening and closing parentheses(unless the string is incomplete due to V2 reader).
+        case '(' => parenthesesCount += 1
+        case ')' => parenthesesCount -= 1
+        case _ =>
+      }
+      if (angleBracketsCount == 0 && parenthesesCount == 0 && char.equals(',')) {
+        individualSchema += tempStringBuilder.toString
+        tempStringBuilder.setLength(0)
+      } else {
+        tempStringBuilder.append(char);
+      }
+    }
+    if (!tempStringBuilder.isEmpty) {
+      individualSchema += tempStringBuilder.toString
+    }
+
+    // If DataSource V2 is used, then Schema may be incomplete with ... appended at the end.
+    // We determine complex types and nested complex types until ...
+    val incompleteSchema = individualSchema.filter(x => x.contains("..."))
+    val completeSchema = individualSchema.filterNot(x => x.contains("..."))
+
+    // Check if it has types
+    val incompleteTypes = incompleteSchema.map { x =>
+      if (x.contains("...") && x.contains(":")) {
+        val schemaTypes = x.split(":", 2)
+        if (schemaTypes.size == 2) {
+          val partialSchema = schemaTypes(1).split("\\.\\.\\.")
+          if (partialSchema.size == 1) {
+            partialSchema(0)
+          } else {
+            ""
+          }
+        } else {
+          ""
+        }
+      } else {
+        ""
+      }
+    }
+    // Omit columnName and get only schemas
+    val completeTypes = completeSchema.map { x =>
+      val schemaTypes = x.split(":", 2)
+      if (schemaTypes.size == 2) {
+        schemaTypes(1)
+      } else {
+        ""
+      }
+    }
+    val schemaTypes = completeTypes ++ incompleteTypes
+
+    // Filter only complex types.
+    // Example: array<string>, array<struct<string, string>>
+    val complexTypes = schemaTypes.filter(x =>
+      x.startsWith("array<") || x.startsWith("map<") || x.startsWith("struct<"))
+
+    // Determine nested complex types from complex types
+    // Example: array<struct<string, string>> is nested complex type.
+    val nestedComplexTypes = complexTypes.filter(complexType => {
+      val startIndex = complexType.indexOf('<')
+      val closedBracket = complexType.lastIndexOf('>')
+      // If String is incomplete due to dsv2, then '>' may not be present. In that case traverse
+      // until length of the incomplete string
+      val lastIndex = if (closedBracket == -1) {
+        complexType.length - 1
+      } else {
+        closedBracket
+      }
+      val string = complexType.substring(startIndex, lastIndex + 1)
+      string.contains("array<") || string.contains("struct<") || string.contains("map<")
+    })
+
+    // Since it is saved as csv, replace commas with ;
+    val complexTypesResult = complexTypes.filter(_.nonEmpty).mkString(";").replace(",", ";")
+    val nestedComplexTypesResult = nestedComplexTypes.filter(
+      _.nonEmpty).mkString(";").replace(",", ";")
+
+    (complexTypesResult, nestedComplexTypesResult)
   }
 }

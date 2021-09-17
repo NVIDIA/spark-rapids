@@ -36,20 +36,17 @@ mvn_verify() {
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
-    # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'unit_test()' respectively.
-    mvn -U -B $MVN_URM_MIRROR '-P!snapshot-shims,pre-merge' clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=5 -Dcuda.version=$CUDA_CLASSIFIER
+    # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
+    mvn -U -B $MVN_URM_MIRROR '-Pindividual,pre-merge' clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
+        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
 
-    # Run the unit tests for other Spark versions but dont run full python integration tests
+    # Run the unit tests for other Spark versions but don't run full python integration tests
     # NOT ALL TESTS NEEDED FOR PREMERGE
     # Just test one 3.0.X version (base version covers this) and one 3.1.X version.
     # All others shims test should be covered in nightly pipelines
     # Disabled until Spark 3.2 source incompatibility fixed, see https://github.com/NVIDIA/spark-rapids/issues/2052
     # env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark320tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
-    # env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark303tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
-    # env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark304tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
-    # env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark312tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark313tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=311 test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
@@ -92,11 +89,17 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/stop-master.sh
 }
 
-unit_test() {
-    # TODO: this function should be named as 'integration_test()' but it would break backward compatibility. Need find a way to fix this.
-    echo "Run integration testings..."
+ci_2() {
+    echo "Run premerge ci 2 testings..."
     mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
-    TEST_TAGS="not premerge_ci_1" TEST_TYPE="pre-commit" TEST_PARALLEL=4 ./integration_tests/run_pyspark_from_build.sh
+    export TEST_TAGS="not premerge_ci_1"
+    export TEST_TYPE="pre-commit"
+    export TEST_PARALLEL=4
+    # separate process to avoid OOM kill
+    TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST_PARALLEL=5 TEST='struct_test or time_window_test' ./integration_tests/run_pyspark_from_build.sh
+    TEST='not conditionals_test and not window_function_test and not struct_test and not time_window_test' \
+      ./integration_tests/run_pyspark_from_build.sh
 }
 
 
@@ -115,7 +118,7 @@ rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 # Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
 M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
 if [ -s "$M2_CACHE_TAR" ] ; then
-    tar xvf $M2_CACHE_TAR -C ~/
+    tar xf $M2_CACHE_TAR -C ~/
 fi
 
 # Download a full version of spark
@@ -132,15 +135,15 @@ case $BUILD_TYPE in
     all)
         echo "Run all testings..."
         mvn_verify
-        unit_test
+        ci_2
         ;;
 
     mvn_verify)
         mvn_verify
         ;;
 
-    ut | unit_test)
-        unit_test
+    ci_2 )
+        ci_2
         ;;
 
     *)

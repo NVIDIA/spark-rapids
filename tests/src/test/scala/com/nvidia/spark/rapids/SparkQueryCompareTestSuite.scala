@@ -23,7 +23,7 @@ import java.util.{Locale, TimeZone}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Try}
 
-import org.scalatest.FunSuite
+import org.scalatest.{Assertion, FunSuite}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -1836,14 +1836,21 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   }
 
   /** most of the AQE tests requires Spark 3.0.1 or later */
-  def assumeSpark301orLater =
-    assume(cmpSparkVersion(3, 0, 1) >= 0)
+  def assumeSpark301orLater: Assertion =
+    assume(cmpSparkVersion(3, 0, 1) >= 0, "Spark version not 3.0.1+")
 
-  def assumeSpark311orLater =
-    assume(cmpSparkVersion(3, 1, 1) >= 0)
+  def assumeSpark311orLater: Assertion =
+    assume(cmpSparkVersion(3, 1, 1) >= 0, "Spark version not 3.1.1+")
 
-  def assumePriorToSpark320 =
-    assume(cmpSparkVersion(3, 2, 0) < 0)
+  def assumePriorToSpark320: Assertion =
+    assume(isPriorToSpark320, "Spark version not before 3.2.0")
+
+  def isPriorToSpark320: Boolean = cmpSparkVersion(3, 2, 0) < 0
+
+  def assumeSpark320orLater: Assertion =
+    assume(isSpark320OrLater, "Spark version not 3.2.0+")
+
+  def isSpark320OrLater: Boolean = cmpSparkVersion(3, 2, 0) >= 0
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion

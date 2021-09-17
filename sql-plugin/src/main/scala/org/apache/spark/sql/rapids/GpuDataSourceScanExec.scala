@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.{GpuExec, ShimLoader}
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.fs.Path
 
@@ -28,7 +28,7 @@ import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.util.Utils
 
 /** GPU implementation of Spark's `DataSourceScanExec` */
-trait GpuDataSourceScanExec extends LeafExecNode {
+trait GpuDataSourceScanExec extends LeafExecNode with GpuExec {
   def relation: BaseRelation
   def tableIdentifier: Option[TableIdentifier]
 
@@ -42,7 +42,7 @@ trait GpuDataSourceScanExec extends LeafExecNode {
   protected def metadata: Map[String, String]
 
   protected val maxMetadataValueLength = ShimLoader.getSparkShims
-    .getFileSourceMaxMetadataValueLength(sqlContext.sessionState.conf)
+    .getFileSourceMaxMetadataValueLength(sparkSession.sessionState.conf)
 
   override def simpleString(maxFields: Int): String = {
     val metadataEntries = metadata.toSeq.sorted.map {
@@ -74,7 +74,7 @@ trait GpuDataSourceScanExec extends LeafExecNode {
    * Shorthand for calling redactString() without specifying redacting rules
    */
   protected def redact(text: String): String = {
-    Utils.redact(sqlContext.sessionState.conf.stringRedactionPattern, text)
+    Utils.redact(sparkSession.sessionState.conf.stringRedactionPattern, text)
   }
 
   /**

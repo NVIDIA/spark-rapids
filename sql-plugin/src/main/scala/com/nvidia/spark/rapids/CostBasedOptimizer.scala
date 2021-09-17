@@ -22,10 +22,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, GetStructField, WindowFrame, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftSemi}
 import org.apache.spark.sql.execution.{GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec, UnionExec}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, CustomShuffleReaderExec, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.aggregate.HashAggregateExec
-import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ShuffledHashJoinExec, SortMergeJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, StructType}
 
@@ -261,14 +260,7 @@ class CostBasedOptimizer extends Optimizer with Logging {
   private def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the
     // next operator on GPU in these cases
-    SQLConf.get.adaptiveExecutionEnabled && (plan.wrapped match {
-      case _: CustomShuffleReaderExec
-         | _: ShuffledHashJoinExec
-         | _: BroadcastHashJoinExec
-         | _: BroadcastExchangeExec
-         | _: BroadcastNestedLoopJoinExec => true
-      case _ => false
-    })
+    ShimLoader.getSparkShims.isExchangeOp(plan)
   }
 }
 

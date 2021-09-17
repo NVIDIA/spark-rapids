@@ -19,13 +19,14 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{GenerateExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{GenerateExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuCreateArray
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -441,7 +442,7 @@ case class GpuGenerateExec(
     requiredChildOutput: Seq[Attribute],
     outer: Boolean,
     generatorOutput: Seq[Attribute],
-    child: SparkPlan) extends UnaryExecNode with GpuExec {
+    child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   import GpuMetric._
 

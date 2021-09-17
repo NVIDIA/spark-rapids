@@ -21,6 +21,7 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD
@@ -28,11 +29,12 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RoundRobinPartitioning}
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuShuffleDependency, GpuShuffleEnv}
+import org.apache.spark.sql.rapids.GpuShuffleDependency
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
@@ -71,13 +73,20 @@ class GpuShuffleMeta(
   //    apply the same type overriding as its child plan: the partial Aggregate.
   override protected val useOutputAttributesOfChild: Boolean = true
 
+  // For transparent plan like ShuffleExchange, the accessibility of runtime data transition is
+  // depended on the next non-transparent plan. So, we need to trace back.
+  override val availableRuntimeDataTransition: Boolean =
+    childPlans.head.availableRuntimeDataTransition
+
   override def tagPlanForGpu(): Unit = {
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this exchange can run on GPU
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
 
     shuffle.outputPartitioning match {
-      case _: RoundRobinPartitioning if shuffle.sqlContext.conf.sortBeforeRepartition =>
+      case _: RoundRobinPartitioning
+        if ShimLoader.getSparkShims.sessionFromPlan(shuffle).sessionState.conf
+            .sortBeforeRepartition =>
         val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
         shuffle.output.map(_.dataType)
             .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
@@ -86,6 +95,17 @@ class GpuShuffleMeta(
                   s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")
             }
       case _ =>
+    }
+
+    // When AQE is enabled, we need to preserve meta data as outputAttributes and
+    // availableRuntimeDataTransition to the spark plan for the subsequent query stages.
+    // These meta data will be fetched in the SparkPlanMeta of CustomShuffleReaderExec.
+    if (wrapped.getTagValue(GpuShuffleMeta.shuffleExOutputAttributes).isEmpty) {
+      wrapped.setTagValue(GpuShuffleMeta.shuffleExOutputAttributes, outputAttributes)
+    }
+    if (wrapped.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition).isEmpty) {
+      wrapped.setTagValue(GpuShuffleMeta.availableRuntimeDataTransition,
+        availableRuntimeDataTransition)
     }
   }
 
@@ -96,6 +116,14 @@ class GpuShuffleMeta(
       Some(shuffle))
 }
 
+object GpuShuffleMeta {
+
+  val shuffleExOutputAttributes = TreeNodeTag[Seq[Attribute]](
+    "rapids.gpu.shuffleExOutputAttributes")
+
+  val availableRuntimeDataTransition = TreeNodeTag[Boolean](
+    "rapids.gpu.availableRuntimeDataTransition")
+}
 
 /**
  * Performs a shuffle that will result in the desired partitioning.
@@ -119,7 +147,7 @@ abstract class GpuShuffleExchangeExecBaseWithMetrics(
  */
 abstract class GpuShuffleExchangeExecBase(
     override val outputPartitioning: Partitioning,
-    child: SparkPlan) extends Exchange with GpuExec {
+    child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   private lazy val useRapidsShuffle = {
@@ -230,7 +258,8 @@ object GpuShuffleExchangeExec {
     val newRdd = if (isRoundRobin && SQLConf.get.sortBeforeRepartition) {
       val shim = ShimLoader.getSparkShims
       val boundReferences = outputAttributes.zipWithIndex.map { case (attr, index) =>
-        shim.sortOrder(GpuBoundReference(index, attr.dataType, attr.nullable), Ascending)
+        shim.sortOrder(GpuBoundReference(index, attr.dataType,
+          attr.nullable)(attr.exprId, attr.name), Ascending)
         // Force the sequence to materialize so we don't have issues with serializing too much
       }.toArray.toSeq
       val sorter = new GpuSorter(boundReferences, outputAttributes)

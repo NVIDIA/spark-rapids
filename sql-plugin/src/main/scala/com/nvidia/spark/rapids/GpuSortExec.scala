@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -29,7 +30,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -51,6 +52,11 @@ class GpuSortMeta(
   // GpuSortAggregateExec.
   override protected val useOutputAttributesOfChild: Boolean = true
 
+  // For transparent plan like ShuffleExchange, the accessibility of runtime data transition is
+  // depended on the next non-transparent plan. So, we need to trace back.
+  override val availableRuntimeDataTransition: Boolean =
+    childPlans.head.availableRuntimeDataTransition
+
   override def convertToGpu(): GpuExec = {
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
@@ -64,7 +70,7 @@ case class GpuSortExec(
     global: Boolean,
     child: SparkPlan,
     sortType: SortExecType)
-  extends UnaryExecNode with GpuExec {
+  extends ShimUnaryExecNode with GpuExec {
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
     case FullSortSingleBatch => Seq(RequireSingleBatch)

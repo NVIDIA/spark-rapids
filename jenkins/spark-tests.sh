@@ -34,8 +34,9 @@ $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
+# TODO - this is now spark version specific, hardcode to spark301 for now
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
+    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=spark301
 if [ "$CUDA_CLASSIFIER"x == x ];then
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
 else
@@ -43,12 +44,14 @@ else
 fi
 export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
-RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
+# TODO - this doesn't seem to be used, leaving just in case script in another repo that I'm missing
+RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-spark301.jar"
 
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=pytest -Dpackaging=tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
+# The version of pytest.tar.gz that is uploaded is the one built against spark301 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
@@ -132,7 +135,7 @@ run_test() {
 
       cache_serializer)
         SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
-        --conf spark.sql.cache.serializer=com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer" \
+        --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer" \
           ./run_pyspark_from_build.sh -k cache_test
         ;;
 
@@ -171,7 +174,8 @@ else
 fi
 # cudf_udf_test
 run_test cudf_udf_test
-# only run cache tests with our serializer in nightly test for Spark version >= 3.1.1
+
+# Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
 if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
   run_test cache_serializer
 fi

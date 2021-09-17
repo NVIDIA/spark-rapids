@@ -29,6 +29,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.types.DataType
 
 trait DataFromReplacementRule {
@@ -153,6 +154,13 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childParts.foreach(_.recursiveSparkPlanRemoved())
     childScans.foreach(_.recursiveSparkPlanRemoved())
     childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
+  }
+
+  final def inputFilePreventsRunningOnGpu(): Unit = {
+    if (canThisBeReplaced) {
+      willNotWorkOnGpu("Removed by InputFileBlockRule preventing plans " +
+        "[SparkPlan(with input_file_xxx), FileScan) running on GPU")
+    }
   }
 
   /**
@@ -609,7 +617,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       !childPlans.exists(_.canThisBeReplaced) &&
         (plan.conf.adaptiveExecutionEnabled ||
         !parent.exists(_.canThisBeReplaced))) {
+
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
+
+      childPlans.head.wrapped
+          .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
+        wrapped.setTagValue(GpuOverrides.preRowToColProjection, r2c)
+      }
     }
   }
 
@@ -629,7 +643,14 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // have to be very careful to avoid loops in the rules.
 
     // RULES:
-    // 1) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
+    // 1) If file scan plan runs on the CPU, and the following plans run on GPU, then
+    // GpuRowToColumnar will be inserted. GpuRowToColumnar will invalid input_file_xxx operations,
+    // So input_file_xxx in the following GPU operators will get empty value.
+    // InputFileBlockRule is to prevent the SparkPlans
+    // [SparkPlan (with first input_file_xxx expression), FileScan) to run on GPU
+    InputFileBlockRule.apply(this.asInstanceOf[SparkPlanMeta[SparkPlan]])
+
+    // 2) For ShuffledHashJoin and SortMergeJoin we need to verify that all of the exchanges
     // feeding them are either all on the GPU or all on the CPU, because the hashing is not
     // consistent between the two implementations. This is okay because it is only impacting
     // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on
@@ -712,14 +733,16 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case None if useOutputAttributesOfChild =>
       require(wrapped.children.length == 1,
         "useOutputAttributesOfChild ONLY works on UnaryPlan")
-      // We will check whether the child plan can be replaced or not. We only pass through the
-      // outputAttributes of the child plan when it is GPU enabled. Otherwise, we should fetch the
-      // outputAttributes from the wrapped plan, because type overriding of RapidsMeta is
-      // specialized for the GPU runtime.
+      // We pass through the outputAttributes of the child plan only if it will be really applied
+      // in the runtime. We can pass through either if child plan can be replaced by GPU overrides;
+      // or if child plan is available for runtime type conversion. The later condition indicates
+      // the CPU to GPU data transition will be introduced as the pre-processing of the adjacent
+      // GpuRowToColumnarExec, though the child plan can't produce output attributes for GPU.
+      // Otherwise, we should fetch the outputAttributes from the wrapped plan.
       //
       // We can safely call childPlan.canThisBeReplaced here, because outputAttributes is called
-      // via tagSelfForGpu. At this point, tagging of the child plan has already happened.
-      if (childPlans.head.canThisBeReplaced) {
+      // via tagSelfForGpu. At this point, tagging of the child plan has already taken place.
+      if (childPlans.head.canThisBeReplaced || childPlans.head.availableRuntimeDataTransition) {
         childPlans.head.outputAttributes
       } else {
         wrapped.output
@@ -737,6 +760,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * Whether to pass through the outputAttributes of childPlan's meta, only for UnaryPlan
    */
   protected val useOutputAttributesOfChild: Boolean = false
+
+  /**
+   * Whether there exists runtime data transition for the wrapped plan, if true, the overriding
+   * of output attributes will always work even when the wrapped plan can't be replaced by GPU
+   * overrides.
+   */
+  val availableRuntimeDataTransition: Boolean = false
 }
 
 /**
@@ -1105,6 +1135,29 @@ abstract class TypedImperativeAggExprMeta[INPUT <: TypedImperativeAggregate[_]](
    * overriding.
    */
   def aggBufferAttribute: AttributeReference
+
+  /**
+   * Returns a buffer converter who can generate a Expression to transform the aggregation buffer
+   * of wrapped function from CPU format to GPU format. The conversion occurs on the CPU, so the
+   * generated expression should be a CPU Expression executed by row.
+   */
+  def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+    throw new NotImplementedError("The method should be implemented by specific functions")
+
+  /**
+   * Returns a buffer converter who can generate a Expression to transform the aggregation buffer
+   * of wrapped function from GPU format to CPU format. The conversion occurs on the CPU, so the
+   * generated expression should be a CPU Expression executed by row.
+   */
+  def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+    throw new NotImplementedError("The method should be implemented by specific functions")
+
+  /**
+   * Whether buffers of current Aggregate is able to be converted from CPU to GPU format and
+   * reversely in runtime. If true, it assumes both createCpuToGpuBufferConverter and
+   * createGpuToCpuBufferConverter are implemented.
+   */
+  val supportBufferConversion: Boolean = false
 }
 
 /**

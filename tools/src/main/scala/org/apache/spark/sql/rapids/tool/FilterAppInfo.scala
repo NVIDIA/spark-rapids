@@ -19,12 +19,14 @@ package org.apache.spark.sql.rapids.tool
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import org.apache.hadoop.conf.Configuration
 
-import org.apache.spark.scheduler.{SparkListenerApplicationStart, SparkListenerEvent}
+import org.apache.spark.scheduler.{SparkListenerApplicationStart, SparkListenerEnvironmentUpdate, SparkListenerEvent}
 
 case class ApplicationStartInfo(
     appName: String,
     startTime: Long,
     userName: String)
+
+case class EnvironmentInfo(configName: Map[String, String])
 
 class FilterAppInfo(
     numOutputRows: Int,
@@ -39,15 +41,28 @@ class FilterAppInfo(
       event.time,
       event.sparkUser
     )
-    appInfo = Some(thisAppInfo)
+    appStartInfo = Some(thisAppInfo)
   }
 
-  var appInfo: Option[ApplicationStartInfo] = None
+  def doSparkListenerEnvironmentUpdate(event: SparkListenerEnvironmentUpdate): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    val envSparkProperties = event.environmentDetails("Spark Properties").toMap
+    sparkProperties = Some(EnvironmentInfo(envSparkProperties))
+  }
+
+  var appStartInfo: Option[ApplicationStartInfo] = None
+  var sparkProperties: Option[EnvironmentInfo] = None
+  // We are currently processing 2 events. This is used as counter to send true when both the
+  // event are processed so that we can stop processing further events.
+  var eventsToProcess: Int = 2
 
   override def processEvent(event: SparkListenerEvent): Boolean = {
     if (event.isInstanceOf[SparkListenerApplicationStart]) {
       doSparkListenerApplicationStart(event.asInstanceOf[SparkListenerApplicationStart])
-      true
+      (eventsToProcess -= 1) == 0
+    } else if (event.isInstanceOf[SparkListenerEnvironmentUpdate]) {
+      doSparkListenerEnvironmentUpdate(event.asInstanceOf[SparkListenerEnvironmentUpdate])
+      (eventsToProcess -= 1) == 0
     } else {
       false
     }

@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.udf
 
-import com.nvidia.spark.rapids.RapidsConf
+import scala.util.control.NonFatal
+
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
@@ -25,7 +27,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.types.DataType
 
-case class GpuScalaUDFLogical(udf: ScalaUDF) extends Expression with Logging {
+case class GpuScalaUDFLogical(udf: ScalaUDF) extends ShimExpression with Logging {
   override def nullable: Boolean = udf.nullable
 
   override def eval(input: InternalRow): Any = {
@@ -50,10 +52,15 @@ case class GpuScalaUDFLogical(udf: ScalaUDF) extends Expression with Logging {
       }
     } catch {
       case e: SparkException =>
-        logDebug("UDF compilation failure: " + e)
+        val udfName = udf.udfName.getOrElse("<unknown>")
+        logDebug(s"UDF $udfName compilation failure: $e")
         if (isTestEnabled) {
           throw e
         }
+        udf
+      case NonFatal(e) =>
+        val udfName = udf.udfName.getOrElse("<unknown>")
+        logWarning(s"Unable to translate UDF $udfName: $e")
         udf
     }
   }

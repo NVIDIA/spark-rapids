@@ -25,7 +25,6 @@ import ai.rapids.cudf.NvtxColor;
 import ai.rapids.cudf.NvtxRange;
 import ai.rapids.cudf.Table;
 import org.apache.spark.TaskContext;
-import org.apache.spark.sql.catalyst.CudfUnsafeRow;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
 import org.apache.spark.sql.types.DataType;

@@ -105,8 +105,7 @@ def test_sortmerge_join(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type)
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(_sortmerge_join_conf)
+    conf = copy_and_update(_sortmerge_join_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
@@ -117,8 +116,7 @@ def test_sortmerge_join_array(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
         return left.join(right, left.key == right.r_key, join_type)
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(_sortmerge_join_conf)
+    conf = copy_and_update(_sortmerge_join_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
@@ -129,8 +127,7 @@ def test_sortmerge_join_map(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
         return left.join(right, left.key == right.r_key, join_type)
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(_sortmerge_join_conf)
+    conf = copy_and_update(_sortmerge_join_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # For floating point values the normalization is done using a higher order function. We could probably work around this
@@ -154,8 +151,7 @@ def test_sortmerge_join_struct(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
         return left.join(right, left.key == right.r_key, join_type)
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(_sortmerge_join_conf)
+    conf = copy_and_update(_sortmerge_join_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # For spark to insert a shuffled hash join it has to be enabled with
@@ -249,19 +245,20 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(right)
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
@@ -270,13 +267,13 @@ def test_cartesian_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 250)
         return left.crossJoin(right).selectExpr('COUNT(*)')
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.xfail(condition=is_databricks_runtime(),
     reason='https://github.com/NVIDIA/spark-rapids/issues/334')
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
@@ -285,13 +282,13 @@ def test_cartesian_join_special_case_group_by(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(right).groupBy('a').count()
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join_with_condition(data_gen, batch_size):
@@ -302,8 +299,7 @@ def test_cartesian_join_with_condition(data_gen, batch_size):
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
         return left.join(right, left.b >= right.r_b, "cross")
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(_sortmerge_join_conf)
+    conf = copy_and_update(_sortmerge_join_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -315,8 +311,7 @@ def test_broadcast_nested_loop_join(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(broadcast(right))
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -328,8 +323,7 @@ def test_broadcast_nested_loop_join_special_case_count(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(broadcast(right)).selectExpr('COUNT(*)')
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -343,8 +337,7 @@ def test_broadcast_nested_loop_join_special_case_group_by(data_gen, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
         return left.crossJoin(broadcast(right)).groupBy('a').count()
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -361,8 +354,7 @@ def test_right_broadcast_nested_loop_join_with_ast_condition(data_gen, join_type
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
         return left.join(broadcast(right), (left.b >= right.r_b), join_type)
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
@@ -378,14 +370,13 @@ def test_left_broadcast_nested_loop_join_with_ast_condition(data_gen, batch_size
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
         return broadcast(left).join(right, (left.b >= right.r_b), 'Right')
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Inner', 'Cross'], ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_type, batch_size):
@@ -395,26 +386,25 @@ def test_broadcast_nested_loop_join_with_condition_post_filter(data_gen, join_ty
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
-        # AST does not support logical AND, so this must be implemented as a post-filter
-        return left.join(broadcast(right), (left.a >= right.r_a) & (left.b >= right.r_b), join_type)
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
-    conf.update(allow_negative_scale_of_decimal_conf)
+        # AST does not support cast or logarithm yet, so this must be implemented as a post-filter
+        return left.join(broadcast(right), left.a > f.log(right.r_a), join_type)
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-@allow_non_gpu('And', 'BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'CheckOverflow', 'Divide', 'GreaterThanOrEqual')
+@allow_non_gpu('BroadcastExchangeExec', 'BroadcastNestedLoopJoinExec', 'Cast', 'GreaterThan', 'Log')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', [IntegerGen(), LongGen(), pytest.param(FloatGen(), marks=[incompat]), pytest.param(DoubleGen(), marks=[incompat])], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'FullOuter', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
-        # AST does not support logical AND yet
-        return broadcast(left).join(right, (left.a >= right.r_a) & (left.b >= right.r_b), join_type)
+        # AST does not support cast or logarithm yet
+        return broadcast(left).join(right, left.a > f.log(right.r_a), join_type)
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_fallback_collect(do_join, 'BroadcastNestedLoopJoinExec', conf=conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     def do_join(spark):
@@ -423,12 +413,14 @@ def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type)
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
-        return left.join(broadcast(right), how=join_type)
+        # Compute the distinct of the join result to verify the join produces a proper dataframe
+        # for downstream processing.
+        return left.join(broadcast(right), how=join_type).distinct()
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
 def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
     def do_join(spark):
@@ -437,12 +429,12 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
         # if the sizes are large enough to have both 0.0 and -0.0 show up 500 and 250
         # but these take a long time to verify so we run with smaller numbers by default
         # that do not expose the error
-        return broadcast(left).join(right, how=join_type)
+        # Compute the distinct of the join result to verify the join produces a proper dataframe
+        # for downstream processing.
+        return broadcast(left).join(right, how=join_type).distinct()
     conf = allow_negative_scale_of_decimal_conf
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
-@pytest.mark.xfail(condition=is_databricks_runtime(),
-                   reason='https://github.com/NVIDIA/spark-rapids/issues/3244')
 @pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):

@@ -251,6 +251,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         children[i] = convertFrom(fields[i].dataType(), fields[i].nullable());
       }
       return new HostColumnVector.StructType(nullable, children);
+    } else if (spark instanceof BinaryType) {
+      return new HostColumnVector.ListType(nullable, convertFrom(DataTypes.ByteType, false));
     } else {
       // Only works for basic types
       return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
@@ -474,6 +476,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof BinaryType) {
+      return DType.LIST;
     } else if (type instanceof NullType) {
       // INT8 is used for both in this case
       return DType.INT8;
@@ -861,8 +865,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   /**
    * Creates a cudf ColumnVector where the elements are filled with nulls.
-   *
-   * NOTE: Besides the non-nested types, the array type is supported.
    *
    * @param count the row number of the output column
    * @param sparkType the expected data type of the output column

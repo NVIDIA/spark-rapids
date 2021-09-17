@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.util
 import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
@@ -29,7 +28,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
-import org.apache.spark.sql.{DataFrame, SparkSessionExtensions}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
@@ -43,30 +42,12 @@ class PluginException(msg: String) extends RuntimeException(msg)
 case class CudfVersionMismatchException(errorMsg: String) extends PluginException(errorMsg)
 
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
-  val overrides: Rule[SparkPlan] = GpuOverrides()
-  val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
+  lazy val overrides: Rule[SparkPlan] = GpuOverrides()
+  lazy val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
 
   override def preColumnarTransitions : Rule[SparkPlan] = overrides
 
   override def postColumnarTransitions: Rule[SparkPlan] = overrideTransitions
-}
-
-/**
- * Extension point to enable GPU SQL processing.
- */
-class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
-  override def apply(extensions: SparkSessionExtensions): Unit = {
-    val pluginProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
-    logInfo(s"RAPIDS Accelerator build: $pluginProps")
-    val cudfProps = RapidsPluginUtils.loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
-    logInfo(s"cudf build: $cudfProps")
-    val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
-    val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
-    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
-      s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
-    extensions.injectColumnar(_ => ColumnarOverrideRules())
-    extensions.injectQueryStagePrepRule(_ => GpuQueryStagePrepOverrides())
-  }
 }
 
 object RapidsPluginUtils extends Logging {
@@ -81,6 +62,17 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_SERIALIZER_NAME = classOf[KryoSerializer].getName
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
+
+  {
+    val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
+    logInfo(s"RAPIDS Accelerator build: $pluginProps")
+    val cudfProps = loadProps(RapidsPluginUtils.CUDF_PROPS_FILENAME)
+    logInfo(s"cudf build: $cudfProps")
+    val pluginVersion = pluginProps.getProperty("version", "UNKNOWN")
+    val cudfVersion = cudfProps.getProperty("version", "UNKNOWN")
+    logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion." +
+        s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
+  }
 
   def fixupConfigs(conf: SparkConf): Unit = {
     // First add in the SQL executor plugin because that is what we need at a minimum
@@ -151,13 +143,12 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     }
   }
 
-  override def init(sc: SparkContext, pluginContext: PluginContext): util.Map[String, String] = {
+  override def init(
+    sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
-    if (conf.shimsProviderOverride.isDefined) {
-      ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
-    }
+
     if (GpuShuffleEnv.isRapidsShuffleAvailable &&
         conf.shuffleTransportEarlyStart) {
       rapidsShuffleHeartbeatManager =
@@ -177,12 +168,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def init(
       pluginContext: PluginContext,
-      extraConf: util.Map[String, String]): Unit = {
+      extraConf: java.util.Map[String, String]): Unit = {
     try {
       val conf = new RapidsConf(extraConf.asScala.toMap)
-      if (conf.shimsProviderOverride.isDefined) {
-        ShimLoader.setSparkShimProviderClass(conf.shimsProviderOverride.get)
-      }
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
@@ -198,6 +186,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             conf.shuffleTransportEarlyStart) {
           logInfo("Initializing shuffle manager heartbeats")
           rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
         }
       }
 
@@ -314,6 +303,7 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
+
     val gpuPlan = getResultWithTimeout(timeoutMs=timeoutMs)
     assert(gpuPlan.isDefined, "Did not capture a GPU plan")
     assertDidFallBack(gpuPlan.get, fallbackCpuClass)
@@ -353,15 +343,17 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
-    !exp.isInstanceOf[GpuExpression] &&
+    !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
       PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
       exp.children.exists(didFallBack(_, fallbackCpuClass))
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
+    ShimLoader.getSparkShims.getSparkShimVersion.toString
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
-    !executedPlan.isInstanceOf[GpuExec] && PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
-      executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
+    !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
+    PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
+    executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
   private def containsExpression(exp: Expression, className: String): Boolean = {

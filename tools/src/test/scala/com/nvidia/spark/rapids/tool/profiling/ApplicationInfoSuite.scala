@@ -129,8 +129,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(rapidsJar.size == 1, "Rapids jar check")
     assert(cuDFJar.size == 1, "CUDF jar check")
 
-    val collect = new CollectInformation(apps, None, 1000)
-    val rapidsJarResults = collect.printRapidsJAR()
+    val collect = new CollectInformation(apps)
+    val rapidsJarResults = collect.getRapidsJARInfo
     assert(rapidsJarResults.size === 2)
     assert(rapidsJarResults.filter(_.jar.contains("rapids-4-spark_2.12-0.5.0.jar")).size === 1)
     assert(rapidsJarResults.filter(_.jar.contains("cudf-0.19.2-cuda11.jar")).size === 1)
@@ -186,8 +186,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
 
-    val collect = new CollectInformation(apps, None, 1000)
-    val sqlMetrics = collect.printSQLPlanMetrics()
+    val collect = new CollectInformation(apps)
+    val sqlMetrics = collect.getSQLPlanMetrics
     val resultExpectation =
       new File(expRoot, "rapids_join_eventlog_sqlmetrics_expectation.csv")
     assert(sqlMetrics.size == 83)
@@ -210,10 +210,9 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         index += 1
       }
       assert(apps.size == 1)
-      val collect = new CollectInformation(apps, None, 1000)
-      collect.printSQLPlans(tempOutputDir.getAbsolutePath)
-      val dotDirs = ToolTestUtils.listFilesMatching(tempOutputDir,
-        _.endsWith("planDescriptions.log"))
+      CollectInformation.printSQLPlans(apps, tempOutputDir.getAbsolutePath)
+      val outputDir = new File(tempOutputDir, apps.head.appId)
+      val dotDirs = ToolTestUtils.listFilesMatching(outputDir, _.endsWith("planDescriptions.log"))
       assert(dotDirs.length === 1)
     }
   }
@@ -231,8 +230,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         index += 1
       }
       assert(apps.size == 1)
-      val collect = new CollectInformation(apps, None, 1000)
-      val dsRes = collect.printDataSourceInfo()
+      val collect = new CollectInformation(apps)
+      val dsRes = collect.getDataSourceInfo
       assert(dsRes.size == 7)
       val allFormats = dsRes.map { r =>
         r.format
@@ -267,8 +266,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       }
 
       assert(apps.size == 1)
-      val collect = new CollectInformation(apps, None, 1000)
-      val dsRes = collect.printDataSourceInfo()
+      val collect = new CollectInformation(apps)
+      val dsRes = collect.getDataSourceInfo
       assert(dsRes.size == 9)
       val allFormats = dsRes.map { r =>
         r.format
@@ -304,8 +303,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 1)
-    val collect = new CollectInformation(apps, None, 1000)
-    val jobInfo = collect.printJobInfo()
+    val collect = new CollectInformation(apps)
+    val jobInfo = collect.getJobInfo
 
     assert(jobInfo.size == 2)
     val firstRow = jobInfo.head
@@ -361,8 +360,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 2)
-    val collect = new CollectInformation(apps, None, 1000)
-    val execInfos = collect.printExecutorInfo()
+    val collect = new CollectInformation(apps)
+    val execInfos = collect.getExecutorInfo
     // just the fact it worked makes sure we can run with both files
     // since we give them indexes above they should be in the right order
     // and spark2 event info should be second
@@ -487,10 +486,10 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       index += 1
     }
     assert(apps.size == 1)
-    val collect = new CollectInformation(apps, None, 1000)
+    val collect = new CollectInformation(apps)
     for (app <- apps) {
-      val props = collect.printRapidsProperties()
-      val rows = props.map(_.head)
+      val props = collect.getRapidsProperties
+      val rows = props.map(_.rows.head)
       assert(rows.length == 5) // 5 properties captured.
       // verify  ucx parameters are captured.
       assert(rows.contains("spark.executorEnv.UCX_RNDV_SCHEME"))
@@ -513,8 +512,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
 
-    val collect = new CollectInformation(apps, None, 1000)
-    val execInfo = collect.printExecutorInfo()
+    val collect = new CollectInformation(apps)
+    val execInfo = collect.getExecutorInfo
     assert(execInfo.size == 1)
     assert(execInfo.head.numExecutors === 1)
     assert(execInfo.head.maxMem === 16991335219L)
@@ -533,10 +532,124 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
     assert(apps.size == 1)
 
-    val collect = new CollectInformation(apps, None, 1000)
-    val execInfo = collect.printExecutorInfo()
+    val collect = new CollectInformation(apps)
+    val execInfo = collect.getExecutorInfo
     assert(execInfo.size == 1)
     assert(execInfo.head.numExecutors === 8)
     assert(execInfo.head.maxMem === 5538054144L)
+  }
+
+  test("test csv file output with failures") {
+    val eventLog = s"$logDir/tasks_executors_fail_compressed_eventlog.zstd"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--csv",
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog))
+      val exit = ProfileMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/application_1603128018386_7846")
+
+      // assert that a file was generated
+      val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+        f.endsWith(".csv")
+      })
+      assert(dotDirs.length === 12)
+      for (file <- dotDirs) {
+        assert(file.getAbsolutePath.endsWith(".csv"))
+        // just load each one to make sure formatted properly
+        val df = sparkSession.read.option("header", "true").csv(file.getAbsolutePath)
+        val res = df.collect()
+        assert(res.nonEmpty)
+      }
+    }
+  }
+
+  test("test csv file output gpu") {
+    val eventLog = s"$qualLogDir/udf_dataset_eventlog"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--csv",
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog))
+      val exit = ProfileMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/local-1621966649543")
+
+      // assert that a file was generated
+      val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+        f.endsWith(".csv")
+      })
+      assert(dotDirs.length === 10)
+      for (file <- dotDirs) {
+        assert(file.getAbsolutePath.endsWith(".csv"))
+        // just load each one to make sure formatted properly
+        val df = sparkSession.read.option("header", "true").csv(file.getAbsolutePath)
+        val res = df.collect()
+        assert(res.nonEmpty)
+      }
+    }
+  }
+
+  test("test csv file output compare mode") {
+    val eventLog1 = s"$logDir/rapids_join_eventlog.zstd"
+    val eventLog2 = s"$logDir/rapids_join_eventlog2.zstd"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--csv",
+        "-c",
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog1,
+        eventLog2))
+      val exit = ProfileMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/compare")
+
+      // assert that a file was generated
+      val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+        f.endsWith(".csv")
+      })
+      assert(dotDirs.length === 11)
+      for (file <- dotDirs) {
+        assert(file.getAbsolutePath.endsWith(".csv"))
+        // just load each one to make sure formatted properly
+        val df = sparkSession.read.option("header", "true").csv(file.getAbsolutePath)
+        val res = df.collect()
+        assert(res.nonEmpty)
+      }
+    }
+  }
+
+  test("test csv file output combined mode") {
+    val eventLog1 = s"$logDir/rapids_join_eventlog.zstd"
+    val eventLog2 = s"$logDir/rapids_join_eventlog2.zstd"
+    TrampolineUtil.withTempDir { tempDir =>
+      val appArgs = new ProfileArgs(Array(
+        "--csv",
+        "--combined",
+        "--output-directory",
+        tempDir.getAbsolutePath,
+        eventLog1,
+        eventLog2))
+      val exit = ProfileMain.mainInternal(appArgs)
+      assert(exit == 0)
+      val tempSubDir = new File(tempDir, s"${Profiler.SUBDIR}/combined")
+
+      // assert that a file was generated
+      val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+        f.endsWith(".csv")
+      })
+      assert(dotDirs.length === 9)
+      for (file <- dotDirs) {
+        assert(file.getAbsolutePath.endsWith(".csv"))
+        // just load each one to make sure formatted properly
+        val df = sparkSession.read.option("header", "true").csv(file.getAbsolutePath)
+        val res = df.collect()
+        assert(res.nonEmpty)
+      }
+    }
   }
 }

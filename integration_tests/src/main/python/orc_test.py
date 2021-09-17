@@ -20,6 +20,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_spark_session
+from parquet_test import _nested_pruning_schemas
 
 def read_orc_df(data_path):
     return lambda spark : spark.read.orc(data_path)
@@ -39,9 +40,9 @@ reader_opt_confs = [original_orc_file_reader_conf, multithreaded_orc_file_reader
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, reader_confs):
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                      'spark.sql.orc.impl': orc_impl})
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.orc.impl': orc_impl})
     assert_gpu_and_cpu_are_equal_collect(
             read_func(std_input_path + '/' + name),
             conf=all_confs)
@@ -58,16 +59,47 @@ orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
     TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))] + decimal_gens_no_neg
 
+orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
+
 # Some array gens, but not all because of nesting
 orc_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens] + [
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
     ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
-    ArrayGen(ArrayGen(decimal_gen_default, max_length=10), max_length=10)]
+    ArrayGen(ArrayGen(decimal_gen_default, max_length=10), max_length=10),
+    ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+# Some struct gens, but not all because of nesting.
+# No empty struct gen because it leads to an error as below.
+#   '''
+#     E               pyspark.sql.utils.AnalysisException:
+#     E               Datasource does not support writing empty or nested empty schemas.
+#     E               Please make sure the data schema has at least one or more column(s).
+#   '''
+orc_struct_gens_sample = [orc_basic_struct_gen,
+    StructGen([['child0', byte_gen], ['child1', orc_basic_struct_gen]]),
+    StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+orc_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
+    BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
+    lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
+    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable)]]
+
+# Some map gens, but not all because of nesting
+orc_map_gens_sample = orc_basic_map_gens + [
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+    MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+    MapGen(StructGen([['child0', byte_gen], ['child1', long_gen]], nullable=False),
+           StructGen([['child0', byte_gen], ['child1', long_gen]]))]
 
 orc_gens_list = [orc_basic_gens,
     orc_array_gens_sample,
+    orc_struct_gens_sample,
+    orc_map_gens_sample,
     pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131')),
     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/131'))]
+
+flattened_orc_gens = orc_basic_gens + orc_array_gens_sample + orc_struct_gens_sample
 
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
@@ -88,6 +120,7 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
             conf={disable_conf: 'false',
                 "spark.sql.sources.useV1SourceList": "orc"})
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
@@ -97,8 +130,7 @@ def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_e
     data_path = spark_tmp_path + '/ORC_DATA'
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.orc(data_path))
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             read_func(data_path),
             conf=all_confs)
@@ -113,21 +145,24 @@ orc_pred_push_gens = [
         # timestamp_gen 
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gen', orc_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/ORC_DATA'
-    gen_list = [('a', RepeatSeqGen(orc_gen, 100)), ('b', orc_gen)]
+    # Append two struct columns to verify nested predicate pushdown.
+    gen_list = [('a', RepeatSeqGen(orc_gen, 100)), ('b', orc_gen),
+        ('s1', StructGen([['sa', orc_gen]])),
+        ('s2', StructGen([['sa', StructGen([['ssa', orc_gen]])]]))]
     s0 = gen_scalar(orc_gen, force_no_nulls=True)
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).orderBy('a').write.orc(data_path))
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     rf = read_func(data_path)
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: rf(spark).select(f.col('a') >= s0),
+            lambda spark: rf(spark).select(f.col('a') >= s0, f.col('s1.sa') >= s0, f.col('s2.sa.ssa') >= s0),
             conf=all_confs)
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
@@ -147,8 +182,7 @@ def test_mixed_compress_read(spark_tmp_path, v1_enabled_list, reader_confs):
                 conf={'spark.sql.orc.compression.codec': compress})
         data_pathes.append(data_path)
 
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_pathes),
             conf=all_confs)
@@ -161,8 +195,7 @@ def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, rea
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.orc(data_path),
             conf={'spark.sql.orc.compression.codec': compress})
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path),
             conf=all_confs)
@@ -186,8 +219,7 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.orc(third_data_path))
     data_path = spark_tmp_path + '/ORC_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path),
             conf=all_confs)
@@ -205,8 +237,7 @@ def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reade
     with_cpu_session(
             lambda spark : gen_df(spark, gen_list).write.orc(second_data_path))
     data_path = spark_tmp_path + '/ORC_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path).select("key"),
             conf=all_confs)
@@ -229,8 +260,7 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
     with_cpu_session(
             lambda spark : gen_df(spark, second_gen_list).write.orc(second_data_path))
     data_path = spark_tmp_path + '/ORC_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.option('mergeSchema', 'true').orc(data_path),
             conf=all_confs)
@@ -245,8 +275,34 @@ def test_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.orc(second_data_path))
     data_path = spark_tmp_path + '/ORC_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc(data_path)\
+                    .filter(f.col('a') > 0)\
+                    .selectExpr('a',
+                        'input_file_name()',
+                        'input_file_block_start()',
+                        'input_file_block_length()'),
+            conf=all_confs)
+
+@allow_non_gpu('ProjectExec', 'Alias', 'InputFileName', 'InputFileBlockStart', 'InputFileBlockLength',
+               'FilterExec', 'And', 'IsNotNull', 'GreaterThan', 'Literal',
+               'FileSourceScanExec', 'ColumnarToRowExec',
+               'BatchScanExec', 'OrcScan')
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.orc.enabled', 'spark.rapids.sql.format.orc.read.enabled'])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disable_conf):
+    first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, long_gen).write.orc(first_data_path))
+    second_data_path = spark_tmp_path + '/ORC_DATA/key=1'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, long_gen).write.orc(second_data_path))
+    data_path = spark_tmp_path + '/ORC_DATA'
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        disable_conf: 'false'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.orc(data_path)\
                     .filter(f.col('a') > 0)\
@@ -268,10 +324,9 @@ def setup_orc_file_no_column_names(spark, table_name):
 def test_missing_column_names(spark_tmp_table_factory, reader_confs):
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
-    all_confs = reader_confs.copy()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT _col3,_col2 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
 
 def setup_orc_file_with_column_names(spark, table_name):
     drop_query = "DROP TABLE IF EXISTS {}".format(table_name)
@@ -285,41 +340,100 @@ def setup_orc_file_with_column_names(spark, table_name):
 def test_disorder_read_schema(spark_tmp_table_factory, reader_confs):
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_with_column_names(spark, table_name))
-    all_confs = reader_confs.copy()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_2,c_1 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_3,c_1 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_3,c_2 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_1,c_3,c_2 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_1,c_2,c_3 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_2,c_1,c_3 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_2,c_3,c_1 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_3,c_1,c_2 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT c_3,c_2,c_1 FROM {}".format(table_name)),
-        all_confs)
+        reader_confs)
 
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_missing_column_names_filter(spark_tmp_table_factory, reader_confs):
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_no_column_names(spark, table_name))
-    all_confs = reader_confs.copy()
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT _col3,_col2 FROM {} WHERE _col2 = '155'".format(table_name)),
-        all_confs)
+        reader_confs)
+
+
+@pytest.mark.parametrize('data_gen,read_schema', _nested_pruning_schemas, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('nested_enabled', ["true", "false"])
+def test_read_nested_pruning(spark_tmp_path, data_gen, read_schema, reader_confs, v1_enabled_list, nested_enabled):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, data_gen).write.orc(data_path))
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.optimizer.nestedSchemaPruning.enabled': nested_enabled})
+    # This is a hack to get the type in a slightly less verbose way
+    rs = StructGen(read_schema, nullable=False).data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(rs).orc(data_path),
+            conf=all_confs)
+
+
+# This is for the corner case of reading only a struct column that has no nulls.
+# Then there will be no streams in a stripe connecting to this column (Its ROW_INDEX
+# streams have been pruned by the Plugin.), and CUDF throws an exception for such case.
+# Here is the tracking issue: 'https://github.com/rapidsai/cudf/issues/8878'. But it has
+# been fixed. Still keep the test here to have this corner case tested.
+def test_read_struct_without_stream(spark_tmp_path):
+    data_gen = StructGen([['c_byte', ByteGen(nullable=False)]], nullable=False)
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : unary_op_df(spark, data_gen, 10).write.orc(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.orc(data_path))
+
+
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+@pytest.mark.parametrize('case_sensitive', ["false", "true"])
+def test_read_with_more_columns(spark_tmp_path, orc_gen, reader_confs, v1_enabled_list, case_sensitive):
+    struct_gen = StructGen([('nested_col', orc_gen)])
+    # Map is not supported yet.
+    gen_list = [("top_pri", orc_gen),
+                ("top_st", struct_gen),
+                ("top_ar", ArrayGen(struct_gen, max_length=10))]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.orc(data_path))
+    all_confs = reader_confs.copy()
+    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.caseSensitive': case_sensitive})
+    # This is a hack to get the type in a slightly less verbose way
+    extra_struct_gen = StructGen([('nested_col', orc_gen), ("nested_non_existing", orc_gen)])
+    extra_gen_list = [("top_pri", orc_gen),
+                      ("top_non_existing_mid", orc_gen),
+                      ("TOP_AR", ArrayGen(extra_struct_gen, max_length=10)),
+                      ("top_ST", extra_struct_gen),
+                      ("top_non_existing_end", orc_gen)]
+    rs = StructGen(extra_gen_list, nullable=False).data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.schema(rs).orc(data_path),
+            conf=all_confs)

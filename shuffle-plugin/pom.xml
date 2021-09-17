@@ -42,22 +42,23 @@
             <artifactId>scala-library</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
           <groupId>org.openucx</groupId>
           <artifactId>jucx</artifactId>
           <version>1.11</version>
           <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
         <profile>
-            <id>default</id>
+            <id>with-classifier</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
@@ -65,12 +66,6 @@
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                </dependency>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
                 </dependency>
             </dependencies>
         </profile>
@@ -103,35 +98,33 @@
                 </dependency>
             </dependencies>
         </profile>
-        <profile>
-            <id>with-classifier</id>
+       <profile>
+            <!--
+                 Note that we are using the Spark version for all of the Databricks dependencies as well.
+                 The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                 This is to make it easier and not have to change version numbers for each individual dependency
+                 and deal with differences between Databricks versions
+            -->
+            <id>dbdeps</id>
             <activation>
-                <property><name>buildver</name></property>
+                <property>
+                    <name>databricks</name>
+                </property>
             </activation>
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <classifier>${spark.version.classifier}</classifier>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-core_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                        <configuration>
-                            <classifier>${spark.version.classifier}</classifier>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
     </profiles>
 
@@ -152,6 +145,13 @@
           </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <classifier>${spark.version.classifier}</classifier>
+                </configuration>
+            </plugin>
             <plugin>
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
@@ -192,10 +192,6 @@
             <plugin>
                 <groupId>org.apache.rat</groupId>
                 <artifactId>apache-rat-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.scalastyle</groupId>
-                <artifactId>scalastyle-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

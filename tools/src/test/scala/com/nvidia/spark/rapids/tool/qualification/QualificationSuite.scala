@@ -19,10 +19,11 @@ package com.nvidia.spark.rapids.tool.qualification
 import java.io.File
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
+import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
@@ -30,7 +31,7 @@ import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, S
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
+import org.apache.spark.sql.rapids.tool.qualification.{QualAppInfo, QualificationSummaryInfo}
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -64,6 +65,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     .add("Read Score Percent", IntegerType, true)
     .add("Read File Format Score", DoubleType, true)
     .add("Unsupported Read File Formats and Types", StringType, true)
+    .add("Unsupported Write Data Format", StringType, true)
+    .add("Complex Types", StringType, true)
+    .add("Unsupported Nested Complex Types", StringType, true)
 
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
@@ -338,6 +342,66 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
   }
 
+  test("test event log write format") {
+    val logFiles = Array(s"$logDir/writeformat_eventlog")
+    runQualificationTest(logFiles, "write_format_expectation.csv")
+  }
+
+  test("test event log nested types in ReadSchema") {
+    val logFiles = Array(s"$logDir/nested_type_eventlog")
+    runQualificationTest(logFiles, "nested_type_expectation.csv")
+  }
+
+  // this tests parseReadSchema by passing different schemas as strings. Schemas
+  // with complex types, complex nested types, decimals and simple types
+  test("test different types in ReadSchema") {
+    val testSchemas: ArrayBuffer[ArrayBuffer[String]] = ArrayBuffer(
+      ArrayBuffer(""),
+      ArrayBuffer("firstName:string,lastName:string", "", "address:string"),
+      ArrayBuffer("properties:map<string,string>"),
+      ArrayBuffer("name:array<string>"),
+      ArrayBuffer("name:string,booksInterested:array<struct<name:string,price:decimal(8,2)," +
+          "author:string,pages:int>>,authbook:array<map<name:string,author:string>>, " +
+          "pages:array<array<struct<name:string,pages:int>>>,name:string,subject:string"),
+      ArrayBuffer("name:struct<fn:string,mn:array<string>,ln:string>," +
+          "add:struct<cur:struct<st:string,city:string>," +
+          "previous:struct<st:map<string,string>,city:string>>," +
+          "next:struct<fn:string,ln:string>"),
+      ArrayBuffer("name:map<id:int,map<fn:string,ln:string>>, " +
+          "address:map<id:int,struct<st:string,city:string>>," +
+          "orders:map<id:int,order:array<map<oname:string,oid:int>>>," +
+          "status:map<name:string,active:string>")
+    )
+
+    var index = 0
+    val expectedResult = List(
+      ("", ""),
+      ("", ""),
+      ("map<string;string>", ""),
+      ("array<string>", ""),
+      ("array<struct<name:string;price:decimal(8;2);author:string;pages:int>>;" +
+          "array<map<name:string;author:string>>;array<array<struct<name:string;pages:int>>>",
+          "array<struct<name:string;price:decimal(8;2);author:string;pages:int>>;" +
+              "array<map<name:string;author:string>>;array<array<struct<name:string;pages:int>>>"),
+      ("struct<fn:string;mn:array<string>;ln:string>;" +
+          "struct<cur:struct<st:string;city:string>;previous:struct<st:map<string;string>;" +
+          "city:string>>;struct<fn:string;ln:string>",
+          "struct<fn:string;mn:array<string>;ln:string>;" +
+              "struct<cur:struct<st:string;city:string>;previous:struct<st:map<string;string>;" +
+              "city:string>>"),
+      ("map<id:int;map<fn:string;ln:string>>;map<id:int;struct<st:string;city:string>>;" +
+          "map<id:int;order:array<map<oname:string;oid:int>>>;map<name:string;active:string>",
+          "map<id:int;map<fn:string;ln:string>>;map<id:int;struct<st:string;city:string>>;" +
+              "map<id:int;order:array<map<oname:string;oid:int>>>"))
+
+    val result = testSchemas.map(x => QualAppInfo.parseReadSchemaForNestedTypes(x))
+    result.foreach { actualResult =>
+      assert(actualResult._1.equals(expectedResult(index)._1))
+      assert(actualResult._2.equals(expectedResult(index)._2))
+      index += 1
+    }
+  }
+
   // this event log has both decimal and non-decimal so comes out partial
   // it has both reading decimal, multiplication and join on decimal
   test("test decimal problematic") {
@@ -359,7 +423,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val tmpParquet = s"$outpath/decparquet"
         createDecFile(sparkSession, tmpParquet)
 
-        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
           val plusOne = udf((x: Int) => x + 1)
           import spark.implicits._
           spark.udf.register("plusOne", plusOne)
@@ -391,7 +455,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val tmpParquet = s"$outpath/decparquet"
         createDecFile(sparkSession, tmpParquet)
 
-        val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
           val plusOne = udf((x: Int) => x + 1)
           import spark.implicits._
           spark.udf.register("plusOne", plusOne)
@@ -441,10 +505,15 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "complex_dec_expectation.csv")
   }
 
+  test("test dsv2 nested complex") {
+    val logFiles = Array(s"$logDir/eventlog_nested_dsv2")
+    runQualificationTest(logFiles, "nested_dsv2_expectation.csv")
+  }
+
   test("sql metric agg") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val listener = new ToolTestListener
-      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")

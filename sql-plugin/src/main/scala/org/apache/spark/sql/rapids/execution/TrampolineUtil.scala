@@ -22,7 +22,8 @@ import org.apache.spark.{SparkContext, SparkEnv, SparkUpgradeException, TaskCont
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.memory.TaskMemoryManager
+import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
@@ -130,4 +131,11 @@ object TrampolineUtil {
       port: Int,
       topologyInfo: Option[String] = None): BlockManagerId =
     BlockManagerId(execId, host, port, topologyInfo)
+
+  def getTaskMemoryManager(): TaskMemoryManager = {
+    TaskContext.get.taskMemoryManager()
+  }
+
+  /** Throw a Spark analysis exception */
+  def throwAnalysisException(msg: String) = throw new AnalysisException(msg)
 }

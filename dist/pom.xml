@@ -17,332 +17,1764 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
+    <modelVersion>4.0.0</modelVersion>
 
-  <parent>
-    <groupId>com.nvidia</groupId>
-    <artifactId>rapids-4-spark-parent</artifactId>
+    <parent>
+        <groupId>com.nvidia</groupId>
+        <artifactId>rapids-4-spark-parent</artifactId>
+        <version>21.10.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>rapids-4-spark_2.12</artifactId>
+    <name>RAPIDS Accelerator for Apache Spark Distribution</name>
+    <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
     <version>21.10.0-SNAPSHOT</version>
-  </parent>
-  <artifactId>rapids-4-spark_2.12</artifactId>
-  <name>RAPIDS Accelerator for Apache Spark Distribution</name>
-  <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-  <version>21.10.0-SNAPSHOT</version>
 
-  <profiles>
-    <profile>
-        <id>default</id>
-        <activation>
-            <activeByDefault>true</activeByDefault>
-        </activation>
-        <dependencies>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <!-- required for conf generation script -->
-               <groupId>org.apache.spark</groupId>
-               <artifactId>spark-sql_${scala.binary.version}</artifactId>
-               <scope>provided</scope>
-            </dependency>
-            <dependency>
-              <!-- required for conf generation script -->
-              <groupId>org.apache.spark</groupId>
-              <artifactId>spark-hive_${scala.binary.version}</artifactId>
-              <scope>provided</scope>
-            </dependency>
-        </dependencies>
-    </profile>
-    <profile>
-        <id>with-classifier</id>
-        <activation>
-            <property><name>buildver</name></property>
-        </activation>
-        <dependencies>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-               <classifier>${spark.version.classifier}</classifier>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-               <classifier>${spark.version.classifier}</classifier>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-               <classifier>${spark.version.classifier}</classifier>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <!-- required for conf generation script -->
-               <groupId>org.apache.spark</groupId>
-               <artifactId>spark-sql_${scala.binary.version}</artifactId>
-               <scope>provided</scope>
-            </dependency>
-            <dependency>
-              <!-- required for conf generation script -->
-              <groupId>org.apache.spark</groupId>
-              <artifactId>spark-hive_${scala.binary.version}</artifactId>
-              <scope>provided</scope>
-            </dependency>
-        </dependencies>
-    </profile>
-    <profile>
-        <id>release311cdh</id>
-        <activation>
-            <property>
-                <name>buildver</name>
-                <value>311cdh</value>
-            </property>
-        </activation>
-        <dependencies>
-            <dependency>
-                <groupId>org.apache.spark</groupId>
-                <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                <version>${spark311cdh.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>org.apache.curator</groupId>
-                        <artifactId>curator-recipes</artifactId>
-                    </exclusion>
-                </exclusions>
-                <scope>provided</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.curator</groupId>
-                <artifactId>curator-recipes</artifactId>
-                <version>4.3.0.7.2.7.0-184</version>
-                <scope>provided</scope>
-            </dependency>
-        </dependencies>
-    </profile>
-    <profile>
-        <id>pre-merge</id>
-        <dependencies>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shuffle_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <groupId>com.nvidia</groupId>
-               <artifactId>rapids-4-spark-shims-aggregator_${scala.binary.version}</artifactId>
-               <version>${project.version}</version>
-            </dependency>
-            <dependency>
-               <!-- required for conf generation script -->
-               <groupId>org.apache.spark</groupId>
-               <artifactId>spark-sql_${scala.binary.version}</artifactId>
-               <scope>provided</scope>
-            </dependency>
-            <dependency>
-              <!-- required for conf generation script -->
-              <groupId>org.apache.spark</groupId>
-              <artifactId>spark-hive_${scala.binary.version}</artifactId>
-              <scope>provided</scope>
-            </dependency>
-        </dependencies>
-        <build>
-            <plugins>
-                <plugin>
-                    <groupId>org.codehaus.mojo</groupId>
-                    <artifactId>exec-maven-plugin</artifactId>
-                    <executions>
-                        <execution>
-                            <id>if_modified_files</id>
-                            <phase>verify</phase>
-                            <goals>
-                                <goal>exec</goal>
-                            </goals>
-                            <configuration>
-                                <executable>bash</executable>
-                                <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn verify:\n$MODIFIED"; exit 1;}'</commandlineArgs>
-                              </configuration>
-                        </execution>
-                    </executions>
-                </plugin>
-            </plugins>
-        </build>
-    </profile>
-  </profiles>
+    <profiles>
+        <profile>
+            <id>noSnapshotsWithDatabricks</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- weird but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-current</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark301</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark302</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark303</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark312</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311cdh</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                  <groupId>com.nvidia</groupId>
+                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <classifier>spark301db</classifier>
+                                  <version>${project.version}</version>
+                                  <type>jar</type>
+                                  <overWrite>false</overWrite>
+                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                  <groupId>com.nvidia</groupId>
+                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <classifier>spark311db</classifier>
+                                  <version>${project.version}</version>
+                                  <type>jar</type>
+                                  <overWrite>false</overWrite>
+                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                            </patternset>
+                                        </unzip>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/spark301"
+                                        >
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/spark302"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includes-spark311">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311"
+                                        >
+                                            <patternset id="excludes-spark311">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/spark312"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
+                                                dest="${project.build.directory}/parallel-world/spark301db"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311db"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+
+                                        <delete
+                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        />
+                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>noSnapshots</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- weird but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-current</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark301</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark302</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark303</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark312</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311cdh</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                            </patternset>
+                                        </unzip>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/spark301"
+                                        >
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/spark302"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includes-spark311">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311"
+                                        >
+                                            <patternset id="excludes-spark311">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/spark312"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+
+                                        <delete
+                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        />
+                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <!--
+            https://spark.apache.org/versioning-policy.html
+            Spark's semantic versioning [MAJOR].[FEATURE].[MAINTENANCE]
+
+            The plugin support begins with MAJOR=3
+
+            Most problems with the shim support occur when we cross into the next
+            FEATURE version and when we deal with distributions
+
+            Maintain a representative sample for testing while minimizing the build time
+            -->
+            <id>minimumFeatureVersionMix</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- weird but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-current</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark302</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311cdh</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark312</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark320</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                            </patternset>
+                                        </unzip>
 
 
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <configuration>
-          <artifactSet>
-            <excludes>org.slf4j:*</excludes>
-          </artifactSet>
-	  <transformers>
-            <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
-	  </transformers>
-          <shadedArtifactAttached>false</shadedArtifactAttached>
-          <createDependencyReducedPom>true</createDependencyReducedPom>
-          <relocations>
-            <!-- Shade ORC and Hive and their dependencies -->
-            <relocation>
-              <pattern>org.apache.orc.</pattern>
-              <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.hadoop.hive.</pattern>
-              <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
-              <excludes>
-                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
-                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
-                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
-              </excludes>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.hive.</pattern>
-              <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>io.airlift.compress.</pattern>
-              <shadedPattern>${rapids.shade.package}.io.airlift.compress.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.commons.codec.</pattern>
-              <shadedPattern>${rapids.shade.package}.org.apache.commons.codec.</shadedPattern>
-            </relocation>
-            <relocation>
-              <pattern>org.apache.commons.lang.</pattern>
-              <shadedPattern>${rapids.shade.package}.org.apache.commons.lang.</shadedPattern>
-            </relocation>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/spark302"
+                                        >
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
 
-            <!-- Shade Guava, Flatbuffers, and Protobuf -->
-            <relocation>
-              <pattern>com.google</pattern>
-              <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
-            </relocation>
-          </relocations>
-        </configuration>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-            <configuration>
-              <filters>
-                <filter>
-                  <artifact>com.nvidia:rapids-4-spark_2.12</artifact>
-                  <includes>
-                    <include>META-INF/**</include>
-                  </includes>
-                  <excludes>
-                    <exclude>META-INF/services/**</exclude>
-                  </excludes>
-                </filter>
-              </filters>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>net.alchim31.maven</groupId>
-        <artifactId>scala-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>update_config</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <configuration>
-              <launchers>
-                <launcher>
-                  <id>update_rapids_config</id>
-                  <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
-                  <args>
-                    <arg>${project.basedir}/../docs/configs.md</arg>
-                  </args>
-                </launcher>
-              </launchers>
-            </configuration>
-          </execution>
-          <execution>
-            <id>update_supported</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <configuration>
-              <launchers>
-                <launcher>
-                  <id>update_rapids_support</id>
-                  <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
-                  <args>
-                    <arg>${project.basedir}/../docs/supported_ops.md</arg>
-                  </args>
-                </launcher>
-              </launchers>
-            </configuration>
-          </execution>
-          <execution>
-            <id>update_supported_tools</id>
-            <phase>verify</phase>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <configuration>
-              <launchers>
-                <launcher>
-                  <id>update_rapids_support_tools</id>
-                  <mainClass>com.nvidia.spark.rapids.SupportedOpsForTools</mainClass>
-                  <args>
-                      <arg>${project.basedir}/../tools/src/main/resources/supportedDataSource.csv</arg>
-                  </args>
-                </launcher>
-              </launchers>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.rat</groupId>
-        <artifactId>apache-rat-plugin</artifactId>
-      </plugin>
-    </plugins>
-  </build>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includes-spark311">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/spark312"
+                                        >
+                                            <patternset id="excludes-spark311">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <delete
+                                                file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        />
+                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>snapshots</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- weird but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-current</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark301</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark302</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark303</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark304</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark312</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark313</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311cdh</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark320</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                            </patternset>
+                                        </unzip>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/spark301"
+                                        >
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/spark302"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
+                                                dest="${project.build.directory}/parallel-world/spark304"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includes-spark311">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311"
+                                        >
+                                            <patternset id="excludes-spark311">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/spark312"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
+                                                dest="${project.build.directory}/parallel-world/spark313"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <delete
+                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        />
+                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>snapshotsWithDatabricks</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- weird but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-current</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark301</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark302</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark303</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark304</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark312</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark313</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark311cdh</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark320</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                  <groupId>com.nvidia</groupId>
+                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <classifier>spark301db</classifier>
+                                  <version>${project.version}</version>
+                                  <type>jar</type>
+                                  <overWrite>false</overWrite>
+                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                  <groupId>com.nvidia</groupId>
+                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <classifier>spark311db</classifier>
+                                  <version>${project.version}</version>
+                                  <type>jar</type>
+                                  <overWrite>false</overWrite>
+                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                            <useBaseVersion>true</useBaseVersion>
+                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                            <overWriteReleases>false</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                            </patternset>
+                                        </unzip>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/spark301"
+                                        >
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/spark302"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
+                                                dest="${project.build.directory}/parallel-world/spark304"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
+                                                dest="${project.build.directory}/parallel-world/spark303"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includes-spark311">
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311"
+                                        >
+                                            <patternset id="excludes-spark311">
+                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
+                                                dest="${project.build.directory}/parallel-world/spark312"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
+                                                dest="${project.build.directory}/parallel-world/spark313"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
+                                                dest="${project.build.directory}/parallel-world/spark311db"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
+                                                dest="${project.build.directory}/parallel-world/spark301db"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <delete
+                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        />
+                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>release311cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>311cdh</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.curator</groupId>
+                            <artifactId>curator-recipes</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.curator</groupId>
+                    <artifactId>curator-recipes</artifactId>
+                    <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- weird but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${project.build.directory}/target/deps"/>
+                                        <copy file="../aggregator/target/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                              todir="${project.build.directory}/deps"/>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                                dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
+                                        >
+                                        </unzip>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>individual</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.nvidia</groupId>
+                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <!-- required for conf generation script -->
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!-- weird but first build the jar for dependencies pick it up,
+                             it gets overwritten below by ant target
+                        -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>delete-shim-classes</id>
+                                <configuration>
+                                    <target>
+                                        <delete
+                                                dir="${project.build.directory}/parallel-world"
+                                                includeemptydirs="true"
+                                        />
+
+                                        <delete>
+                                            <fileset
+                                                    dir="${project.build.directory}"
+                                                    includes="*.jar"
+                                            />
+                                        </delete>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <id>create-parallel-world</id>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${project.build.directory}/target/deps"/>
+                                        <copy file="../aggregator/target/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                              todir="${project.build.directory}/deps"/>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                                dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
+                                        >
+                                        </unzip>
+                                        <jar
+                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
+                                                basedir="${project.build.directory}/parallel-world"
+                                        >
+                                        </jar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>pre-merge</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>if_modified_files</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>bash</executable>
+                                     <commandlineArgs>-c 'export MODIFIED=$(git status --porcelain | grep "^ M"); [[ -z $MODIFIED ]] &amp;&amp; exit 0 || { echo -e "found modified files during mvn verify:\n$MODIFIED"; exit 1;}'</commandlineArgs>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>update_config</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <launchers>
+                                <launcher>
+                                    <id>update_rapids_config</id>
+                                    <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
+                                    <args>
+                                        <arg>${project.basedir}/../docs/configs.md</arg>
+                                    </args>
+                                </launcher>
+                            </launchers>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>update_supported</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <launchers>
+                                <launcher>
+                                    <id>update_rapids_support</id>
+                                    <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
+                                    <args>
+                                        <arg>${project.basedir}/../docs/supported_ops.md</arg>
+                                    </args>
+                                </launcher>
+                            </launchers>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>update_supported_tools</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <launchers>
+                                <launcher>
+                                    <id>update_rapids_support_tools</id>
+                                    <mainClass>com.nvidia.spark.rapids.SupportedOpsForTools</mainClass>
+                                    <args>
+                                        <arg>${project.basedir}/../tools/src/main/resources/supportedDataSource.csv
+                                        </arg>
+                                    </args>
+                                </launcher>
+                            </launchers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>com.nvidia.spark.rapids.SparkShimServiceProvider.*</exclude>
+                        <exclude>dependency-reduced-pom.xml</exclude>
+                        <exclude>*.txt</exclude>
+                        <exclude>*.md</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>
