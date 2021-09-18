@@ -250,3 +250,14 @@ def test_transform_keys_last_win_fallback(data_gen):
             lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> 1)'),
             'TransformKeys',
             conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+# We add in several types of processing for foldable functions because the output
+# can be different types.
+@pytest.mark.parametrize('query', [
+    'map_from_arrays(sequence(1, 5), sequence(1, 5)) as m_a',
+    'map("a", "a", "b", "c") as m',
+    'map(1, sequence(1, 5)) as m'], ids=idfn)
+def test_sql_map_scalars(query):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.sql('SELECT {}'.format(query)),
+            conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})

@@ -13,14 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids.shims.v2
 
-package org.apache.spark.sql
+import ai.rapids.cudf
+import com.nvidia.spark.rapids.{Arm, ColumnCastUtil}
 
-object Spark32XShimsUtils {
-
-  def leafNodeDefaultParallelism(ss: SparkSession): Int = {
-    ss.leafNodeDefaultParallelism
-  }
-
+object HashUtils extends Arm {
+  /**
+   * In Spark 3.2.0+ -0.0 is normalized to 0.0, but for everyone else this is a noop
+   * @param in the input to normalize
+   * @return the result
+   */
+  def normalizeInput(in: cudf.ColumnVector): cudf.ColumnVector =
+    in.incRefCount()
 }
-

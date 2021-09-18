@@ -125,6 +125,16 @@ trait Arm {
     }
   }
 
+  /** Executes the provided code block, closing the resources only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V](r: Option[T])(block: Option[T] => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        r.foreach(_.safeClose(t))
+        throw t
+    }
+  }
 
   /** Executes the provided code block, freeing the RapidsBuffer only if an exception occurs */
   def freeOnExcept[T <: RapidsBuffer, V](r: T)(block: T => V): V = {
