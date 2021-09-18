@@ -14,6 +14,7 @@
 
 import pytest
 
+from spark_session import is_before_spark_320
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from pyspark.sql.types import *
@@ -35,7 +36,7 @@ _grouping_set_sqls = [
     'SELECT a, b, count(1) FROM testData GROUP BY a, GROUPING SETS(ROLLUP(a, b), CUBE(a, b))',
     'SELECT a, b, count(1) FROM testData '
         'GROUP BY a, GROUPING SETS(GROUPING SETS((a, b), (a), ()), '
-            'GROUPING SETS((a, b), (a), (b), ()))',
+        'GROUPING SETS((a, b), (a), (b), ()))',
     'SELECT a, b, count(1) FROM testData '
         'GROUP BY a, GROUPING SETS((a, b), (a), (), (a, b), (a), (b), ())',
 ]
@@ -44,6 +45,7 @@ _grouping_set_sqls = [
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grouping_set_gen], ids=idfn)
 @pytest.mark.parametrize('sql', _grouping_set_sqls, ids=idfn)
+@pytest.mark.skipif(is_before_spark_320(), reason='Not supports before spark 3.2.0')
 def test_nested_grouping_sets_rollup_cube(data_gen, sql):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
