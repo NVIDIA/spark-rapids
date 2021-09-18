@@ -25,7 +25,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.Spark32XShims
+import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, Spark32XShims}
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, TimeAdd}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -406,7 +406,36 @@ class Spark320Shims extends Spark32XShims {
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuTimeAdd(lhs, rhs)
-      })
+      }),
+    GpuOverrides.expr[SpecifiedWindowFrame](
+      "Specification of the width of the group (or \"frame\") of input rows " +
+        "around which a window function is evaluated",
+      ExprChecks.projectOnly(
+        TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+        TypeSig.numericAndInterval,
+        Seq(
+          ParamCheck("lower",
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.numericAndInterval),
+          ParamCheck("upper",
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.numericAndInterval))),
+      (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r)),
+    GpuOverrides.expr[WindowExpression](
+      "Calculates a return value for every input row of a table based on a group (or " +
+        "\"window\") of rows",
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("windowFunction",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all),
+          ParamCheck("windowSpec",
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
+              TypeSig.DAYTIME, TypeSig.numericAndInterval))),
+      (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
