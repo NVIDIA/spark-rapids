@@ -45,7 +45,8 @@ _grouping_set_sqls = [
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grouping_set_gen], ids=idfn)
 @pytest.mark.parametrize('sql', _grouping_set_sqls, ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason='Not supports before spark 3.2.0')
+@pytest.mark.skipif(is_before_spark_320(),
+                    reason='Nested grouping sets is not supported before spark 3.2.0')
 def test_nested_grouping_sets_rollup_cube(data_gen, sql):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
