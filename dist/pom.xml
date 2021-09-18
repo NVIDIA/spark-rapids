@@ -1546,7 +1546,7 @@
                                 <configuration>
                                     <target>
                                         <mkdir dir="${project.build.directory}/target/deps"/>
-                                        <copy file="../aggregator/target/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                        <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
                                               todir="${project.build.directory}/deps"/>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
@@ -1643,7 +1643,7 @@
                                 <configuration>
                                     <target>
                                         <mkdir dir="${project.build.directory}/target/deps"/>
-                                        <copy file="../aggregator/target/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                        <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
                                               todir="${project.build.directory}/deps"/>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
