@@ -578,7 +578,7 @@ void abortDupBuilds() {
                 if (prevExecutor != null) {
                     echo "...Aborting duplicate Build #${prevBuild.number}"
                     prevExecutor.interrupt(Result.ABORTED,
-                            new UserInterruption("Aborted by Build #${currentBuild.number}"))
+                            new UserInterruption("Build #${currentBuild.number}"))
                 }
             }
         }
