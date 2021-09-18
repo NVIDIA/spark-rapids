@@ -1700,6 +1700,9 @@
     </profiles>
 
     <build>
+        <!-- dist is a combined unclassified jar, override parent's definition -->
+        <directory>target</directory>
+
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
