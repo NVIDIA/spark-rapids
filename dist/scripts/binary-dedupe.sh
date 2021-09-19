@@ -31,24 +31,40 @@
 # 3. Call sort on all the diff files and replace duplicate entries with
 #    uniq counts
 # 4. all entries that occur (numShimsInBuild - 1) tinmes are identical for all shims
-#    and constitute the list for spark3xx-commons
+#    and constitute the list for spark3xx-common
 
 # PWD should be dist/target
 set -ex
-SHIM_DIRS=$(ls -d parallel-world/spark3* | cut -d/ -f 2)
+
+PARALLEL_WORLDS_DIR=parallel-world
+SHIM_DIRS=$(find "$PARALLEL_WORLDS_DIR" -maxdepth 1 -type d -path "*/spark3*" | cut -d/ -f 2)
 REF_SHIM=$(<<< "$SHIM_DIRS" head -1)
 SHIMS_TO_COMPARE=$(<<< "$SHIM_DIRS" tail --lines=+2)
 NUM_DIFFS=$(<<< "$SHIMS_TO_COMPARE" wc -l)
-OUTPUTDIR=binary-diffs
+DIFFDIR=binary-diffs
 
-mkdir -p $OUTPUTDIR
+mkdir $DIFFDIR
 <<< "$SHIMS_TO_COMPARE" xargs -I% -n 1 bash -c \
-  "diff -s -r parallel-world/$REF_SHIM parallel-world/% |
+  "diff -s -r $PARALLEL_WORLDS_DIR/$REF_SHIM $PARALLEL_WORLDS_DIR/% |
     grep '.class are identical' |
     cut -d' ' -f 2 |
-    cut -d/ -f 3- > $OUTPUTDIR/$REF_SHIM-%.identical"
+    cut -d/ -f 3- > $DIFFDIR/$REF_SHIM-%.identical"
 
-sort binary-diffs/* | uniq -c | grep "^ \+$NUM_DIFFS " | \
-  awk '{print $2}' > spark3xx-common.txt
+SPARK3XX_COMMON_TXT=$PWD/spark3xx-common.txt
+SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
+sort $DIFFDIR/* | uniq -c | grep "^ \+$NUM_DIFFS " | \
+  awk '{print $2}' > "$SPARK3XX_COMMON_TXT"
 
-< spark3xx-common.txt xargs
+mkdir "$SPARK3XX_COMMON_DIR"
+cd $PARALLEL_WORLDS_DIR/"$REF_SHIM"
+xargs --arg-file="$SPARK3XX_COMMON_TXT" -n 100 -I% cp --parent % "$SPARK3XX_COMMON_DIR"
+cd -
+echo PWD
+
+# it's now safe to delete duplicate .class files from the original locations
+# don't use rm */% because globbing is broken for files containing $
+for shimDir in $SHIM_DIRS; do
+  xargs --arg-file="$SPARK3XX_COMMON_TXT" -n 100 -I% rm "$PARALLEL_WORLDS_DIR/$shimDir/%"
+done
+
+mv "$SPARK3XX_COMMON_DIR" $PARALLEL_WORLDS_DIR/
