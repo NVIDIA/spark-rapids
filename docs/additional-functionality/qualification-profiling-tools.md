@@ -131,9 +131,11 @@ outputs this same report to STDOUT.
 The other file is a CSV file that contains more information and can be used for further post processing.
 
 Note, potential problems are reported in the CSV file in a separate column, which is not included in the score. This
-currently includes some UDFs and some decimal operations. The tool won't catch all UDFs, and some of the UDFs can be
+currently includes some UDFs, some decimal operations and nested complex types. The tool won't catch all UDFs, and some of the UDFs can be
 handled with additional steps. Please refer to [supported_ops.md](../supported_ops.md) for more details on UDF.
-For decimals, it tries to recognize decimal operations but it may not catch them all.
+For decimals, it tries to recognize decimal operations but it may not catch them all. If there are any complex nested types,
+then `NESTED COMPLEX TYPE` is mentioned in the `Potential Problems` section. Please refer to the column
+`Unsupported Nested Complex Types` to get the nested complex types which are not supported.
 
 The CSV output also contains a `Executor CPU Time Percent` column that is not included in the score. This is an estimate
 at how much time the tasks spent doing processing on the CPU vs waiting on IO. This is not always a good indicator

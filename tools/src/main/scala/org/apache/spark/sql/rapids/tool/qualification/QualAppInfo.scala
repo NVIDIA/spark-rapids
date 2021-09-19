@@ -132,8 +132,28 @@ class QualAppInfo(
     validSums.values.map(dur => dur.totalTaskDuration).sum
   }
 
-  private def getPotentialProblems: String = {
+  private def getPotentialProblemsForDf: String = {
     probNotDataset.values.flatten.toSet.mkString(":")
+  }
+
+  // This is to append potential issues such as UDF, decimal type determined from
+  // SparkGraphPlan Node description and nested complex type determined from reading the
+  // event logs. If there are any complex nested types, then `NESTED COMPLEX TYPE` is mentioned
+  // in the `Potential Problems` section in the csv file. Section `Unsupported Nested Complex
+  // Types` has information on the exact nested complex types which are not supported for a
+  // particular application.
+  private def getAllPotentialProblems(dFPotentialProb: String, nestedComplex: String): String = {
+    val nestedComplexType = if (nestedComplex.nonEmpty) "NESTED COMPLEX TYPE" else ""
+    val result = if (dFPotentialProb.nonEmpty) {
+      if (nestedComplex.nonEmpty) {
+        s"$dFPotentialProb:$nestedComplexType"
+      } else {
+        dFPotentialProb
+      }
+    } else {
+      nestedComplexType
+    }
+    result
   }
 
   private def getSQLDurationProblematic: Long = {
@@ -198,7 +218,6 @@ class QualAppInfo(
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
       val sqlDataframeDur = calculateSqlDataframeDuration
-      val problems = getPotentialProblems
       val executorCpuTimePercent = calculateCpuTimePercent
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0
       val sqlDurProblem = getSQLDurationProblematic
@@ -217,6 +236,7 @@ class QualAppInfo(
       }.mkString(";")
       val writeFormat = writeFormatNotSupported(writeDataFormat)
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
+      val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
       new QualificationSummaryInfo(info.appName, appId, scoreRounded, problems,
         sqlDataframeDur, sqlDataframeTaskDuration, appDuration, executorCpuTimePercent,
