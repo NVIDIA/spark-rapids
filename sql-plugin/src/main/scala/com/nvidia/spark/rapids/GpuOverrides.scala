@@ -2081,13 +2081,13 @@ object GpuOverrides extends Logging {
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "input", _gpuCommonTypes + TypeSig.STRUCT.nested(_gpuCommonTypes), TypeSig.all))),
-      (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+      (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
             willNotWorkOnGpu("count of multiple columns not supported")
           }
         }
-        override def convertToGpu(): GpuExpression = GpuCount(childExprs.map(_.convertToGpu()))
+        override def convertToGpu(child: Expression): GpuExpression = GpuCount(Seq(child))
       }),
     expr[Max](
       "Max aggregate operator",
@@ -2111,7 +2111,7 @@ object GpuOverrides extends Logging {
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = max.child.dataType
           checkAndTagFloatNanAgg("Max", dataType, conf, this)
         }
@@ -2140,7 +2140,7 @@ object GpuOverrides extends Logging {
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
           checkAndTagFloatNanAgg("Min", dataType, conf, this)
         }
@@ -2162,7 +2162,7 @@ object GpuOverrides extends Logging {
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
           checkAndTagFloatAgg(dataType, conf, this)
         }

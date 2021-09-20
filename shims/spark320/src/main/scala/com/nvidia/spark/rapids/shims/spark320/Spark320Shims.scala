@@ -221,7 +221,7 @@ class Spark320Shims extends Spark32XShims {
         Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp + TypeSig.NULL,
           TypeSig.numericAndInterval + TypeSig.NULL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
           GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
         }

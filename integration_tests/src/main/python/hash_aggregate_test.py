@@ -259,29 +259,6 @@ def test_hash_grpby_avg(data_gen, conf):
         conf=conf
     )
 
-@ignore_order
-@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-def test_hash_grpby_avg_nulls(data_gen, conf, ansi_enabled):
-    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a')
-          .agg(f.avg('c')),
-        conf=local_conf
-    )
-
-@ignore_order
-@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-def test_hash_reduction_avg_nulls(data_gen, conf, ansi_enabled):
-    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-          .agg(f.avg('c')),
-        conf=local_conf
-    )
 
 # tracks https://github.com/NVIDIA/spark-rapids/issues/154
 @approximate_float
@@ -1088,3 +1065,79 @@ def test_agg_nested_map():
         df = two_col_df(spark, StringGen('k{1,5}'), ArrayGen(MapGen(StringGen('a{1,5}', nullable=False), StringGen('[ab]{1,5}'))))
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+@ignore_order
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+  'HashPartitioning', 'ShuffleExchangeExec', 'Average')
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_hash_grpby_avg_nulls_ansi(data_gen, conf, ansi_enabled):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a')
+          .agg(f.avg('c')),
+        conf=local_conf
+    )
+
+
+@ignore_order
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+  'HashPartitioning', 'ShuffleExchangeExec', 'Average')
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_hash_reduction_avg_nulls_ansi(data_gen, conf, ansi_enabled):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+          .agg(f.avg('c')),
+        conf=local_conf
+    )
+
+
+_no_overflow_sum_gens = [
+    ByteGen(min_val = 1, max_val = 10, special_cases=[]),
+    ShortGen(min_val = 1, max_val = 100, special_cases=[]),
+    IntegerGen(min_val = 1, max_val = 1000, special_cases=[]),
+    LongGen(min_val = 1, max_val = 3000, special_cases=[])]
+
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+  'HashPartitioning', 'ShuffleExchangeExec', 'Sum')
+@pytest.mark.parametrize('data_gen', _no_overflow_sum_gens, ids=idfn)
+def test_sum_fallback_when_ansi_enabled(data_gen):
+    def do_it(spark):
+        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=1024)
+        df = df.groupBy('a').agg(f.sum("b"))
+        df.explain()
+        return df
+
+    assert_gpu_fallback_collect(do_it, 'Sum',
+        conf={'spark.sql.ansi.enabled': 'true', 'spark.rapids.sql.explain': 'true'})
+
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+  'HashPartitioning', 'ShuffleExchangeExec', 'Average')
+@pytest.mark.parametrize('data_gen', _no_overflow_sum_gens, ids=idfn)
+def test_avg_fallback_when_ansi_enabled(data_gen):
+    def do_it(spark):
+        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=1024)
+        df = df.groupBy('a').agg(f.avg("b"))
+        df.explain()
+        return df
+
+    assert_gpu_fallback_collect(do_it, 'Average',
+        conf={'spark.sql.ansi.enabled': 'true', 'spark.rapids.sql.explain': 'true'})
+
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression',
+  'HashPartitioning', 'ShuffleExchangeExec', 'Count', 'Literal')
+@pytest.mark.parametrize('data_gen', _no_overflow_sum_gens, ids=idfn)
+def test_count_fallback_when_ansi_enabled(data_gen):
+    def do_it(spark):
+        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=1024)
+        df = df.groupBy('a').agg(f.count("b"), f.count("*"))
+        df.explain()
+        return df
+
+    assert_gpu_fallback_collect(do_it, 'Count',
+        conf={'spark.sql.ansi.enabled': 'true', 'spark.rapids.sql.explain': 'true'})

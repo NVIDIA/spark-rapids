@@ -228,7 +228,7 @@ abstract class SparkBaseShims extends Spark30XShims {
         TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
         Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
           GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
         }

@@ -17,11 +17,9 @@
 package com.nvidia.spark.rapids
 
 import java.time.ZoneId
-
 import scala.collection.mutable
-
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
-import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
+import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, Average, First, ImperativeAggregate, Last, Max, Min, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
@@ -29,8 +27,9 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ByteType, CalendarIntervalType, DataType, DecimalType, IntegerType, LongType, ShortType}
 
 trait DataFromReplacementRule {
   val operationName: String
@@ -1097,8 +1096,50 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs.head.convertToGpu())
+  override def tagExprForGpu(): Unit = {
+    tagAggregateInAnsiModeForGpu()
+    tagAggForGpu()
+  }
+
+  def tagAggForGpu(): Unit
+
+  def tagAggregateInAnsiModeForGpu(): Unit = {
+    val failOnError = SQLConf.get.ansiEnabled
+    val dataType = expr.dataType
+    if (failOnError) {
+      var willNotWork = false
+      expr match {
+        // Most aggregates rely on `Add` either explicitly (like `Sum`), or
+        // implicitly via `ImplicitOperators.operator+`, amongst other arithmetic ops.
+        // The exceptions are: First/Last and Min/Max. The rest of the
+        // aggregates should fallback in AnsiMode, until we have overflow
+        // semantics built into cuDF for each type.
+        case _: First | _: Last | _: Min | _: Max => // OK
+        case _: Average =>
+          // Average is special, it uses Long internally. If we say that Count can overflow
+          // Long, then so could Average, even if its resultType is `Double` presently.
+          willNotWorkOnGpu("Average is not supported in ANSI mode.")
+        case _ => // Sum, Count, Stddev*, Variance*
+          dataType match {
+            case CalendarIntervalType => willNotWork = true
+            case _: LongType | IntegerType | ShortType | ByteType => willNotWork = true
+            case _: DecimalType => willNotWork = true
+            case _ => // OK
+          }
+      }
+      if (willNotWork) {
+        willNotWorkOnGpu(s"ANSI mode is enabled and ${expr.prettyName} with a " +
+          s"$dataType result is not supported.")
+      }
+    }
+  }
+
+  override final def convertToGpu(): GpuExpression = {
+    require(childExprs.length == 1,
+      "Aggregates with more than 1 child are not supported")
+    val gpuExpressions = childExprs.map(_.convertToGpu())
+    convertToGpu(gpuExpressions.head)
+  }
 
   def convertToGpu(child: Expression): GpuExpression
 }
