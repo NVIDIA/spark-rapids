@@ -21,8 +21,9 @@ import java.util.concurrent.TimeUnit
 import scala.language.{existentials, implicitConversions}
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
+import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimExpression}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -32,7 +33,7 @@ import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCreateNamedStruct
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
 
-class GpuWindowExpressionMeta(
+abstract class GpuWindowExpressionMetaBase(
     windowExpression: WindowExpression,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
@@ -44,7 +45,6 @@ class GpuWindowExpressionMeta(
       literal.dataType match {
         case IntegerType =>
           literal.value.asInstanceOf[Int]
-          literal.value.asInstanceOf[Int]
         case t =>
           willNotWorkOnGpu(s"unsupported window boundary type $t")
           -1
@@ -55,6 +55,12 @@ class GpuWindowExpressionMeta(
     case _ =>
       willNotWorkOnGpu("unsupported window boundary type")
       -1
+  }
+
+  /** Tag if RangeFrame expression is supported */
+  def tagOtherTypesForRangeFrame(bounds: Expression): Unit = {
+    willNotWorkOnGpu(s"the type of boundary is not supported in a window range" +
+      s" function, found $bounds")
   }
 
   override def tagExprForGpu(): Unit = {
@@ -72,7 +78,7 @@ class GpuWindowExpressionMeta(
             val lower = getAndCheckRowBoundaryValue(spec.lower)
             val upper = getAndCheckRowBoundaryValue(spec.upper)
             windowFunction match {
-              case Lead(_, _, _) | Lag(_, _, _) => // ignored we are good
+              case _: Lead | _: Lag => // ignored we are good
               case _ =>
                 // need to be sure that the lower/upper are acceptable
                 if (lower > 0) {
@@ -142,9 +148,7 @@ class GpuWindowExpressionMeta(
                     willNotWorkOnGpu("interval months isn't supported")
                   }
                 case UnboundedFollowing | UnboundedPreceding | CurrentRow =>
-                case anythings =>
-                  willNotWorkOnGpu(s"the type of boundary is not supported in a window range" +
-                  s" function, found $anythings")
+                case anythings => tagOtherTypesForRangeFrame(anythings)
               }
             }
         }
@@ -164,7 +168,7 @@ class GpuWindowExpressionMeta(
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
-  extends GpuUnevaluable {
+  extends GpuUnevaluable with ShimExpression {
 
   override def children: Seq[Expression] = windowFunction :: windowSpec :: Nil
 
@@ -273,7 +277,7 @@ case class GpuWindowSpecDefinition(
     partitionSpec: Seq[Expression],
     orderSpec: Seq[SortOrder],
     frameSpecification: GpuWindowFrame)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression with ShimExpression with GpuUnevaluable {
 
   override def children: Seq[Expression] = partitionSpec ++ orderSpec :+ frameSpecification
 
@@ -329,14 +333,12 @@ case class GpuWindowSpecDefinition(
     elements.mkString("(", " ", ")")
   }
 
-  private def isValidFrameType(ft: DataType): Boolean = (orderSpec.head.dataType, ft) match {
-    case (DateType, IntegerType) => true
-    case (TimestampType, CalendarIntervalType) => true
-    case (a, b) => a == b
+  private def isValidFrameType(ft: DataType): Boolean = {
+    GpuWindowUtil.isValidRangeFrameType(orderSpec.head.dataType, ft)
   }
 }
 
-class GpuSpecifiedWindowFrameMeta(
+abstract class GpuSpecifiedWindowFrameMetaBase(
     windowFrame: SpecifiedWindowFrame,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
@@ -345,6 +347,15 @@ class GpuSpecifiedWindowFrameMeta(
 
   // SpecifiedWindowFrame has no associated dataType.
   override val ignoreUnsetDataTypes: Boolean = true
+
+  /**
+   * Tag RangeFrame for other types and get the value
+   */
+  def getAndTagOtherTypesForRangeFrame(bounds : Expression, isLower : Boolean): Long = {
+    willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
+      s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
+    if (isLower) -1 else 1 // not check again
+  }
 
   override def tagExprForGpu(): Unit = {
     if (windowFrame.frameType.equals(RangeFrame)) {
@@ -382,10 +393,7 @@ class GpuSpecifiedWindowFrameMeta(
                   s"and $ci is too large to fit")
                 if (isLower) -1 else 1 // not check again
             }
-          case _ =>
-            willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
-            s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
-            if (isLower) -1 else 1 // not check again
+          case _ => getAndTagOtherTypesForRangeFrame(bounds, isLower)
         }
 
         if (isLower && value > 0) {
@@ -451,7 +459,7 @@ class GpuSpecifiedWindowFrameMeta(
   }
 }
 
-trait GpuWindowFrame extends GpuExpression with GpuUnevaluable {
+trait GpuWindowFrame extends GpuExpression with GpuUnevaluable with ShimExpression {
   override def children: Seq[Expression] = Nil
 
   override def dataType: DataType = {
@@ -574,7 +582,7 @@ case class GpuSpecifiedWindowFrame(
 }
 
 case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression with ShimExpression with GpuUnevaluable {
   override def children : Seq[Expression] = Nil
   override def dataType: DataType = NullType
   override def foldable: Boolean = false
@@ -608,7 +616,7 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 
 // This is here for now just to tag an expression as being a GpuWindowFunction and match
 // Spark. This may expand in the future if other types of window functions show up.
-trait GpuWindowFunction extends GpuUnevaluable
+trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
 
 /**
  * GPU Counterpart of `AggregateWindowFunction`.
@@ -1172,7 +1180,7 @@ object DenseRankFixer extends Arm {
  * @note this is a running window only operator.
  */
 case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
-    with GpuBatchedRunningWindowWithFixer {
+    with GpuBatchedRunningWindowWithFixer with ShimExpression {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
@@ -1321,8 +1329,8 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
   lazy val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
   lazy val offset: BaseExprMeta[_] = {
     expr match {
-      case Lead(_,_,_) => // Supported.
-      case Lag(_,_,_) =>  // Supported.
+      case _: Lead => // Supported.
+      case _: Lag =>  // Supported.
       case other =>
         throw new IllegalStateException(
           s"Only LEAD/LAG offset window functions are supported. Found: $other")
@@ -1344,8 +1352,8 @@ abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
 
   override def tagExprForGpu(): Unit = {
     expr match {
-      case Lead(_,_,_) => // Supported.
-      case Lag(_,_,_) =>  // Supported.
+      case _: Lead => // Supported.
+      case _: Lag =>  // Supported.
       case other =>
         willNotWorkOnGpu( s"Only LEAD/LAG offset window functions are supported. Found: $other")
     }

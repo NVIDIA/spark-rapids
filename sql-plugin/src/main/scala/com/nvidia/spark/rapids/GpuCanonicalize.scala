@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ object GpuCanonicalize {
     case a: AttributeReference =>
       AttributeReference("none", TrampolineUtil.asNullable(a.dataType))(exprId = a.exprId)
     case GetStructField(child, ordinal, Some(_)) => GetStructField(child, ordinal, None)
+    case GpuGetStructField(child, ordinal, Some(_)) => GpuGetStructField(child, ordinal, None)
     case _ => e
   }
 
@@ -78,7 +79,8 @@ object GpuCanonicalize {
 
   /** Rearrange expressions that are commutative or associative. */
   private def expressionReorder(e: Expression): Expression = e match {
-    case a: GpuAdd => orderCommutative(a, { case GpuAdd(l, r) => Seq(l, r) }).reduce(GpuAdd)
+    case a @ GpuAdd(_, _, f) =>
+      orderCommutative(a, { case GpuAdd(l, r, _) => Seq(l, r) }).reduce(GpuAdd(_, _, f))
     case m: GpuMultiply =>
       orderCommutative(m, { case GpuMultiply(l, r) => Seq(l, r) }).reduce(GpuMultiply)
     case o: GpuOr =>
@@ -88,6 +90,12 @@ object GpuCanonicalize {
       orderCommutative(a, { case GpuAnd(l, r) if l.deterministic && r.deterministic => Seq(l, r)})
           .reduce(GpuAnd)
 
+    case o: GpuBitwiseOr =>
+      orderCommutative(o, { case GpuBitwiseOr(l, r) => Seq(l, r) }).reduce(GpuBitwiseOr)
+    case a: GpuBitwiseAnd =>
+      orderCommutative(a, { case GpuBitwiseAnd(l, r) => Seq(l, r) }).reduce(GpuBitwiseAnd)
+    case x: GpuBitwiseXor =>
+      orderCommutative(x, { case GpuBitwiseXor(l, r) => Seq(l, r) }).reduce(GpuBitwiseXor)
     case GpuEqualTo(l, r) if l.hashCode() > r.hashCode() => GpuEqualTo(r, l)
     case GpuEqualNullSafe(l, r) if l.hashCode() > r.hashCode() => GpuEqualNullSafe(r, l)
 
@@ -106,6 +114,13 @@ object GpuCanonicalize {
 
     // order the list in the In operator
     case GpuInSet(value, list) if list.length > 1 => GpuInSet(value, list.sortBy(_.hashCode()))
+
+    case g: GpuGreatest =>
+      val newChildren = orderCommutative(g, { case GpuGreatest(children) => children })
+      GpuGreatest(newChildren)
+    case l: GpuLeast =>
+      val newChildren = orderCommutative(l, { case GpuLeast(children) => children })
+      GpuLeast(newChildren)
 
     case _ => e
   }

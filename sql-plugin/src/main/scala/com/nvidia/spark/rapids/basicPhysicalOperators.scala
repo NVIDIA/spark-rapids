@@ -22,7 +22,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, Scalar, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{ShimSparkPlan, ShimUnaryExecNode}
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -378,7 +378,8 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
   val start: Long = range.start
   val end: Long = range.end
   val step: Long = range.step
-  val numSlices: Int = range.numSlices.getOrElse(sparkContext.defaultParallelism)
+  val numSlices: Int = range.numSlices.getOrElse(ShimLoader.getSparkShims
+    .leafNodeDefaultParallelism(sparkSession))
   val numElements: BigInt = range.numElements
   val isEmptyRange: Boolean = start == end || (start < end ^ 0 < step)
 
@@ -422,7 +423,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
     if (isEmptyRange) {
       sparkContext.emptyRDD[ColumnarBatch]
     } else {
-      sqlContext
+      sparkSession
           .sparkContext
           .parallelize(0 until numSlices, numSlices)
           .mapPartitionsWithIndex { (i, _) =>
@@ -506,7 +507,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 }
 
 
-case class GpuUnionExec(children: Seq[SparkPlan]) extends SparkPlan with GpuExec {
+case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with GpuExec {
 
   // updating nullability to make all the children consistent
   override def output: Seq[Attribute] = {

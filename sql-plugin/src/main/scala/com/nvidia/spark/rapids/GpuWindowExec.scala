@@ -23,7 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -633,8 +633,7 @@ object GroupedAggregations extends Arm {
       var x = value.asInstanceOf[Long]
       if (x == Long.MinValue) x = Long.MaxValue
       ParsedBoundary(isUnbounded = false, Math.abs(x))
-    case anything => throw new UnsupportedOperationException("Unsupported window frame" +
-        s" expression $anything")
+    case anything => GpuWindowUtil.getRangeBoundaryValue(anything)
   }
 }
 

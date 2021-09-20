@@ -1,0 +1,51 @@
+#!/bin/bash
+#
+# Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+set -ex
+
+# Install all the versions we support
+
+# First loop over all supported versions except for 301 skipping expensive plugins that
+# - either deferred to 301 because the check is identical in all shim profiles such as scalastyle
+# - or deferred to 301 because we currently don't require it per shim such as javadoc generation
+# - or there is a dedicated step to run against a particular shim jar such as unit tests, in
+#   the near future we will run unit tests against a combined multi-shim jar to catch classloading
+#   regressions even before pytest-based integration_tests
+#
+SPARK_SHIM_VERSIONS="
+  302
+  303
+  304
+  311
+  311cdh
+  312
+  313
+  320
+"
+for sparkver in ${SPARK_SHIM_VERSIONS} ; do
+  mvn -U clean install \
+    -Dbuildver="$sparkver" \
+    -Drat.skip=true \
+    -DskipTests \
+    -Dmaven.javadoc.skip=true \
+    -Dskip \
+    -Dmaven.scalastyle.skip=true \
+    -pl aggregator -am
+done
+
+# install 301 skipping only tests
+mvn -U -Dbuildver=301 clean install -DskipTests -Psnapshots

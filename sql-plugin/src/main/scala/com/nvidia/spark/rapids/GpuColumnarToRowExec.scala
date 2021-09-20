@@ -21,11 +21,11 @@ import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuColumnarToRowExecParent.makeIteratorFunc
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.{CudfUnsafeRow, InternalRow}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
@@ -181,8 +181,8 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     opTime: GpuMetric,
     fetchTime: GpuMetric) extends Iterator[InternalRow] with Arm {
   // GPU batches read in must be closed by the receiver (us)
-  @transient var cb: ColumnarBatch = null
-  var it: java.util.Iterator[InternalRow] = null
+  @transient private var cb: ColumnarBatch = null
+  private var it: java.util.Iterator[InternalRow] = null
 
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 

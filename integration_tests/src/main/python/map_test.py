@@ -22,11 +22,44 @@ from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 import pyspark.sql.functions as f
 
+# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
+pytestmark = pytest.mark.premerge_ci_1
+
 basic_struct_gen = StructGen([
     ['child' + str(ind), sub_gen]
     for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
                                    BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
     nullable=False)
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_map_keys(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                # Technically the order of the keys could change, and be different and still correct
+                # but it works this way for now so lets see if we can maintain it.
+                # Good thing too, because we cannot support sorting all of the types that could be
+                # in here yet, and would need some special case code for checking equality
+                'map_keys(a)'))
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_map_values(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                # Technically the order of the values could change, and be different and still correct
+                # but it works this way for now so lets see if we can maintain it.
+                # Good thing too, because we cannot support sorting all of the types that could be
+                # in here yet, and would need some special case code for checking equality
+                'map_values(a)'))
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_map_entries(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                # Technically the order of the values could change, and be different and still correct
+                # but it works this way for now so lets see if we can maintain it.
+                # Good thing too, because we cannot support sorting all of the types that could be
+                # in here yet, and would need some special case code for checking equality
+                'map_entries(a)'))
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value(data_gen):
@@ -175,3 +208,56 @@ def test_transform_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it, 
             conf=allow_negative_scale_of_decimal_conf)
 
+
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_transform_keys(data_gen):
+    # The processing here is very limited, because we need to be sure we do not create duplicate keys.
+    # This can happen because of integer overflow, round off errors in floating point, etc. So for now
+    # we really are only looking at a very basic transformation.
+    def do_it(spark):
+        columns = ['a',
+                'transform_keys(a, (key, value) -> key) as ident']
+        key_type = data_gen.data_type.keyType
+        if isinstance(key_type, StringType):
+            columns.extend(['transform_keys(a, (key, value) -> concat(key, "-test")) as con'])
+
+        return unary_op_df(spark, data_gen).selectExpr(columns)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, 
+            conf=allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_transform_keys_null_fail(data_gen):
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'transform_keys(a, (key, value) -> CAST(null as INT))').collect(),
+                conf={},
+                error_message='Cannot use null as map key')
+
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_transform_keys_duplicate_fail(data_gen):
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'transform_keys(a, (key, value) -> 1)').collect(),
+            conf={},
+            error_message='Duplicate map key')
+
+
+@allow_non_gpu('ProjectExec,Alias,TransformKeys,Literal,LambdaFunction,NamedLambdaVariable')
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_transform_keys_last_win_fallback(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> 1)'),
+            'TransformKeys',
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+# We add in several types of processing for foldable functions because the output
+# can be different types.
+@pytest.mark.parametrize('query', [
+    'map_from_arrays(sequence(1, 5), sequence(1, 5)) as m_a',
+    'map("a", "a", "b", "c") as m',
+    'map(1, sequence(1, 5)) as m'], ids=idfn)
+def test_sql_map_scalars(query):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.sql('SELECT {}'.format(query)),
+            conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})

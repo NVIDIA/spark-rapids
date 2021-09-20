@@ -19,14 +19,17 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.catalyst.expressions.{Expression, UserDefinedExpression}
+import org.apache.spark.sql.catalyst.expressions.UserDefinedExpression
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** Common implementation across all RAPIDS accelerated UDF types */
-trait GpuUserDefinedFunction extends GpuExpression with UserDefinedExpression with Serializable {
+trait GpuUserDefinedFunction extends GpuExpression
+    with ShimExpression
+    with UserDefinedExpression with Serializable {
   /** name of the UDF function */
   val name: String
 

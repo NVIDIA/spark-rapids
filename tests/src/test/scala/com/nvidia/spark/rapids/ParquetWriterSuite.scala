@@ -20,9 +20,13 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 import org.apache.hadoop.fs.Path
+import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
 
 import org.apache.spark.{SparkConf, SparkException}
+import org.apache.spark.internal.io.FileCommitProtocol
+import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
+import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 
 /**
  * Tests for writing Parquet files with the GPU.
@@ -135,5 +139,44 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       frame.write.mode("overwrite").parquet(tempFile.getAbsolutePath)
       frame
     }
+  }
+
+  test("Job commit time metrics") {
+    val slowCommitClass = "com.nvidia.spark.rapids.SlowFileCommitProtocolForTest"
+    withGpuSparkSession(spark => {
+      try {
+        spark.sql("CREATE TABLE t(id STRING) USING PARQUET")
+        val df = spark.sql("INSERT INTO TABLE t SELECT 'abc'")
+        val insert = ShimLoader.getSparkShims.findOperators(df.queryExecution.executedPlan,
+          _.isInstanceOf[GpuDataWritingCommandExec]).head
+          .asInstanceOf[GpuDataWritingCommandExec]
+        assert(insert.metrics.contains(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME))
+        assert(insert.metrics.contains(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME))
+        assert(insert.metrics(BasicColumnarWriteJobStatsTracker.JOB_COMMIT_TIME).value > 0)
+        assert(insert.metrics(BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME).value > 0)
+      } finally {
+        spark.sql("DROP TABLE IF EXISTS tempmetricstable")
+      }
+    }, new SparkConf().set("spark.sql.sources.commitProtocolClass", slowCommitClass))
+  }
+}
+
+/** File committer that sleeps before committing each task and the job. */
+case class SlowFileCommitProtocolForTest(
+    jobId: String,
+    path: String,
+    dynamicPartitionOverwrite: Boolean = false)
+    extends SQLHadoopMapReduceCommitProtocol(jobId, path, dynamicPartitionOverwrite) {
+  override def commitTask(
+      taskContext: TaskAttemptContext): FileCommitProtocol.TaskCommitMessage = {
+    Thread.sleep(100)
+    super.commitTask(taskContext)
+  }
+
+  override def commitJob(
+      jobContext: JobContext,
+      taskCommits: Seq[FileCommitProtocol.TaskCommitMessage]): Unit = {
+    Thread.sleep(100)
+    super.commitJob(jobContext, taskCommits)
   }
 }

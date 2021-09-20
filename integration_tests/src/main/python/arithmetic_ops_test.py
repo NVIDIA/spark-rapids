@@ -14,11 +14,12 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat, approximate_float
+from marks import incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311
+from pyspark.sql.types import IntegralType
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311, is_before_spark_320
 import pyspark.sql.functions as f
 from pyspark.sql.utils import IllegalArgumentException
 
@@ -61,6 +62,26 @@ def test_multiplication(data_gen):
                 f.col('b') * f.lit(None).cast(data_type),
                 f.col('a') * f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
+
+# No overflow gens here because we just focus on verifying the fallback to CPU when
+# enabling ansi mode. But overflows will fail the tests because CPU runs raise
+# exceptions.
+_no_overflow_multiply_gens = [
+    ByteGen(min_val = 1, max_val = 10, special_cases=[]),
+    ShortGen(min_val = 1, max_val = 100, special_cases=[]),
+    IntegerGen(min_val = 1, max_val = 1000, special_cases=[]),
+    LongGen(min_val = 1, max_val = 3000, special_cases=[]),
+    float_gen, double_gen,
+    decimal_gen_scale_precision, decimal_gen_same_scale_precision, DecimalGen(8, 8)]
+
+@allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Multiply', 'PromotePrecision', 'Cast')
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
+def test_multiplication_fallback_when_ansi_enabled(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a') * f.col('b')),
+            'ProjectExec',
+            conf={'spark.sql.ansi.enabled': 'true'})
 
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2)], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(6, 3)], ids=idfn)
@@ -520,9 +541,11 @@ def _test_div_by_zero(ansi_mode, expr):
     div_by_zero_func = lambda spark: data_gen(spark).selectExpr(expr)
 
     if ansi_mode == 'ansi':
+        # Note that Spark 3.2.0 throws SparkArithmeticException and < 3.2.0 throws java.lang.ArithmeticException
+        # so just look for ArithmeticException
         assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
                                  conf=ansi_conf,
-                                 error_message='java.lang.ArithmeticException: divide by zero')
+                                 error_message='ArithmeticException: divide by zero')
     else:
         assert_gpu_and_cpu_are_equal_collect(div_by_zero_func, ansi_conf)
 
@@ -535,3 +558,88 @@ def test_div_by_zero_ansi(expr):
 @pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
 def test_div_by_zero_nonansi(expr):
     _test_div_by_zero(ansi_mode='nonAnsi', expr=expr)
+
+
+def _get_div_overflow_df(spark, expr):
+    return spark.createDataFrame(
+        [(LONG_MIN, -1)],
+        ['a', 'b']
+    ).selectExpr(expr)
+
+div_overflow_exprs = [
+    'CAST(-9223372036854775808L as LONG) DIV -1',
+    'a DIV CAST(-1 AS INT)',
+    'a DIV b']
+
+# Only run this test for Spark v3.2.0 and later to verify IntegralDivide will
+# throw exceptions for overflow when ANSI mode is enabled.
+@pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.parametrize('expr', div_overflow_exprs)
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
+    ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
+    if ansi_enabled == 'true':
+        assert_gpu_and_cpu_error(
+            df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
+            conf=ansi_conf,
+            error_message='java.lang.ArithmeticException: Overflow in integral divide')
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            func=lambda spark: _get_div_overflow_df(spark, expr),
+            conf=ansi_conf)
+
+
+# Only run this test before Spark v3.2.0 to verify IntegralDivide will NOT
+# throw exceptions for overflow even ANSI mode is enabled.
+@pytest.mark.skipif(not is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.parametrize('expr', div_overflow_exprs)
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):
+    assert_gpu_and_cpu_are_equal_collect(
+        func=lambda spark: _get_div_overflow_df(spark, expr),
+        conf={'spark.sql.ansi.enabled': ansi_enabled})
+
+
+def _get_add_overflow_df(spark, data, data_type, expr):
+    return spark.createDataFrame(
+        SparkContext.getOrCreate().parallelize([data]),
+        StructType([StructField('a', data_type)])
+    ).selectExpr(expr)
+
+_data_type_expr_for_add_overflow = [
+    ([127], ByteType(), 'a + 1Y'), ([-128], ByteType(), '-1Y + a'),
+    ([32767], ShortType(), 'a + 1S'), ([-32768], ShortType(), '-1S + a'),
+    ([2147483647], IntegerType(), 'a + 1'), ([-2147483648], IntegerType(), '-1 + a'),
+    ([9223372036854775807],  LongType(), 'a + 1L'),
+    ([-9223372036854775808], LongType(), '-1L + a'),
+    ([3.4028235E38],  FloatType(), 'a + a'),
+    ([-3.4028235E38], FloatType(), 'a + a'),
+    ([1.7976931348623157E308],  DoubleType(), 'a + a'),
+    ([-1.7976931348623157E308], DoubleType(), 'a + a'),
+    ([Decimal('9'*18 + 'e-0')], DecimalType(precision=18), 'a + a'),
+    ([Decimal('-' + '9'*18 + 'e-0')], DecimalType(precision=18), 'a + a'),
+]
+
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow[:12])
+def test_add_overflow_with_ansi_enabled(data, tp, expr):
+    ansi_conf = {'spark.sql.ansi.enabled': 'true'}
+    if isinstance(tp, IntegralType):
+        assert_gpu_and_cpu_error(
+            lambda spark: _get_add_overflow_df(spark, data, tp, expr).collect(),
+            conf=ansi_conf,
+            error_message='overflow')
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            func=lambda spark: _get_add_overflow_df(spark, data, tp, expr),
+            conf=ansi_conf)
+
+
+@allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Add', 'PromotePrecision', 'Cast')
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow[12:])
+@pytest.mark.parametrize('ansi_enabled', ['false','true'])
+def test_add_overflow_fallback_for_decimal(data, tp, expr, ansi_enabled):
+    # Spark will try to promote the precision (to 19) which GPU does not supported now.
+    assert_gpu_fallback_collect(
+        lambda spark: _get_add_overflow_df(spark, data, tp, expr),
+        'ProjectExec',
+        conf={'spark.sql.ansi.enabled': ansi_enabled})

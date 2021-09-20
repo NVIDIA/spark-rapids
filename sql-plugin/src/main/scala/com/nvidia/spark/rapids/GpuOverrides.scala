@@ -22,6 +22,8 @@ import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -35,7 +37,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand}
@@ -55,6 +57,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.shims.v2.GpuTimeAdd
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -429,7 +432,7 @@ object WriteFileOp extends FileFormatOp {
   override def toString = "write"
 }
 
-object GpuOverrides {
+object GpuOverrides extends Logging {
   val FLOAT_DIFFERS_GROUP_INCOMPAT =
     "when enabling these, there may be extra groups produced for floating point grouping " +
     "keys (e.g. -0.0, and 0.0)"
@@ -442,6 +445,20 @@ object GpuOverrides {
     "\f", "\\a", "\\e", "\\cx", "[", "]", "^", "&", ".", "*", "\\d", "\\D", "\\h", "\\H", "\\s",
     "\\S", "\\v", "\\V", "\\w", "\\w", "\\p", "$", "\\b", "\\B", "\\A", "\\G", "\\Z", "\\z", "\\R",
     "?", "|", "(", ")", "{", "}", "\\k", "\\Q", "\\E", ":", "!", "<=", ">")
+
+  /**
+   * Provides a way to log an info message about how long an operation took in milliseconds.
+   */
+  def logDuration[T](shouldLog: Boolean, msg: Double => String)(block: => T): T = {
+    val start = System.nanoTime()
+    val ret = block
+    val end = System.nanoTime()
+    if (shouldLog) {
+      val timeTaken = (end - start).toDouble / java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(1)
+      logInfo(msg(timeTaken))
+    }
+    ret
+  }
 
   private[this] val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
 
@@ -457,7 +474,8 @@ object GpuOverrides {
   }
 
   // this listener mechanism is global and is intended for use by unit tests only
-  private val listeners: ListBuffer[GpuOverridesListener] = new ListBuffer[GpuOverridesListener]()
+  private lazy val listeners: ListBuffer[GpuOverridesListener] =
+    new ListBuffer[GpuOverridesListener]()
 
   def addListener(listener: GpuOverridesListener): Unit = {
     listeners += listener
@@ -680,6 +698,34 @@ object GpuOverrides {
   def isAnyStringLit(expressions: Seq[Expression]): Boolean =
     expressions.exists(isStringLit)
 
+  def isOrContainsFloatingPoint(dataType: DataType): Boolean =
+    TrampolineUtil.dataTypeExistsRecursively(dataType, dt => dt == FloatType || dt == DoubleType)
+
+  def checkAndTagFloatAgg(dataType: DataType, conf: RapidsConf, meta: RapidsMeta[_,_,_]): Unit = {
+    if (!conf.isFloatAggEnabled && isOrContainsFloatingPoint(dataType)) {
+      meta.willNotWorkOnGpu("the GPU will aggregate floating point values in" +
+          " parallel and the result is not always identical each time. This can cause" +
+          " some Spark queries to produce an incorrect answer if the value is computed" +
+          " more than once as part of the same query.  To enable this anyways set" +
+          s" ${RapidsConf.ENABLE_FLOAT_AGG} to true.")
+    }
+  }
+
+  def checkAndTagFloatNanAgg(
+      op: String,
+      dataType: DataType,
+      conf: RapidsConf,
+      meta: RapidsMeta[_,_,_]): Unit = {
+    if (conf.hasNans && isOrContainsFloatingPoint(dataType)) {
+      meta.willNotWorkOnGpu(s"$op aggregation on floating point columns that can contain NaNs " +
+          "will compute incorrect results. If it is known that there are no NaNs, set " +
+          s" ${RapidsConf.HAS_NANS} to false.")
+    }
+  }
+
+  private val nanAggPsNote = "Input must not contain NaNs and" +
+      s" ${RapidsConf.HAS_NANS} must be false."
+
   def expr[INPUT <: Expression](
       desc: String,
       pluginChecks: ExprChecks,
@@ -757,7 +803,7 @@ object GpuOverrides {
       .map(r => r.wrap(expr, conf, parent, r).asInstanceOf[BaseExprMeta[INPUT]])
       .getOrElse(new RuleNotFoundExprMeta(expr, conf, parent))
 
-  val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
+  lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes,
       cudfWrite = TypeSig.none,
@@ -771,7 +817,7 @@ object GpuOverrides {
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64 +
-          TypeSig.STRUCT).nested(),
+          TypeSig.STRUCT + TypeSig.MAP).nested(),
       cudfWrite = TypeSig.commonCudfTypes,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
@@ -1335,7 +1381,7 @@ object GpuOverrides {
       ExprChecks.mathUnary,
       (a, conf, p, r) => new UnaryExprMeta[Log1p](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
-          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType)))
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), SQLConf.get.ansiEnabled))
       }),
     expr[Log2](
       "Log base 2",
@@ -1613,8 +1659,17 @@ object GpuOverrides {
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          super.tagSelfForAst()
+          if (ansiEnabled) {
+            willNotWorkInAst("AST Addition does not support ansi mode.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuAdd(lhs, rhs)
+          GpuAdd(lhs, rhs, failOnError = ansiEnabled)
       }),
     expr[Subtract](
       "Subtraction",
@@ -1664,6 +1719,10 @@ object GpuOverrides {
               }
             case _ => // NOOP
           }
+
+          if (SQLConf.get.ansiEnabled) {
+            willNotWorkOnGpu("GPU Multiplication does not support ansi mode")
+          }
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -1671,7 +1730,7 @@ object GpuOverrides {
       }),
     expr[And](
       "Logical AND",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[And](a, conf, p, r) {
@@ -1680,7 +1739,7 @@ object GpuOverrides {
       }),
     expr[Or](
       "Logical OR",
-      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+      ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("lhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
         ("rhs", TypeSig.BOOLEAN, TypeSig.BOOLEAN)),
       (a, conf, p, r) => new BinaryExprMeta[Or](a, conf, p, r) {
@@ -1818,7 +1877,7 @@ object GpuOverrides {
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
-          val boolExpr :: trueExpr :: falseExpr :: Nil = childExprs.map(_.convertToGpu())
+          val Seq(boolExpr, trueExpr, falseExpr) = childExprs.map(_.convertToGpu())
           GpuIf(boolExpr, trueExpr, falseExpr)
         }
       }),
@@ -1995,20 +2054,16 @@ object GpuOverrides {
         TypeSig.all,
         Seq(ParamCheck(
           "pivotColumn",
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
+              .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+              .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
           TypeSig.all),
           ParamCheck("valueColumn",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
           TypeSig.all))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (conf.hasNans &&
-            (pivot.pivotColumn.dataType.equals(FloatType) ||
-              pivot.pivotColumn.dataType.equals(DoubleType))) {
-            willNotWorkOnGpu("Pivot expressions over floating point columns " +
-              "that may contain NaN is disabled. You can bypass this by setting " +
-              s"${RapidsConf.HAS_NANS}=false")
-          }
+          checkAndTagFloatNanAgg("Pivot", pivot.pivotColumn.dataType, conf, this)
           // If pivotColumnValues doesn't have distinct values, fall back to CPU
           if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
             willNotWorkOnGpu("PivotFirst does not work on the GPU when there are duplicate" +
@@ -2040,23 +2095,25 @@ object GpuOverrides {
         ExprChecks.fullAgg(
           TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            (TypeSig.commonCudfTypes + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+            TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable,
             Seq(ParamCheck("input",
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable))
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = max.child.dataType
-          if (conf.hasNans && (dataType == DoubleType || dataType == FloatType)) {
-            willNotWorkOnGpu("Max aggregation on floating point columns that can contain NaNs " +
-              "will compute incorrect results. If it is known that there are no NaNs, set " +
-              s" ${RapidsConf.HAS_NANS} to false.")
-          }
+          checkAndTagFloatNanAgg("Max", dataType, conf, this)
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuMax(child)
@@ -2067,23 +2124,25 @@ object GpuOverrides {
         ExprChecks.fullAgg(
           TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
+            (TypeSig.commonCudfTypes + TypeSig.NULL)
+                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+            TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable,
             Seq(ParamCheck("input",
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL, TypeSig.orderable))
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+              TypeSig.orderable))
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
-          if (conf.hasNans && (dataType == DoubleType || dataType == FloatType)) {
-            willNotWorkOnGpu("Min aggregation on floating point columns that can contain NaNs " +
-              "will compute incorrect results. If it is known that there are no NaNs, set " +
-              s" ${RapidsConf.HAS_NANS} to false.")
-          }
+          checkAndTagFloatNanAgg("Min", dataType, conf, this)
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
@@ -2105,35 +2164,10 @@ object GpuOverrides {
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
-          if (!conf.isFloatAggEnabled && (dataType == DoubleType || dataType == FloatType)) {
-            willNotWorkOnGpu("the GPU will sum floating point values in" +
-              " parallel and the result is not always identical each time. This can cause some" +
-              " Spark queries to produce an incorrect answer if the value is computed more than" +
-              " once as part of the same query.  To enable this anyways set" +
-              s" ${RapidsConf.ENABLE_FLOAT_AGG} to true.")
-          }
+          checkAndTagFloatAgg(dataType, conf, this)
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuSum(child, a.dataType)
-      }),
-    expr[Average](
-      "Average aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
-      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          val dataType = a.child.dataType
-          if (!conf.isFloatAggEnabled && (dataType == DoubleType || dataType == FloatType)) {
-            willNotWorkOnGpu("the GPU will sum floating point values in" +
-              " parallel to compute an average and the result is not always identical each time." +
-              " This can cause some Spark queries to produce an incorrect answer if the value is" +
-              " computed more than once as part of the same query. To enable this anyways set" +
-              s" ${RapidsConf.ENABLE_FLOAT_AGG} to true")
-          }
-        }
-
-        override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
     expr[First](
       "first aggregate operator", {
@@ -2440,6 +2474,86 @@ object GpuOverrides {
           GpuElementAt(lhs, rhs, failOnError = false)
         }
       }),
+    expr[MapKeys](
+      "Returns an unordered array containing the keys of the map",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.ARRAY.nested(TypeSig.all - TypeSig.MAP), // Maps cannot have other maps as keys
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all)),
+      (in, conf, p, r) => new UnaryExprMeta[MapKeys](in, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMapKeys(child)
+      }),
+    expr[MapValues](
+      "Returns an unordered array containing the values of the map",
+      ExprChecks.unaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all)),
+      (in, conf, p, r) => new UnaryExprMeta[MapValues](in, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMapValues(child)
+      }),
+    expr[MapEntries](
+      "Returns an unordered array of all entries in the given map",
+      ExprChecks.unaryProject(
+        // Technically the return type is an array of struct, but we cannot really express that
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all)),
+      (in, conf, p, r) => new UnaryExprMeta[MapEntries](in, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuMapEntries(child)
+      }),
+    expr[ArrayMin](
+      "Returns the minimum value in the array",
+      ExprChecks.unaryProject(
+        // TODO add back in STRING support once https://github.com/rapidsai/cudf/issues/9156
+        //   is fixed
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
+        TypeSig.orderable,
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL -
+            TypeSig.STRING)
+            .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+            .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+        TypeSig.ARRAY.nested(TypeSig.orderable)),
+      (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          checkAndTagFloatNanAgg("Min", in.dataType, conf, this)
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuArrayMin(child)
+      }),
+    expr[ArrayMax](
+      "Returns the maximum value in the array",
+      ExprChecks.unaryProject(
+        // TODO add back in STRING support once https://github.com/rapidsai/cudf/issues/9156
+        //   is fixed
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
+        TypeSig.orderable,
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL
+            - TypeSig.STRING)
+            .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+            .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+        TypeSig.ARRAY.nested(TypeSig.orderable)),
+      (in, conf, p, r) => new UnaryExprMeta[ArrayMax](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          checkAndTagFloatNanAgg("Max", in.dataType, conf, this)
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuArrayMax(child)
+      }),
     expr[CreateNamedStruct](
       "Creates a struct with the given field names and values",
       CreateNamedStructCheck,
@@ -2454,7 +2568,12 @@ object GpuOverrides {
         TypeSig.BOOLEAN,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL),
           TypeSig.ARRAY.nested(TypeSig.all)),
-        ("key", TypeSig.commonCudfTypes, TypeSig.all)),
+        ("key", TypeSig.commonCudfTypes
+            .withPsNote(TypeEnum.DOUBLE, "NaN literals are not supported. Columnar input" +
+                s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false.")
+            .withPsNote(TypeEnum.FLOAT, "NaN literals are not supported. Columnar input" +
+                s" must not contain NaNs and ${RapidsConf.HAS_NANS} must be false."),
+            TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayContains](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // do not support literal arrays as LHS
@@ -2570,6 +2689,33 @@ object GpuOverrides {
       (in, conf, p, r) => new ExprMeta[ArrayTransform](in, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
           GpuArrayTransform(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
+        }
+      }),
+    expr[TransformKeys](
+      "Transform keys in a map using a transform function",
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.MAP.nested(TypeSig.all),
+        Seq(
+          ParamCheck("argument",
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.MAP.nested(TypeSig.all)),
+          ParamCheck("function",
+            // We need to be able to check for duplicate keys (equality)
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+            TypeSig.all - TypeSig.MAP.nested()))),
+      (in, conf, p, r) => new ExprMeta[TransformKeys](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY).toUpperCase match {
+            case "EXCEPTION" => // Good we can support this
+            case other =>
+              willNotWorkOnGpu(s"$other is not supported for config setting" +
+                  s" ${SQLConf.MAP_KEY_DEDUP_POLICY.key}")
+          }
+        }
+        override def convertToGpu(): GpuExpression = {
+          GpuTransformKeys(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
         }
       }),
     expr[TransformValues](
@@ -2832,11 +2978,11 @@ object GpuOverrides {
       "Collect a list of non-unique elements, not supported in reduction",
       // GpuCollectList is not yet supported in Reduction context.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
@@ -2862,9 +3008,9 @@ object GpuOverrides {
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL),
         TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64,
+        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -3175,8 +3321,8 @@ object GpuOverrides {
     exec[UnionExec](
       "The backend for the union operator",
       ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP +
-        TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.MAP)
+        TypeSig.ARRAY + TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY)
         .withPsNote(TypeEnum.STRUCT,
           "unionByName will not optionally impute nulls for missing struct fields " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
@@ -3227,7 +3373,8 @@ object GpuOverrides {
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+            .withPsNote(TypeEnum.STRUCT,
+              "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[ObjectHashAggregateExec](
@@ -3235,10 +3382,11 @@ object GpuOverrides {
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
+            .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+            .withPsNote(TypeEnum.STRUCT,
+              "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
     exec[SortAggregateExec](
@@ -3249,7 +3397,8 @@ object GpuOverrides {
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-            .withPsNote(TypeEnum.STRUCT, "not allowed for grouping expressions"),
+            .withPsNote(TypeEnum.STRUCT,
+              "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuSortAggregateExecMeta(agg, conf, p, r)),
     exec[SortExec](
@@ -3276,12 +3425,7 @@ object GpuOverrides {
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),
-    exec[CustomShuffleReaderExec](
-      "A wrapper of shuffle query stage",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
-      (reader, conf, p, r) => new GpuCustomShuffleReaderMeta(reader, conf, p, r)
-    ),
+    ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
         " scheduling GPU resources for the Python process when enabled",
@@ -3311,7 +3455,7 @@ object GpuOverrides {
     neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
     neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+  lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
 
   def getTimeParserPolicy: TimeParserPolicy = {
@@ -3328,6 +3472,7 @@ object GpuOverrides {
   val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.postColToRowProcessing")
 }
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(plan: SparkPlan) :SparkPlan = {
@@ -3343,17 +3488,20 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
-      val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
-        // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
-        // distribution expressions are not semantically equal.
-        GpuOverrides.removeExtraneousShuffles(plan, conf)
-      } else {
-        plan
+      GpuOverrides.logDuration(conf.shouldExplain,
+        t => f"Plan conversion to the GPU took $t%.2f ms") {
+        val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
+          // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
+          // distribution expressions are not semantically equal.
+          GpuOverrides.removeExtraneousShuffles(plan, conf)
+        } else {
+          plan
+        }
+        applyOverrides(updatedPlan, conf)
       }
-      applyOverrides(updatedPlan, conf)
     } else {
       plan
     }

@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
-import org.scalatest.FunSuite
+import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{BinaryType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuColumnarToRowSuite extends FunSuite with Arm {
+class GpuColumnarToRowSuite extends SparkQueryCompareTestSuite {
   test("iterate past empty input batches") {
     val batchIter: Iterator[ColumnarBatch] = new Iterator[ColumnarBatch] {
       private[this] var batchCount = 0
@@ -43,5 +43,30 @@ class GpuColumnarToRowSuite extends FunSuite with Arm {
     val ctriter = new ColumnarToRowIterator(batchIter, NoopMetric, NoopMetric, NoopMetric,
       NoopMetric)
     assertResult(Seq("1", "3", "5", "7", "9"))(ctriter.map(_.getString(0)).toSeq)
+  }
+
+  test("transform binary data back and forth between Row and Columnar") {
+    val schema = StructType(Seq(StructField("Binary", BinaryType),
+      StructField("BinaryNotNull", BinaryType, nullable = false)))
+    val numRows = 300
+    val rows = GpuBatchUtilsSuite.createRows(schema, numRows)
+
+    withResource(new GpuColumnarBatchBuilder(schema, numRows)) { batchBuilder =>
+      val r2cConverter = new GpuRowToColumnConverter(schema)
+      rows.foreach(r2cConverter.convert(_, batchBuilder))
+      closeOnExcept(batchBuilder.build(numRows)) { columnarBatch =>
+        val c2rIterator = new ColumnarToRowIterator(Iterator(columnarBatch),
+          NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+        rows.foreach { input =>
+          val output = c2rIterator.next()
+          if (input.isNullAt(0)) {
+            assert(output.isNullAt(0))
+          } else {
+            assert(input.getBinary(0) sameElements output.getBinary(0))
+          }
+          assert(input.getBinary(1) sameElements output.getBinary(1))
+        }
+      }
+    }
   }
 }

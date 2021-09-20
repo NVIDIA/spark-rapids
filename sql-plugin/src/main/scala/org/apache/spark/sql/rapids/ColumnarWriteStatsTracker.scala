@@ -72,11 +72,12 @@ trait ColumnarWriteTaskStatsTracker {
 
   /**
    * Returns the final statistics computed so far.
+   * @param taskCommitTime Time of committing the task.
    * @note This may only be called once. Further use of the object may lead to undefined behavior.
    * @return An object of subtype of `org.apache.spark.sql.execution.datasources.WriteTaskStats`,
    *         to be sent to the driver.
    */
-  def getFinalStats(): WriteTaskStats
+  def getFinalStats(taskCommitTime: Long): WriteTaskStats
 }
 
 
@@ -102,6 +103,7 @@ trait ColumnarWriteJobStatsTracker extends Serializable {
    * Process the given collection of stats computed during this job.
    * E.g. aggregate them, write them to memory / disk, issue warnings, whatever.
    * @param stats One `WriteTaskStats` object from each successful write task.
+   * @param jobCommitTime Time of committing the job.
    */
-  def processStats(stats: Seq[WriteTaskStats]): Unit
+  def processStats(stats: Seq[WriteTaskStats], jobCommitTime: Long): Unit
 }

@@ -18,14 +18,16 @@ package com.nvidia.spark.rapids
 
 import java.lang.reflect.Method
 
-import com.nvidia.spark.rapids.shims.sql.ShimUnaryExecNode
+import scala.annotation.tailrec
+
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, NamedExpression, Projection, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
@@ -130,7 +132,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
         parent match {
-          case Some(_: GpuCustomShuffleReaderExec | _: CustomShuffleReaderExec) =>
+          case Some(x) if ShimLoader.getSparkShims.isCustomReaderExec(x) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
@@ -189,6 +191,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
+  @tailrec
   private def isGpuShuffleLike(execNode: SparkPlan): Boolean = execNode match {
     case _: GpuShuffleExchangeExecBase | _: GpuCustomShuffleReaderExec => true
     case qs: ShuffleQueryStageExec => isGpuShuffleLike(qs.plan)
@@ -275,23 +278,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => false
   }
 
-  /**
-   * Because we cannot change the executors in spark itself we need to try and account for
-   * the ones that might have issues with coalesce here.
-   */
-  private def disableCoalesceUntilInput(exec: Expression): Boolean = exec match {
-    case _: InputFileName => true
-    case _: InputFileBlockStart => true
-    case _: InputFileBlockLength => true
-    case e => e.children.exists(disableCoalesceUntilInput)
-  }
+
 
   /**
    * Because we cannot change the executors in spark itself we need to try and account for
    * the ones that might have issues with coalesce here.
    */
   private def disableCoalesceUntilInput(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(disableCoalesceUntilInput)
+    plan.expressions.exists(GpuTransitionOverrides.checkHasInputFileExpressions)
   }
 
   private def disableScanUntilInput(exec: Expression): Boolean = {
@@ -451,7 +445,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: BroadcastHashJoinExec | _: BroadcastNestedLoopJoinExec
           if isAdaptiveEnabled =>
         // broadcasts are left on CPU for now when AQE is enabled
-      case _: AdaptiveSparkPlanExec | _: QueryStageExec | _: CustomShuffleReaderExec =>
+      case p if ShimLoader.getSparkShims.isAqePlan(p)  =>
         // we do not yet fully support GPU-acceleration when AQE is enabled, so we skip checking
         // the plan in this case - https://github.com/NVIDIA/spark-rapids/issues/5
       case lts: LocalTableScanExec =>
@@ -466,6 +460,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
+      case p if ShimLoader.getSparkShims.skipAssertIsOnTheGpu(p) => () // Ignored
       case _ =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little
@@ -476,7 +471,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             !conf.testingAllowedNonGpu.exists(nonGpuClass =>
                 PlanUtils.sameClass(plan, nonGpuClass))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
-            s"${plan.getClass}\n${plan}")
+            s"${plan.getClass}\n$plan")
         }
         // filter out the output expressions since those are not GPU expressions
         val planOutput = plan.output.toSet
@@ -503,7 +498,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       // to set to make uniq execs
       val execsFound = PlanUtils.findOperators(plan, planContainsInstanceOf).toSet
-      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
+      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass.getSimpleName))
       require(execsNotFound.isEmpty,
         s"Plan ${plan.toString()} does not contain the following execs: " +
         execsNotFound.mkString(","))
@@ -520,31 +515,34 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   override def apply(plan: SparkPlan): SparkPlan = {
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled) {
-      var updatedPlan = insertHashOptimizeSorts(plan)
-      updatedPlan = updateScansForInput(updatedPlan)
-      updatedPlan = insertColumnarFromGpu(updatedPlan)
-      updatedPlan = insertCoalesce(updatedPlan)
-      // only insert shuffle coalesces when using normal shuffle
-      if (!GpuShuffleEnv.shouldUseRapidsShuffle(rapidsConf)) {
-        updatedPlan = insertShuffleCoalesce(updatedPlan)
+      GpuOverrides.logDuration(rapidsConf.shouldExplain,
+        t => f"GPU plan transition optimization took $t%.2f ms") {
+        var updatedPlan = insertHashOptimizeSorts(plan)
+        updatedPlan = updateScansForInput(updatedPlan)
+        updatedPlan = insertColumnarFromGpu(updatedPlan)
+        updatedPlan = insertCoalesce(updatedPlan)
+        // only insert shuffle coalesces when using normal shuffle
+        if (!GpuShuffleEnv.shouldUseRapidsShuffle(rapidsConf)) {
+          updatedPlan = insertShuffleCoalesce(updatedPlan)
+        }
+        if (plan.conf.adaptiveExecutionEnabled) {
+          updatedPlan = optimizeAdaptiveTransitions(updatedPlan, None)
+        } else {
+          updatedPlan = optimizeGpuPlanTransitions(updatedPlan)
+        }
+        updatedPlan = optimizeCoalesce(updatedPlan)
+        if (rapidsConf.exportColumnarRdd) {
+          updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
+        }
+        if (rapidsConf.isTestEnabled) {
+          assertIsOnTheGpu(updatedPlan, rapidsConf)
+          // Generate the canonicalized plan to ensure no incompatibilities.
+          // The plan itself is not currently checked.
+          updatedPlan.canonicalized
+          validateExecsInGpuPlan(updatedPlan, rapidsConf)
+        }
+        updatedPlan
       }
-      if (plan.conf.adaptiveExecutionEnabled) {
-        updatedPlan = optimizeAdaptiveTransitions(updatedPlan, None)
-      } else {
-        updatedPlan = optimizeGpuPlanTransitions(updatedPlan)
-      }
-      updatedPlan = optimizeCoalesce(updatedPlan)
-      if (rapidsConf.exportColumnarRdd) {
-        updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
-      }
-      if (rapidsConf.isTestEnabled) {
-        assertIsOnTheGpu(updatedPlan, rapidsConf)
-        // Generate the canonicalized plan to ensure no incompatibilities.
-        // The plan itself is not currently checked.
-        updatedPlan.canonicalized
-        validateExecsInGpuPlan(updatedPlan, rapidsConf)
-      }
-      updatedPlan
     } else {
       plan
     }
@@ -573,6 +571,18 @@ object GpuTransitionOverrides {
         }
       case _ => plan
     }
+  }
+
+  /**
+   * Check the Expression is or has Input File expressions.
+   * @param exec expression to check
+   * @return true or false
+   */
+  def checkHasInputFileExpressions(exec: Expression): Boolean = exec match {
+    case _: InputFileName => true
+    case _: InputFileBlockStart => true
+    case _: InputFileBlockLength => true
+    case e => e.children.exists(checkHasInputFileExpressions)
   }
 }
 

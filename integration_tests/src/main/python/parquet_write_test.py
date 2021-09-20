@@ -21,6 +21,7 @@ from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session
 import pyspark.sql.functions as f
+import pyspark.sql.utils
 import random
 from spark_session import is_before_spark_311
 
@@ -77,6 +78,7 @@ parquet_write_gens_list = [
     parquet_basic_gen + parquet_struct_gen + parquet_array_gen + parquet_decimal_gens + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -85,10 +87,9 @@ def test_write_round_trip(spark_tmp_path, parquet_gens, v1_enabled_list, ts_type
                                   reader_confs):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.parquet.outputTimestampType': ts_type})
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(reader_confs, writer_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
             lambda spark, path: spark.read.parquet(path),
@@ -123,6 +124,7 @@ parquet_part_write_gens = [
 
 # There are race conditions around when individual files are read in for partitioned data
 @ignore_order
+@pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gen', parquet_part_write_gens, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -131,10 +133,9 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
     gen_list = [('a', RepeatSeqGen(parquet_gen, 10)),
             ('b', parquet_gen)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.parquet.outputTimestampType': ts_type})
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(reader_confs, writer_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.partitionBy('a').parquet(path),
             lambda spark, path: spark.read.parquet(path),
@@ -147,8 +148,7 @@ def test_part_write_round_trip(spark_tmp_path, parquet_gen, v1_enabled_list, ts_
                                       TimestampGen(start=datetime(2262, 4, 11, tzinfo=timezone.utc))], ids=idfn)
 def test_catch_int96_overflow(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    confs = writer_confs.copy()
-    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
+    confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_py4j_exception(lambda: with_gpu_session(
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
@@ -156,9 +156,9 @@ def test_catch_int96_overflow(spark_tmp_path, data_gen):
 @pytest.mark.allow_non_gpu("DataWritingCommandExec")
 def test_int96_write_conf(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    confs = writer_confs.copy()
-    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96',
-                 'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
+    confs = copy_and_update(writer_confs, {
+        'spark.sql.parquet.outputTimestampType': 'INT96',
+        'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
     with_gpu_session(lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs)
 
 def test_all_null_int96(spark_tmp_path):
@@ -166,8 +166,7 @@ def test_all_null_int96(spark_tmp_path):
         def start(self, rand):
             self._start(rand, lambda : None)
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    confs = writer_confs.copy()
-    confs.update({'spark.sql.parquet.outputTimestampType': 'INT96'})
+    confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path : unary_op_df(spark, AllNullTimestampGen()).coalesce(1).write.parquet(path),
         lambda spark, path : spark.read.parquet(path),
@@ -180,22 +179,22 @@ parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_compress_write_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = reader_confs.copy()
-    all_confs.update({'spark.sql.sources.useV1SourceList': v1_enabled_list,
-            'spark.sql.parquet.compression.codec': compress})
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.parquet.compression.codec': compress})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path : binary_op_df(spark, long_gen).coalesce(1).write.parquet(path),
             lambda spark, path : spark.read.parquet(path),
             data_path,
             conf=all_confs)
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_write_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.parquet.outputTimestampType': ts_type}
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("parquet").mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.parquet(path),
@@ -208,13 +207,13 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
     write_cmd = 'CREATE TABLE `{}` USING PARQUET location \'{}\' AS SELECT * from `{}`'.format(write_to_table, data_path, tmp_view_name)
     spark.sql(write_cmd)
 
+@pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, ts_type, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs={'spark.sql.parquet.outputTimestampType': ts_type}
-    all_confs.update(writer_confs)
+    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: write_parquet_sql_from(spark, gen_df(spark, gen_list).coalesce(1), path, spark_tmp_table_factory.get()),
             lambda spark, path: spark.read.parquet(path),
@@ -366,3 +365,27 @@ def test_roundtrip_with_rebase_values(spark_tmp_path, ts_write_data_gen, date_ti
         lambda spark, path: spark.read.parquet(path),
         data_path,
         conf=all_confs)
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", "HiveTableScanExec")
+@pytest.mark.parametrize('allow_non_empty', [True, False])
+def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty):
+    data_path = spark_tmp_path + "/CTAS"
+    conf = {
+        "spark.sql.hive.convertCTAS": "true",
+        "spark.sql.legacy.createHiveTableByDefault": "false",
+        "spark.sql.legacy.allowNonEmptyLocationInCTAS": str(allow_non_empty)
+    }
+    def test_it(spark):
+        src_name = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE {}(id string) LOCATION '{}/src1'".format(src_name, data_path))
+        spark.sql("INSERT INTO TABLE {} SELECT 'A'".format(src_name))
+        ctas1_name = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE {}(id string) LOCATION '{}/ctas/ctas1'".format(ctas1_name, data_path))
+        spark.sql("INSERT INTO TABLE {} SELECT 'A'".format(ctas1_name))
+        try:
+            ctas_with_existing_name = spark_tmp_table_factory.get()
+            spark.sql("CREATE TABLE {} LOCATION '{}/ctas' AS SELECT * FROM {}".format(
+                ctas_with_existing_name, data_path, src_name))
+        except pyspark.sql.utils.AnalysisException as e:
+            if allow_non_empty or e.desc.find('non-empty directory') == -1:
+                raise e
+    with_gpu_session(test_it, conf)

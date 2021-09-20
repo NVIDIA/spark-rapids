@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids
 
 import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
-import java.util
 import java.util.{List => JList, Objects}
+import java.util
 import javax.xml.bind.DatatypeConverter
 
 import scala.collection.JavaConverters._
@@ -31,8 +31,8 @@ import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Literal
-import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, MapData, TimestampFormatter}
+import org.apache.spark.sql.catalyst.expressions.{Literal, UnsafeArrayData}
+import org.apache.spark.sql.catalyst.util.{ArrayData, DateTimeUtils, MapData, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -109,6 +109,15 @@ object GpuScalar extends Arm with Logging {
     }
   }
 
+  private[this] def getArrayData(data: ArrayData, eType: DataType): Array[_ >: AnyRef] = {
+    data match {
+      case udata: UnsafeArrayData =>
+        udata.toObjectArray(eType)
+      case adata: ArrayData =>
+        adata.array
+    }
+  }
+
   /** Converts an element for nested lists */
   private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
     case _ if element == null => null
@@ -118,8 +127,8 @@ object GpuScalar extends Arm with Logging {
       case Right(l) => l
     }
     case ArrayType(eType, _) =>
-      val data = element.asInstanceOf[ArrayData]
-      data.array.map(convertElementTo(_, eType)).toList.asJava
+      val data = getArrayData(element.asInstanceOf[ArrayData], eType)
+      data.map(convertElementTo(_, eType)).toList.asJava
     case StructType(fields) =>
       val data = element.asInstanceOf[InternalRow]
       val row = fields.zipWithIndex.map { case (f, id) =>
@@ -128,8 +137,10 @@ object GpuScalar extends Arm with Logging {
       new HostColumnVector.StructData(row.asInstanceOf[Array[Object]]: _*)
     case MapType(keyType, valueType, _) =>
       val data = element.asInstanceOf[MapData]
-      val keys = data.keyArray.array.map(convertElementTo(_, keyType)).toList
-      val values = data.valueArray.array.map(convertElementTo(_, valueType)).toList
+      val keyData = getArrayData(data.keyArray(), keyType)
+      val valueData = getArrayData(data.valueArray(), valueType)
+      val keys = keyData.map(convertElementTo(_, keyType)).toList
+      val values = valueData.map(convertElementTo(_, valueType)).toList
       keys.zip(values).map {
         case (k, v) => new HostColumnVector.StructData(
           k.asInstanceOf[Object],
@@ -298,7 +309,8 @@ object GpuScalar extends Arm with Logging {
     }
     case ArrayType(elementType, _) => v match {
       case array: ArrayData =>
-        withResource(columnVectorFromLiterals(array.array, elementType)) { list =>
+        val data = getArrayData(array, elementType)
+        withResource(columnVectorFromLiterals(data, elementType)) { list =>
           Scalar.listFromColumnView(list)
         }
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
@@ -319,8 +331,10 @@ object GpuScalar extends Arm with Logging {
     }
     case MapType(keyType, valueType, _) => v match {
       case map: MapData =>
-        val struct = withResource(columnVectorFromLiterals(map.keyArray().array, keyType)) { keys =>
-          withResource(columnVectorFromLiterals(map.valueArray().array, valueType)) { values =>
+        val keyArray = getArrayData(map.keyArray(), keyType)
+        val valueArray = getArrayData(map.valueArray(), valueType)
+        val struct = withResource(columnVectorFromLiterals(keyArray, keyType)) { keys =>
+          withResource(columnVectorFromLiterals(valueArray, valueType)) { values =>
             ColumnVector.makeStruct(map.numElements(), keys, values)
           }
         }
@@ -335,8 +349,8 @@ object GpuScalar extends Arm with Logging {
   }
 
   def isNan(s: Scalar): Boolean = s.getType match {
-    case DType.FLOAT32 => s.isValid && s.getFloat.isNaN()
-    case DType.FLOAT64 => s.isValid && s.getDouble.isNaN()
+    case DType.FLOAT32 => s.isValid && s.getFloat.isNaN
+    case DType.FLOAT64 => s.isValid && s.getDouble.isNaN
     case t => throw new IllegalStateException(s"$t is doesn't support NaNs")
   }
 
@@ -619,7 +633,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       }
     case (v: Decimal, _: DecimalType) => v + "BD"
     case (v: Int, DateType) =>
-      val formatter = DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
+      val formatter = ShimLoader.getSparkShims.getDateFormatter()
       s"DATE '${formatter.format(v)}'"
     case (v: Long, TimestampType) =>
       val formatter = TimestampFormatter.getFractionFormatter(
@@ -665,13 +679,6 @@ class LiteralExprMeta(
   override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
     if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
       super.print(append, depth, all)
-    }
-  }
-
-  override protected def tagSelfForAst(): Unit = {
-    // Preclude null literals until https://github.com/rapidsai/cudf/issues/8831 is fixed.
-    if (lit.value == null) {
-      willNotWorkInAst("null literals are not supported")
     }
   }
 }

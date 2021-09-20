@@ -16,12 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.Optional
-
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnView, DType}
+import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.types.{ArrayType, DataType, MapType, Metadata}
@@ -67,7 +66,7 @@ case class GpuLambdaFunction(
     function: Expression,
     arguments: Seq[NamedExpression],
     hidden: Boolean = false)
-    extends GpuExpression {
+    extends GpuExpression with ShimExpression {
 
   override def children: Seq[Expression] = function +: arguments
   override def dataType: DataType = function.dataType
@@ -81,7 +80,7 @@ case class GpuLambdaFunction(
  * A higher order function takes one or more (lambda) functions and applies these to some objects.
  * The function produces a number of variables which can be consumed by some lambda function.
  */
-trait GpuHigherOrderFunction extends GpuExpression {
+trait GpuHigherOrderFunction extends GpuExpression with ShimExpression {
 
   override def nullable: Boolean = arguments.exists(_.nullable)
 
@@ -278,21 +277,6 @@ case class GpuArrayTransform(
     }
   }
 
-  private[this] def makeListFrom(
-      dataCol: cudf.ColumnVector,
-      listCol: cudf.ColumnVector,
-      resultType: DataType): GpuColumnVector = {
-    withResource(listCol.getOffsets) { offsets =>
-      withResource(listCol.getValid) { validity =>
-        withResource(new ColumnView(DType.LIST, listCol.getRowCount,
-          Optional.of[java.lang.Long](listCol.getNullCount), validity, offsets,
-          Array[ColumnView](dataCol))) { view =>
-          GpuColumnVector.from(view.copyToColumnVector(), resultType)
-        }
-      }
-    }
-  }
-
   override def columnarEval(batch: ColumnarBatch): Any = {
     withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
       val dataCol = withResource(
@@ -300,38 +284,26 @@ case class GpuArrayTransform(
         GpuExpressionsUtils.columnarEvalToColumn(function, cb)
       }
       withResource(dataCol) { dataCol =>
-        makeListFrom(dataCol.getBase, arg.getBase, dataType)
+        withResource(GpuListUtils.replaceListDataColumnAsView(arg.getBase, dataCol.getBase)) {
+          retView =>
+            GpuColumnVector.from(retView.copyToColumnVector(), dataType)
+        }
       }
     }
   }
 }
 
-case class GpuTransformValues(
-    argument: Expression,
-    function: Expression,
-    isBound: Boolean = false,
-    boundIntermediate: Seq[GpuExpression] = Seq.empty)
-    extends GpuSimpleHigherOrderFunction
-        with GpuBind {
+trait GpuMapSimpleHigherOrderFunction extends GpuSimpleHigherOrderFunction with GpuBind {
 
-  @transient lazy val MapType(keyType, valueType, valueContainsNull) = argument.dataType
+  protected def isBound: Boolean
+  protected def boundIntermediate: Seq[GpuExpression]
 
-  override def dataType: DataType = MapType(keyType, function.dataType, function.nullable)
-
-  override def prettyName: String = "transform"
-
-  private lazy val inputToLambda: Seq[DataType] = {
+  protected lazy val inputToLambda: Seq[DataType] = {
     assert(isBound)
     boundIntermediate.map(_.dataType) ++ lambdaFunction.arguments.map(_.dataType)
   }
 
-  override def bind(input: AttributeSeq): GpuExpression = {
-    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
-
-    GpuTransformValues(boundArg, boundFunc, isBound = true, boundIntermediate)
-  }
-
-  private[this] def makeElementProjectBatch(
+  protected def makeElementProjectBatch(
       inputBatch: ColumnarBatch,
       listColumn: cudf.ColumnVector): ColumnarBatch = {
     assert(listColumn.getType.equals(DType.LIST))
@@ -354,18 +326,20 @@ case class GpuTransformValues(
         cols(index) = explodedTable.getColumn(index)
       }
       val keyValuePairColumn = explodedTable.getColumn(numOtherColumns)
-      val keyCol = withResource(keyValuePairColumn.getChildColumnView(0)) { keyView =>
+      val keyCol = withResource(
+        keyValuePairColumn.getChildColumnView(GpuMapUtils.KEY_INDEX)) { keyView =>
         keyView.copyToColumnVector()
       }
       withResource(keyCol) { keyCol =>
-        val valCol = withResource(keyValuePairColumn.getChildColumnView(1)) { valueView =>
+        val valCol = withResource(
+          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX)) { valueView =>
           valueView.copyToColumnVector()
         }
 
         withResource(valCol) { valCol =>
           cols(numOtherColumns) = keyCol
           cols(numOtherColumns + 1) = valCol
-            new cudf.Table(cols: _*)
+          new cudf.Table(cols: _*)
         }
       }
     }
@@ -373,30 +347,62 @@ case class GpuTransformValues(
       GpuColumnVector.from(moddedTable, inputToLambda.toArray)
     }
   }
+}
 
-  private[this] def replaceValue(
-      valueCol: cudf.ColumnVector,
-      mapCol: cudf.ColumnVector,
-      resultType: DataType): GpuColumnVector = {
-    withResource(mapCol.getChildColumnView(0)) { keyValueView =>
-      withResource(keyValueView.getValid) { keyValueValidity =>
-        withResource(keyValueView.getChildColumnView(0)) { keyView =>
-          withResource(new ColumnView(DType.STRUCT, keyValueView.getRowCount,
-            Optional.empty[java.lang.Long](), keyValueValidity, null,
-            Array[ColumnView](keyView, valueCol))) { updatedKeyValueView =>
-            withResource(mapCol.getOffsets) { mapOffsets =>
-              withResource(mapCol.getValid) { mapValid =>
-                withResource(new ColumnView(DType.LIST, mapCol.getRowCount,
-                  Optional.of[java.lang.Long](mapCol.getNullCount), mapValid, mapOffsets,
-                  Array[ColumnView](updatedKeyValueView))) { updatedMapView =>
-                  GpuColumnVector.from(updatedMapView.copyToColumnVector(), resultType)
-                }
-              }
-            }
-          }
+case class GpuTransformKeys(
+    argument: Expression,
+    function: Expression,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty)
+    extends GpuMapSimpleHigherOrderFunction {
+
+  @transient lazy val MapType(keyType, valueType, valueContainsNull) = argument.dataType
+
+  override def dataType: DataType = MapType(function.dataType, valueType, valueContainsNull)
+
+  override def prettyName: String = "transform_keys"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuTransformKeys(boundArg, boundFunc, isBound = true, boundIntermediate)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(argument, batch)) { arg =>
+      val newKeysCol = withResource(
+        makeElementProjectBatch(batch, arg.getBase)) { cb =>
+        GpuExpressionsUtils.columnarEvalToColumn(function, cb)
+      }
+      withResource(newKeysCol) { newKeysCol =>
+        withResource(GpuMapUtils.replaceExplodedKeyAsView(arg.getBase, newKeysCol.getBase)) {
+          updatedMapView =>
+            GpuMapUtils.assertNoNullKeys(updatedMapView)
+            GpuMapUtils.assertNoDuplicateKeys(updatedMapView)
+            GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
         }
       }
     }
+  }
+}
+
+case class GpuTransformValues(
+    argument: Expression,
+    function: Expression,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty)
+    extends GpuMapSimpleHigherOrderFunction {
+
+  @transient lazy val MapType(keyType, valueType, valueContainsNull) = argument.dataType
+
+  override def dataType: DataType = MapType(keyType, function.dataType, function.nullable)
+
+  override def prettyName: String = "transform_values"
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundIntermediate) = bindLambdaFunc(input)
+
+    GpuTransformValues(boundArg, boundFunc, isBound = true, boundIntermediate)
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -406,7 +412,10 @@ case class GpuTransformValues(
         GpuExpressionsUtils.columnarEvalToColumn(function, cb)
       }
       withResource(newValueCol) { newValueCol =>
-        replaceValue(newValueCol.getBase, arg.getBase, dataType)
+        withResource(GpuMapUtils.replaceExplodedValueAsView(arg.getBase, newValueCol.getBase)) {
+          updatedMapView =>
+            GpuColumnVector.from(updatedMapView.copyToColumnVector(), dataType)
+        }
       }
     }
   }

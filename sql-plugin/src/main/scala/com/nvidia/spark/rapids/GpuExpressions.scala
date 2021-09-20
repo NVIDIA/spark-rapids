@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
-import ai.rapids.cudf.ast
+import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.sql.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.v2.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -111,14 +110,14 @@ object GpuExpressionsUtils extends Arm {
  * An Expression that cannot be evaluated in the traditional row-by-row sense (hence Unevaluable)
  * but instead can be evaluated on an entire column batch at once.
  */
-trait GpuExpression extends ShimExpression with Arm {
+trait GpuExpression extends Expression with Arm {
 
   // copied from Unevaluable to avoid inheriting  final foldable
   //
   final override def eval(input: InternalRow = null): Any =
     throw new UnsupportedOperationException(s"Cannot evaluate expression: $this")
 
-  final override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode =
+  final override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode =
     throw new UnsupportedOperationException(s"Cannot generate code for expression: $this")
 
   /**
@@ -164,7 +163,7 @@ trait GpuExpression extends ShimExpression with Arm {
     throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
 }
 
-abstract class GpuLeafExpression extends GpuExpression {
+abstract class GpuLeafExpression extends GpuExpression with ShimExpression {
   override final def children: Seq[Expression] = Nil
 }
 
@@ -276,6 +275,8 @@ object CudfBinaryExpression {
     BinaryOp.GREATER_EQUAL -> ast.BinaryOperator.GREATER_EQUAL,
     BinaryOp.LESS -> ast.BinaryOperator.LESS,
     BinaryOp.LESS_EQUAL -> ast.BinaryOperator.LESS_EQUAL,
+    BinaryOp.LOGICAL_AND -> ast.BinaryOperator.NULL_LOGICAL_AND,
+    BinaryOp.LOGICAL_OR -> ast.BinaryOperator.NULL_LOGICAL_OR,
     BinaryOp.MUL -> ast.BinaryOperator.MUL,
     BinaryOp.POW -> ast.BinaryOperator.POW,
     BinaryOp.SUB -> ast.BinaryOperator.SUB)
@@ -343,7 +344,8 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
 
 abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpression
 
-trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression {
+trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression
+    with ShimExpression {
 
   override def srcStr: Expression
 
@@ -357,7 +359,6 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
     s"TRIM($direction ${trimStr.get.sql} FROM ${srcStr.sql})"
   } else {
     super.sql
-
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -376,6 +377,19 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
         }
       }
     }
+  }
+
+  protected def doEval(
+      srcString: org.apache.spark.unsafe.types.UTF8String,
+      trimString: org.apache.spark.unsafe.types.UTF8String
+  ): org.apache.spark.unsafe.types.UTF8String = {
+    throw new UnsupportedOperationException("TODO: Columnar only message!")
+  }
+
+  protected def doEval(
+      srcString: org.apache.spark.unsafe.types.UTF8String
+  ): org.apache.spark.unsafe.types.UTF8String = {
+    throw new UnsupportedOperationException("TODO: Columnar only message!")
   }
 }
 
@@ -423,6 +437,7 @@ trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
   }
 }
 
-trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression
+    with GpuExpression with ShimExpression {
   def columnarEval(batch: ColumnarBatch): Any
 }

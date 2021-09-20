@@ -19,13 +19,14 @@ package com.nvidia.spark.rapids
 import java.net.URI
 import java.nio.ByteBuffer
 
+import com.esotericsoftware.kryo.Kryo
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
@@ -34,9 +35,10 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, Nul
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
+import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -44,7 +46,7 @@ import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExcha
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
-import org.apache.spark.sql.rapids.{GpuFileSourceScanExec, ShuffleManagerShimBase}
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -165,8 +167,6 @@ trait SparkShims {
     startPartition: Int,
     endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]
 
-  def getShuffleManagerShims(): ShuffleManagerShimBase
-
   def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition
 
   def getPartitionFileNames(partitions: Seq[PartitionDirectory]): Seq[String]
@@ -234,6 +234,8 @@ trait SparkShims {
 
   def shouldFailDivByZero(): Boolean
 
+  def shouldFailDivOverflow(): Boolean
+
   def createTable(table: CatalogTable,
     sessionCatalog: SessionCatalog,
     tableLocation: Option[URI],
@@ -255,4 +257,41 @@ trait SparkShims {
   def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
 
   def broadcastModeTransform(mode: BroadcastMode, toArray: Array[InternalRow]): Any
+
+  def isAqePlan(p: SparkPlan): Boolean
+
+  def isExchangeOp(plan: SparkPlanMeta[_]): Boolean
+
+  def getDateFormatter(): DateFormatter
+
+  def sessionFromPlan(plan: SparkPlan): SparkSession
+
+  def isCustomReaderExec(x: SparkPlan): Boolean
+
+  def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
+
+  /**
+   * Walk the plan recursively and return a list of operators that match the predicate
+   */
+  def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan]
+
+  /**
+   * Our tests, by default, will check that all operators are running on the GPU, but
+   * there are some operators that we do not translate to GPU plans, so we need a way
+   * to bypass the check for those.
+   */
+  def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
+
+  def leafNodeDefaultParallelism(ss: SparkSession): Int
+
+  def registerKryoClasses(kryo: Kryo): Unit
+}
+
+abstract class SparkCommonShims extends SparkShims {
+  override def alias(child: Expression, name: String)(
+      exprId: ExprId,
+      qualifier: Seq[String],
+      explicitMetadata: Option[Metadata]): Alias = {
+    Alias(child, name)(exprId, qualifier, explicitMetadata)
+  }
 }

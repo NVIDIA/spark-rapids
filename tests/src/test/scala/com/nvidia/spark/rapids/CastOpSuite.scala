@@ -156,6 +156,24 @@ class CastOpSuite extends GpuExpressionTestSuite {
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
 
+  test("Cast from string to date ANSI mode with valid values") {
+    testCastStringTo(DataTypes.DateType, Seq("2021-01-01", "2021-02-01"),
+      ansiMode = AnsiExpectSuccess)
+  }
+
+  test("Cast from string to date ANSI mode with invalid values") {
+    assumeSpark320orLater
+    // test the values individually
+    Seq("2021-20-60", "not numbers", "666666666").foreach { value =>
+      testCastStringTo(DataTypes.DateType, Seq(value), ansiMode = AnsiExpectFailure)
+    }
+  }
+
+  test("Cast from string to timestamp") {
+    testCastStringTo(DataTypes.TimestampType,
+      timestampsAsStringsSeq(castStringToTimestamp = true, validOnly = false))
+  }
+
   ignore("Cast from string to timestamp using random inputs") {
     // Test ignored due to known issues
     // https://github.com/NVIDIA/spark-rapids/issues/2889
@@ -941,30 +959,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("CAST string to date - sanitize step") {
-    val testPairs = Seq(
-      ("2001-1", "2001-01"),
-      ("2001-01-1", "2001-01-01"),
-      ("2001-1-1", "2001-01-01"),
-      ("2001-01-1", "2001-01-01"),
-      ("2001-01-1 ", "2001-01-01 "),
-      ("2001-1-1 ", "2001-01-01 "),
-      ("2001-1-1 ZZZ", "2001-01-01 ZZZ"),
-      ("2001-1-1TZZZ", "2001-01-01TZZZ"),
-      ("3330-7 39 49: 1", "3330-7 39 49: 1"),
-      ("today", "today")
-    )
-    val inputs = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(GpuCast.sanitizeStringToDate(v)) { actual =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
-    }
-  }
-
   protected def testCastToDecimal(
     dataType: DataType,
     scale: Int,
@@ -1220,10 +1214,9 @@ object CastOpSuite {
     timestampValues.map(_.toDouble).toDF("c0")
   }
 
-  def timestampsAsStrings(session: SparkSession,
+  def timestampsAsStringsSeq(
       castStringToTimestamp: Boolean,
-      validOnly: Boolean): DataFrame = {
-    import session.sqlContext.implicits._
+      validOnly: Boolean): Seq[String] = {
 
     val specialDates = Seq(
       "epoch",
@@ -1260,6 +1253,7 @@ object CastOpSuite {
     )
 
     val validTimestamps = Seq(
+      "2030-8-1 1:2:3.012345Z",
       "2030-8-1 11:02:03.012345Z",
       "2030-9-11 11:02:03.012345Z",
       "2030-10-1 11:02:03.012345Z",
@@ -1277,6 +1271,7 @@ object CastOpSuite {
       Seq(
         "200", // year too few digits
         "20000", // year too many digits
+        "21\r\n", // year with 4 chars but not all digits
         "3330-7 39 49: 1",
         "1999\rGARBAGE",
         "1999-1\rGARBAGE",
@@ -1297,6 +1292,7 @@ object CastOpSuite {
         "2010-01-6T  12:34:56.000111Z",
         "2010-01-6 T 12:34:56.000111Z",
         "2010-01-6  T12:34:56.000111Z",
+        "2010-01-6  T1:3:5.000111Z",
         "2030-11-11 12:02:03.012345Z TRAILING TEXT",
         "2010-01-6 ",
         "2010-01-6 T",
@@ -1364,7 +1360,15 @@ object CastOpSuite {
 
     val valuesWithWhitespace = values.map(s => s"\t\n\t$s\r\n")
 
-    (values ++ valuesWithWhitespace).toDF("c0")
+    values ++ valuesWithWhitespace
+  }
+
+  def timestampsAsStrings(
+      session: SparkSession,
+      castStringToTimestamp: Boolean,
+      validOnly: Boolean): DataFrame = {
+    import session.sqlContext.implicits._
+    timestampsAsStringsSeq(castStringToTimestamp, validOnly).toDF("c0")
   }
 
   def validTimestamps(session: SparkSession): DataFrame = {
