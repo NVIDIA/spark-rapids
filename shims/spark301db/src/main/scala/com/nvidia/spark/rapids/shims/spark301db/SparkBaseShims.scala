@@ -23,7 +23,7 @@ import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.Spark30XShims
+import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -59,9 +59,10 @@ import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
-import org.apache.spark.sql.rapids.execution.python.{GpuFlatMapGroupsInPandasExecMeta, GpuPythonUDF}
-import org.apache.spark.sql.rapids.execution.python.shims.spark301db._
-import org.apache.spark.sql.rapids.shims.spark301db._
+import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.shims.v2._
+import org.apache.spark.sql.rapids.shims.spark301db.GpuFileScanRDD
+import org.apache.spark.sql.rapids.shims.v2.GpuSchemaUtils
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
