@@ -61,7 +61,7 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuB
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 import org.apache.spark.sql.rapids.execution.python.shims.spark313._
 import org.apache.spark.sql.rapids.shims.spark313._
-import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
+import org.apache.spark.sql.rapids.shims.v2.{GpuInMemoryTableScanExec, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
