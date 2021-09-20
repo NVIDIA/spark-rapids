@@ -30,7 +30,7 @@
 # 2. count the diff files from Step 1 which is (numShimsInBuild - 1)
 # 3. Call sort on all the diff files and replace duplicate entries with
 #    uniq counts
-# 4. all entries that occur (numShimsInBuild - 1) tinmes are identical for all shims
+# 4. all entries that occur (numShimsInBuild - 1) times are identical for all shims
 #    and constitute the list for spark3xx-common
 
 # PWD should be dist/target
@@ -42,12 +42,14 @@ REF_SHIM=$(<<< "$SHIM_DIRS" head -1)
 SHIMS_TO_COMPARE=$(<<< "$SHIM_DIRS" tail --lines=+2)
 NUM_DIFFS=$(<<< "$SHIMS_TO_COMPARE" wc -l)
 DIFFDIR=binary-diffs
+DIFFLABEL="DEDUPE_BINARYDIFF_$(date +%s)"
 
 mkdir $DIFFDIR
 <<< "$SHIMS_TO_COMPARE" xargs -I% -n 1 bash -c \
-  "diff -s -r $PARALLEL_WORLDS_DIR/$REF_SHIM $PARALLEL_WORLDS_DIR/% |
-    grep '.class are identical' |
-    cut -d' ' -f 2 |
+  "diff -q -s -r --label $DIFFLABEL \
+    $PARALLEL_WORLDS_DIR/$REF_SHIM $PARALLEL_WORLDS_DIR/% |
+    grep ^Files\ $DIFFLABEL\ and\ .*\.class\ are\ identical |
+    cut -d' ' -f 4 |
     cut -d/ -f 3- > $DIFFDIR/$REF_SHIM-%.identical"
 
 SPARK3XX_COMMON_TXT=$PWD/spark3xx-common.txt
@@ -68,3 +70,8 @@ for shimDir in $SHIM_DIRS; do
 done
 
 mv "$SPARK3XX_COMMON_DIR" $PARALLEL_WORLDS_DIR/
+
+# TODO further dedupe by FEATURE version lines:
+#  spark30x-common
+#  spark31x-common
+#  spark32x-common
