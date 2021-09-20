@@ -556,7 +556,16 @@ case class GpuSum(child: Expression, resultType: DataType)
     TypeUtils.checkForNumericExpr(child.dataType, "function gpu sum")
 
   // GENERAL WINDOW FUNCTION
-  override lazy val windowInputProjection: Seq[Expression] = inputProjection
+  // Spark 3.2.0+ stopped casting the input data to the output type before the sum operation
+  // This fixes that.
+  override lazy val windowInputProjection: Seq[Expression] = {
+    if (child.dataType != resultType) {
+      Seq(GpuCast(child, resultType))
+    } else {
+      Seq(child)
+    }
+  }
+
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.sum().onColumn(inputs.head._2)
@@ -566,12 +575,15 @@ case class GpuSum(child: Expression, resultType: DataType)
     new SumBinaryFixer()
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
-    inputProjection
+    windowInputProjection
+
   override def groupByScanAggregation(
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
     Seq(AggAndReplace(GroupByScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
-  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
+  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
+    windowInputProjection
+
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
     Seq(AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 }
