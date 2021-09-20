@@ -23,6 +23,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -56,6 +57,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.shims.v2.GpuTimeAdd
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 

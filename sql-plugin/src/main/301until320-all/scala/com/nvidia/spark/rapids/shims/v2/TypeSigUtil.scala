@@ -66,4 +66,7 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
    */
   override def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value = TypeEnum.UDT
 
+  /** Get numeric and interval TypeSig */
+  override def getNumericAndInterval(): TypeSig =
+    TypeSig.numeric + TypeSig.CALENDAR
 }
