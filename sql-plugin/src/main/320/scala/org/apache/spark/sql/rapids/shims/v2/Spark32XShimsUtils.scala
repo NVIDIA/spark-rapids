@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql
+package org.apache.spark.sql.rapids.shims.v2
+
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.{CalendarIntervalType, DataType, DateType, DayTimeIntervalType, IntegerType, TimestampNTZType, TimestampType, YearMonthIntervalType}
 
 object Spark32XShimsUtils {
 
@@ -22,5 +25,15 @@ object Spark32XShimsUtils {
     ss.leafNodeDefaultParallelism
   }
 
-}
+  def isValidRangeFrameType(orderSpecType: DataType, ft: DataType): Boolean = {
+    (orderSpecType, ft) match {
+      case (DateType, IntegerType) => true
+      case (DateType, _: YearMonthIntervalType) => true
+      case (TimestampType | TimestampNTZType, CalendarIntervalType) => true
+      case (TimestampType | TimestampNTZType, _: YearMonthIntervalType) => true
+      case (TimestampType | TimestampNTZType, _: DayTimeIntervalType) => true
+      case (a, b) => a == b
+    }
+  }
 
+}
