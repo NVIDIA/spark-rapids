@@ -200,7 +200,7 @@ def test_array_transform(data_gen):
 
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
 array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
-        boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_min(data_gen):
@@ -211,14 +211,6 @@ def test_array_min(data_gen):
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
                 'spark.rapids.sql.hasNans': 'false'})
 
-@allow_non_gpu("ProjectExec", "ArrayMin", "Alias")
-@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
-def test_array_min_fallback(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-                'array_min(a)'),
-            "ArrayMin")
-
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -227,14 +219,6 @@ def test_array_max(data_gen):
             conf={
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
                 'spark.rapids.sql.hasNans': 'false'})
-
-@allow_non_gpu("ProjectExec", "ArrayMax", "Alias")
-@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
-def test_array_max_fallback(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-                'array_max(a)'),
-            "ArrayMax")
 
 # We add in several types of processing for foldable functions because the output
 # can be different types.

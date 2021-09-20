@@ -2520,12 +2520,9 @@ object GpuOverrides extends Logging {
     expr[ArrayMin](
       "Returns the minimum value in the array",
       ExprChecks.unaryProject(
-        // TODO add back in STRING support once https://github.com/rapidsai/cudf/issues/9156
-        //   is fixed
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL -
-            TypeSig.STRING)
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
             .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
             .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
@@ -2540,12 +2537,9 @@ object GpuOverrides extends Logging {
     expr[ArrayMax](
       "Returns the maximum value in the array",
       ExprChecks.unaryProject(
-        // TODO add back in STRING support once https://github.com/rapidsai/cudf/issues/9156
-        //   is fixed
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL
-            - TypeSig.STRING)
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
             .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
             .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
