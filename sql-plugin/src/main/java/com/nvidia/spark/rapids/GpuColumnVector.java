@@ -550,6 +550,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return emptyHostColumns(structFromAttributes(format));
   }
 
+  /**
+   * Create empty host column vectors from the given format.  This should only be necessary
+   * when serializing an empty broadcast table.
+   */
+  public static HostColumnVector[] emptyHostColumns(DataType[] format) {
+    return emptyHostColumns(structFromTypes(format));
+  }
+
   private static StructType structFromTypes(DataType[] format) {
     StructField[] fields = new StructField[format.length];
     int i = 0;
