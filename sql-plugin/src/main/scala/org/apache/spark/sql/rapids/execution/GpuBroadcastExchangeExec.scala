@@ -46,64 +46,108 @@ import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
+object SerializedHostTableUtils extends Arm {
+  /** Read in a cudf serialized table into host memory */
+  def readTableHeaderAndBuffer(
+      in: ObjectInputStream): (JCudfSerialization.SerializedTableHeader, HostMemoryBuffer) = {
+    val din = new DataInputStream(in)
+    val header = new JCudfSerialization.SerializedTableHeader(din)
+    if (!header.wasInitialized()) {
+      throw new IllegalStateException("Could not read serialized table header")
+    }
+    closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen)) { buffer =>
+      // buffer will only be cleaned up on GC, so cannot warn about leaks
+      buffer.noWarnLeakExpected()
+      JCudfSerialization.readTableIntoBuffer(din, header, buffer)
+      if (!header.wasDataRead()) {
+        throw new IllegalStateException("Could not read serialized table data")
+      }
+      (header, buffer)
+    }
+  }
+}
+
 @SerialVersionUID(100L)
 class SerializeConcatHostBuffersDeserializeBatch(
-    private val data: Array[SerializeBatchDeserializeHostBuffer],
-    private val output: Seq[Attribute])
+    data: Array[SerializeBatchDeserializeHostBuffer],
+    output: Seq[Attribute])
   extends Serializable with Arm with AutoCloseable {
-  @transient private val headers = data.map(_.header)
-  @transient private val buffers = data.map(_.buffer)
+  @transient private var dataTypes = output.map(_.dataType).toArray
+  @transient private var headers = data.map(_.header)
+  @transient private var buffers = data.map(_.buffer)
   @transient private var batchInternal: ColumnarBatch = null
 
   def batch: ColumnarBatch = this.synchronized {
     if (batchInternal == null) {
-      // TODO we should come up with a better way for this to happen directly...
-      val out = new ByteArrayOutputStream()
-      val oout = new ObjectOutputStream(out)
-      writeObject(oout)
-      val barr = out.toByteArray
-      val oin = new ObjectInputStream(new ByteArrayInputStream(barr))
-      readObject(oin)
+      if (headers.length > 1) {
+        // This should only happen if the driver is trying to access the batch. That should not be
+        // a common occurrence, so for simplicity just round-trip this through the serialization.
+        val out = new ByteArrayOutputStream()
+        val oout = new ObjectOutputStream(out)
+        writeObject(oout)
+        val barr = out.toByteArray
+        val oin = new ObjectInputStream(new ByteArrayInputStream(barr))
+        readObject(oin)
+      }
+      assert(headers.length <= 1 && buffers.length <= 1)
+      withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
+        if (headers.isEmpty) {
+          batchInternal = GpuColumnVector.emptyBatchFromTypes(dataTypes)
+        } else {
+          withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) { tableInfo =>
+            val table = tableInfo.getContiguousTable
+            if (table == null) {
+              val numRows = tableInfo.getNumRows
+              batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
+            } else {
+              batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
+              GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
+            }
+          }
+        }
+
+        // At this point we no longer need the host data and should not need to touch it again.
+        buffers.safeClose()
+        headers = null
+        buffers = null
+      }
     }
     batchInternal
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    if (headers.length == 0) {
-      import scala.collection.JavaConverters._
-      // We didn't get any data back, but we need to write out an empty table that matches
-      withResource(GpuColumnVector.emptyHostColumns(output.asJava)) { hostVectors =>
-        JCudfSerialization.writeToStream(hostVectors, out, 0, 0)
-      }
-      out.writeObject(output.map(_.dataType).toArray)
-    } else if (headers.head.getNumColumns == 0) {
-      JCudfSerialization.writeRowsToStream(out, numRows)
+    if (batchInternal != null) {
+      val table = GpuColumnVector.from(batchInternal)
+      JCudfSerialization.writeToStream(table, out, 0, table.getRowCount)
+      out.writeObject(dataTypes)
     } else {
-      JCudfSerialization.writeConcatedStream(headers, buffers, out)
-      out.writeObject(output.map(_.dataType).toArray)
+      if (headers.length == 0) {
+        // We didn't get any data back, but we need to write out an empty table that matches
+        withResource(GpuColumnVector.emptyHostColumns(dataTypes)) { hostVectors =>
+          JCudfSerialization.writeToStream(hostVectors, out, 0, 0)
+        }
+        out.writeObject(dataTypes)
+      } else if (headers.head.getNumColumns == 0) {
+        JCudfSerialization.writeRowsToStream(out, numRows)
+      } else {
+        JCudfSerialization.writeConcatedStream(headers, buffers, out)
+        out.writeObject(dataTypes)
+      }
     }
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    val range = new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)
-    try {
-      val tableInfo: JCudfSerialization.TableAndRowCountPair =
-        JCudfSerialization.readTableFrom(in)
-      try {
-        val table = tableInfo.getContiguousTable
-        if (table == null) {
-          val numRows = tableInfo.getNumRows
-          this.batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
+    withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
+      val (header, buffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(in)
+      closeOnExcept(buffer) { _ =>
+        dataTypes = if (header.getNumColumns > 0) {
+          in.readObject().asInstanceOf[Array[DataType]]
         } else {
-          val colDataTypes = in.readObject().asInstanceOf[Array[DataType]]
-          this.batchInternal = GpuColumnVectorFromBuffer.from(table, colDataTypes)
-          GpuColumnVector.extractBases(this.batchInternal).foreach(_.noWarnLeakExpected())
+          Array.empty
         }
-      } finally {
-        tableInfo.close()
+        headers = Array(header)
+        buffers = Array(buffer)
       }
-    } finally {
-      range.close()
     }
   }
 
@@ -128,25 +172,25 @@ class SerializeConcatHostBuffersDeserializeBatch(
     }
   }
 
-  override def close(): Unit = {
-    data.safeClose()
+  override def close(): Unit = this.synchronized {
+    buffers.safeClose()
     if (batchInternal != null) {
       batchInternal.close()
+      batchInternal = null
     }
   }
 }
 
 @SerialVersionUID(100L)
 class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
-  extends Serializable with AutoCloseable {
+  extends Serializable with AutoCloseable with Arm {
   @transient private var columns = GpuColumnVector.extractBases(batch).map(_.copyToHost())
   @transient var header: JCudfSerialization.SerializedTableHeader = null
   @transient var buffer: HostMemoryBuffer = null
-  @transient private val numRows = batch.numRows()
+  @transient private var numRows = batch.numRows()
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    val range = new NvtxRange("SerializeBatch", NvtxColor.PURPLE)
-    try {
+    withResource(new NvtxRange("SerializeBatch", NvtxColor.PURPLE)) { _ =>
       if (buffer != null) {
         throw new IllegalStateException("Cannot re-serialize a batch this way...")
       } else {
@@ -159,32 +203,15 @@ class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)
         columns.safeClose()
         columns = null
       }
-    } finally {
-      range.close()
     }
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    val range = new NvtxRange("HostDeserializeBatch", NvtxColor.PURPLE)
-    try {
-      val din = new DataInputStream(in)
-      header = new JCudfSerialization.SerializedTableHeader(din)
-      if (!header.wasInitialized()) {
-        throw new IllegalStateException("Could not read data")
-      }
-      buffer = HostMemoryBuffer.allocate(header.getDataLen)
-      // This one is a little odd. When deserialized this object is passed to
-      // SerializeConcatHostBuffersDeserializeBatch.  But we cannot close this (the input data)
-      // after serializing it because in local mode it is up to spark and GC if it is the same
-      // object, or if it tries to deserialize it, so that means we have to rely on GC to clean up
-      // this buffer too.
-      buffer.noWarnLeakExpected()
-      JCudfSerialization.readTableIntoBuffer(din, header, buffer)
-      if (!header.wasDataRead()) {
-        throw new IllegalStateException("Could not read data")
-      }
-    } finally {
-      range.close()
+    withResource(new NvtxRange("HostDeserializeBatch", NvtxColor.PURPLE)) { _ =>
+      val (h, b) = SerializedHostTableUtils.readTableHeaderAndBuffer(in)
+      header = h
+      buffer = b
+      numRows = h.getNumRows
     }
   }
 
