@@ -28,6 +28,11 @@ import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+object GpuAnsi {
+  def needBasicOpOverflowCheck(dt: DataType): Boolean =
+    dt.isInstanceOf[IntegralType]
+}
+
 case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
@@ -115,7 +120,7 @@ case class GpuAdd(
   override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val ret = super.doColumnar(lhs, rhs)
     // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
-    if (failOnError && needOverflowCheckForType(dataType)) {
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
       // Check overflow. It is true when both arguments have the opposite sign of the result.
       // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
       closeOnExcept(ret) { r =>
@@ -140,13 +145,6 @@ case class GpuAdd(
     }
     ret
   }
-
-  /**
-   * Spark "Add" checks the overflow only for integral types.
-   */
-  private def needOverflowCheckForType(dt: DataType): Boolean =
-    dt.isInstanceOf[IntegralType]
-
 }
 
 case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
