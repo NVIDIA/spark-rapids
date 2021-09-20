@@ -36,16 +36,19 @@ SPARK_SHIM_VERSIONS="
   313
   320
 "
-for sparkver in ${SPARK_SHIM_VERSIONS} ; do
+BUILD_PARALLELISM=1
+
+time (
+echo -n "$SPARK_SHIM_VERSIONS" | xargs -I% -P $BUILD_PARALLELISM -n 1 \
   mvn -U clean install \
-    -Dbuildver="$sparkver" \
+    -Dbuildver=% \
     -Drat.skip=true \
     -DskipTests \
     -Dmaven.javadoc.skip=true \
     -Dskip \
     -Dmaven.scalastyle.skip=true \
     -pl aggregator -am
-done
+)
 
 # install 301 skipping only tests
 mvn -U -Dbuildver=301 clean install -DskipTests -Psnapshots
