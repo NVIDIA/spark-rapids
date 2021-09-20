@@ -1380,8 +1380,11 @@ object GpuOverrides extends Logging {
       "Natural log 1 + expr",
       ExprChecks.mathUnary,
       (a, conf, p, r) => new UnaryExprMeta[Log1p](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), SQLConf.get.ansiEnabled))
+        override def convertToGpu(child: Expression): GpuExpression = {
+          // No need for overflow checking on the GpuAdd in Double as Double handles overflow
+          // the same in all modes.
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false))
+        }
       }),
     expr[Log2](
       "Log base 2",
@@ -1663,8 +1666,8 @@ object GpuOverrides extends Logging {
 
         override def tagSelfForAst(): Unit = {
           super.tagSelfForAst()
-          if (ansiEnabled) {
-            willNotWorkInAst("AST Addition does not support ansi mode.")
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST Addition does not support ANSI mode.")
           }
         }
 
@@ -1720,8 +1723,8 @@ object GpuOverrides extends Logging {
             case _ => // NOOP
           }
 
-          if (SQLConf.get.ansiEnabled) {
-            willNotWorkOnGpu("GPU Multiplication does not support ansi mode")
+          if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
           }
         }
 

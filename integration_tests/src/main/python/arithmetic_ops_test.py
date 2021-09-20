@@ -64,15 +64,13 @@ def test_multiplication(data_gen):
             conf=allow_negative_scale_of_decimal_conf)
 
 # No overflow gens here because we just focus on verifying the fallback to CPU when
-# enabling ansi mode. But overflows will fail the tests because CPU runs raise
+# enabling ANSI mode. But overflows will fail the tests because CPU runs raise
 # exceptions.
 _no_overflow_multiply_gens = [
     ByteGen(min_val = 1, max_val = 10, special_cases=[]),
     ShortGen(min_val = 1, max_val = 100, special_cases=[]),
     IntegerGen(min_val = 1, max_val = 1000, special_cases=[]),
-    LongGen(min_val = 1, max_val = 3000, special_cases=[]),
-    float_gen, double_gen,
-    decimal_gen_scale_precision, decimal_gen_same_scale_precision, DecimalGen(8, 8)]
+    LongGen(min_val = 1, max_val = 3000, special_cases=[])]
 
 @allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Multiply', 'PromotePrecision', 'Cast')
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
@@ -81,6 +79,16 @@ def test_multiplication_fallback_when_ansi_enabled(data_gen):
             lambda spark : binary_op_df(spark, data_gen).select(
                 f.col('a') * f.col('b')),
             'ProjectExec',
+            conf={'spark.sql.ansi.enabled': 'true'})
+
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen,
+    decimal_gen_scale_precision], ids=idfn)
+def test_multiplication_ansi_enabled(data_gen):
+    data_type = data_gen.data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a') * f.lit(100).cast(data_type),
+                f.col('a') * f.col('b')),
             conf={'spark.sql.ansi.enabled': 'true'})
 
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2)], ids=idfn)
