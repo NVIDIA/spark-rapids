@@ -66,6 +66,8 @@ trait TypeSigUtil {
    */
   def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value
 
+  /** Get numeric and interval TypeSig */
+  def getNumericAndInterval(): TypeSig
 }
 
 /**
@@ -654,7 +656,7 @@ object TypeSig {
   /**
    * numeric + CALENDAR
    */
-  val numericAndInterval: TypeSig = numeric + CALENDAR
+  val numericAndInterval: TypeSig = TypeSigUtil.getNumericAndInterval()
 
   /**
    * All types that CUDF supports sorting/ordering on.
