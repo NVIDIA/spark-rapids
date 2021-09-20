@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark311
+package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.{GpuParquetScanBase, RapidsConf}
 import org.apache.hadoop.conf.Configuration
@@ -41,7 +41,7 @@ case class GpuParquetScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = true)
+    queryUsesInputFile: Boolean = false)
   extends GpuParquetScanBase(sparkSession, hadoopConf, dataSchema,
     readDataSchema, readPartitionSchema, pushedFilters, rapidsConf,
     queryUsesInputFile) with FileScan {
@@ -55,6 +55,7 @@ case class GpuParquetScan(
       super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
         equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
         queryUsesInputFile == p.queryUsesInputFile
+
     case _ => false
   }
 
