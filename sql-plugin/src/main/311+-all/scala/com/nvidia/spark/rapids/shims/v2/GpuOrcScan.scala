@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark313
+package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.{GpuOrcScanBase, RapidsConf}
 import org.apache.hadoop.conf.Configuration
