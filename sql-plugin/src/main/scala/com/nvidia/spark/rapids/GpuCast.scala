@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.math.BigInteger
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
@@ -675,6 +676,7 @@ case class GpuCast(
           val maxPredicate = if (inclusiveMax) {
             values.greaterThan(maxValue)
           } else {
+            //returning wroong results kuhu
             values.greaterOrEqualTo(maxValue)
           }
           withResource(maxPredicate) { maxPredicate =>
@@ -1195,10 +1197,10 @@ case class GpuCast(
 
     // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
     val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
-      case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
+//      case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
       case bound => (-bound.toLong + 1, bound.toLong - 1)
     }
-    // At first, we conduct overflow check onto input column.
+//    // At first, we conduct overflow check onto input column.
     // Then, we cast checked input into target decimal type.
     val checkedInput = if (ansiMode) {
       assertValuesInRange(input,
@@ -1389,13 +1391,17 @@ case class GpuCast(
     if (isFrom32Bit && absBoundPrecision > Decimal.MAX_INT_DIGITS) {
       return input.incRefCount()
     }
-    val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
-      val absBound = math.pow(10, absBoundPrecision).toLong
+    val (minValueScalar, maxValueScalar) =
+      if (input.getType.getTypeId == DType.DTypeEnum.DECIMAL64) {
+        val absBound = math.pow(10, absBoundPrecision).toLong
+        (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
+      } else if (input.getType.getTypeId == DType.DTypeEnum.DECIMAL32) {
+        val absBound = math.pow(10, absBoundPrecision).toInt
       (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
-    } else {
-      val absBound = math.pow(10, absBoundPrecision).toInt
-      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
-    }
+      } else {
+        val absBound: BigInteger = new BigInteger(math.pow(10, DType.DECIMAL128_MAX_PRECISION).toString)
+        (Scalar.fromDecimal(0, absBound.negate()), Scalar.fromDecimal(0, absBound))
+      }
     val checkedInput = if (ansiMode) {
       assertValuesInRange(input,
         minValue = minValueScalar,
