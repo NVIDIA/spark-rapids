@@ -140,7 +140,11 @@ class SerializeConcatHostBuffersDeserializeBatch(
     withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
       val (header, buffer) = SerializedHostTableUtils.readTableHeaderAndBuffer(in)
       closeOnExcept(buffer) { _ =>
-        dataTypes = in.readObject().asInstanceOf[Array[DataType]]
+        dataTypes = if (header.getNumColumns > 0) {
+          in.readObject().asInstanceOf[Array[DataType]]
+        } else {
+          Array.empty
+        }
         headers = Array(header)
         buffers = Array(buffer)
       }
