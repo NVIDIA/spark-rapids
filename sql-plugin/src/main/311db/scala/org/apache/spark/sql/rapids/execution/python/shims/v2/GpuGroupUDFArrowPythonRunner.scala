@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.execution.python.shims.spark311db
+package org.apache.spark.sql.rapids.execution.python.shims.v2
 
 import java.io.{DataInputStream, DataOutputStream}
 import java.net.Socket
