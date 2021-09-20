@@ -25,6 +25,7 @@ import scala.collection.JavaConverters._
 import scala.reflect.runtime.universe.TypeTag
 
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
+import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import org.json4s.JsonAST.{JField, JNull, JString}
 
@@ -33,6 +34,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.util.{ArrayData, DateFormatter, DateTimeUtils, MapData, TimestampFormatter}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -618,7 +620,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       }
     case (v: Decimal, _: DecimalType) => v + "BD"
     case (v: Int, DateType) =>
-      val formatter = DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
+      val formatter = ShimLoader.getSparkShims.getDateFormatter()
       s"DATE '${formatter.format(v)}'"
     case (v: Long, TimestampType) =>
       val formatter = TimestampFormatter.getFractionFormatter(
@@ -632,6 +634,22 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
     // Returns a Scalar instead of the value to support the scalar of nested type, and
     // simplify the handling of result from a `expr.columnarEval`.
     GpuScalar(value, dataType)
+  }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    dataType match {
+      case BooleanType => ast.Literal.ofBoolean(value.asInstanceOf[java.lang.Boolean])
+      case ByteType => ast.Literal.ofByte(value.asInstanceOf[java.lang.Byte])
+      case ShortType => ast.Literal.ofShort(value.asInstanceOf[java.lang.Short])
+      case IntegerType => ast.Literal.ofInt(value.asInstanceOf[java.lang.Integer])
+      case LongType => ast.Literal.ofLong(value.asInstanceOf[java.lang.Long])
+      case FloatType => ast.Literal.ofFloat(value.asInstanceOf[java.lang.Float])
+      case DoubleType => ast.Literal.ofDouble(value.asInstanceOf[java.lang.Double])
+      case TimestampType =>
+        ast.Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS,
+          value.asInstanceOf[java.lang.Long])
+      case _ => throw new IllegalStateException("$dataType is an unsupported literal type")
+    }
   }
 }
 
@@ -648,6 +666,13 @@ class LiteralExprMeta(
   override def print(append: StringBuilder, depth: Int, all: Boolean): Unit = {
     if (!this.canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) {
       super.print(append, depth, all)
+    }
+  }
+
+  override protected def tagSelfForAst(): Unit = {
+    // Preclude null literals until https://github.com/rapidsai/cudf/issues/8831 is fixed.
+    if (lit.value == null) {
+      willNotWorkInAst("null literals are not supported")
     }
   }
 }

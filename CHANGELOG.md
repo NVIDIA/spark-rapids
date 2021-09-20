@@ -1,5 +1,18 @@
 # Change log
-Generated on 2021-08-04
+Generated on 2021-08-31
+
+## Release 21.08.1
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3350](https://github.com/NVIDIA/spark-rapids/issues/3350)|[BUG] Qualification tool: check for metadata being null|
+
+### PRs
+|||
+|:---|:---|
+|[#3348](https://github.com/NVIDIA/spark-rapids/pull/3348)|Change tool version to 21.08.1 [skip ci]|
+|[#3343](https://github.com/NVIDIA/spark-rapids/pull/3343)|Qualification tool backport: Check for metadata being null (#3285)|
 
 ## Release 21.08
 
@@ -36,6 +49,7 @@ Generated on 2021-08-04
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#3135](https://github.com/NVIDIA/spark-rapids/issues/3135)|[BUG] Regression seen in `concatenate` in NDS with RAPIDS Shuffle Manager enabled|
 |[#3017](https://github.com/NVIDIA/spark-rapids/issues/3017)|[BUG] orc_write_test failed in databricks runtime|
 |[#3060](https://github.com/NVIDIA/spark-rapids/issues/3060)|[BUG] ORC read can corrupt data when specified schema does not match file schema ordering|
 |[#3065](https://github.com/NVIDIA/spark-rapids/issues/3065)|[BUG] window exec tries to do too much on the GPU|
@@ -98,6 +112,15 @@ Generated on 2021-08-04
 ### PRs
 |||
 |:---|:---|
+|[#3216](https://github.com/NVIDIA/spark-rapids/pull/3216)|Update changelog to include download doc update [skip ci]|
+|[#3214](https://github.com/NVIDIA/spark-rapids/pull/3214)|Update download and databricks doc for 21.06.2 [skip ci]|
+|[#3210](https://github.com/NVIDIA/spark-rapids/pull/3210)|Update 21.08.0 changelog to latest [skip ci]|
+|[#3197](https://github.com/NVIDIA/spark-rapids/pull/3197)|Databricks parquetFilters api change in db 8.2 runtime|
+|[#3168](https://github.com/NVIDIA/spark-rapids/pull/3168)|Update 21.08 changelog to latest [skip ci]|
+|[#3146](https://github.com/NVIDIA/spark-rapids/pull/3146)|update cudf Java binding version to 21.08.2|
+|[#3080](https://github.com/NVIDIA/spark-rapids/pull/3080)|Update docs for 21.08 release|
+|[#3136](https://github.com/NVIDIA/spark-rapids/pull/3136)|Update tool docs to explain default filesystem [skip ci]|
+|[#3128](https://github.com/NVIDIA/spark-rapids/pull/3128)|Fix merge conflict 3126 from branch-21.06 [skip ci]|
 |[#3124](https://github.com/NVIDIA/spark-rapids/pull/3124)|Fix merge conflict 3122 from branch-21.06 [skip ci]|
 |[#3100](https://github.com/NVIDIA/spark-rapids/pull/3100)|Update databricks 3.0.1 shim to new ParquetFilter api|
 |[#3083](https://github.com/NVIDIA/spark-rapids/pull/3083)|Initial CHANGELOG.md update for 21.08|
@@ -263,6 +286,22 @@ Generated on 2021-08-04
 |[#2561](https://github.com/NVIDIA/spark-rapids/pull/2561)|Fixing the merge of 21.06 to 21.08 for comment changes in Profiling tool|
 |[#2558](https://github.com/NVIDIA/spark-rapids/pull/2558)|Fix cdh shim version in 21.08 [skip ci]|
 |[#2543](https://github.com/NVIDIA/spark-rapids/pull/2543)|Init branch-21.08|
+
+## Release 21.06.2
+
+### Bugs Fixed
+|||
+|:---|:---|
+|[#3191](https://github.com/NVIDIA/spark-rapids/issues/3191)|[BUG] Databricks parquetFilters build failure in db 8.2 runtime|
+
+### PRs
+|||
+|:---|:---|
+|[#3209](https://github.com/NVIDIA/spark-rapids/pull/3209)|Update 21.06.2 changelog [skip ci]|
+|[#3208](https://github.com/NVIDIA/spark-rapids/pull/3208)|Update rapids plugin version to 21.06.2 [skip ci]|
+|[#3207](https://github.com/NVIDIA/spark-rapids/pull/3207)|Disable auto-merge from 21.06 to 21.08 [skip ci]|
+|[#3205](https://github.com/NVIDIA/spark-rapids/pull/3205)|Branch 21.06 databricks update [skip ci]|
+|[#3198](https://github.com/NVIDIA/spark-rapids/pull/3198)|Databricks parquetFilters api change in db 8.2 runtime|
 
 ## Release 21.06.1
 

@@ -20,6 +20,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.DecimalUtil.createCudfDecimal
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -56,6 +57,17 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
         }
     }
   }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    val literalZero = dataType match {
+      case LongType => ast.Literal.ofLong(0)
+      case FloatType => ast.Literal.ofFloat(0)
+      case DoubleType => ast.Literal.ofDouble(0)
+      case IntegerType => ast.Literal.ofInt(0)
+    }
+    new ast.BinaryOperation(ast.BinaryOperator.SUB, literalZero,
+      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns));
+  }
 }
 
 case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
@@ -69,6 +81,10 @@ case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
   override def sql: String = s"(+ ${child.sql})"
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = input.getBase.incRefCount()
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)
+  }
 }
 
 case class GpuAbs(child: Expression) extends CudfUnaryExpression
@@ -476,7 +492,9 @@ case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLike {
   override def dataType: DataType = left.dataType
 }
 
-trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression
+  with ShimExpression {
+
   override def nullable: Boolean = children.forall(_.nullable)
   override def foldable: Boolean = children.forall(_.foldable)
 

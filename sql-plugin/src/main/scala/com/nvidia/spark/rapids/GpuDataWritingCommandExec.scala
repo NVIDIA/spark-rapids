@@ -16,13 +16,14 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.v2.{ShimUnaryCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
@@ -32,7 +33,7 @@ import org.apache.spark.util.SerializableConfiguration
 /**
  * An extension of `DataWritingCommand` that allows columnar execution.
  */
-trait GpuDataWritingCommand extends DataWritingCommand {
+trait GpuDataWritingCommand extends DataWritingCommand with ShimUnaryCommand {
   lazy val basicMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.basicMetrics
   lazy val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
 
@@ -54,11 +55,11 @@ trait GpuDataWritingCommand extends DataWritingCommand {
 }
 
 case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPlan)
-    extends UnaryExecNode with GpuExec {
+    extends ShimUnaryExecNode with GpuExec {
   override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
   private lazy val sideEffectResult: Seq[ColumnarBatch] =
-    cmd.runColumnar(sqlContext.sparkSession, child)
+    cmd.runColumnar(sparkSession, child)
 
   override def output: Seq[Attribute] = cmd.output
 
@@ -81,7 +82,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    sqlContext.sparkContext.parallelize(sideEffectResult, 1)
+    sparkContext.parallelize(sideEffectResult, 1)
   }
 
   // Need single batch in some cases, at least until out of core sort is done

@@ -35,7 +35,7 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
 
   test("Generate DOT") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+      val (eventLog, appId) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
         import spark.implicits._
         val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
         t1.createOrReplaceTempView("t1")
@@ -55,12 +55,13 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           dotFileDir.getAbsolutePath,
           "--generate-dot",
           eventLog))
-        ProfileMain.mainInternal(spark2, appArgs)
+        ProfileMain.mainInternal(appArgs)
 
-        val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
-
+        val tempSubDir = new File(dotFileDir, s"${Profiler.SUBDIR}/$appId")
         // assert that a file was generated
-        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
+        val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
+          f.endsWith(".dot")
+        })
         assert(dotDirs.length === 2)
 
         // assert that the generated files looks something like what we expect
@@ -78,7 +79,6 @@ class GenerateDotSuite extends FunSuite with BeforeAndAfterAll with Logging {
           hashAggCount += dotFileStr.sliding(hashAggr.length).count(_ == hashAggr)
           stageCount += dotFileStr.sliding(stageWord.length).count(_ == stageWord)
         }
-
         assert(hashAggCount === 8, "Expected: 4 in node labels + 4 in graph label")
         assert(stageCount === 4, "Expected: UNKNOWN Stage, Initial Aggregation, " +
           "Final Aggregation, Sorting final output")

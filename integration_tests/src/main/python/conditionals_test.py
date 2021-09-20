@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
 all_gens = all_gen + [NullGen()]
-all_nested_gens = array_gens_sample + struct_gens_sample
+all_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
 
 # Create dedicated data gens of nested type for 'if' tests here with two exclusions:
@@ -54,6 +54,16 @@ def test_if_else(data_gen):
                 'IF(a, {}, {})'.format(s1, s2),
                 'IF(a, b, {})'.format(null_lit),
                 'IF(a, {}, c)'.format(null_lit)),
+            conf = allow_negative_scale_of_decimal_conf)
+
+# Maps scalars are not really supported by Spark from python without jumping through a lot of hoops
+# so for now we are going to skip them
+@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+def test_if_else_map(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : three_col_df(spark, boolean_gen, data_gen, data_gen).selectExpr(
+                'IF(TRUE, b, c)',
+                'IF(a, b, c)'),
             conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', all_gens + all_nested_gens, ids=idfn)

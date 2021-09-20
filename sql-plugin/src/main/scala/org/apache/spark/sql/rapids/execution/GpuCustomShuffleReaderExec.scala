@@ -16,6 +16,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import com.nvidia.spark.rapids.{CoalesceGoal, GpuExec, GpuMetric, ShimLoader}
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -35,7 +36,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuCustomShuffleReaderExec(
     child: SparkPlan,
-    partitionSpecs: Seq[ShufflePartitionSpec]) extends UnaryExecNode with GpuExec  {
+    partitionSpecs: Seq[ShufflePartitionSpec]) extends ShimUnaryExecNode with GpuExec  {
   import GpuMetric._
 
   /**
@@ -60,12 +61,15 @@ case class GpuCustomShuffleReaderExec(
         partitionSpecs.map(_.asInstanceOf[PartialMapperPartitionSpec].mapIndex).toSet.size ==
             partitionSpecs.length) {
       child match {
-        case ShuffleQueryStageExec(_, s: ShuffleExchangeLike) =>
-          s.child.outputPartitioning
-        case ShuffleQueryStageExec(_, r @ ReusedExchangeExec(_, s: ShuffleExchangeLike)) =>
-          s.child.outputPartitioning match {
-            case e: Expression => r.updateAttr(e).asInstanceOf[Partitioning]
-            case other => other
+        case sqse: ShuffleQueryStageExec if sqse.plan.isInstanceOf[ShuffleExchangeLike] =>
+          sqse.plan.asInstanceOf[ShuffleExchangeLike].child.outputPartitioning
+        case sqse: ShuffleQueryStageExec if sqse.plan.isInstanceOf[ReusedExchangeExec] =>
+          val reused = sqse.plan.asInstanceOf[ReusedExchangeExec]
+          reused.child match {
+            case sel: ShuffleExchangeLike => sel.child.outputPartitioning match {
+              case e: Expression => reused.updateAttr(e).asInstanceOf[Partitioning]
+              case other => other
+            }
           }
         case _ =>
           throw new IllegalStateException("operating on canonicalization plan")

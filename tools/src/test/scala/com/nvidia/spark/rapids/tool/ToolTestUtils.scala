@@ -38,7 +38,7 @@ object ToolTestUtils extends Logging {
   }
 
   def generateEventLog(eventLogDir: File, appName: String)
-      (fun: SparkSession => DataFrame): String = {
+      (fun: SparkSession => DataFrame): (String, String) = {
 
     // we need to close any existing sessions to ensure that we can
     // create a session with a new event log dir
@@ -56,6 +56,8 @@ object ToolTestUtils extends Logging {
     val df = fun(spark)
     df.collect()
 
+    val appId = spark.sparkContext.applicationId
+
     // close the event log
     spark.close()
 
@@ -64,7 +66,7 @@ object ToolTestUtils extends Logging {
     if (files.length != 1) {
       throw new FileNotFoundException(s"Could not find event log in ${eventLogDir.getAbsolutePath}")
     }
-    files.head.getAbsolutePath
+    (files.head.getAbsolutePath, appId)
   }
 
   def listFilesMatching(dir: File, matcher: String => Boolean): Array[File] = {
@@ -77,8 +79,8 @@ object ToolTestUtils extends Logging {
     val diffCount = df.except(expectedDf).union(expectedDf.except(df)).count
     if (diffCount != 0) {
       logWarning("Diff expected vs actual:")
-      expectedDf.show()
-      df.show()
+      expectedDf.show(false)
+      df.show(false)
     }
     assert(diffCount == 0)
   }
@@ -103,7 +105,8 @@ object ToolTestUtils extends Logging {
       val eventLogInfo = EventLogPathProcessor
         .getEventLogInfo(path, sparkSession.sparkContext.hadoopConfiguration)
       assert(eventLogInfo.size >= 1, s"event log not parsed as expected $path")
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), sparkSession,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000),
+        sparkSession.sparkContext.hadoopConfiguration,
         eventLogInfo.head._1, index)
       index += 1
     }

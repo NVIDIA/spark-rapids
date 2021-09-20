@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -32,7 +33,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
@@ -174,7 +174,7 @@ class GroupingIterator(
  * The base class of GpuWindowInPandasExec in different shim layers
  *
  */
-trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
+trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
 
   def windowExpression: Seq[Expression]
   def partitionSpec: Seq[Expression]

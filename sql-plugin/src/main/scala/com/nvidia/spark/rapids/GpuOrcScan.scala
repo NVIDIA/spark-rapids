@@ -58,7 +58,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{Decimal, DecimalType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -381,6 +381,59 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     rawOut.write(postScriptLength.toInt)
   }
 
+  protected def getPrecisionsList(types: Seq[TypeDescription]): Seq[Int] = {
+    types.flatMap { t =>
+      t.getCategory match {
+        case TypeDescription.Category.DECIMAL => Seq(t.getPrecision)
+        case c if !c.isPrimitive => getPrecisionsList(t.getChildren.asScala)
+        case _ => Seq.empty[Int]
+      }
+    }
+  }
+
+  /**
+   * Cast columns with precision that can be stored in an int to DECIMAL32.
+   *
+   * The plugin requires decimals being stored as DECIMAL32 if the precision is small enough
+   * to fit in an int. And getting this wrong may lead to a number of problems later on. However
+   * the cuDF ORC reader always read decimals as DECIMAL64, so do this conversion when needed.
+   *
+   * @param table the input table, will be closed after returning.
+   * @param schema the schema of the table
+   * @param readSchema the read schema from Spark
+   * @return a new table with cast columns
+   */
+  protected def typeCastForDecimalIfNeededAndClose(table: Table, schema: Seq[TypeDescription],
+      readSchema: StructType): Table = {
+    assert(table.getNumberOfColumns == schema.length)
+    // 'readSchema' may have more columns than 'schema', but for now ORC reader does not support
+    // this case, being tracked by the issue: https://github.com/NVIDIA/spark-rapids/issues/3058.
+    assert(table.getNumberOfColumns == readSchema.length)
+
+    // check if there are cols with precision that can be stored in an int
+    val typeCastingNeeded = getPrecisionsList(schema).exists(p => p <= Decimal.MAX_INT_DIGITS)
+    if (typeCastingNeeded) {
+      withResource(table) { t =>
+        withResource(new Array[ColumnVector](t.getNumberOfColumns)) { newCols =>
+          (0 until t.getNumberOfColumns).foreach { id =>
+            val readField = readSchema(id)
+            val origCol = t.getColumn(id)
+            val newCol = ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol,
+              readField.dataType,
+              (dt, cv) => cv.getType.isDecimalType &&
+                !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
+              (dt, cv) =>
+                cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType])))
+            newCols(id) = newCol
+          }
+          new Table(newCols: _*)
+        }
+      }
+    } else {
+      table
+    }
+  }
+
 }
 
 /**
@@ -630,7 +683,9 @@ class GpuOrcPartitionReader(
               s"but read $numColumns from $partFile")
         }
         metrics(NUM_OUTPUT_BATCHES) += 1
-        Some(table)
+        val colTypes = ctx.updatedReadSchema.getChildren.asScala.toArray
+        val tableSchema = ctx.requestedMapping.map(_.map(colTypes(_))).getOrElse(colTypes)
+        Some(typeCastForDecimalIfNeededAndClose(table, tableSchema, readDataSchema))
       }
     } finally {
       if (dataBuffer != null) {
@@ -1119,7 +1174,7 @@ private case class GpuOrcFileFilterHandler(
      * @param fileSchema input file's ORC schema
      * @param readSchema ORC schema for what will be read
      * @param isCaseAware true if field names are case-sensitive
-     * @return read schema mapped to the file's field names
+     * @return read schema if check passes.
      */
     private def checkSchemaCompatibility(
         fileSchema: TypeDescription,
@@ -1136,19 +1191,48 @@ private case class GpuOrcFileFilterHandler(
 
       val readerFieldNames = readSchema.getFieldNames.asScala
       val readerChildren = readSchema.getChildren.asScala
-      val newReadSchema = TypeDescription.createStruct()
       readerFieldNames.zip(readerChildren).foreach { case (readField, readType) =>
         val (fileType, fileFieldName) = fileTypesMap.getOrElse(readField, (null, null))
-        if (readType != fileType) {
+        // When column pruning is enabled, the readType is not always equal to the fileType,
+        // may be part of the fileType. e.g.
+        //     read type: struct<c_1:string>
+        //     file type: struct<c_1:string,c_2:bigint,c_3:smallint>
+        if (!isSchemaCompatible(fileType, readType)) {
           throw new QueryExecutionException("Incompatible schemas for ORC file" +
             s" at ${partFile.filePath}\n" +
             s" file schema: $fileSchema\n" +
             s" read schema: $readSchema")
         }
-        newReadSchema.addField(fileFieldName, fileType)
       }
+      // To support nested column pruning, the original read schema (pruned) should be
+      // returned, instead of creating a new schema from the children of the file schema,
+      // who may contain more nested columns than read schema, causing mismatch between the
+      // pruned data and the pruned schema.
+      readSchema
+    }
 
-      newReadSchema
+    /**
+     * The read schema is compatible with the file schema only when
+     *   1) They are equal to each other
+     *   2) The read schema is part of the file schema for struct types.
+     *
+     * @param fileSchema input file's ORC schema
+     * @param readSchema ORC schema for what will be read
+     * @return true if they are compatible, otherwise false
+     */
+    private def isSchemaCompatible(
+        fileSchema: TypeDescription,
+        readSchema: TypeDescription): Boolean = {
+      (fileSchema == readSchema) ||
+        (fileSchema != null && readSchema != null &&
+          fileSchema.getCategory == readSchema.getCategory && {
+          if (readSchema.getChildren != null) {
+            readSchema.getChildren.asScala.forall(rc =>
+              fileSchema.getChildren.asScala.exists(fc => isSchemaCompatible(fc, rc)))
+          } else {
+            false
+          }
+        })
     }
 
     /**
@@ -1398,7 +1482,9 @@ class MultiFileCloudOrcPartitionReader(
       }
 
       metrics(NUM_OUTPUT_BATCHES) += 1
-      Some(table)
+      val colTypes = updatedReadSchema.getChildren.asScala.toArray
+      val tableSchema = requestedMapping.map(_.map(colTypes(_))).getOrElse(colTypes)
+      Some(typeCastForDecimalIfNeededAndClose(table, tableSchema, readDataSchema))
     }
 
     withResource(table) { _ =>
@@ -1549,6 +1635,19 @@ class MultiFileOrcPartitionReader(
   implicit def toOrcExtraInfo(in: ExtraInfo): OrcExtraInfo =
     in.asInstanceOf[OrcExtraInfo]
 
+  // Estimate the size of StripeInformation with the worst case.
+  // The serialized size may be different because of the different values.
+  // Here set most of values to "Long.MaxValue" to get the worst case.
+  lazy val sizeOfStripeInformation = {
+    OrcProto.StripeInformation.newBuilder()
+      .setOffset(Long.MaxValue)
+      .setIndexLength(0) // Index stream is pruned
+      .setDataLength(Long.MaxValue)
+      .setFooterLength(Int.MaxValue) // StripeFooter size should be small
+      .setNumberOfRows(Long.MaxValue)
+      .build().getSerializedSize
+  }
+
   // The runner to copy stripes to the offset of HostMemoryBuffer and update
   // the StripeInformation to construct the file Footer
   class OrcCopyStripesRunner(
@@ -1659,12 +1758,20 @@ class MultiFileOrcPartitionReader(
         stripes.foreach { stripeMeta =>
           // account for the size of every stripe including index + data + stripe footer
           size += stripeMeta.getBlockSize
+
+          // add StripeInformation size in advance which should be calculated in Footer
+          size += sizeOfStripeInformation
         }
-        // the ctx is the same for all stripes
-        val ctx = stripes(0).ctx
-        // the original file's footer should be worst-case
-        size += ctx.fileTail.getPostscript.getFooterLength
     }
+
+    val blockIter = filesAndBlocks.valuesIterator
+    if (blockIter.hasNext) {
+      val blocks = blockIter.next()
+
+      // add the first orc file's footer length to cover ORC schema and other information
+      size += blocks(0).ctx.fileTail.getPostscript.getFooterLength
+    }
+
     // Per ORC v1 spec, the size of Postscript must be less than 256 bytes.
     size += 256
     // finally the single-byte postscript length at the end of the file
@@ -1777,7 +1884,9 @@ class MultiFileOrcPartitionReader(
     }
 
     metrics(NUM_OUTPUT_BATCHES) += 1
-    table
+    val colTypes = clippedSchema.getChildren.asScala.toArray
+    val tableSchema = extraInfo.requestedMapping.map(_.map(colTypes(_))).getOrElse(colTypes)
+    typeCastForDecimalIfNeededAndClose(table, tableSchema, readDataSchema)
   }
 
   /**

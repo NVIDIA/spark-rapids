@@ -16,214 +16,376 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
+import scala.collection.mutable.ArrayBuffer
 
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * Does analysis on the DataFrames
  * from object of ApplicationInfo
  */
-class Analysis(apps: Seq[ApplicationInfo], fileWriter: Option[ToolTextFileWriter]) {
+class Analysis(apps: Seq[ApplicationInfo]) {
 
-  require(apps.nonEmpty)
-
-  // Job Level TaskMetrics Aggregation
-  def jobMetricsAggregation(): Unit = {
-    val messageHeader = "\nJob level aggregated task metrics:\n"
-    if (apps.size == 1) {
-      apps.head.runQuery(apps.head.jobMetricsAggregationSQL + " order by Duration desc",
-        false, fileWriter, messageHeader)
+  def getDurations(tcs: ArrayBuffer[TaskCase]): (Long, Long, Long, Double) = {
+    val durations = tcs.map(_.duration)
+    if (durations.size > 0 ) {
+      (durations.sum, durations.max, durations.min,
+        ToolUtils.calculateAverage(durations.sum, durations.size, 1))
     } else {
-      var query = ""
-      for (app <- apps) {
-        if (query.isEmpty) {
-          query += app.jobMetricsAggregationSQL
-        } else {
-          query += " union " + app.jobMetricsAggregationSQL
-        }
-      }
-      apps.head.runQuery(query + " order by appIndex, Duration desc",
-        false, fileWriter, messageHeader)
+      (0L, 0L, 0L, 0.toDouble)
     }
   }
 
-  // Stage Level TaskMetrics Aggregation
-  def stageMetricsAggregation(): Unit = {
-    val messageHeader = "\nStage level aggregated task metrics:\n"
-    if (apps.size == 1) {
-      apps.head.runQuery(apps.head.stageMetricsAggregationSQL + " order by Duration desc",
-        false, fileWriter, messageHeader)
+  private def maxWithEmptyHandling(arr: ArrayBuffer[Long]): Long = {
+    if (arr.isEmpty) {
+      0L
     } else {
-      var query = ""
-      for (app <- apps) {
-        if (query.isEmpty) {
-          query += app.stageMetricsAggregationSQL
-        } else {
-          query += " union " + app.stageMetricsAggregationSQL
-        }
-      }
-      apps.head.runQuery(query + " order by appIndex, Duration desc",
-        false, fileWriter, messageHeader)
+      arr.max
     }
   }
 
   // Job + Stage Level TaskMetrics Aggregation
-  def jobAndStageMetricsAggregation(): DataFrame = {
-    val messageHeader = "\nJob + Stage level aggregated task metrics:\n"
-    if (apps.size == 1) {
-      val app = apps.head
-      if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-        app.allDataFrames.contains(s"stageDF_${app.index}") &&
-        app.allDataFrames.contains(s"jobDF_${app.index}")) {
-        app.runQuery(apps.head.jobAndStageMetricsAggregationSQL +
-          " order by appIndex, Duration desc, ID",
-          false, fileWriter, messageHeader)
-      } else {
-        apps.head.sparkSession.emptyDataFrame
+  def jobAndStageMetricsAggregation(): Seq[JobStageAggTaskMetricsProfileResult] = {
+    val allJobRows = apps.flatMap { app =>
+      app.jobIdToInfo.map { case (id, jc) =>
+        val stageIdsInJob = jc.stageIds
+        val stagesInJob = app.stageIdToInfo.filterKeys { case (sid, _) =>
+          stageIdsInJob.contains(sid)
+        }.keys.map(_._1).toSeq
+        if (stagesInJob.isEmpty) {
+          None
+        } else {
+          val tasksInJob = app.taskEnd.filter { tc =>
+            stagesInJob.contains(tc.stageId)
+          }
+          // count duplicate task attempts
+          val numTaskAttempt = tasksInJob.size
+          val (durSum, durMax, durMin, durAvg) = getDurations(tasksInJob)
+          Some(JobStageAggTaskMetricsProfileResult(app.index,
+            s"job_$id",
+            numTaskAttempt,
+            jc.duration,
+            tasksInJob.map(_.diskBytesSpilled).sum,
+            durSum,
+            durMax,
+            durMin,
+            durAvg,
+            tasksInJob.map(_.executorCPUTime).sum,
+            tasksInJob.map(_.executorDeserializeCPUTime).sum,
+            tasksInJob.map(_.executorDeserializeTime).sum,
+            tasksInJob.map(_.executorRunTime).sum,
+            tasksInJob.map(_.gettingResultTime).sum,
+            tasksInJob.map(_.input_bytesRead).sum,
+            tasksInJob.map(_.input_recordsRead).sum,
+            tasksInJob.map(_.jvmGCTime).sum,
+            tasksInJob.map(_.memoryBytesSpilled).sum,
+            tasksInJob.map(_.output_bytesWritten).sum,
+            tasksInJob.map(_.output_recordsWritten).sum,
+            maxWithEmptyHandling(tasksInJob.map(_.peakExecutionMemory)),
+            tasksInJob.map(_.resultSerializationTime).sum,
+            maxWithEmptyHandling(tasksInJob.map(_.resultSize)),
+            tasksInJob.map(_.sr_fetchWaitTime).sum,
+            tasksInJob.map(_.sr_localBlocksFetched).sum,
+            tasksInJob.map(_.sr_localBytesRead).sum,
+            tasksInJob.map(_.sr_remoteBlocksFetched).sum,
+            tasksInJob.map(_.sr_remoteBytesRead).sum,
+            tasksInJob.map(_.sr_remoteBytesReadToDisk).sum,
+            tasksInJob.map(_.sr_totalBytesRead).sum,
+            tasksInJob.map(_.sw_bytesWritten).sum,
+            tasksInJob.map(_.sw_recordsWritten).sum,
+            tasksInJob.map(_.sw_writeTime).sum
+          ))
+        }
       }
-    } else {
-      var query = ""
-      for (app <- apps) {
-        if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-          app.allDataFrames.contains(s"stageDF_${app.index}") &&
-          app.allDataFrames.contains(s"jobDF_${app.index}")) {
-          if (query.isEmpty) {
-            query += app.jobAndStageMetricsAggregationSQL
-          } else {
-            query += " union " + app.jobAndStageMetricsAggregationSQL
+    }
+    val allJobStageRows = apps.flatMap { app =>
+      app.jobIdToInfo.flatMap { case (id, jc) =>
+        val stageIdsInJob = jc.stageIds
+        val stagesInJob = app.stageIdToInfo.filterKeys { case (sid, _) =>
+          stageIdsInJob.contains(sid)
+        }
+        if (stagesInJob.isEmpty) {
+          None
+        } else {
+          stagesInJob.map { case ((id, said), sc) =>
+            val tasksInStage = app.taskEnd.filter { tc =>
+              tc.stageId == id
+            }
+            // count duplicate task attempts
+            val numAttempts = tasksInStage.size
+            val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
+            Some(JobStageAggTaskMetricsProfileResult(app.index,
+              s"stage_$id",
+              numAttempts,
+              sc.duration,
+              tasksInStage.map(_.diskBytesSpilled).sum,
+              durSum,
+              durMax,
+              durMin,
+              durAvg,
+              tasksInStage.map(_.executorCPUTime).sum,
+              tasksInStage.map(_.executorDeserializeCPUTime).sum,
+              tasksInStage.map(_.executorDeserializeTime).sum,
+              tasksInStage.map(_.executorRunTime).sum,
+              tasksInStage.map(_.gettingResultTime).sum,
+              tasksInStage.map(_.input_bytesRead).sum,
+              tasksInStage.map(_.input_recordsRead).sum,
+              tasksInStage.map(_.jvmGCTime).sum,
+              tasksInStage.map(_.memoryBytesSpilled).sum,
+              tasksInStage.map(_.output_bytesWritten).sum,
+              tasksInStage.map(_.output_recordsWritten).sum,
+              maxWithEmptyHandling(tasksInStage.map(_.peakExecutionMemory)),
+              tasksInStage.map(_.resultSerializationTime).sum,
+              maxWithEmptyHandling(tasksInStage.map(_.resultSize)),
+              tasksInStage.map(_.sr_fetchWaitTime).sum,
+              tasksInStage.map(_.sr_localBlocksFetched).sum,
+              tasksInStage.map(_.sr_localBytesRead).sum,
+              tasksInStage.map(_.sr_remoteBlocksFetched).sum,
+              tasksInStage.map(_.sr_remoteBytesRead).sum,
+              tasksInStage.map(_.sr_remoteBytesReadToDisk).sum,
+              tasksInStage.map(_.sr_totalBytesRead).sum,
+              tasksInStage.map(_.sw_bytesWritten).sum,
+              tasksInStage.map(_.sw_recordsWritten).sum,
+              tasksInStage.map(_.sw_writeTime).sum
+            ))
           }
         }
       }
-      if (query.nonEmpty) {
-        apps.head.runQuery(query + " order by appIndex, Duration desc, ID",
-          false, fileWriter, messageHeader)
+    }
+    // stages that are missing from a job, perhaps dropped events
+    val stagesWithoutJobs = apps.flatMap { app =>
+      val allStageinJobs = app.jobIdToInfo.flatMap { case (id, jc) =>
+        val stageIdsInJob = jc.stageIds
+        app.stageIdToInfo.filterKeys { case (sid, _) =>
+          stageIdsInJob.contains(sid)
+        }
+      }
+      val missing = app.stageIdToInfo.keys.toSeq.diff(allStageinJobs.keys.toSeq)
+      if (missing.isEmpty) {
+        Seq.empty
       } else {
-        fileWriter.foreach(_.write("Unable to calculate Job and Stage Metrics\n"))
-        apps.head.sparkSession.emptyDataFrame
+        missing.map { case ((id, saId)) =>
+          val scOpt = app.stageIdToInfo.get((id, saId))
+          scOpt match {
+            case None =>
+              None
+            case Some(sc) =>
+              val tasksInStage = app.taskEnd.filter { tc =>
+                tc.stageId == id
+              }
+              // count duplicate task attempts
+              val numAttempts = tasksInStage.size
+              val (durSum, durMax, durMin, durAvg) = getDurations(tasksInStage)
+              Some(JobStageAggTaskMetricsProfileResult(app.index,
+                s"stage_$id",
+                numAttempts,
+                sc.duration,
+                tasksInStage.map(_.diskBytesSpilled).sum,
+                durSum,
+                durMax,
+                durMin,
+                durAvg,
+                tasksInStage.map(_.executorCPUTime).sum,
+                tasksInStage.map(_.executorDeserializeCPUTime).sum,
+                tasksInStage.map(_.executorDeserializeTime).sum,
+                tasksInStage.map(_.executorRunTime).sum,
+                tasksInStage.map(_.gettingResultTime).sum,
+                tasksInStage.map(_.input_bytesRead).sum,
+                tasksInStage.map(_.input_recordsRead).sum,
+                tasksInStage.map(_.jvmGCTime).sum,
+                tasksInStage.map(_.memoryBytesSpilled).sum,
+                tasksInStage.map(_.output_bytesWritten).sum,
+                tasksInStage.map(_.output_recordsWritten).sum,
+                maxWithEmptyHandling(tasksInStage.map(_.peakExecutionMemory)),
+                tasksInStage.map(_.resultSerializationTime).sum,
+                maxWithEmptyHandling(tasksInStage.map(_.resultSize)),
+                tasksInStage.map(_.sr_fetchWaitTime).sum,
+                tasksInStage.map(_.sr_localBlocksFetched).sum,
+                tasksInStage.map(_.sr_localBytesRead).sum,
+                tasksInStage.map(_.sr_remoteBlocksFetched).sum,
+                tasksInStage.map(_.sr_remoteBytesRead).sum,
+                tasksInStage.map(_.sr_remoteBytesReadToDisk).sum,
+                tasksInStage.map(_.sr_totalBytesRead).sum,
+                tasksInStage.map(_.sw_bytesWritten).sum,
+                tasksInStage.map(_.sw_recordsWritten).sum,
+                tasksInStage.map(_.sw_writeTime).sum
+              ))
+          }
+        }
       }
     }
+
+    val allRows = allJobRows ++ allJobStageRows ++ stagesWithoutJobs
+    val filteredRows = allRows.filter(_.isDefined).map(_.get)
+    if (filteredRows.size > 0) {
+      val sortedRows = filteredRows.sortBy { cols =>
+        val sortDur = cols.duration.getOrElse(0L)
+        (cols.appIndex, -(sortDur), cols.id)
+      }
+      sortedRows
+    } else {
+      Seq.empty
+    }
+
   }
 
   // SQL Level TaskMetrics Aggregation(Only when SQL exists)
-  def sqlMetricsAggregation(): DataFrame = {
-    val messageHeader = "\nSQL level aggregated task metrics:\n"
-    if (apps.size == 1) {
-      val app = apps.head
-      if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-        app.allDataFrames.contains(s"stageDF_${app.index}") &&
-        app.allDataFrames.contains(s"jobDF_${app.index}") &&
-        app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-        apps.head.runQuery(apps.head.sqlMetricsAggregationSQL + " order by Duration desc",
-          false, fileWriter, messageHeader)
-      } else {
-        apps.head.sparkSession.emptyDataFrame
-      }
-    } else {
-      var query = ""
-      val appsWithSQL = apps.filter(p => p.allDataFrames.contains(s"sqlDF_${p.index}"))
-      for (app <- appsWithSQL) {
-        if (app.allDataFrames.contains(s"taskDF_${app.index}") &&
-          app.allDataFrames.contains(s"stageDF_${app.index}") &&
-          app.allDataFrames.contains(s"jobDF_${app.index}") &&
-          app.allDataFrames.contains(s"sqlDF_${app.index}")) {
-          if (query.isEmpty) {
-            query += app.sqlMetricsAggregationSQL
+  def sqlMetricsAggregation(): Seq[SQLTaskAggMetricsProfileResult] = {
+    val allRows = apps.flatMap { app =>
+      app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
+        val jcs = app.jobIdToInfo.filter { case (_, jc) =>
+          val jcid = jc.sqlID.getOrElse(-1)
+          jc.sqlID.getOrElse(-1) == sqlId
+        }
+        if (jcs.isEmpty) {
+          None
+        } else {
+          val stageIdsForSQL = jcs.flatMap(_._2.stageIds).toSeq
+          val tasksInSQL = app.taskEnd.filter { tc =>
+            stageIdsForSQL.contains(tc.stageId)
+          }
+          if (tasksInSQL.isEmpty) {
+            None
           } else {
-            query += " union " + app.sqlMetricsAggregationSQL
+            // count all attempts
+            val numAttempts = tasksInSQL.size
+
+            val diskBytes = tasksInSQL.map(_.diskBytesSpilled).sum
+            val execCpuTime = tasksInSQL.map(_.executorCPUTime).sum
+            val execRunTime = tasksInSQL.map(_.executorRunTime).sum
+            val execCPURatio = ToolUtils.calculateDurationPercent(execCpuTime, execRunTime)
+
+            // set this here, so make sure we don't get it again until later
+            sqlCase.sqlCpuTimePercent = execCPURatio
+           
+            val (durSum, durMax, durMin, durAvg) = getDurations(tasksInSQL)
+            Some(SQLTaskAggMetricsProfileResult(app.index,
+              app.appId,
+              sqlId,
+              sqlCase.description,
+              numAttempts,
+              sqlCase.duration,
+              execCpuTime,
+              execRunTime,
+              execCPURatio,
+              diskBytes,
+              durSum,
+              durMax,
+              durMin,
+              durAvg,
+              execCpuTime,
+              tasksInSQL.map(_.executorDeserializeCPUTime).sum,
+              tasksInSQL.map(_.executorDeserializeTime).sum,
+              execRunTime,
+              tasksInSQL.map(_.gettingResultTime).sum,
+              tasksInSQL.map(_.input_bytesRead).sum,
+              tasksInSQL.map(_.input_recordsRead).sum,
+              tasksInSQL.map(_.jvmGCTime).sum,
+              tasksInSQL.map(_.memoryBytesSpilled).sum,
+              tasksInSQL.map(_.output_bytesWritten).sum,
+              tasksInSQL.map(_.output_recordsWritten).sum,
+              maxWithEmptyHandling(tasksInSQL.map(_.peakExecutionMemory)),
+              tasksInSQL.map(_.resultSerializationTime).sum,
+              maxWithEmptyHandling(tasksInSQL.map(_.resultSize)),
+              tasksInSQL.map(_.sr_fetchWaitTime).sum,
+              tasksInSQL.map(_.sr_localBlocksFetched).sum,
+              tasksInSQL.map(_.sr_localBytesRead).sum,
+              tasksInSQL.map(_.sr_remoteBlocksFetched).sum,
+              tasksInSQL.map(_.sr_remoteBytesRead).sum,
+              tasksInSQL.map(_.sr_remoteBytesReadToDisk).sum,
+              tasksInSQL.map(_.sr_totalBytesRead).sum,
+              tasksInSQL.map(_.sw_bytesWritten).sum,
+              tasksInSQL.map(_.sw_recordsWritten).sum,
+              tasksInSQL.map(_.sw_writeTime).sum
+            ))
           }
         }
       }
-      if (query.nonEmpty) {
-        apps.head.runQuery(query + " order by appIndex, Duration desc", false,
-          fileWriter, messageHeader)
-      } else {
-        fileWriter.foreach(_.write("Unable to aggregate SQL task Metrics\n"))
-        apps.head.sparkSession.emptyDataFrame
+    }
+    val allFiltered = allRows.filter(_.isDefined).map(_.get)
+    if (allFiltered.size > 0) {
+      val sortedRows = allFiltered.sortBy { cols =>
+        val sortDur = cols.duration.getOrElse(0L)
+        (cols.appIndex, -(sortDur), cols.sqlId, cols.executorCpuTime)
+      }
+      sortedRows
+    } else {
+      Seq.empty
+    }
+  }
+
+  def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTimeProfileResult] = {
+    val allRows = apps.flatMap { app =>
+      app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
+        // Potential problems not properly track, add it later
+        SQLDurationExecutorTimeProfileResult(app.index, app.appId, sqlId, sqlCase.duration,
+          sqlCase.hasDataset, app.appInfo.duration, sqlCase.problematic,
+          sqlCase.sqlCpuTimePercent)
       }
     }
-  }
 
-  // sql metrics aggregation specific for qualification because
-  // it aggregates executor time metrics differently
-  def sqlMetricsAggregationQual(): DataFrame = {
-    val query = apps
-      .filter { p =>
-        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
-          p.allDataFrames.contains(s"stageDF_${p.index}") &&
-          p.allDataFrames.contains(s"jobDF_${p.index}")
-      }.map( app => "(" + app.sqlMetricsAggregationSQLQual + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query)
+    if (allRows.size > 0) {
+      val sortedRows = allRows.sortBy { cols =>
+        val sortDur = cols.duration.getOrElse(0L)
+        (cols.appIndex, cols.sqlID, sortDur)
+      }
+      sortedRows
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      Seq.empty
     }
   }
 
-  def sqlMetricsAggregationDurationAndCpuTime(): DataFrame = {
-    val messageHeader = "\nSQL Duration and Executor CPU Time Percent\n"
-    val query = apps
-      .filter { p =>
-        p.allDataFrames.contains(s"sqlDF_${p.index}") &&
-        p.allDataFrames.contains(s"appDF_${p.index}")
-      }.map( app => "(" + app.profilingDurationSQL + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex, sqlID, `SQL Duration`",
-        false, fileWriter, messageHeader)
-    } else {
-      apps.head.sparkSession.emptyDataFrame
+  private case class AverageStageInfo(avgDuration: Double, avgShuffleReadBytes: Double)
+
+  def shuffleSkewCheck(): Seq[ShuffleSkewProfileResult] = {
+    val allRows = apps.flatMap { app =>
+      val tasksPerStageAttempt = app.taskEnd.groupBy { tc =>
+        (tc.stageId, tc.stageAttemptId)
+      }
+      val avgsStageInfos = tasksPerStageAttempt.map { case ((sId, saId), tcArr) =>
+        val sumDuration = tcArr.map(_.duration).sum
+        val avgDuration = ToolUtils.calculateAverage(sumDuration, tcArr.size, 2)
+        val sumShuffleReadBytes = tcArr.map(_.sr_totalBytesRead).sum
+        val avgShuffleReadBytes = ToolUtils.calculateAverage(sumShuffleReadBytes, tcArr.size, 2)
+        ((sId, saId), AverageStageInfo(avgDuration, avgShuffleReadBytes))
+      }
+
+      val tasksWithSkew = app.taskEnd.filter { tc =>
+        val avgShuffleDur = avgsStageInfos.get((tc.stageId, tc.stageAttemptId))
+        avgShuffleDur match {
+          case Some(avg) =>
+            (tc.sr_totalBytesRead > 3 * avg.avgShuffleReadBytes) &&
+              (tc.sr_totalBytesRead > 100 * 1024 * 1024)
+          case None => false
+        }
+      }
+
+      val groupedTasks = tasksWithSkew.groupBy { tc =>
+        (tc.stageId, tc.stageAttemptId)
+      }
+
+      tasksWithSkew.map { tc =>
+        val avgShuffleDur = avgsStageInfos.get((tc.stageId, tc.stageAttemptId))
+        avgShuffleDur match {
+          case Some(avg) =>
+            Some(ShuffleSkewProfileResult(app.index, tc.stageId, tc.stageAttemptId,
+              tc.taskId, tc.attempt, tc.duration, avg.avgDuration, tc.sr_totalBytesRead,
+              avg.avgShuffleReadBytes, tc.peakExecutionMemory, tc.successful, tc.endReason))
+          case None =>
+            None
+        }
+      }
     }
-  }
 
-  // custom query execution. Normally for debugging use.
-  def customQueryExecution(app: ApplicationInfo): Unit = {
-    fileWriter.foreach(_.write("Custom query execution:"))
-    val customQuery =
-      s"""select stageId from stageDF_${app.index} limit 1
-         |""".stripMargin
-    app.runQuery(customQuery)
-  }
-
-  // Function to find out shuffle read skew(For Joins or Aggregation)
-  def shuffleSkewCheck(): Unit ={
-    for (app <- apps){
-      shuffleSkewCheckSingleApp(app)
-    }
-  }
-
-  def shuffleSkewCheckSingleApp(app: ApplicationInfo): DataFrame = {
-    if (app.allDataFrames.contains(s"taskDF_${app.index}")) {
-      val customQuery =
-        s"""with tmp as
-           |(select stageId, stageAttemptId,
-           |avg(sr_totalBytesRead) avgShuffleReadBytes,
-           |avg(duration) avgDuration
-           |from taskDF_${app.index}
-           |group by stageId,stageAttemptId)
-           |select ${app.index} as appIndex, t.stageId,t.stageAttemptId,
-           |t.taskId, t.attempt,
-           |round(t.duration/1000,2) as taskDurationSec,
-           |round(tmp.avgDuration/1000,2) as avgDurationSec,
-           |round(t.sr_totalBytesRead/1024/1024,2) as taskShuffleReadMB,
-           |round(tmp.avgShuffleReadBytes/1024/1024,2) as avgShuffleReadMB,
-           |round(t.peakExecutionMemory/1024/1024,2) as taskPeakMemoryMB,
-           |t.successful,
-           |substr(t.endReason,0,100) reason
-           |from tmp, taskDF_${app.index} t
-           |where tmp.stageId=t.StageId
-           |and tmp.stageAttemptId=t.stageAttemptId
-           |and t.sr_totalBytesRead > 3 * tmp.avgShuffleReadBytes
-           |and t.sr_totalBytesRead > 100*1024*1024
-           |order by t.stageId, t.stageAttemptId, t.taskId,t.attempt
-           |""".stripMargin
-      val messageHeader = s"\nShuffle Skew Check:" +
-        " (When task's Shuffle Read Size > 3 * Avg Stage-level size)\n"
-      app.runQuery(customQuery, false, fileWriter, messageHeader)
+    val allNonEmptyRows = allRows.filter(_.isDefined).map(_.get)
+    if (allNonEmptyRows.size > 0) {
+      val sortedRows = allNonEmptyRows.sortBy { cols =>
+        (cols.appIndex, cols.stageId, cols.stageAttemptId, cols.taskId, cols.taskAttemptId)
+      }
+      sortedRows
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      Seq.empty
     }
   }
 }

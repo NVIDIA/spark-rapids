@@ -1,3 +1,9 @@
+---
+layout: page
+title: Adaptive Query Execution with the RAPIDS Accelerator for Apache Spark
+nav_order: 1
+parent: Developer Overview
+---
 # Adaptive Query Execution with the RAPIDS Accelerator for Apache Spark
 
 The benefits of AQE are not specific to CPU execution and can provide

@@ -33,7 +33,7 @@ class GenerateTimelineSuite extends FunSuite with BeforeAndAfterAll with Logging
 
   test("Generate Timeline") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val eventLog = ToolTestUtils.generateEventLog(eventLogDir, "timeline") { spark =>
+      val (eventLog, appId) = ToolTestUtils.generateEventLog(eventLogDir, "timeline") { spark =>
         import spark.implicits._
         val t1 = Seq((1, 2), (3, 4)).toDF("a", "b")
         t1.createOrReplaceTempView("t1")
@@ -53,12 +53,14 @@ class GenerateTimelineSuite extends FunSuite with BeforeAndAfterAll with Logging
           dotFileDir.getAbsolutePath,
           "--generate-timeline",
           eventLog))
-        ProfileMain.mainInternal(spark2, appArgs)
+        ProfileMain.mainInternal(appArgs)
 
-        val tempSubDir = new File(dotFileDir, ProfileMain.SUBDIR)
+        val tempSubDir = new File(dotFileDir, s"${Profiler.SUBDIR}/$appId")
 
         // assert that a file was generated
-        val outputDirs = ToolTestUtils.listFilesMatching(tempSubDir, _.startsWith("local"))
+        val outputDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f => 
+          f.endsWith("timeline.svg")
+        })
         assert(outputDirs.length === 1)
 
         // assert that the generated files looks something like what we expect

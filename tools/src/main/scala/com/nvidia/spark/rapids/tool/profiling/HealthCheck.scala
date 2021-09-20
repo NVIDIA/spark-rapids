@@ -16,101 +16,114 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import com.nvidia.spark.rapids.tool.ToolTextFileWriter
-
 import org.apache.spark.sql.rapids.tool.profiling.ApplicationInfo
 
 /**
  * HealthCheck defined health check rules
  */
-class HealthCheck(apps: Seq[ApplicationInfo], textFileWriter: ToolTextFileWriter) {
-
-  require(apps.nonEmpty)
+class HealthCheck(apps: Seq[ApplicationInfo]) {
 
   // Function to list all failed tasks , stages and jobs.
-  def listFailedJobsStagesTasks(): Unit = {
-    val tasksMessageHeader = s"\nFailed tasks:\n"
-    val tasksQuery = apps
-        .filter { p =>
-          p.allDataFrames.contains(s"taskDF_${p.index}")
-        }.map(app => "(" + app.getFailedTasks + ")")
-        .mkString(" union ")
-    if (tasksQuery.nonEmpty) {
-      apps.head.runQuery(tasksQuery + "order by appIndex", false,
-        fileWriter = Some(textFileWriter), messageHeader = tasksMessageHeader)
-    } else {
-      apps.head.sparkSession.emptyDataFrame
+  def getFailedTasks: Seq[FailedTaskProfileResults] = {
+    val failed = apps.flatMap { app =>
+      val tasksFailed = app.taskEnd.filter(_.successful == false)
+      tasksFailed.map { t =>
+        FailedTaskProfileResults(app.index, t.stageId, t.stageAttemptId,
+          t.taskId, t.attempt, ProfileUtils.truncateFailureStr(t.endReason))
+      }
     }
-
-    val stagesMessageHeader = s"\nFailed stages:\n"
-    val stagesQuery = apps
-        .filter { p =>
-          p.allDataFrames.contains(s"stageDF_${p.index}")
-        }.map(app => "(" + app.getFailedStages + ")")
-        .mkString(" union ")
-    if (stagesQuery.nonEmpty) {
-      apps.head.runQuery(stagesQuery + "order by appIndex", false,
-        fileWriter = Some(textFileWriter), messageHeader = stagesMessageHeader)
+    if (failed.size > 0) {
+      val sortedRows = failed.sortBy(cols =>
+        (cols.appIndex, cols.stageId, cols.stageAttemptId, cols.taskId, cols.taskAttemptId))
+      sortedRows
     } else {
-      apps.head.sparkSession.emptyDataFrame
-    }
-
-    val jobsMessageHeader = s"\nFailed jobs:\n"
-    val jobsQuery = apps
-        .filter { p =>
-          p.allDataFrames.contains(s"jobDF_${p.index}")
-        }.map(app => "(" + app.getFailedJobs + ")")
-        .mkString(" union ")
-    if (jobsQuery.nonEmpty) {
-      apps.head.runQuery(jobsQuery + "order by appIndex", false,
-        fileWriter = Some(textFileWriter), messageHeader = jobsMessageHeader)
-    } else {
-      apps.head.sparkSession.emptyDataFrame
+      Seq.empty
     }
   }
 
-  //Function to list all SparkListenerBlockManagerRemoved
-  def listRemovedBlockManager(): Unit = {
-    val header = "\nRemoved BlockManager(s):\n"
-    val query = apps
-      .filter { p =>
-        (p.allDataFrames.contains(s"blockManagersRemovedDF_${p.index}"))
-      }.map(app => "(" + app.getblockManagersRemoved + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex, executorID", false,
-        fileWriter = Some(textFileWriter), messageHeader = header)
+  def getFailedStages: Seq[FailedStagesProfileResults] = {
+    val failed = apps.flatMap { app =>
+      val stagesFailed = app.stageIdToInfo.filter { case (_, sc) =>
+        sc.failureReason.nonEmpty
+      }
+      stagesFailed.map { case ((id, attId), sc) =>
+        val failureStr = sc.failureReason.getOrElse("")
+        FailedStagesProfileResults(app.index, id, attId,
+          sc.info.name, sc.info.numTasks,
+          ProfileUtils.truncateFailureStr(failureStr))
+      }
+    }
+    if (failed.size > 0) {
+      val sortedRows = failed.sortBy(cols => (cols.appIndex, cols.stageId,
+        cols.stageAttemptId))
+      sortedRows
+    } else {
+      Seq.empty
     }
   }
 
-  //Function to list all SparkListenerExecutorRemoved
-  def listRemovedExecutors(): Unit = {
-    val header = "\nRemoved Executors(s):\n"
-    val query = apps
-      .filter { p =>
-        (p.allDataFrames.contains(s"executorsRemovedDF_${p.index}"))
-      }.map(app => "(" + app.getExecutorsRemoved + ")")
-      .mkString(" union ")
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex, executorID", false,
-        fileWriter = Some(textFileWriter), messageHeader = header)
+  def getFailedJobs: Seq[FailedJobsProfileResults] = {
+    val failed = apps.flatMap { app =>
+      val jobsFailed = app.jobIdToInfo.filter { case (_, jc) =>
+        jc.jobResult.nonEmpty && !jc.jobResult.get.equals("JobSucceeded")
+      }
+      jobsFailed.map { case (id, jc) =>
+        val failureStr = jc.failedReason.getOrElse("")
+        FailedJobsProfileResults(app.index, id, jc.jobResult.getOrElse("Unknown"),
+          ProfileUtils.truncateFailureStr(failureStr))
+      }
+    }
+    if (failed.size > 0) {
+      val sortedRows = failed.sortBy { cols =>
+        (cols.appIndex, cols.jobId, cols.jobResult)
+      }
+      sortedRows
+    } else {
+      Seq.empty
+    }
+  }
+
+  def getRemovedBlockManager: Seq[BlockManagerRemovedProfileResult] = {
+    val res = apps.flatMap { app =>
+      app.blockManagersRemoved.map { bm =>
+        BlockManagerRemovedProfileResult(app.index, bm.executorID, bm.time)
+      }
+    }
+    if (res.size > 0) {
+      res.sortBy(cols => (cols.appIndex, cols.executorID))
+    } else {
+      Seq.empty
+    }
+  }
+
+  def getRemovedExecutors: Seq[ExecutorsRemovedProfileResult] = {
+    val res = apps.flatMap { app =>
+      val execsRemoved = app.executorIdToInfo.filter { case (_, exec) =>
+          exec.isActive == false
+      }
+      execsRemoved.map { case (id, exec) =>
+        ExecutorsRemovedProfileResult(app.index, id, exec.removeTime, exec.removeReason)
+      }
+    }
+    if (res.size > 0) {
+      res.sortBy(cols => (cols.appIndex, cols.executorID))
+    } else {
+      Seq.empty
     }
   }
 
   //Function to list all *possible* not-supported plan nodes if GPU Mode=on
-  def listPossibleUnsupportedSQLPlan(): Unit = {
-    textFileWriter.write("\nSQL Plan HealthCheck:\n")
-    val query = apps
-        .filter { p =>
-          (p.allDataFrames.contains(s"sqlDF_${p.index}") && p.sqlPlan.nonEmpty)
-        }.map(app => "(" + app.unsupportedSQLPlan + ")")
-        .mkString(" union ")
-
-    if (query.nonEmpty) {
-      apps.head.runQuery(query + "order by appIndex", false,
-        fileWriter = Some(textFileWriter), messageHeader = s"\nUnsupported SQL Plan\n")
+  def getPossibleUnsupportedSQLPlan: Seq[UnsupportedOpsProfileResult] = {
+    val res = apps.flatMap { app =>
+      app.unsupportedSQLplan.map { unsup =>
+        UnsupportedOpsProfileResult(app.index, unsup.sqlID, unsup.nodeID, unsup.nodeName,
+          ProfileUtils.truncateFailureStr(unsup.nodeDesc), unsup.reason)
+      }
+    }
+    if (res.size > 0) {
+      res.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID))
     } else {
-      apps.head.sparkSession.emptyDataFrame
+      Seq.empty
     }
   }
 }

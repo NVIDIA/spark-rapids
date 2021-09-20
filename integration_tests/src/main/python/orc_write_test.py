@@ -20,6 +20,9 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
+# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
+pytestmark = pytest.mark.premerge_ci_1
+
 orc_write_gens_list = [
         [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
             string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),

@@ -20,6 +20,7 @@ import java.util.Random
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.types.{DataType, IntegerType}
@@ -32,7 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * DataFrame.repartition() operator.
  */
 case class GpuRoundRobinPartitioning(numPartitions: Int)
-  extends GpuExpression with GpuPartitioning {
+  extends GpuExpression with ShimExpression with GpuPartitioning {
   override def children: Seq[GpuExpression] = Nil
 
   override def nullable: Boolean = false

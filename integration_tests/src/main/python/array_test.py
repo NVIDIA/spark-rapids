@@ -14,12 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from functools import reduce
 from spark_session import is_before_spark_311
 from marks import allow_non_gpu
 from pyspark.sql.types import *
+from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
 
 # Once we support arrays as literals then we can support a[null] and
@@ -166,52 +167,71 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
 
-@pytest.mark.parametrize('child_gen', [
-    float_gen,
-    double_gen,
-    int_gen
-], ids=idfn)
-@pytest.mark.parametrize('child_to_type', [
-    FloatType(),
-    DoubleType(),
-    IntegerType(),
-], ids=idfn)
-@pytest.mark.parametrize('depth', [1, 2, 3], ids=idfn)
-def test_array_cast_recursive(child_gen, child_to_type, depth):
-    def cast_func(spark):
-        depth_rng = range(0, depth)
-        nested_gen = reduce(lambda dg, i: ArrayGen(dg, max_length=int(max(1, 16 / (2 ** i)))),
-            depth_rng, child_gen)
-        nested_type = reduce(lambda t, _: ArrayType(t), depth_rng, child_to_type)
-        df = two_col_df(spark, int_gen, nested_gen)
-        res = df.select(df.b.cast(nested_type))
-        return res
-    assert_gpu_and_cpu_are_equal_collect(cast_func)
+@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+def test_array_transform(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                'transform(a, item -> item) as ident',
+                'transform(a, item -> null) as n',
+                'transform(a, item -> 1) as one',
+                'transform(a, (item, index) -> index) as indexed',
+                'transform(a, item -> b) as b_val',
+                'transform(a, (item, index) -> index - b) as math_on_index']
+        element_type = data_gen.data_type.elementType
+        # decimal types can grow too large so we are avoiding those here for now
+        if isinstance(element_type, IntegralType):
+            columns.extend(['transform(a, item -> item + 1) as add',
+                'transform(a, item -> item + item) as mul',
+                'transform(a, (item, index) -> item + index + b) as all_add'])
 
+        if isinstance(element_type, StringType):
+            columns.extend(['transform(a, entry -> concat(entry, "-test")) as con'])
 
-@allow_non_gpu('ProjectExec', 'Alias', 'Cast')
-def test_array_cast_fallback():
-    def cast_float_to_double(spark):
-        df = two_col_df(spark, int_gen, ArrayGen(int_gen))
-        res = df.select(df.b.cast(ArrayType(StringType())))
-        return res
-    assert_gpu_and_cpu_are_equal_collect(cast_float_to_double)
+        if isinstance(element_type, ArrayType):
+            columns.extend(['transform(a, entry -> transform(entry, sub_entry -> 1)) as sub_one',
+                'transform(a, (entry, index) -> transform(entry, (sub_entry, sub_index) -> index)) as index_as_sub_entry',
+                'transform(a, (entry, index) -> transform(entry, (sub_entry, sub_index) -> index + sub_index)) as index_add_sub_index',
+                'transform(a, (entry, index) -> transform(entry, (sub_entry, sub_index) -> index + sub_index + b)) as add_indexes_and_value'])
 
+        return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
 
-@pytest.mark.parametrize('child_gen', [
-    byte_gen,
-    string_gen,
-    decimal_gen_default,
-], ids=idfn)
-@pytest.mark.parametrize('child_to_type', [
-    FloatType(),
-    DoubleType(),
-    IntegerType(),
-], ids=idfn)
-@allow_non_gpu('ProjectExec', 'Alias', 'Cast')
-def test_array_cast_bad_from_good_to_fallback(child_gen, child_to_type):
-    def cast_array(spark):
-        df = two_col_df(spark, int_gen, ArrayGen(child_gen))
-        res = df.select(df.b.cast(ArrayType(child_to_type)))
-        return res
-    assert_gpu_and_cpu_are_equal_collect(cast_array)
+    assert_gpu_and_cpu_are_equal_collect(do_it, 
+            conf=allow_negative_scale_of_decimal_conf)
+
+# TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
+array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
+        boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
+
+@pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
+def test_array_min(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_min(a)'),
+            conf={
+                'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                'spark.rapids.sql.hasNans': 'false'})
+
+@allow_non_gpu("ProjectExec", "ArrayMin", "Alias")
+@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
+def test_array_min_fallback(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_min(a)'),
+            "ArrayMin")
+
+@pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
+def test_array_max(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_max(a)'),
+            conf={
+                'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                'spark.rapids.sql.hasNans': 'false'})
+
+@allow_non_gpu("ProjectExec", "ArrayMax", "Alias")
+@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
+def test_array_max_fallback(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_max(a)'),
+            "ArrayMax")
