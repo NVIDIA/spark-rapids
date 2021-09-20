@@ -68,14 +68,14 @@ def test_cast_string_date_valid_format():
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(DateType())),
-            conf = {'spark.rapids.sql.parseExtendedYears.enabled': 'true'})
+            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
 def test_cast_string_ts_valid_format():
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType())),
-            conf = {'spark.rapids.sql.parseExtendedYears.enabled': 'true',
+            conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
                 'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')

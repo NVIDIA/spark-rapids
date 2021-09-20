@@ -116,7 +116,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     datesAsStrings,
     CORRECTED_TIME_PARSER_POLICY
         // All of the dates being parsed are valid for all of the versions of Spark supported.
-        .set(RapidsConf.ENABLE_EXTENDED_YEAR_PARSING.key, "true")) {
+        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")) {
     df => df.withColumn("c1", to_date(col("c0")))
   }
 

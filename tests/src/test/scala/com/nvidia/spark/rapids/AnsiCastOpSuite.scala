@@ -440,7 +440,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     // Copied from Spark CastSuite
 
     // All of the dates/timestamps here fail no matter what version of Spark used
-    val newConf = sparkConf.set(RapidsConf.ENABLE_EXTENDED_YEAR_PARSING.key, "true")
+    val newConf = sparkConf.set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
     def checkCastWithParseError(str: String): Unit = {
       val exception = intercept[SparkException] {

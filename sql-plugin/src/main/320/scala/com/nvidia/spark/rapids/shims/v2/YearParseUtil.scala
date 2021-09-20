@@ -19,12 +19,10 @@ import com.nvidia.spark.rapids.{RapidsConf, RapidsMeta}
 
 object YearParseUtil {
   def tagParseStringAsDate(conf: RapidsConf, meta: RapidsMeta[_, _, _]): Unit = {
-    if (!conf.isExtendedRangeYearParsingEnabled) {
+    if (conf.hasExtendedYearValues) {
       meta.willNotWorkOnGpu("Parsing the full rage of supported years is not supported. " +
-          "SPARK-35780 extended the allowed years in Spark 3.2.0 to all supported values. " +
-          "The RAPIDS accelerator is limited to just 4 positive digits, like prior to " +
-          "SPARK-35780. If you want to enable GPU acceleration despite this set " +
-          s"${RapidsConf.ENABLE_EXTENDED_YEAR_PARSING} to true")
+          "If your years are limited to 4 positive digits set " +
+          s"${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false.")
     }
   }
 }
