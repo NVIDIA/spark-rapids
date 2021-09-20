@@ -70,7 +70,7 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 /**
  * Base Shim for Spark 3.1.1 that can be used by other 3.1.x versions and to easily diff
  */
-abstract class SparkBaseShims extends Spark30XShims {
+abstract class SparkBaseShims extends Spark31XShims {
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,

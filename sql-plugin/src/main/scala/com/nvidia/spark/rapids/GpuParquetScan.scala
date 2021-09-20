@@ -318,8 +318,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
 
   def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
-      case p:PrimitiveType
-        if p.getPrimitiveTypeName == PrimitiveTypeName.INT96 => true
+      case p:PrimitiveType =>
+        p.getPrimitiveTypeName == PrimitiveTypeName.INT96
       case g:GroupType => //GroupType
         g.getFields.asScala.exists(t => isParquetTimeInInt96(t))
       case _ => false

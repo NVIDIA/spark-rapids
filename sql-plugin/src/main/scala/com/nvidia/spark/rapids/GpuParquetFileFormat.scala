@@ -220,7 +220,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     // prior to spark 311 int96 don't check for rebase exception
     // https://github.com/apache/spark/blob/068465d016447ef0dbf7974b1a3f992040f4d64d/sql/core/src/
     // main/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetWriteSupport.scala#L195
-    val isBeforeSpark311 = ShimLoader.getSparkShims.getSparkShimVersion.toString < "3.1.1"
+    val isBeforeSpark311 = ShimLoader.getSparkShims.isBeforeSpark311
     val timestampRebaseException =
       outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
           "EXCEPTION".equals(sparkSession.sqlContext
