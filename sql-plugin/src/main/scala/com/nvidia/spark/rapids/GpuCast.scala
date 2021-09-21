@@ -24,6 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.YearParseUtil
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -81,11 +82,16 @@ class CastExprMeta[INPUT <: CastBase](
             "\"-1.7976931348623158E308\" in both these cases the GPU returns Double.MaxValue " +
             "while CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this " +
             s"operation on the GPU, set ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-      case (_: StringType, _: TimestampType) if !conf.isCastStringToTimestampEnabled =>
-        willNotWorkOnGpu("the GPU only supports a subset of formats " +
-            "when casting strings to timestamps. Refer to the CAST documentation " +
-            "for more details. To enable this operation on the GPU, set" +
-            s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+      case (_: StringType, _: TimestampType) =>
+        if (!conf.isCastStringToTimestampEnabled) {
+          willNotWorkOnGpu("the GPU only supports a subset of formats " +
+              "when casting strings to timestamps. Refer to the CAST documentation " +
+              "for more details. To enable this operation on the GPU, set" +
+              s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+        }
+        YearParseUtil.tagParseStringAsDate(conf, this)
+      case (_: StringType, _: DateType) =>
+        YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DecimalType) if !conf.isCastStringToDecimalEnabled =>
         // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
         willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +

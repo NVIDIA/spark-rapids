@@ -30,7 +30,11 @@
     <version>21.10.0-SNAPSHOT</version>
 
     <properties>
-        <rapids.shade.package>com.nvidia.shaded.${spark.version.classifier}.spark</rapids.shade.package>
+        <!--
+        we store ASM-relocated packages in /spark3xx parallel worlds in dist
+        and they are auto-deduped using binary diff
+        -->
+        <rapids.shade.package>com.nvidia.shaded.spark</rapids.shade.package>
     </properties>
     <dependencies>
         <dependency>

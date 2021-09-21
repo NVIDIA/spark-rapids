@@ -148,10 +148,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Cast from string to date using random inputs") {
+    // We cannot do the full range of parsing unless it is prior to 3.2.0
+    assumePriorToSpark320
     testCastStringTo(DataTypes.DateType, generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8))
   }
 
   test("Cast from string to date using random inputs with valid year prefix") {
+    // We cannot do the full range of parsing unless it is prior to 3.2.0
+    assumePriorToSpark320
     testCastStringTo(DataTypes.DateType,
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
@@ -205,7 +209,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private def testCastStringTo(
       toType: DataType,
       strings: Seq[String],
-      ansiMode: AnsiTestMode = AnsiDisabled) {
+      ansiMode: AnsiTestMode = AnsiDisabled): Unit = {
 
     def castDf(spark: SparkSession): Seq[Row] = {
       import spark.implicits._
@@ -233,6 +237,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+      // Tests that this is not true for are skipped in 3.2.0+
+      .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
     val tryGpu = Try(withGpuSparkSession(castDf, gpuConf)
       .sortBy(_.getInt(INDEX_ID)))
@@ -275,6 +281,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
+        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
       val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
       val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
@@ -312,7 +319,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def compareFloatToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]) = {
+  private def compareFloatToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]): Unit = {
     fromCpu.zip(fromGpu).foreach {
       case (c, g) =>
         val cpuValue = c.getAs[String](0)
@@ -453,7 +460,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   private def testCastToString[T](
       dataType: DataType,
-      comparisonFunc: Option[(String, String) => Boolean] = None) {
+      comparisonFunc: Option[(String, String) => Boolean] = None): Unit = {
     val checks = GpuOverrides.expressions(classOf[Cast]).getChecks.get.asInstanceOf[CastChecks]
 
     assert(checks.gpuCanCast(dataType, DataTypes.StringType))
@@ -967,7 +974,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
     ansiEnabled: Boolean = false,
-    gpuOnly: Boolean = false) {
+    gpuOnly: Boolean = false): Unit = {
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
@@ -1270,7 +1277,7 @@ object CastOpSuite {
     } else {
       Seq(
         "200", // year too few digits
-        "20000", // year too many digits
+        "20000000", // year too many digits, even for 3.2.0+
         "21\r\n", // year with 4 chars but not all digits
         "3330-7 39 49: 1",
         "1999\rGARBAGE",
@@ -1336,13 +1343,17 @@ object CastOpSuite {
       )
     }
 
-    val allValues = specialDates ++
+    var allValues =
         validYear ++
         validYearMonth ++
         validYearMonthDay ++
         invalidValues ++
         validTimestamps ++
         timestampWithoutDate
+
+    if (!VersionUtils.isSpark320OrLater) {
+      allValues = specialDates ++ allValues
+    }
 
     // these partial timestamp formats are not yet supported in cast string to timestamp but are
     // supported by cast string to date
@@ -1409,7 +1420,7 @@ object CastOpSuite {
 
 }
 
-sealed trait AnsiTestMode;
+sealed trait AnsiTestMode
 case object AnsiDisabled extends AnsiTestMode
 case object AnsiExpectSuccess extends AnsiTestMode
 case object AnsiExpectFailure extends AnsiTestMode

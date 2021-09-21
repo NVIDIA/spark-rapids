@@ -23,6 +23,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -56,6 +57,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.shims.v2.GpuTimeAdd
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -1378,8 +1380,11 @@ object GpuOverrides extends Logging {
       "Natural log 1 + expr",
       ExprChecks.mathUnary,
       (a, conf, p, r) => new UnaryExprMeta[Log1p](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType)))
+        override def convertToGpu(child: Expression): GpuExpression = {
+          // No need for overflow checking on the GpuAdd in Double as Double handles overflow
+          // the same in all modes.
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false))
+        }
       }),
     expr[Log2](
       "Log base 2",
@@ -1657,8 +1662,17 @@ object GpuOverrides extends Logging {
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          super.tagSelfForAst()
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST Addition does not support ANSI mode.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuAdd(lhs, rhs)
+          GpuAdd(lhs, rhs, failOnError = ansiEnabled)
       }),
     expr[Subtract](
       "Subtraction",
@@ -1707,6 +1721,10 @@ object GpuOverrides extends Logging {
                     s" to fit on the GPU $intermediateResult")
               }
             case _ => // NOOP
+          }
+
+          if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
           }
         }
 
