@@ -85,19 +85,6 @@ abstract class SparkBaseShims extends Spark30XShims {
   override def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
 
-  override def getParquetFilters(
-      schema: MessageType,
-      pushDownDate: Boolean,
-      pushDownTimestamp: Boolean,
-      pushDownDecimal: Boolean,
-      pushDownStartWith: Boolean,
-      pushDownInFilterThreshold: Int,
-      caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
-    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
-      pushDownInFilterThreshold, caseSensitive)
-  }
-
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
 
@@ -848,8 +835,6 @@ abstract class SparkBaseShims extends Spark30XShims {
   }
 
   override def hasAliasQuoteFix: Boolean = false
-
-  override def hasCastFloatTimestampUpcast: Boolean = false
 
   override def filesFromFileIndex(fileIndex: PartitioningAwareFileIndex): Seq[FileStatus] = {
     fileIndex.allFiles()
