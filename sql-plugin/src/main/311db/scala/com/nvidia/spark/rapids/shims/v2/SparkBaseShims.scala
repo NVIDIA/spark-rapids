@@ -14,22 +14,23 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark311cdh
+package com.nvidia.spark.rapids.shims.v2
 
 import java.net.URI
 import java.nio.ByteBuffer
 
+import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.spark311db._
 import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
-import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkContext, SparkEnv, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -48,7 +49,7 @@ import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, Shuffle
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -61,30 +62,13 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
-import org.apache.spark.sql.rapids.shims.spark311cdh._
+import org.apache.spark.sql.rapids.shims.spark311db._
 import org.apache.spark.sql.rapids.shims.v2.{GpuColumnarToRowTransitionExec, GpuInMemoryTableScanExec, GpuSchemaUtils}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
-/**
- * Base Shim for Spark 3.1.1 that can be used by other 3.1.x versions and to easily diff
- */
 abstract class SparkBaseShims extends Spark30XShims {
-
-  override def parquetRebaseReadKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
-  override def parquetRebaseWriteKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key
-  override def avroRebaseReadKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_READ.key
-  override def avroRebaseWriteKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_WRITE.key
-  override def parquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
-  override def parquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
-
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
 
@@ -134,7 +118,8 @@ abstract class SparkBaseShims extends Spark30XShims {
     }
   }
 
-  override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
+  override def isWindowFunctionExec(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
 
   override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
@@ -394,7 +379,7 @@ abstract class SparkBaseShims extends Spark30XShims {
           TypeSig.all),
         (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
           override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
-            winPy.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+            winPy.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
           override def convertToGpu(): GpuExec = {
             GpuWindowInPandasExec(
@@ -405,6 +390,19 @@ abstract class SparkBaseShims extends Spark30XShims {
             )
           }
         }).disabledByDefault("it only supports row based frame for now"),
+      GpuOverrides.exec[RunningWindowFunctionExec](
+        "Databricks-specific window function exec, for \"running\" windows, " +
+            "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.all,
+          Map("partitionSpec" ->
+              InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+                TypeSig.all))),
+          (runningWindowFunctionExec, conf, p, r) =>
+            new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
+      ),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
@@ -413,7 +411,18 @@ abstract class SparkBaseShims extends Spark30XShims {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
-          override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+          override def tagPlanForGpu(): Unit = {
+            // this is very specific check to have any of the Delta log metadata queries
+            // fallback and run on the CPU since there is some incompatibilities in
+            // Databricks Spark and Apache Spark.
+            if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
+              wrapped.relation.location.getClass.getCanonicalName() ==
+                "com.databricks.sql.transaction.tahoe.DeltaLogFileIndex") {
+              this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
+                "any part of the plan on the GPU!")
+            }
+            GpuFileSourceScanExec.tagSupport(this)
+          }
 
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
@@ -439,10 +448,11 @@ abstract class SparkBaseShims extends Spark30XShims {
               wrapped.requiredSchema,
               wrapped.partitionFilters,
               wrapped.optionalBucketSet,
-              wrapped.optionalNumCoalescedBuckets,
+              // TODO: Does Databricks have coalesced bucketing implemented?
+              None,
               wrapped.dataFilters,
               wrapped.tableIdentifier)(conf)
-          }
+            }
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
@@ -476,29 +486,29 @@ abstract class SparkBaseShims extends Spark30XShims {
         (join, conf, p, r) => new GpuShuffledHashJoinMeta(join, conf, p, r)),
       GpuOverrides.exec[ArrowEvalPythonExec](
         "The backend of the Scalar Pandas UDFs. Accelerates the data transfer between the" +
-          " Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled",
+        " Java process and the Python process. It also supports scheduling GPU resources" +
+        " for the Python process when enabled",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
         (e, conf, p, r) =>
-          new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
-            val udfs: Seq[BaseExprMeta[PythonUDF]] =
-              e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-            val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-              e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-            override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
+        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
+          val udfs: Seq[BaseExprMeta[PythonUDF]] =
+            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
 
-            override def replaceMessage: String = "partially run on GPU"
-            override def noReplacementPossibleMessage(reasons: String): String =
-              s"cannot run even partially on the GPU because $reasons"
+          override def replaceMessage: String = "partially run on GPU"
+          override def noReplacementPossibleMessage(reasons: String): String =
+            s"cannot run even partially on the GPU because $reasons"
 
-            override def convertToGpu(): GpuExec =
-              GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
-                resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-                childPlans.head.convertIfNeeded(),
-                e.evalType)
-          }),
+          override def convertToGpu(): GpuExec =
+            GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+              resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+              childPlans.head.convertIfNeeded(),
+              e.evalType)
+        }),
       GpuOverrides.exec[MapInPandasExec](
         "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
           " Java process and the Python process. It also supports scheduling GPU resources" +
@@ -615,7 +625,7 @@ abstract class SparkBaseShims extends Spark30XShims {
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions)
+    new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
@@ -821,8 +831,8 @@ abstract class SparkBaseShims extends Spark30XShims {
   }
 
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
-    case ShuffleQueryStageExec(_, e: ReusedExchangeExec) => e
-    case BroadcastQueryStageExec(_, e: ReusedExchangeExec) => e
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
   }
 
   /** dropped by SPARK-34234 */
@@ -836,12 +846,14 @@ abstract class SparkBaseShims extends Spark30XShims {
 
   override def hasAliasQuoteFix: Boolean = false
 
-  override def filesFromFileIndex(fileIndex: PartitioningAwareFileIndex): Seq[FileStatus] = {
-    fileIndex.allFiles()
+  override def hasCastFloatTimestampUpcast: Boolean = false
+
+  override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
+    fileCatalog.allFiles().map(_.toFileStatus)
   }
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
-    mode.transform(rows)
+    mode.transform(rows, TaskContext.get.taskMemoryManager())
 
   override def registerKryoClasses(kryo: Kryo): Unit = {
     kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
