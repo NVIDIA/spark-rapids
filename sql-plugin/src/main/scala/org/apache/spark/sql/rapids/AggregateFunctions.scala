@@ -1224,8 +1224,9 @@ case class GpuStddevPop(child: Expression) extends GpuM2(child) {
 case class GpuStddevSamp(child: Expression) extends GpuM2(child) {
   override lazy val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
-    val stddevSamp = GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0)),
-      failOnErrorOverride = false))
+    val stddevSamp =
+      GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
+        failOnErrorOverride = false))
 
     // Set nulls for the rows where n == 0 and n == 1.
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), GpuLiteral(null, DoubleType),
@@ -1252,7 +1253,7 @@ case class GpuVariancePop(child: Expression) extends GpuM2(child) {
 case class GpuVarianceSamp(child: Expression) extends GpuM2(child) {
   override lazy val evaluateExpression: Expression = {
     // var_samp = m2 / (n - 1.0).
-    val varSamp = GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0)))
+    val varSamp = GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false))
 
     // Set nulls for the rows where n == 0 and n == 1.
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), GpuLiteral(null, DoubleType),
