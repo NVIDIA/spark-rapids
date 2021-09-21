@@ -180,12 +180,75 @@ case class GpuAdd(
   }
 }
 
-case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuSubtract(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
+
+  private[this] def ltZero(rows: Int, op: BinaryOperable): ColumnVector = {
+    op match {
+      case cv: ColumnVector =>
+        withResource(Scalar.fromByte(0.toByte)) { zero =>
+          cv.lessThan(zero)
+        }
+      case s: Scalar =>
+        if (s.isValid) {
+          val isLess = dataType match {
+            case ByteType => s.getByte < 0
+            case ShortType => s.getShort < 0
+            case IntegerType => s.getInt < 0
+            case LongType => s.getLong < 0
+            case other => throw new IllegalArgumentException(s"Unexpected type $other")
+          }
+          withResource(Scalar.fromBool(isLess)) { n =>
+            ColumnVector.fromScalar(n, rows)
+          }
+        } else {
+          withResource(Scalar.fromNull(DType.BOOL8)) { n =>
+            ColumnVector.fromScalar(n, rows)
+          }
+        }
+    }
+  }
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    val ret = super.doColumnar(lhs, rhs)
+    // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Check overflow. It is true when both arguments have opposite sign and
+      // result has same sign as subtrahend (rhs).
+      // TODO the math here could probably be cleaned up and made more efficient
+      closeOnExcept(ret) { r =>
+        val numRows = r.getRowCount.toInt
+        val hasOverflow = withResource(ltZero(numRows, rhs)) { rhsLz =>
+          val argsOpSign = withResource(ltZero(numRows, lhs)) { lhsLz =>
+            lhsLz.notEqualTo(rhsLz)
+          }
+          withResource(argsOpSign) { argsOpSign =>
+            val resultAndSubtrahendSameSign = withResource(ltZero(numRows, r)) { resultLz =>
+              rhsLz.equalTo(resultLz)
+            }
+            withResource(resultAndSubtrahendSameSign) { resultAndSubtrahendSameSign =>
+              resultAndSubtrahendSameSign.and(argsOpSign)
+            }
+          }
+        }
+        withResource(hasOverflow) { hasOverflow =>
+          withResource(hasOverflow.any()) { any =>
+            if (any.isValid && any.getBoolean) {
+              throw new ArithmeticException("One or more rows overflow for Subtract operation.")
+            }
+          }
+        }
+      }
+    }
+    ret
+  }
 }
 
 object GpuMultiplyUtil {

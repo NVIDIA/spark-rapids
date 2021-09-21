@@ -23,6 +23,15 @@ from spark_session import with_cpu_session, with_gpu_session, with_spark_session
 import pyspark.sql.functions as f
 from pyspark.sql.utils import IllegalArgumentException
 
+# No overflow gens here because we just focus on verifying the fallback to CPU when
+# enabling ANSI mode. But overflows will fail the tests because CPU runs raise
+# exceptions.
+_no_overflow_multiply_gens = [
+    ByteGen(min_val = 1, max_val = 10, special_cases=[]),
+    ShortGen(min_val = 1, max_val = 100, special_cases=[]),
+    IntegerGen(min_val = 1, max_val = 1000, special_cases=[]),
+    LongGen(min_val = 1, max_val = 3000, special_cases=[])]
+
 def _get_overflow_df(spark, data, data_type, expr):
     return spark.createDataFrame(
         SparkContext.getOrCreate().parallelize([data]),
@@ -44,6 +53,19 @@ def test_addition(data_gen):
                 f.col('a') + f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
 
+# If it will not overflow for multiply it is good for add too
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
+def test_addition_ansi_no_overflow(data_gen):
+    data_type = data_gen.data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a') + f.lit(100).cast(data_type),
+                f.lit(-12).cast(data_type) + f.col('b'),
+                f.lit(None).cast(data_type) + f.col('a'),
+                f.col('b') + f.lit(None).cast(data_type),
+                f.col('a') + f.col('b')),
+            conf={'spark.sql.ansi.enabled': 'true'})
+
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
 def test_subtraction(data_gen):
     data_type = data_gen.data_type
@@ -55,6 +77,19 @@ def test_subtraction(data_gen):
                 f.col('b') - f.lit(None).cast(data_type),
                 f.col('a') - f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
+
+# If it will not overflow for multiply it is good for subtract too
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
+def test_subtraction_ansi_no_overflow(data_gen):
+    data_type = data_gen.data_type
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a') - f.lit(100).cast(data_type),
+                f.lit(-12).cast(data_type) - f.col('b'),
+                f.lit(None).cast(data_type) - f.col('a'),
+                f.col('b') - f.lit(None).cast(data_type),
+                f.col('a') - f.col('b')),
+            conf={'spark.sql.ansi.enabled': 'true'})
 
 @pytest.mark.parametrize('data_gen', numeric_gens +
         [decimal_gen_neg_scale, decimal_gen_scale_precision, decimal_gen_same_scale_precision, DecimalGen(8, 8)], ids=idfn)
@@ -68,15 +103,6 @@ def test_multiplication(data_gen):
                 f.col('b') * f.lit(None).cast(data_type),
                 f.col('a') * f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
-
-# No overflow gens here because we just focus on verifying the fallback to CPU when
-# enabling ANSI mode. But overflows will fail the tests because CPU runs raise
-# exceptions.
-_no_overflow_multiply_gens = [
-    ByteGen(min_val = 1, max_val = 10, special_cases=[]),
-    ShortGen(min_val = 1, max_val = 100, special_cases=[]),
-    IntegerGen(min_val = 1, max_val = 1000, special_cases=[]),
-    LongGen(min_val = 1, max_val = 3000, special_cases=[])]
 
 @allow_non_gpu('ProjectExec', 'Alias', 'Multiply', 'Cast')
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
@@ -656,20 +682,20 @@ def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):
         conf={'spark.sql.ansi.enabled': ansi_enabled})
 
 _data_type_expr_for_add_overflow = [
-    ([127], ByteType(), 'a + 1Y'), ([-128], ByteType(), '-1Y + a'),
-    ([32767], ShortType(), 'a + 1S'), ([-32768], ShortType(), '-1S + a'),
-    ([2147483647], IntegerType(), 'a + 1'), ([-2147483648], IntegerType(), '-1 + a'),
+    ([127], ByteType(), 'a + 1Y'),
+    ([-128], ByteType(), '-1Y + a'),
+    ([32767], ShortType(), 'a + 1S'),
+    ([-32768], ShortType(), '-1S + a'),
+    ([2147483647], IntegerType(), 'a + 1'),
+    ([-2147483648], IntegerType(), '-1 + a'),
     ([9223372036854775807],  LongType(), 'a + 1L'),
     ([-9223372036854775808], LongType(), '-1L + a'),
     ([3.4028235E38],  FloatType(), 'a + a'),
     ([-3.4028235E38], FloatType(), 'a + a'),
     ([1.7976931348623157E308],  DoubleType(), 'a + a'),
-    ([-1.7976931348623157E308], DoubleType(), 'a + a'),
-    ([Decimal('9'*18 + 'e-0')], DecimalType(precision=18), 'a + a'),
-    ([Decimal('-' + '9'*18 + 'e-0')], DecimalType(precision=18), 'a + a'),
-]
+    ([-1.7976931348623157E308], DoubleType(), 'a + a')]
 
-@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow[:12])
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow)
 def test_add_overflow_with_ansi_enabled(data, tp, expr):
     ansi_conf = {'spark.sql.ansi.enabled': 'true'}
     if isinstance(tp, IntegralType):
@@ -682,6 +708,27 @@ def test_add_overflow_with_ansi_enabled(data, tp, expr):
             func=lambda spark: _get_overflow_df(spark, data, tp, expr),
             conf=ansi_conf)
 
+
+_data_type_expr_for_sub_overflow = [
+    ([-128], ByteType(), 'a - 1Y'),
+    ([-32768], ShortType(), 'a -1S'),
+    ([-2147483648], IntegerType(), 'a - 1'),
+    ([-9223372036854775808], LongType(), 'a - 1L'),
+    ([-3.4028235E38], FloatType(), 'a - 1.0f'),
+    ([-1.7976931348623157E308], DoubleType(), 'a - 1.0')]
+
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_sub_overflow)
+def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
+    ansi_conf = {'spark.sql.ansi.enabled': 'true'}
+    if isinstance(tp, IntegralType):
+        assert_gpu_and_cpu_error(
+            lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
+            conf=ansi_conf,
+            error_message='overflow')
+    else:
+        assert_gpu_and_cpu_are_equal_collect(
+            func=lambda spark: _get_overflow_df(spark, data, tp, expr),
+            conf=ansi_conf)
 
 @allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Add', 'PromotePrecision', 'Cast')
 @pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow[12:])
