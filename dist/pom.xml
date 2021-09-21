@@ -185,60 +185,68 @@
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                            </patternset>
+                                        </unzip>
+
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
-                                            <patternset id="exclude-shared-world">
-                                                <excludesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset id="include-shared-world">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/spark302"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <patternset refid="include-shared-world"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -247,7 +255,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <patternset refid="exclude-shared-world"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -255,49 +263,49 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/spark312"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
                                                 dest="${project.build.directory}/parallel-world/spark301db"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311db"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
 
                                         <delete
@@ -456,60 +464,68 @@
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                            </patternset>
+                                        </unzip>
+
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
-                                            <patternset id="exclude-shared-world">
-                                                <excludesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset id="include-shared-world">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/spark302"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <patternset refid="include-shared-world"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -518,7 +534,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <patternset refid="exclude-shared-world"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -526,25 +542,25 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/spark312"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
 
                                         <delete
@@ -696,22 +712,31 @@
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                            </patternset>
+                                        </unzip>
+
+
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/spark302"
                                         >
-                                            <patternset id="exclude-shared-world">
-                                                <excludesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset id="include-shared-world">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -720,7 +745,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <patternset refid="include-shared-world"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -729,7 +754,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark312"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <patternset refid="exclude-shared-world"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -738,25 +763,25 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
                                                 dest="${project.build.directory}/parallel-world/spark320"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <delete
                                                 file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
@@ -941,72 +966,80 @@
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world"
+                                        >
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                            </patternset>
+                                        </unzip>
+
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
-                                            <patternset id="exclude-shared-world">
-                                                <excludesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset id="include-shared-world">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/spark302"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
                                                 dest="${project.build.directory}/parallel-world/spark304"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <patternset refid="include-shared-world"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1015,7 +1048,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <patternset refid="exclude-shared-world"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1023,49 +1056,49 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/spark312"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
                                                 dest="${project.build.directory}/parallel-world/spark313"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
                                                 dest="${project.build.directory}/parallel-world/spark320"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <delete
                                             file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
@@ -1269,72 +1302,80 @@
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-                                        <unzip
-                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
-                                                dest="${project.build.directory}/parallel-world/spark301"
-                                        >
-                                            <patternset id="exclude-shared-world">
-                                                <excludesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
-                                            </patternset>
-                                        </unzip>
+
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
                                                 dest="${project.build.directory}/parallel-world"
                                         >
-                                            <patternset id="include-shared-world">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                            <patternset id="sharedWorld">
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                            </patternset>
+                                        </unzip>
+
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/spark301"
+                                        >
+                                            <patternset id="excludeMeta">
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
+                                            </patternset>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset id="includeMeta">
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/spark302"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
                                                 dest="${project.build.directory}/parallel-world/spark304"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark304.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark303.jar"
                                                 dest="${project.build.directory}/parallel-world/spark303"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <patternset refid="include-shared-world"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1343,7 +1384,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <patternset refid="exclude-shared-world"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1351,73 +1392,73 @@
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312.jar"
                                                 dest="${project.build.directory}/parallel-world/spark312"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark313.jar"
                                                 dest="${project.build.directory}/parallel-world/spark313"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
                                                 dest="${project.build.directory}/parallel-world/spark320"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311db.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311db"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
-                                            <patternset refid="include-shared-world"/>
+                                            <patternset refid="includeMeta"/>
                                         </unzip>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
                                                 dest="${project.build.directory}/parallel-world/spark301db"
                                         >
-                                            <patternset refid="exclude-shared-world"/>
+                                            <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <delete
                                             file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
@@ -1522,8 +1563,8 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1619,8 +1660,8 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
