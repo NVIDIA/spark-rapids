@@ -42,11 +42,10 @@ mvn_verify() {
 
     # Run the unit tests for other Spark versions but don't run full python integration tests
     # NOT ALL TESTS NEEDED FOR PREMERGE
-    # Just test one 3.0.X version (base version covers this) and one 3.1.X version.
+    # Just test one 3.0.X version (base version covers this), one 3.1.X version, and one 3.2.X version.
     # All others shims test should be covered in nightly pipelines
-    # Disabled until Spark 3.2 source incompatibility fixed, see https://github.com/NVIDIA/spark-rapids/issues/2052
-    # env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Pspark320tests,snapshot-shims test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=311 test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 test -Dpytest.TEST_TAGS='' -Dcuda.version=$CUDA_CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
