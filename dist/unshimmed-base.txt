@@ -2,7 +2,6 @@ META-INF/DEPENDENCIES
 META-INF/LICENSE
 META-INF/NOTICE
 META-INF/maven/**
-com/nvidia/shaded/**
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*

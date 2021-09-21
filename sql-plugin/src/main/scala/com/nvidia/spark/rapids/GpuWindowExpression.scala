@@ -23,7 +23,7 @@ import scala.language.{existentials, implicitConversions}
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
-import com.nvidia.spark.rapids.shims.v2.ShimExpression
+import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimExpression}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCreateNamedStruct
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
 
-class GpuWindowExpressionMeta(
+abstract class GpuWindowExpressionMetaBase(
     windowExpression: WindowExpression,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
@@ -55,6 +55,12 @@ class GpuWindowExpressionMeta(
     case _ =>
       willNotWorkOnGpu("unsupported window boundary type")
       -1
+  }
+
+  /** Tag if RangeFrame expression is supported */
+  def tagOtherTypesForRangeFrame(bounds: Expression): Unit = {
+    willNotWorkOnGpu(s"the type of boundary is not supported in a window range" +
+      s" function, found $bounds")
   }
 
   override def tagExprForGpu(): Unit = {
@@ -142,9 +148,7 @@ class GpuWindowExpressionMeta(
                     willNotWorkOnGpu("interval months isn't supported")
                   }
                 case UnboundedFollowing | UnboundedPreceding | CurrentRow =>
-                case anythings =>
-                  willNotWorkOnGpu(s"the type of boundary is not supported in a window range" +
-                  s" function, found $anythings")
+                case anythings => tagOtherTypesForRangeFrame(anythings)
               }
             }
         }
@@ -329,14 +333,12 @@ case class GpuWindowSpecDefinition(
     elements.mkString("(", " ", ")")
   }
 
-  private def isValidFrameType(ft: DataType): Boolean = (orderSpec.head.dataType, ft) match {
-    case (DateType, IntegerType) => true
-    case (TimestampType, CalendarIntervalType) => true
-    case (a, b) => a == b
+  private def isValidFrameType(ft: DataType): Boolean = {
+    GpuWindowUtil.isValidRangeFrameType(orderSpec.head.dataType, ft)
   }
 }
 
-class GpuSpecifiedWindowFrameMeta(
+abstract class GpuSpecifiedWindowFrameMetaBase(
     windowFrame: SpecifiedWindowFrame,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
@@ -345,6 +347,15 @@ class GpuSpecifiedWindowFrameMeta(
 
   // SpecifiedWindowFrame has no associated dataType.
   override val ignoreUnsetDataTypes: Boolean = true
+
+  /**
+   * Tag RangeFrame for other types and get the value
+   */
+  def getAndTagOtherTypesForRangeFrame(bounds : Expression, isLower : Boolean): Long = {
+    willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
+      s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
+    if (isLower) -1 else 1 // not check again
+  }
 
   override def tagExprForGpu(): Unit = {
     if (windowFrame.frameType.equals(RangeFrame)) {
@@ -382,10 +393,7 @@ class GpuSpecifiedWindowFrameMeta(
                   s"and $ci is too large to fit")
                 if (isLower) -1 else 1 // not check again
             }
-          case _ =>
-            willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
-            s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
-            if (isLower) -1 else 1 // not check again
+          case _ => getAndTagOtherTypesForRangeFrame(bounds, isLower)
         }
 
         if (isLower && value > 0) {
