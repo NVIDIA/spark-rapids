@@ -726,6 +726,37 @@ object GpuOverrides extends Logging {
   private val nanAggPsNote = "Input must not contain NaNs and" +
       s" ${RapidsConf.HAS_NANS} must be false."
 
+  /**
+   * Helper function specific to ANSI mode for the aggregate functions that should
+   * fallback, since we don't have the same overflow checks that Spark provides in
+   * the CPU
+   * @param checkType Something other than `None` triggers logic to detect whether
+   *                  the agg should fallback in ANSI mode. Otherwise (None), it's
+   *                  an automatic fallback.
+   * @param meta agg expression meta
+   */
+  def checkAndTagAnsiAgg(checkType: Option[DataType], meta: AggExprMeta[_]): Unit = {
+    val failOnError = SQLConf.get.ansiEnabled
+    if (failOnError) {
+      if (checkType.isDefined) {
+        val typeToCheck = checkType.get
+        val failedType = typeToCheck match {
+          case _: CalendarIntervalType => true
+          case _: DecimalType | LongType | IntegerType | ShortType | ByteType => true
+          case _ =>  false
+        }
+        if (failedType) {
+          meta.willNotWorkOnGpu(s"Not supported in ANSI mode due to $typeToCheck")
+        }
+      } else {
+        // Average falls into this category, where it produces Doubles, but
+        // internally it uses Double and Long, and Long could overflow (technically)
+        // and failOnError given that it is based on catalyst Add.
+        meta.willNotWorkOnGpu("Not supported in ANSI mode")
+      }
+    }
+  }
+
   def expr[INPUT <: Expression](
       desc: String,
       pluginChecks: ExprChecks,
@@ -2117,6 +2148,9 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuMax(child)
+
+        // Max does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Min](
       "Min aggregate operator",
@@ -2146,6 +2180,9 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
+
+        // Min does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Sum](
       "Sum aggregate operator",

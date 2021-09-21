@@ -227,6 +227,9 @@ class Spark320Shims extends Spark32XShims {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
+
+        // Average is not supported in ANSI mode right now, no matter the type
+        override val ansiTypeToCheck: Option[DataType] = None
       }),
     GpuOverrides.expr[RegExpReplace](
       "RegExpReplace support for string literal input patterns",

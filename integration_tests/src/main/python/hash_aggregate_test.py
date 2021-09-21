@@ -1108,36 +1108,51 @@ _no_overflow_sum_gens = [
 @pytest.mark.parametrize('data_gen', _no_overflow_sum_gens, ids=idfn)
 def test_sum_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
-        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=1024)
+        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
         df = df.groupBy('a').agg(f.sum("b"))
         df.explain()
         return df
 
     assert_gpu_fallback_collect(do_it, 'Sum',
-        conf={'spark.sql.ansi.enabled': 'true', 'spark.rapids.sql.explain': 'true'})
+        conf={'spark.sql.ansi.enabled': 'true'})
+
 
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
   'HashPartitioning', 'ShuffleExchangeExec', 'Average')
 @pytest.mark.parametrize('data_gen', _no_overflow_sum_gens, ids=idfn)
 def test_avg_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
-        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=1024)
+        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
         df = df.groupBy('a').agg(f.avg("b"))
         df.explain()
         return df
 
     assert_gpu_fallback_collect(do_it, 'Average',
-        conf={'spark.sql.ansi.enabled': 'true', 'spark.rapids.sql.explain': 'true'})
+        conf={'spark.sql.ansi.enabled': 'true'})
+
 
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression',
   'HashPartitioning', 'ShuffleExchangeExec', 'Count', 'Literal')
 @pytest.mark.parametrize('data_gen', _no_overflow_sum_gens, ids=idfn)
 def test_count_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
-        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=1024)
+        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
         df = df.groupBy('a').agg(f.count("b"), f.count("*"))
         df.explain()
         return df
 
     assert_gpu_fallback_collect(do_it, 'Count',
-        conf={'spark.sql.ansi.enabled': 'true', 'spark.rapids.sql.explain': 'true'})
+        conf={'spark.sql.ansi.enabled': 'true'})
+
+
+@pytest.mark.parametrize('data_gen', _no_overflow_sum_gens, ids=idfn)
+def test_no_fallback_when_ansi_enabled(data_gen):
+    def do_it(spark):
+        df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
+        # coalescing because of first/last are not deterministic
+        df = df.coalesce(1).orderBy("a", "b")
+        df = df.groupBy('a').agg(f.first("b"), f.last("b"), f.min("b"), f.max("b"))
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_it,
+        conf={'spark.sql.ansi.enabled': 'true'})
