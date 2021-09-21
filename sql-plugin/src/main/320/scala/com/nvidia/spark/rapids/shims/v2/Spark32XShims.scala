@@ -54,7 +54,7 @@ trait Spark32XShims extends SparkShims {
   override final def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
 
-  override def isBeforeSpark311: Boolean = false
+  override def hasSeparateINT96RebaseConf: Boolean = true
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
