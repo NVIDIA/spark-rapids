@@ -23,7 +23,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.{Spark30XShims, Spark31XShims}
+import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -62,7 +62,7 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuB
 import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
 import org.apache.spark.sql.rapids.execution.python.shims.spark311cdh._
 import org.apache.spark.sql.rapids.shims.spark311cdh._
-import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
+import org.apache.spark.sql.rapids.shims.v2.{GpuInMemoryTableScanExec, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}

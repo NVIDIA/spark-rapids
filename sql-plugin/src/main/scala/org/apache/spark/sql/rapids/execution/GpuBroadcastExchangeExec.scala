@@ -383,7 +383,7 @@ abstract class GpuBroadcastExchangeExecBase(
         }
       }
     }
-    GpuBroadcastExchangeExec.executionContext.submit[Broadcast[Any]](task)
+    GpuBroadcastExchangeExecBase.executionContext.submit[Broadcast[Any]](task)
   }
 
   protected def createOutOfMemoryException(oe: OutOfMemoryError) = {
@@ -456,7 +456,7 @@ abstract class GpuBroadcastExchangeExecBase(
 }
 
 
-object GpuBroadcastExchangeExec {
+object GpuBroadcastExchangeExecBase {
   /**
    * Create a thread factory that names threads with a prefix and also sets the threads to daemon.
    */

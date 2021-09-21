@@ -25,7 +25,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, Spark32XShims}
+import com.nvidia.spark.rapids.shims.v2._
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -173,7 +173,13 @@ class Spark320Shims extends Spark32XShims {
         override val timestampChecks: TypeSig = TIMESTAMP + DATE + STRING
         override val sparkTimestampSig: TypeSig = TIMESTAMP + DATE + STRING
 
-        // stringChecks are the same
+        // stringChecks are the same, but adding in PS note
+        private val fourDigitYearMsg: String = "Only 4 digit year parsing is available. To " +
+            s"enable parsing anyways set ${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false."
+        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY +
+            TypeSig.psNote(TypeEnum.DATE, fourDigitYearMsg) +
+            TypeSig.psNote(TypeEnum.TIMESTAMP, fourDigitYearMsg)
+
         // binaryChecks are the same
         override val decimalChecks: TypeSig = DECIMAL_64 + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
