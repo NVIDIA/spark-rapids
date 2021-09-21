@@ -28,12 +28,33 @@ import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuAnsi {
+object GpuAnsi extends Arm {
   def needBasicOpOverflowCheck(dt: DataType): Boolean =
     dt.isInstanceOf[IntegralType]
+
+  def minValueScalar(dt: DataType): Scalar = dt match {
+    case ByteType => Scalar.fromByte(Byte.MinValue)
+    case ShortType => Scalar.fromShort(Short.MinValue)
+    case IntegerType => Scalar.fromInt(Int.MinValue)
+    case LongType => Scalar.fromLong(Long.MinValue)
+    case other =>
+      throw new IllegalArgumentException(s"$other does not need an ANSI check for this operator")
+  }
+
+  def assertMinValueOverflow(cv: GpuColumnVector, op: String): Unit = {
+    withResource(minValueScalar(cv.dataType())) { minVal =>
+      withResource(cv.getBase.equalToNullAware(minVal)) { isMinVal =>
+        withResource(isMinVal.any()) { anyFound =>
+          if (anyFound.isValid && anyFound.getBoolean) {
+            throw new ArithmeticException(s"One or more rows overflow for $op operation.")
+          }
+        }
+      }
+    }
+  }
 }
 
-case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
+case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
 
@@ -44,6 +65,10 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
   override def sql: String = s"(- ${child.sql})"
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Because of 2s compliment we need to only worry about the min value for integer types.
+      GpuAnsi.assertMinValueOverflow(input, "minus")
+    }
     dataType match {
       case dt: DecimalType =>
         val scale = dt.scale
@@ -71,7 +96,7 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
       case IntegerType => ast.Literal.ofInt(0)
     }
     new ast.BinaryOperation(ast.BinaryOperator.SUB, literalZero,
-      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns));
+      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
   }
 }
 
@@ -92,13 +117,21 @@ case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
   }
 }
 
-case class GpuAbs(child: Expression) extends CudfUnaryExpression
+case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
   override def dataType: DataType = child.dataType
 
   override def unaryOp: UnaryOp = UnaryOp.ABS
+
+  override def doColumnar(input: GpuColumnVector) : ColumnVector = {
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Because of 2s compliment we need to only worry about the min value for integer types.
+      GpuAnsi.assertMinValueOverflow(input, "abs")
+    }
+    super.doColumnar(input)
+  }
 }
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
@@ -147,12 +180,75 @@ case class GpuAdd(
   }
 }
 
-case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuSubtract(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
+
+  private[this] def ltZero(rows: Int, op: BinaryOperable): ColumnVector = {
+    op match {
+      case cv: ColumnVector =>
+        withResource(Scalar.fromByte(0.toByte)) { zero =>
+          cv.lessThan(zero)
+        }
+      case s: Scalar =>
+        if (s.isValid) {
+          val isLess = dataType match {
+            case ByteType => s.getByte < 0
+            case ShortType => s.getShort < 0
+            case IntegerType => s.getInt < 0
+            case LongType => s.getLong < 0
+            case other => throw new IllegalArgumentException(s"Unexpected type $other")
+          }
+          withResource(Scalar.fromBool(isLess)) { n =>
+            ColumnVector.fromScalar(n, rows)
+          }
+        } else {
+          withResource(Scalar.fromNull(DType.BOOL8)) { n =>
+            ColumnVector.fromScalar(n, rows)
+          }
+        }
+    }
+  }
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    val ret = super.doColumnar(lhs, rhs)
+    // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Check overflow. It is true when both arguments have opposite sign and
+      // result has same sign as subtrahend (rhs).
+      // TODO the math here could probably be cleaned up and made more efficient
+      closeOnExcept(ret) { r =>
+        val numRows = r.getRowCount.toInt
+        val hasOverflow = withResource(ltZero(numRows, rhs)) { rhsLz =>
+          val argsOpSign = withResource(ltZero(numRows, lhs)) { lhsLz =>
+            lhsLz.notEqualTo(rhsLz)
+          }
+          withResource(argsOpSign) { argsOpSign =>
+            val resultAndSubtrahendSameSign = withResource(ltZero(numRows, r)) { resultLz =>
+              rhsLz.equalTo(resultLz)
+            }
+            withResource(resultAndSubtrahendSameSign) { resultAndSubtrahendSameSign =>
+              resultAndSubtrahendSameSign.and(argsOpSign)
+            }
+          }
+        }
+        withResource(hasOverflow) { hasOverflow =>
+          withResource(hasOverflow.any()) { any =>
+            if (any.isValid && any.getBoolean) {
+              throw new ArithmeticException("One or more rows overflow for Subtract operation.")
+            }
+          }
+        }
+      }
+    }
+    ret
+  }
 }
 
 object GpuMultiplyUtil {
