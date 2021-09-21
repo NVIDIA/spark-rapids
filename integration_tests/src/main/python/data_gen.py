@@ -240,6 +240,32 @@ class DecimalGen(DataGen):
             length = _MAX_CHOICES
         self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
 
+class BigDecimalGen(DataGen):
+    """Generate Decimals, with some built in corner cases."""
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
+        if precision is None:
+            #Maximum number of decimal digits a decimal type can represent is 18
+            precision = 38
+            scale = 0
+        DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
+        DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
+        super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
+        self.scale = scale
+        self.precision = precision
+        pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
+
+    def __repr__(self):
+        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
+
+    def start(self, rand):
+        strs = self.base_strs
+        try:
+            length = int(len(strs))
+        except OverflowError:
+            length = _MAX_CHOICES
+        self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
+
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):

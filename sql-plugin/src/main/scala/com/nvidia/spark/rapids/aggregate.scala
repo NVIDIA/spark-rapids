@@ -20,18 +20,16 @@ import java.util
 
 import scala.annotation.tailrec
 import scala.collection.mutable
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
-
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst, Projection, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, ExprId, Expression, If, NamedExpression, NullsFirst, Projection, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -42,8 +40,8 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, LongType, MapType, StructType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, LongType, MapType, StructType}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
 
 object AggregateUtils {
 
@@ -219,6 +217,32 @@ class GpuHashAggregateIterator(
     metrics: GpuHashAggregateMetrics,
     configuredTargetBatchSize: Long)
     extends Iterator[ColumnarBatch] with Arm with AutoCloseable with Logging {
+  private def printCvs(childCvs: Seq[GpuColumnVector]) = {
+    (0 until childCvs(0).getRowCount.toInt).foreach { i =>
+      for (j <- 0 until childCvs.length) {
+        val cv: RapidsHostColumnVector = childCvs(j).copyToHost()
+        val rowVal = cv.getBase.getType match {
+          case DType.FLOAT64 => cv.getDouble(i)
+          case DType.FLOAT32 => cv.getFloat(i)
+          case DType.INT64 => cv.getLong(i)
+          case DType.INT32 => cv.getInt(i)
+          case DType.INT16 => cv.getShort(i)
+          case DType.BOOL8 => cv.getBoolean(i)
+          case DType.STRING => cv.getUTF8String(i)
+          case DType.TIMESTAMP_DAYS => "N/A"
+          case DType.TIMESTAMP_MICROSECONDS => "N/A"
+          case _ => if (cv.getBase.getType.isDecimalType)  {
+//            println(s"KUHU precision =${childCvs(j).dataType().asInstanceOf[DecimalType].precision}")
+            cv.getBase.getBigDecimal(i)
+          }
+        }
+        System.err.print(rowVal + " ")
+      }
+      System.err.println()
+    }
+    System.err.println()
+  }
+
   // Partial mode:
   //  1. boundInputReferences: picks column from raw input
   //  2. boundUpdateAgg: performs the partial half of the aggregates (GpuCount => CudfCount)
@@ -314,10 +338,14 @@ class GpuHashAggregateIterator(
   private def aggregateInputBatches(): Unit = {
     while (cbIter.hasNext) {
       val (childCvs, isLastInputBatch) = withResource(cbIter.next()) { inputBatch =>
+        println("KUHU INPUT TO PROCESSBATCHES")
+        printCvs(GpuColumnVector.extractColumns(inputBatch))
         val isLast = GpuColumnVector.isTaggedAsFinalBatch(inputBatch)
         (processIncomingBatch(inputBatch), isLast)
       }
       withResource(childCvs) { _ =>
+        println("KUHU AGG INPUT BATCHES")
+        printCvs(childCvs)
         withResource(computeAggregate(childCvs, merge = false)) { aggBatch =>
           val batch = LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
           // Avoid making batch spillable for the common case of the last and only batch
@@ -427,7 +455,7 @@ class GpuHashAggregateIterator(
       batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
     withResource(batches) { _ =>
       withResource(concatenateBatches(batches)) { concatVectors =>
-        withResource(computeAggregate(concatVectors, merge = true)) { mergedBatch =>
+        withResource( computeAggregate(concatVectors, merge = true)) { mergedBatch =>
           LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
         }
       }
@@ -503,7 +531,10 @@ class GpuHashAggregateIterator(
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
         withResource(keyBatchingIter.next()) { batch =>
-          computeAggregate(GpuColumnVector.extractColumns(batch), merge = true, isSorted = true)
+          val vectors = GpuColumnVector.extractColumns(batch)
+          println("KUHU AGG ITER BATCH")
+          printCvs(vectors)
+          computeAggregate(vectors, merge = true, isSorted = true)
         }
       }
     }
@@ -572,10 +603,13 @@ class GpuHashAggregateIterator(
     withResource(new NvtxWithMetrics("prep agg batch", NvtxColor.CYAN, aggTime)) { _ =>
       boundExpressions.boundInputReferences.safeMap { ref =>
         val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
+        println("KUHU PROCESS INCOMING BATCH")
+        printCvs(Seq(childCv))
         if (childCv.dataType == ref.dataType) {
           childCv
         } else {
           withResource(childCv) { childCv =>
+            println("KUHU CAST IN PROCESS INCOMING BATCH")
             val rapidsType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
             GpuColumnVector.from(childCv.getBase.castTo(rapidsType), ref.dataType)
           }
@@ -768,6 +802,8 @@ class GpuHashAggregateIterator(
       isSorted: Boolean = false): ColumnarBatch  = {
     val aggModeCudfAggregates = boundExpressions.aggModeCudfAggregates
     val computeAggTime = metrics.computeAggTime
+    println("KUHU compute toaggcvs")
+    printCvs(toAggregateCvs)
     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
       if (groupingExpressions.nonEmpty) {
         // Perform group by aggregation
@@ -828,7 +864,10 @@ class GpuHashAggregateIterator(
               }
               ret
             }
-            new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
+            val ret = new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
+            println("KUHU AGG RET OF COMPUTE")
+            printCvs(GpuColumnVector.extractColumns(ret))
+            ret
           }
         }
       } else {

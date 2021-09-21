@@ -162,7 +162,7 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final Decimal getDecimal(int rowId, int precision, int scale) {
-    assert precision <= DType.DECIMAL64_MAX_PRECISION : "Assert " + precision + " <= DECIMAL64_MAX_PRECISION(" + DType.DECIMAL64_MAX_PRECISION + ")";
+    assert precision <= DType.DECIMAL128_MAX_PRECISION : "Assert " + precision + " <= DECIMAL128_MAX_PRECISION(" + DType.DECIMAL128_MAX_PRECISION + ")";
     assert scale == -cudfCv.getType().getScale() :
         "Assert fetch decimal with its original scale " + scale + " expected " + (-cudfCv.getType().getScale());
     if (precision <= Decimal.MAX_INT_DIGITS()) {
@@ -173,6 +173,8 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
       return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
     } else {
       assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL128 : "type should be DECIMAL128";
+      System.out.println("KUHU getDecvimal in Rapids CV =" +
+          cudfCv.getBigDecimal(rowId).unscaledValue());
       return Decimal.fromDecimal(new BigDecimal(cudfCv.getBigDecimal(rowId).unscaledValue(), scale));
     }
 
