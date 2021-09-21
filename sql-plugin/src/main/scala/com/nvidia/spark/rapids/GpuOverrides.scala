@@ -3031,6 +3031,22 @@ object GpuOverrides extends Logging {
       (c, conf, p, r) => new AggExprMeta[StddevSamp](c, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuStddevSamp(child)
       }),
+    expr[VariancePop](
+      "Aggregation computing population variance",
+      ExprChecks.aggNotReduction(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (c, conf, p, r) => new AggExprMeta[VariancePop](c, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuVariancePop(child)
+      }),
+    expr[VarianceSamp](
+      "Aggregation computing sample variance",
+      ExprChecks.aggNotReduction(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (c, conf, p, r) => new AggExprMeta[VarianceSamp](c, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuVarianceSamp(child)
+      }),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
