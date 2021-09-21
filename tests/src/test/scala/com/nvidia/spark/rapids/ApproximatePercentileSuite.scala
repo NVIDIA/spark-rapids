@@ -65,6 +65,11 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     doTest(DataTypes.DoubleType, rowsPerGroup = 0, delta = None)
   }
 
+  test("scalar percentile") {
+    doTest(DataTypes.DoubleType, rowsPerGroup = 250,
+      percentileArg = Left(0.5), delta = Some(100))
+  }
+
   test("fall back to CPU for reduction") {
 
     val conf = new SparkConf()
@@ -85,22 +90,25 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
-  private def doTest(dataType: DataType, rowsPerGroup: Int, delta: Option[Int]) {
+  private def doTest(dataType: DataType,
+      rowsPerGroup: Int,
+      percentileArg: Either[Double, Array[Double]] = Right(DEFAULT_PERCENTILES),
+      delta: Option[Int]) {
 
     val percentiles = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta,
+      calcPercentiles(spark, dataType, rowsPerGroup, percentileArg, delta,
         approx = false)
     }
 
     val approxPercentilesCpu = withCpuSparkSession { spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
+      calcPercentiles(spark, dataType, rowsPerGroup, percentileArg, delta, approx = true)
     }
 
     val conf = new SparkConf()
       .set(RapidsConf.ENABLE_APPROX_PERCENTILE.key, "true")
 
     val approxPercentilesGpu = withGpuSparkSession(spark =>
-      calcPercentiles(spark, dataType, rowsPerGroup, DEFAULT_PERCENTILES, delta, approx = true)
+      calcPercentiles(spark, dataType, rowsPerGroup, percentileArg, delta, approx = true)
     , conf)
 
     val keys = percentiles.keySet ++ approxPercentilesCpu.keySet ++ approxPercentilesGpu.keySet
@@ -141,17 +149,16 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       spark: SparkSession,
       dataType: DataType,
       rowsPerDept: Int,
-      percentiles: Array[Double],
+      percentilesArg: Either[Double, Array[Double]],
       delta: Option[Int],
       approx: Boolean
     ): Map[String, Array[Double]] = {
 
     val df = salaries(spark, dataType, rowsPerDept)
 
-    val percentileArg = if (percentiles.length > 1) {
-      s"array(${percentiles.mkString(", ")})"
-    } else {
-      s"${percentiles.head}"
+    val percentileArg = percentilesArg match {
+      case Left(n) => s"$n"
+      case Right(n) => s"array(${n.mkString(", ")})"
     }
 
     val func = if (approx) "approx_percentile" else "percentile"
@@ -170,11 +177,17 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
     rows.map(row => {
       val dept = row.getString(0)
-      val percentiles: mutable.Seq[Double] = row.getAs[mutable.WrappedArray[Double]](1)
-      val foo: Array[Double] = if (percentiles==null) {
-        Array[Double]()
-      } else {
-        percentiles.map(d => d).toArray
+
+      val foo = percentilesArg match {
+        case Left(_) =>
+          Array(row.getAs[Double](1))
+        case Right(_) =>
+          val value: mutable.Seq[Double] = row.getAs[mutable.WrappedArray[Double]](1)
+          if (value == null) {
+            Array[Double]()
+          } else {
+            value.map(d => d).toArray
+          }
       }
       dept -> foo
     }).toMap

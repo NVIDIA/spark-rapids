@@ -1107,6 +1107,20 @@ def test_hash_groupby_approx_percentile():
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DecimalGen(nullable=False))], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal_nullable():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DecimalGen(nullable=True))], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
 def compare_percentile_approx(df_fun, percentiles):
     p_exact_sql = create_percentile_sql("percentile", percentiles)
 
@@ -1136,7 +1150,6 @@ def compare_percentile_approx(df_fun, percentiles):
         gpu = result[2]['the_percentile']
 
         for x in zip(exact, cpu, gpu):
-            print(x)
             exact = x[0]
             cpu = x[1]
             gpu = x[2]
