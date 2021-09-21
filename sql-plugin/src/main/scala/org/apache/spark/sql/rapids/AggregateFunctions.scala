@@ -324,11 +324,9 @@ class CudfTDigest(
     accuracyExpression: GpuLiteral)
   extends CudfAggregate(ref) {
 
-  // map Spark delta to cuDF delta - this is experimental for now and
-  // will not guarantee that we have better results than Spark although
-  // it did help with one of the tests
+  // Map Spark delta to cuDF delta
   private lazy val accuracy = accuracyExpression.value match {
-    case delta: Int if delta >= 10000 => 10000
+    case delta: Int => delta.max(1000)
     case _ => 1000
   }
 

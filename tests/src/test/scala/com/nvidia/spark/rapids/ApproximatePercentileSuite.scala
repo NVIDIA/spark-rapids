@@ -37,27 +37,32 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
   }
 
   test("250 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, 250, Some(100))
+    doTest(DataTypes.DoubleType, rowsPerGroup = 250, delta = Some(100))
   }
 
   test("2500 rows per group, delta 100, doubles") {
-    doTest(DataTypes.DoubleType, 2500, Some(100))
+    doTest(DataTypes.DoubleType, rowsPerGroup = 2500, delta = Some(100))
   }
 
   test("250 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, 250, None)
+    doTest(DataTypes.DoubleType, rowsPerGroup = 250, delta = None)
   }
 
   test("25000 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, 25000, None)
+    doTest(DataTypes.DoubleType, rowsPerGroup = 25000, delta = None)
   }
 
   test("50000 rows per group, default delta, doubles") {
-    doTest(DataTypes.DoubleType, 50000, None)
+    doTest(DataTypes.DoubleType, rowsPerGroup = 50000, delta = None)
+  }
+
+  // test with a threshold just below the default level of 10000
+  test("50000 rows per group, delta 9999, doubles") {
+    doTest(DataTypes.DoubleType, rowsPerGroup = 50000, delta = Some(9999))
   }
 
   test("empty input set") {
-    doTest(DataTypes.DoubleType, 0, None)
+    doTest(DataTypes.DoubleType, rowsPerGroup = 0, delta = None)
   }
 
   test("fall back to CPU for reduction") {
