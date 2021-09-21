@@ -431,7 +431,7 @@ def _assert_gpu_and_cpu_are_equal(func,
 
     assert_equal(from_cpu, from_gpu)
 
-def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
+def assert_gpu_and_cpu_are_equal_collect(func, conf={'spark.rapids.sql.explain' : 'ALL'}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be

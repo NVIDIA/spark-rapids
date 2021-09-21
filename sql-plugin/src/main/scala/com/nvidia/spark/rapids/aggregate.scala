@@ -339,13 +339,13 @@ class GpuHashAggregateIterator(
     while (cbIter.hasNext) {
       val (childCvs, isLastInputBatch) = withResource(cbIter.next()) { inputBatch =>
         println("KUHU INPUT TO PROCESSBATCHES")
-        printCvs(GpuColumnVector.extractColumns(inputBatch))
+        //printCvs(GpuColumnVector.extractColumns(inputBatch))
         val isLast = GpuColumnVector.isTaggedAsFinalBatch(inputBatch)
         (processIncomingBatch(inputBatch), isLast)
       }
       withResource(childCvs) { _ =>
         println("KUHU AGG INPUT BATCHES")
-        printCvs(childCvs)
+        //printCvs(childCvs)
         withResource(computeAggregate(childCvs, merge = false)) { aggBatch =>
           val batch = LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
           // Avoid making batch spillable for the common case of the last and only batch
@@ -533,7 +533,7 @@ class GpuHashAggregateIterator(
         withResource(keyBatchingIter.next()) { batch =>
           val vectors = GpuColumnVector.extractColumns(batch)
           println("KUHU AGG ITER BATCH")
-          printCvs(vectors)
+          //printCvs(vectors)
           computeAggregate(vectors, merge = true, isSorted = true)
         }
       }
@@ -604,7 +604,7 @@ class GpuHashAggregateIterator(
       boundExpressions.boundInputReferences.safeMap { ref =>
         val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
         println("KUHU PROCESS INCOMING BATCH")
-        printCvs(Seq(childCv))
+        //printCvs(Seq(childCv))
         if (childCv.dataType == ref.dataType) {
           childCv
         } else {
@@ -803,7 +803,7 @@ class GpuHashAggregateIterator(
     val aggModeCudfAggregates = boundExpressions.aggModeCudfAggregates
     val computeAggTime = metrics.computeAggTime
     println("KUHU compute toaggcvs")
-    printCvs(toAggregateCvs)
+    //printCvs(toAggregateCvs)
     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
       if (groupingExpressions.nonEmpty) {
         // Perform group by aggregation
@@ -866,7 +866,7 @@ class GpuHashAggregateIterator(
             }
             val ret = new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
             println("KUHU AGG RET OF COMPUTE")
-            printCvs(GpuColumnVector.extractColumns(ret))
+            //printCvs(GpuColumnVector.extractColumns(ret))
             ret
           }
         }

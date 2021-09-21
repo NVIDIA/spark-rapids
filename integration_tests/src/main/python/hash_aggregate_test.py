@@ -205,8 +205,8 @@ def get_params(init_list, marked_params=[]):
 
 # Run these tests with in 3 modes, all on the GPU, only partial aggregates on GPU and
 # only final aggregates on the GPU with conf for spark.rapids.sql.hasNans set to false/true
-_confs = [_no_nans_float_conf]
-_confs_with_nans = [_nans_float_conf]
+_confs = [_no_nans_float_conf, _no_nans_float_smallbatch_conf, _no_nans_float_conf_final, _no_nans_float_conf_partial]
+_confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf_final]
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
@@ -217,7 +217,7 @@ _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
-    'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
+    'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning', 'SortExec', 'SortOrder')
 
 params_markers_for_confs = [
     (_no_nans_float_conf_partial, [_excluded_operators_marker]),
@@ -239,17 +239,23 @@ _nongrpkey_bigdecimals = [
     ('a', RepeatSeqGen(IntegerGen(), length=15)),
     ('b', DecimalGen(precision=20, scale=2))]
 
-_init_list_no_nans_with_decimal = [_nongrpkey_bigdecimals]
+_grpkey_bigdecimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=20, scale=3, nullable=(True, 10.0)), length=50)),
+    ('b', DecimalGen(precision=20, scale=2))]
+
+_init_list_no_nans_with_bigdecimal = [_nongrpkey_bigdecimals]
+_init_list_no_nans_with_decimal = _init_list_no_nans + [_grpkey_small_decimals]
 
 @shuffle_test
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_bigdecimal +
+                         [_grpkey_bigdecimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=2)).groupby('a').agg(f.sum('b'))),
+        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=100)).groupby('a').agg(f.sum('b'))),
         conf=conf
     )
 
@@ -257,11 +263,13 @@ def test_hash_decimal_sum(data_gen, conf):
 @shuffle_test
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@ignore_order
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_bigdecimal +
+                         [_grpkey_bigdecimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_max(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=2)).groupby('a').agg(f.max('b'))),
+        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=100)).groupby('a').agg(f.max('b'))),
         conf=conf
     )
 
@@ -270,22 +278,25 @@ def test_hash_decimal_max(data_gen, conf):
 @shuffle_test
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@ignore_order
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_bigdecimal +
+                         [_grpkey_bigdecimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_min(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=2)).groupby('a').agg(f.min('b'))),
+        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=100)).groupby('a').agg(f.min('b'))),
         conf=conf
     )
 
 @shuffle_test
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@ignore_order
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_bigdecimal, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_count(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(gen_df(spark, data_gen, length=10).groupby('a').agg(f.count('b'))),
+        lambda spark: debug_df(gen_df(spark, data_gen, length=100).groupby('a').agg(f.count('b'))),
         conf=conf
     )
 

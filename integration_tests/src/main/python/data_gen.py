@@ -959,7 +959,7 @@ no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
-           decimal_gen_64bit]
+           decimal_gen_64bit, DecimalGen(precision=20, scale=3)]
 
 # Pyarrow will complain the error as below if the timestamp is out of range for both CPU and GPU,
 # so narrow down the time range to avoid exceptions causing test failures.

@@ -21,9 +21,9 @@ from marks import ignore_order
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @ignore_order
 def test_expand_exec(data_gen):
-    def op_df(spark, length=2048, seed=0):
-        return gen_df(spark, StructGen([
+    def op_df(spark, length=20, seed=0):
+        return debug_df(gen_df(spark, StructGen([
             ('a', data_gen),
-            ('b', IntegerGen())], nullable=False), length=length, seed=seed).rollup(f.col("a"), f.col("b")).agg(f.col("b"))
+            ('b', IntegerGen())], nullable=False), length=length, seed=seed).rollup(f.col("a"), f.col("b")).agg(f.col("b")))
 
     assert_gpu_and_cpu_are_equal_collect(op_df)
