@@ -714,7 +714,7 @@ _data_type_expr_for_sub_overflow = [
     ([-32768], ShortType(), 'a -1S'),
     ([-2147483648], IntegerType(), 'a - 1'),
     ([-9223372036854775808], LongType(), 'a - 1L'),
-    ([-3.4028235E38], FloatType(), 'a - 1.0f'),
+    ([-3.4028235E38], FloatType(), 'a - cast(1.0 as float)'),
     ([-1.7976931348623157E308], DoubleType(), 'a - 1.0')]
 
 @pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_sub_overflow)
