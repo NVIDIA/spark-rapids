@@ -3243,8 +3243,8 @@ object GpuOverrides {
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
-        TypeSig.STRUCT + TypeSig.MAP).nested()
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+        TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
@@ -3255,9 +3255,9 @@ object GpuOverrides {
       (shuffle, conf, p, r) => new GpuShuffleMeta(shuffle, conf, p, r)),
     exec[UnionExec](
       "The backend for the union operator",
-      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP +
+      ExecChecks(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP +
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL_64 + TypeSig.STRUCT + TypeSig.MAP)
+          TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT + TypeSig.MAP)
         .withPsNote(TypeEnum.STRUCT,
           "unionByName will not optionally impute nulls for missing struct fields " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),

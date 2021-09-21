@@ -111,14 +111,10 @@ def test_union_by_missing_col_name(data_gen):
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
                                 .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens +
-                                     [all_basic_struct_gen,
-                                      StructGen([['child0', DecimalGen(7, 2)]]),
-                                      nested_struct,
-                                      struct_of_maps], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DecimalGen(precision=20, scale=3)], ids=idfn)
 def test_union_by_name(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen)))
+            lambda spark : debug_df(binary_op_df(spark, data_gen).unionByName(binary_op_df(spark, data_gen))))
 
 
 @pytest.mark.parametrize('data_gen', [
