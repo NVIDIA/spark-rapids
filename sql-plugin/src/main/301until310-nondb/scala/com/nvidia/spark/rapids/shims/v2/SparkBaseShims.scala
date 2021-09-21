@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark304
+package com.nvidia.spark.rapids.shims.v2
 
 import java.net.URI
 import java.nio.ByteBuffer
@@ -26,7 +26,6 @@ import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
-import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
