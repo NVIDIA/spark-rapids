@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark301db
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
 import com.nvidia.spark.rapids.spark301db.RapidsShuffleManager
 
 class Spark301dbShims extends SparkBaseShims {

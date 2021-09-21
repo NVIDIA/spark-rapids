@@ -20,6 +20,7 @@ import java.net.URI
 
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
 import com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager
 import org.apache.parquet.schema.MessageType
 
