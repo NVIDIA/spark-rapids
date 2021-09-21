@@ -469,7 +469,7 @@ class CudfMergeM2(ref: Expression) extends CudfAggregate(ref) {
   override def toString(): String = "CudfMergeM2"
   override def dataType: DataType =
     StructType(
-      StructField("n", IntegerType, nullable = true) ::
+      StructField("n", IntegerType, nullable = false) ::
         StructField("avg", DoubleType, nullable = true) ::
         StructField("m2", DoubleType, nullable = true) :: Nil)
   override def nullable: Boolean = false
@@ -1160,7 +1160,7 @@ abstract class GpuM2(child: Expression)
   // which only accept one column in the input.
   //
   // We cast `n` to be an Integer, as that's what MERGE_M2 expects. Note that Spark keeps
-  // `n` as a Double thus we also need to cast `n` back to Double after merging.
+  // `n` as Double thus we also need to cast `n` back to Double after merging.
   // In the future, we need to rewrite CudfMergeM2 such that it accepts `n` in Double type and
   // also output `n` in Double type.
   override lazy val preMerge: Seq[Expression] = {
@@ -1182,15 +1182,14 @@ abstract class GpuM2(child: Expression)
   private val m2Struct = AttributeReference("m2struct", mergeM2DataType, nullable = false)()
   override lazy val mergeExpressions: Seq[Expression] = new CudfMergeM2(m2Struct) :: Nil
 
-  // The result of merging step is 1 structs column thus we create this attribute to bind it.
+  // The result of merging step is a structs column thus we create this attribute to bind it.
   override lazy val postMergeAttr: Seq[AttributeReference] = Seq(m2Struct)
 
   // The postMerge step needs to extract 3 columns (n, avg, m2) from the structs column
-  // output from the merge step. Note that the first one is casted to Double to match Spark.
+  // output from the merge step. Note that the first one is casted to Double to match with Spark.
   //
-  // In the future, when we rewrite CudfMergeM2, we will need to ouput it in Double type.
+  // In the future, when rewriting CudfMergeM2, we will need to ouput it in Double type.
   //
-  // TODO: Is casting needed? The fields 1 and 2 are already of double type.
   override lazy val postMerge: Seq[Expression] = Seq(
     GpuCast(GpuGetStructField(m2Struct, 0), DoubleType),
     GpuCast(GpuGetStructField(m2Struct, 1), DoubleType),
