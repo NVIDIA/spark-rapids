@@ -112,12 +112,18 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
       val gpuAtLeastAsAccurate = p.zip(cpuApprox).zip(gpuApprox).map {
         case ((exact, cpu), gpu) =>
-          if ((gpu-exact).abs <= (cpu-exact).abs) {
+          val gpu_delta = (gpu - exact).abs
+          val cpu_delta = (cpu - exact).abs
+          if (gpu_delta <= cpu_delta) {
             // GPU was at least as close
             true
           } else {
             // check that we are within some tolerance
-            (gpu-cpu).abs / exact < 0.001
+            if (gpu_delta == 0.0) {
+              (gpu_delta / cpu_delta).abs - 1 < 0.001
+            } else {
+              (cpu_delta / gpu_delta).abs - 1 < 0.001
+            }
           }
       }
 
