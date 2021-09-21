@@ -126,5 +126,5 @@ trait Spark30XShims extends SparkShims {
     ss.sparkContext.defaultParallelism
   }
 
-  override def isBeforeSpark311: Boolean = true
+  override def hasSeparateINT96RebaseConf: Boolean = false
 }

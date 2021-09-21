@@ -17,5 +17,5 @@
 package com.nvidia.spark.rapids.shims.v2
 
 trait Spark31XShims extends Spark30XShims {
-  override def isBeforeSpark311: Boolean = false
+  override def hasSeparateINT96RebaseConf: Boolean = true
 }
