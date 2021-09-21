@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,7 +79,8 @@ object GpuCanonicalize {
 
   /** Rearrange expressions that are commutative or associative. */
   private def expressionReorder(e: Expression): Expression = e match {
-    case a: GpuAdd => orderCommutative(a, { case GpuAdd(l, r) => Seq(l, r) }).reduce(GpuAdd)
+    case a @ GpuAdd(_, _, f) =>
+      orderCommutative(a, { case GpuAdd(l, r, _) => Seq(l, r) }).reduce(GpuAdd(_, _, f))
     case m: GpuMultiply =>
       orderCommutative(m, { case GpuMultiply(l, r) => Seq(l, r) }).reduce(GpuMultiply)
     case o: GpuOr =>

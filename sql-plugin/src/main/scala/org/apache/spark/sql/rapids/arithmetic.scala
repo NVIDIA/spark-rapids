@@ -28,6 +28,11 @@ import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+object GpuAnsi {
+  def needBasicOpOverflowCheck(dt: DataType): Boolean =
+    dt.isInstanceOf[IntegralType]
+}
+
 case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
@@ -102,12 +107,44 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
-case class GpuAdd(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuAdd(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    val ret = super.doColumnar(lhs, rhs)
+    // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Check overflow. It is true when both arguments have the opposite sign of the result.
+      // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
+      closeOnExcept(ret) { r =>
+        val signCV = withResource(r.bitXor(lhs)) { lXor =>
+          withResource(r.bitXor(rhs)) { rXor =>
+            lXor.bitAnd(rXor)
+          }
+        }
+        val signDiffCV = withResource(signCV) { sign =>
+          withResource(Scalar.fromInt(0)) { zero =>
+            sign.lessThan(zero)
+          }
+        }
+        withResource(signDiffCV) { signDiff =>
+          withResource(signDiff.any()) { any =>
+            if (any.isValid && any.getBoolean) {
+              throw new ArithmeticException("One or more rows overflow for Add operation.")
+            }
+          }
+        }
+      }
+    }
+    ret
+  }
 }
 
 case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
