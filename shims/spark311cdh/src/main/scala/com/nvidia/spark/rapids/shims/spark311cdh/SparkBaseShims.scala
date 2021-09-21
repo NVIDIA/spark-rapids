@@ -249,6 +249,14 @@ abstract class SparkBaseShims extends Spark31XShims {
 
         override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
+    GpuOverrides.expr[Abs](
+      "Absolute value",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+        // ANSI support for ABS was added in 3.2.0 SPARK-33275
+        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
+      }),
     GpuOverrides.expr[RegExpReplace](
       "RegExpReplace support for string literal input patterns",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
@@ -864,4 +872,6 @@ abstract class SparkBaseShims extends Spark31XShims {
     kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
   }
+
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 }
