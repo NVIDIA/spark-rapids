@@ -57,7 +57,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
+import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
 import org.apache.spark.sql.rapids.execution.python.{GpuFlatMapGroupsInPandasExecMeta, GpuPythonUDF}
 import org.apache.spark.sql.rapids.execution.python.shims.spark301db._
@@ -324,6 +324,14 @@ abstract class SparkBaseShims extends Spark30XShims {
           }
 
           override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
+        }),
+      GpuOverrides.expr[Abs](
+        "Absolute value",
+        ExprChecks.unaryProjectAndAstInputMatchesOutput(
+          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+        (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+          // ANSI support for ABS was added in 3.2.0 SPARK-33275
+          override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
         }),
       GpuOverrides.expr[RegExpReplace](
         "RegExpReplace support for string literal input patterns",

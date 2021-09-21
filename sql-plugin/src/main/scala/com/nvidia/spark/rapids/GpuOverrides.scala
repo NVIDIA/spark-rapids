@@ -1039,7 +1039,16 @@ object GpuOverrides extends Logging {
         TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuUnaryMinus(child)
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST unary minus does not support ANSI mode.")
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuUnaryMinus(child, ansiEnabled)
       }),
     expr[UnaryPositive](
       "A numeric value with a + in front of it",
@@ -1079,13 +1088,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[DayOfYear](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfYear(child)
-      }),
-    expr[Abs](
-      "Absolute value",
-      ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
-      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child)
       }),
     expr[Acos](
       "Inverse cosine",
@@ -1665,7 +1667,6 @@ object GpuOverrides extends Logging {
         val ansiEnabled = SQLConf.get.ansiEnabled
 
         override def tagSelfForAst(): Unit = {
-          super.tagSelfForAst()
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
             willNotWorkInAst("AST Addition does not support ANSI mode.")
           }
