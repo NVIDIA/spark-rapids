@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql,\
     assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
-    assert_cpu_and_gpu_are_equal_collect_with_capture
+    assert_cpu_and_gpu_are_equal_collect_with_capture, run_with_cpu, run_with_cpu_and_gpu
 from conftest import is_databricks_runtime
 from data_gen import *
 from functools import reduce
@@ -24,6 +24,10 @@ from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
+
+_approx_percentile_conf = { 'spark.rapids.approxPercentileEnabled': 'true',
+                            'spark.rapids.sql.test.allowedNonGpu': 'SortExec'
+                           }
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -1091,21 +1095,58 @@ def test_agg_nested_map():
 
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_repeated_keys():
-    assert_cpu_and_gpu_are_equal_sql_with_capture(
+    compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', LongRangeGen())], length=100),
-        table_name='table',
-        sql="""select k,
-        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""",
-        debug=True)
+        [0.25, 0.5, 0.75])
 
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile():
-    assert_cpu_and_gpu_are_equal_sql_with_capture(
+    compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
-        table_name='table',
-        sql="""select k,
-        approx_percentile(v, array(0.25, 0.5, 0.75)) from table group by k""",
-        debug=True)
+        [0.25, 0.5, 0.75])
 
+def compare_percentile_approx(df_fun, percentiles):
+    p_exact_sql = create_percentile_sql("percentile", percentiles)
+
+    def run_exact(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView("t")
+        return spark.sql(p_exact_sql)
+
+    exact = run_with_cpu(run_exact, 'COLLECT', _approx_percentile_conf)
+
+    p_approx_sql = create_percentile_sql("approx_percentile", percentiles)
+
+    def run_approx(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView("t")
+        return spark.sql(p_approx_sql)
+
+    approx_cpu, approx_gpu = run_with_cpu_and_gpu(run_approx, 'COLLECT', _approx_percentile_conf)
+
+    for result in zip(exact, approx_cpu, approx_gpu):
+        print(result)
+
+        # assert that keys match
+        assert result[0]['k'] == result[1]['k']
+        assert result[1]['k'] == result[2]['k']
+
+        exact = result[0]['the_percentile']
+        cpu = result[1]['the_percentile']
+        gpu = result[2]['the_percentile']
+
+        for x in zip(exact, cpu, gpu):
+            exact = x[0]
+            cpu = x[1]
+            gpu = x[2]
+            if cpu != gpu:
+                # TODO WIP this probably needs more work
+                if abs(float(gpu) - float(exact)) > abs(float(cpu) - float(exact)):
+                    # check that we are within some tolerance
+                    assert abs(float(gpu)-float(cpu)) / float(exact) < 0.001
+
+def create_percentile_sql(func_name, percentiles):
+    return """select k, {}(v, array({})) as the_percentile from t group by k""".format(
+        func_name, ",".join(str(i) for i in percentiles))
