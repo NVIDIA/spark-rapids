@@ -73,19 +73,6 @@ import org.apache.spark.unsafe.types.CalendarInterval
  */
 abstract class SparkBaseShims extends Spark30XShims {
 
-  override def parquetRebaseReadKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
-  override def parquetRebaseWriteKey: String =
-    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key
-  override def avroRebaseReadKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_READ.key
-  override def avroRebaseWriteKey: String =
-    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_WRITE.key
-  override def parquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
-  override def parquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
-
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
 
