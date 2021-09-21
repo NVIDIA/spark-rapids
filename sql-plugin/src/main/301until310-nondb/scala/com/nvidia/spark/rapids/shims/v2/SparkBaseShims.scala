@@ -22,7 +22,6 @@ import java.nio.ByteBuffer
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -63,13 +62,6 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-/**
- * This class contains the default implementation for most shim methods and should be compiled
- * against the lowest supported Spark version. As support for the oldest Spark version is
- * abandoned, this class should move to the next oldest supported version and overrides from
- * that version should be folded into here. Any shim methods that are implemented only in the
- * updated base version can then be removed from the shim interface.
- */
 abstract class SparkBaseShims extends Spark30XShims {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =

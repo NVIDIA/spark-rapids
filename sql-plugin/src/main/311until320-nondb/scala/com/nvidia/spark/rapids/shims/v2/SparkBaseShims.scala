@@ -22,7 +22,6 @@ import java.nio.ByteBuffer
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
@@ -63,9 +62,6 @@ import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
-/**
- * Base Shim for Spark 3.1.1 that can be used by other 3.1.x versions and to easily diff
- */
 abstract class SparkBaseShims extends Spark30XShims {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
