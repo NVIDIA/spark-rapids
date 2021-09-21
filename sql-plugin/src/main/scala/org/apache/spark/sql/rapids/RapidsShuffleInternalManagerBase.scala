@@ -427,11 +427,11 @@ trait VisibleShuffleManager {
 abstract class ProxyRapidsShuffleInternalManagerBase(
     conf: SparkConf,
     override val isDriver: Boolean
-) extends ShuffleManager with VisibleShuffleManager with Proxy {
+) extends VisibleShuffleManager with Proxy {
 
   // touched in the plugin code after the shim initialization
   // is complete
-  override lazy val self: ShuffleManager =
+  lazy val self: ShuffleManager =
     ShimLoader.newInternalShuffleManager(conf, isDriver)
         .asInstanceOf[ShuffleManager]
 
@@ -439,13 +439,13 @@ abstract class ProxyRapidsShuffleInternalManagerBase(
   // the manager. This is called from both the driver and executor.
   // In the driver, it's mostly to display information on how to enable/disable the manager,
   // in the executor, the UCXShuffleTransport starts and allocates memory at this time.
-  override def initialize: Unit = self
+  def initialize: Unit = self
 
   //
   // Signatures unchanged since 3.0.1 follow
   //
 
-  override def getWriter[K, V](
+  def getWriter[K, V](
       handle: ShuffleHandle,
       mapId: Long,
       context: TaskContext,
@@ -454,16 +454,16 @@ abstract class ProxyRapidsShuffleInternalManagerBase(
     self.getWriter(handle, mapId, context, metrics)
   }
 
-  override def registerShuffle[K, V, C](
+  def registerShuffle[K, V, C](
       shuffleId: Int,
       dependency: ShuffleDependency[K, V, C]
   ): ShuffleHandle = {
     self.registerShuffle(shuffleId, dependency)
   }
 
-  override def unregisterShuffle(shuffleId: Int): Boolean = self.unregisterShuffle(shuffleId)
+  def unregisterShuffle(shuffleId: Int): Boolean = self.unregisterShuffle(shuffleId)
 
-  override def shuffleBlockResolver: ShuffleBlockResolver = self.shuffleBlockResolver
+  def shuffleBlockResolver: ShuffleBlockResolver = self.shuffleBlockResolver
 
-  override def stop(): Unit = self.stop()
+  def stop(): Unit = self.stop()
 }
