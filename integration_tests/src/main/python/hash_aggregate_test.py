@@ -1110,3 +1110,23 @@ def test_groupby_std_variance(data_gen, conf):
         'var_samp(b)' +
         ' from data_table group by a',
         conf=conf)
+
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=100),
+        "data_table",
+        'select ' +
+        'stddev(c),' +
+        'stddev_pop(c),' +
+        'stddev_samp(c),' +
+        'variance(c),' +
+        'var_pop(c),' +
+        'var_samp(c)' +
+        ' from data_table group by a',
+        conf=local_conf)
