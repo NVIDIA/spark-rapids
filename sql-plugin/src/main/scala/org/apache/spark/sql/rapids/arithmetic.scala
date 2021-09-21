@@ -564,7 +564,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   lazy val failOnOverflow: Boolean =
-    ShimLoader.getSparkShims.shouldFailDivOverflow()
+    ShimLoader.getSparkShims.shouldFailDivOverflow
 
   override def checkDivideOverflow: Boolean = left.dataType match {
     case LongType if failOnOverflow => true

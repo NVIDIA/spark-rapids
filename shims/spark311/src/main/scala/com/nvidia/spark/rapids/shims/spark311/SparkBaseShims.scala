@@ -850,4 +850,6 @@ abstract class SparkBaseShims extends Spark30XShims {
     kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
   }
+
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 }
