@@ -66,7 +66,7 @@ echo PWD
 # it's now safe to delete duplicate .class files from the original locations
 # don't use rm */% because globbing is broken for files containing $
 for shimDir in $SHIM_DIRS; do
-  xargs --arg-file="$SPARK3XX_COMMON_TXT" -n 100 -I% rm "$PARALLEL_WORLDS_DIR/$shimDir/%"
+  xargs --arg-file="$SPARK3XX_COMMON_TXT" -P 4 -n 100 -I% rm "$PARALLEL_WORLDS_DIR/$shimDir/%"
 done
 
 mv "$SPARK3XX_COMMON_DIR" $PARALLEL_WORLDS_DIR/
