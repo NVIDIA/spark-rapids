@@ -168,7 +168,7 @@ case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkP
         }
       }
     }
-    GpuBroadcastExchangeExec.executionContext.submit[Broadcast[Any]](task)
+    GpuBroadcastExchangeExecBase.executionContext.submit[Broadcast[Any]](task)
   }
 
 }
