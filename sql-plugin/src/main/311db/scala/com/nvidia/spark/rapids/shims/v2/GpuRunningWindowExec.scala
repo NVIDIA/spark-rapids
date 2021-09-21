@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301db
+package com.nvidia.spark.rapids.shims.v2
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuBaseWindowExecMeta, GpuExec, GpuOverrides, GpuWindowExec, RapidsConf, RapidsMeta, SparkPlanMeta}

@@ -60,8 +60,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.execution.python.shims.v2._
-import org.apache.spark.sql.rapids.shims.spark301db.GpuFileScanRDD
 import org.apache.spark.sql.rapids.shims.v2.GpuSchemaUtils
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
