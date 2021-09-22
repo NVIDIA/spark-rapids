@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-import org.apache.spark.sql.catalyst.util.GenericArrayData
+import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
@@ -3050,10 +3050,10 @@ object GpuOverrides extends Logging {
                 case null =>
                   willNotWorkOnGpu(
                     "approx_percentile on GPU only supports non-null literal percentiles")
-                case a: GenericArrayData if a.array.isEmpty =>
+                case a: ArrayData if a.numElements == 0 =>
                   willNotWorkOnGpu(
                     "approx_percentile on GPU does not support empty percentiles arrays")
-                case a: GenericArrayData if a.array.contains(null) =>
+                case a: ArrayData if (0 until a.numElements).exists(a.isNullAt) =>
                   willNotWorkOnGpu(
                     "approx_percentile on GPU does not support percentiles arrays containing nulls")
                 case _ =>
