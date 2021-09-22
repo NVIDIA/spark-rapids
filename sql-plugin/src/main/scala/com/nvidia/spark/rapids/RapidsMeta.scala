@@ -1104,12 +1104,12 @@ abstract class AggExprMeta[INPUT <: AggregateFunction](
     tagAggForGpu()
   }
 
-  def tagAggForGpu(): Unit
+  def tagAggForGpu(): Unit = {}
 
   override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs.head.convertToGpu())
+    convertToGpu(childExprs.map(_.convertToGpu()))
 
-  def convertToGpu(child: Expression): GpuExpression
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 
   // Set to false if the aggregate doesn't overflow and therefore
   // shouldn't error
@@ -1128,10 +1128,7 @@ abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends ExprMeta[INPUT](expr, conf, parent, rule) {
-
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs.map(_.convertToGpu()))
+  extends AggExprMeta[INPUT](expr, conf, parent, rule) {
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }

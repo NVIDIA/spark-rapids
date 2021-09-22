@@ -2093,7 +2093,7 @@ object GpuOverrides extends Logging {
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
           TypeSig.all))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           checkAndTagFloatNanAgg("Pivot", pivot.pivotColumn.dataType, conf, this)
           // If pivotColumnValues doesn't have distinct values, fall back to CPU
           if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
@@ -2105,6 +2105,8 @@ object GpuOverrides extends Logging {
           val Seq(pivotColumn, valueColumn) = childExprs
           GpuPivotFirst(pivotColumn, valueColumn, pivot.pivotColumnValues)
         }
+
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Count](
       "Count aggregate operator",
@@ -2118,7 +2120,8 @@ object GpuOverrides extends Logging {
             willNotWorkOnGpu("count of multiple columns not supported")
           }
         }
-        override def convertToGpu(child: Expression): GpuExpression = GpuCount(Seq(child))
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuCount(childExprs)
       }),
     expr[Max](
       "Max aggregate operator",
@@ -2147,7 +2150,8 @@ object GpuOverrides extends Logging {
           checkAndTagFloatNanAgg("Max", dataType, conf, this)
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuMax(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuMax(childExprs.head)
 
         // Max does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
@@ -2179,7 +2183,8 @@ object GpuOverrides extends Logging {
           checkAndTagFloatNanAgg("Min", dataType, conf, this)
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuMin(childExprs.head)
 
         // Min does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
@@ -2204,7 +2209,8 @@ object GpuOverrides extends Logging {
           checkAndTagFloatAgg(dataType, conf, this)
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuSum(child, a.dataType)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuSum(childExprs.head, a.dataType)
       }),
     expr[First](
       "first aggregate operator", {
@@ -2226,9 +2232,11 @@ object GpuOverrides extends Logging {
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
-      (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression =
-          GpuFirst(childExprs.head.convertToGpu(), a.ignoreNulls)
+      (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuFirst(childExprs.head, a.ignoreNulls)
+
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Last](
       "last aggregate operator", {
@@ -2250,9 +2258,11 @@ object GpuOverrides extends Logging {
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
-      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression =
-          GpuLast(childExprs.head.convertToGpu(), a.ignoreNulls)
+      (a, conf, p, r) => new AggExprMeta[Last](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuLast(childExprs.head, a.ignoreNulls)
+
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
@@ -3038,6 +3048,8 @@ object GpuOverrides extends Logging {
           new GpuToCpuCollectBufferConverter()
 
         override val supportBufferConversion: Boolean = true
+
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[CollectSet](
       "Collect a set of unique elements, not supported in reduction",
@@ -3065,6 +3077,8 @@ object GpuOverrides extends Logging {
           new GpuToCpuCollectBufferConverter()
 
         override val supportBufferConversion: Boolean = true
+
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[GetJsonObject](
       "Extracts a json object from path",
