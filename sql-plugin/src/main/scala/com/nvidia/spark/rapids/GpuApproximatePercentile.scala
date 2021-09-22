@@ -128,7 +128,9 @@ case class ApproxPercentileFromTDigestExpr(
 
       percentiles match {
         case Left(p) =>
-          // scalar case - convert Array[Double] to finalDataType
+          // For the scalar case, we still pass cuDF an array of percentiles
+          // (containing a single item) and then extract the child column from the resulting
+          // array and return that (after converting from Double to finalDataType
           withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
             withResource(percentiles.getChildColumnView(0)) { childView =>
               withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
