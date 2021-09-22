@@ -39,11 +39,18 @@ import org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter
  * when they no longer need it.
  */
 object ColumnarRdd {
+
+  lazy val internalConverter: Class[_] = ShimLoader.newColumnarRDDClass()
+
   def apply(df: DataFrame): RDD[Table] = {
-    InternalColumnarRddConverter(df)
+    internalConverter
+      .getDeclaredMethod("apply", classOf[DataFrame])
+      .invoke(null, df).asInstanceOf[RDD[Table]]
   }
 
   def convert(df: DataFrame): RDD[Table] = {
-    InternalColumnarRddConverter.convert(df)
+    internalConverter
+      .getDeclaredMethod("convert", classOf[DataFrame])
+      .invoke(null, df).asInstanceOf[RDD[Table]]
   }
 }

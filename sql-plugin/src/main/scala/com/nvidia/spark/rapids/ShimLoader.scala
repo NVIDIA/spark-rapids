@@ -288,6 +288,12 @@ object ShimLoader extends Logging {
     shimProviderClass = classname
   }
 
+  def newClassOf(className: String): Class[_] = {
+    val loader = getShimClassLoader()
+    logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
+    loader.loadClass(className)
+  }
+
   def newInstanceOf[T](className: String): T = {
     val loader = getShimClassLoader()
     logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
@@ -337,6 +343,10 @@ object ShimLoader extends Logging {
 
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
+  }
+
+  def newColumnarRDDClass(): Class[_] = {
+    newClassOf("com.nvidia.spark.rapids.InternalColumnarRddConverter")
   }
 
 }
