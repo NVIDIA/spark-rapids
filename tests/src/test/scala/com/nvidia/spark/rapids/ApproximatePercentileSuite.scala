@@ -70,18 +70,28 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       percentileArg = Left(0.5), delta = Some(100))
   }
 
+  test("empty percentile array fall back to CPU") {
+    sqlFallbackTest("SELECT dept, approx_percentile(salary, array()) " +
+      "FROM salaries GROUP BY dept")
+  }
+
   test("fall back to CPU for reduction") {
+    sqlFallbackTest("SELECT approx_percentile(salary, array(0.5)) FROM salaries")
+  }
+
+  def sqlFallbackTest(sql: String) {
 
     val conf = new SparkConf()
       .set(RapidsConf.ENABLE_APPROX_PERCENTILE.key, "true")
-      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,ObjectHashAggregateExec," +
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "ShuffleExchangeExec,ObjectHashAggregateExec,HashPartitioning," +
         "AggregateExpression,ApproximatePercentile,Literal,Alias")
 
     withGpuSparkSession(spark => {
       salaries(spark, DataTypes.DoubleType, 50)
         .createOrReplaceTempView("salaries")
 
-      val df = spark.sql("SELECT approx_percentile(salary, Array(0.5)) FROM salaries")
+      val df = spark.sql(sql)
       df.collect()
 
       assert(TestUtils.findOperator(df.queryExecution.executedPlan,

@@ -17,13 +17,14 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByAggregationOnColumn, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByAggregationOnColumn, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.TypeCheckSuccess
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, ExprId, Expression, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression, ExprId, ImplicitCastInputTypes, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
@@ -316,45 +317,6 @@ class CudfMin(ref: Expression) extends CudfAggregate(ref) {
     GroupByAggregation.min()
       .onColumn(getOrdinal(ref))
   override def toString(): String = "CudfMin"
-}
-
-class CudfTDigest(
-    ref: Expression,
-    percentileExpr: GpuLiteral,
-    accuracyExpression: GpuLiteral)
-  extends CudfAggregate(ref) {
-
-  // Map Spark delta to cuDF delta
-  private lazy val accuracy = accuracyExpression.value match {
-    case delta: Int => delta.max(1000)
-    case _ => 1000
-  }
-
-  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
-    throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
-  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
-    throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
-  override lazy val updateAggregate: GroupByAggregationOnColumn =
-    GroupByAggregation.createTDigest(accuracy)
-      .onColumn(getOrdinal(ref))
-  override lazy val mergeAggregate: GroupByAggregationOnColumn =
-    GroupByAggregation.mergeTDigest(accuracy)
-      .onColumn(getOrdinal(ref))
-  override def toString(): String = "CudfTDigest"
-  override def dataType: DataType = CudfTDigest.dataType
-  override def nullable: Boolean = false
-  override protected def otherCopyArgs: Seq[AnyRef] = Seq(percentileExpr, accuracyExpression)
-}
-
-object CudfTDigest {
-  val dataType: DataType = StructType(Array(
-    StructField("centroids", ArrayType(StructType(Array(
-      StructField("mean", DataTypes.DoubleType, nullable = false),
-      StructField("weight", DataTypes.DoubleType, nullable = false)
-    )), containsNull = false)),
-    StructField("min", DataTypes.DoubleType, nullable = false),
-    StructField("max", DataTypes.DoubleType, nullable = false)
-  ))
 }
 
 class CudfCollectList(ref: Expression) extends CudfAggregate(ref) {

@@ -16,14 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.GpuCast.{recursiveDoColumnar}
+import ai.rapids.cudf
+import ai.rapids.cudf.{GroupByAggregation, GroupByAggregationOnColumn}
+import com.nvidia.spark.rapids.GpuCast.recursiveDoColumnar
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{CudfTDigest, GpuAggregateFunction}
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes}
+import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -82,11 +84,11 @@ case class GpuApproximatePercentile (
     ApproxPercentileFromTDigestExpr(outputBuf, percentiles, child.dataType)
   }
 
-  // inputBuf represents the initial aggregation buffer
+  // inputBuf represents the initial t-digest aggregation buffer
   protected final lazy val inputBuf: AttributeReference =
     AttributeReference("inputBuf", CudfTDigest.dataType)()
 
-  // outputBuf represents the merged aggregation buffer
+  // outputBuf represents the merged t-digest aggregation buffer
   protected final lazy val outputBuf: AttributeReference =
     inputBuf.copy("outputBuf", CudfTDigest.dataType)(inputBuf.exprId, inputBuf.qualifier)
 
@@ -165,7 +167,46 @@ case class ApproxPercentileFromTDigestExpr(
   override def nullable: Boolean = false
   override def dataType: DataType = percentiles match {
     case Left(_) => finalDataType
-    case Right(_) => ArrayType(finalDataType, false)
+    case Right(_) => ArrayType(finalDataType, containsNull = false)
   }
   override def children: Seq[Expression] = Seq(child)
+}
+
+class CudfTDigest(
+    ref: Expression,
+    percentileExpr: GpuLiteral,
+    accuracyExpression: GpuLiteral)
+  extends CudfAggregate(ref) {
+
+  // Map Spark delta to cuDF delta
+  private lazy val accuracy = accuracyExpression.value match {
+    case delta: Int => delta.max(1000)
+    case _ => 1000
+  }
+
+  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
+  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("TDigest is not yet supported in reduction")
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.createTDigest(accuracy)
+      .onColumn(getOrdinal(ref))
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mergeTDigest(accuracy)
+      .onColumn(getOrdinal(ref))
+  override def toString(): String = "CudfTDigest"
+  override def dataType: DataType = CudfTDigest.dataType
+  override def nullable: Boolean = false
+  override protected def otherCopyArgs: Seq[AnyRef] = Seq(percentileExpr, accuracyExpression)
+}
+
+object CudfTDigest {
+  val dataType: DataType = StructType(Array(
+    StructField("centroids", ArrayType(StructType(Array(
+      StructField("mean", DataTypes.DoubleType, nullable = false),
+      StructField("weight", DataTypes.DoubleType, nullable = false)
+    )), containsNull = false)),
+    StructField("min", DataTypes.DoubleType, nullable = false),
+    StructField("max", DataTypes.DoubleType, nullable = false)
+  ))
 }

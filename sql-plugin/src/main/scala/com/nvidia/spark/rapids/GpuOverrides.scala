@@ -33,6 +33,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
@@ -3034,12 +3035,28 @@ object GpuOverrides extends Logging {
           if (!conf.isApproxPercentileEnabled) {
             willNotWorkOnGpu(s"approx_percentile on GPU is disabled. " +
               s"Set ${RapidsConf.ENABLE_APPROX_PERCENTILE}=true to enable it")
-          } else if (!childExprs.tail.forall(_.wrapped match {
-            case lit: Literal => lit.value != null
-            case _ => false
-          })) {
-            willNotWorkOnGpu("approx_percentile on GPU only supports non-null literal " +
-              "expressions for percentiles and accuracy")
+          } else {
+
+            // check if the percentile expression can be supported on GPU
+            childExprs(1).wrapped match {
+              case lit: Literal => lit.value match {
+                case null =>
+                  willNotWorkOnGpu(
+                    "approx_percentile on GPU only supports non-null literal percentiles")
+                case a: GenericArrayData if a.array.isEmpty =>
+                  willNotWorkOnGpu(
+                    "approx_percentile on GPU does not support empty percentiles arrays")
+                case a: GenericArrayData if a.array.contains(null) =>
+                  // we should not this case because Spark doesn't allow nulls in arrays here
+                  willNotWorkOnGpu(
+                    "approx_percentile on GPU does not support percentiles arrays containing nulls")
+                case _ =>
+                  // this is fine
+              }
+              case _ =>
+                willNotWorkOnGpu("approx_percentile on GPU only supports literal percentiles")
+            }
+
           }
         }
 
