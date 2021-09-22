@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark304
 
 import com.nvidia.spark.rapids.ShimVersion
+import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
 import com.nvidia.spark.rapids.spark304.RapidsShuffleManager
 import org.apache.parquet.schema.MessageType
 

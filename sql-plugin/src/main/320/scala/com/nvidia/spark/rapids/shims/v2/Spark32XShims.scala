@@ -137,4 +137,5 @@ trait Spark32XShims extends SparkShims {
     Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
   }
 
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 }

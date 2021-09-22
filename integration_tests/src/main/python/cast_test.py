@@ -83,7 +83,7 @@ def test_cast_string_ts_valid_format():
 def test_cast_string_date_fallback():
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
-            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\+){4,12}')).select(f.col('a').cast(DateType()).cast(StringType())),
+            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(DateType()).cast(StringType())),
             'Cast')
 
 @allow_non_gpu('ProjectExec', 'Cast', 'Alias')
@@ -91,7 +91,7 @@ def test_cast_string_date_fallback():
 def test_cast_string_timestamp_fallback():
     assert_gpu_fallback_collect(
             # Cast back to String because this goes beyond what python can support for years
-            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\+){4,12}')).select(f.col('a').cast(TimestampType()).cast(StringType())),
+            lambda spark : unary_op_df(spark, StringGen('([0-9]|-|\\+){4,12}')).select(f.col('a').cast(TimestampType()).cast(StringType())),
             'Cast',
             conf = {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
