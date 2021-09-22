@@ -1074,33 +1074,51 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-
 @ignore_order
-@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
-  'HashPartitioning', 'ShuffleExchangeExec', 'Average')
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-def test_hash_grpby_avg_nulls_ansi(data_gen, conf, ansi_enabled):
-    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+def test_hash_grpby_avg_nulls(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a')
           .agg(f.avg('c')),
-        conf=local_conf
+        conf=conf
     )
-
 
 @ignore_order
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
   'HashPartitioning', 'ShuffleExchangeExec', 'Average')
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-def test_hash_reduction_avg_nulls_ansi(data_gen, conf, ansi_enabled):
-    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+def test_hash_grpby_avg_nulls_ansi(data_gen, conf):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': 'true'})
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a')
+          .agg(f.avg('c')),
+        'Average',
+        conf=local_conf
+    )
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_reduction_avg_nulls(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
           .agg(f.avg('c')),
+        conf=conf
+    )
+
+@ignore_order
+@allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
+  'HashPartitioning', 'ShuffleExchangeExec', 'Average')
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_reduction_avg_nulls_ansi(data_gen, conf):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': 'true'})
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100)
+          .agg(f.avg('c')),
+        'Average',
         conf=local_conf
     )
 
