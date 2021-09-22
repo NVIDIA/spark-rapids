@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuOverrides.exec
-import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta}
+import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession

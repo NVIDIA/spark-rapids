@@ -62,6 +62,7 @@ import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.shims.v2.GpuFlatMapGroupsInPandasExecMeta
 import org.apache.spark.sql.rapids.shims.v2.{GpuInMemoryTableScanExec, GpuTimeAdd, _}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
