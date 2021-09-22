@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
+import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -339,4 +340,7 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
 
+  def newInternalExclusiveModeGpuDiscoveryPlugin(): ResourceDiscoveryPlugin = {
+    newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
+  }
 }

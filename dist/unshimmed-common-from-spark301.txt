@@ -2,11 +2,12 @@ META-INF/DEPENDENCIES
 META-INF/LICENSE
 META-INF/NOTICE
 META-INF/maven/**
+com/nvidia/spark/ExclusiveModeGpuDiscoveryPlugin*
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
-com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/GpuKryoRegistrator*
+com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
 com/nvidia/spark/rapids/RapidsExecutorStartupMsg*
 com/nvidia/spark/rapids/RapidsExecutorUpdateMsg*
