@@ -180,8 +180,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
     rows.map(row => {
       val dept = row.getString(0)
-
-      val foo = percentilesArg match {
+      val result = percentilesArg match {
         case Left(_) =>
           Array(row.getAs[Double](1))
         case Right(_) =>
@@ -192,7 +191,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
             value.map(d => d).toArray
           }
       }
-      dept -> foo
+      dept -> result
     }).toMap
   }
 
