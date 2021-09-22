@@ -464,7 +464,8 @@ abstract class SparkBaseShims extends Spark30XShims {
           TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
-            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+            if (!scan.relation.cacheBuilder.serializer
+              .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
             }
           }
