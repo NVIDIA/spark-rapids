@@ -103,6 +103,7 @@ case class GpuApproximatePercentile (
     case null => (false, Right(Array()))
     case num: Double => (false, Left(num))
     case arrayData: ArrayData => (true, Right(arrayData.toDoubleArray()))
+    case other => throw new IllegalStateException(s"Invalid percentile expression $other")
   }
 
   // The result type is the same as the input type.
