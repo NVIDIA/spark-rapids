@@ -25,7 +25,7 @@ from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
 
-_approx_percentile_conf = { 'spark.rapids.approxPercentileEnabled': 'true' }
+_approx_percentile_conf = { 'spark.rapids.sql.expression.ApproximatePercentile': 'true' }
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
