@@ -657,8 +657,8 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   /**
-   * Need to convert cudf unsigned integer to wider signed integer that parquet expects
-   * After spark 3.2.0, parquet read uint8 as int16, uint16 as int32, uint32 as int64
+   * Need to convert cudf unsigned integer to wider signed integer that Spark expects
+   * After Spark 3.2.0, Spark reads uint8 as int16, uint16 as int32, uint32 as int64
    * TODO uint64 -> Decimal(20,0) depends CUDF, see issue #3475
    *
    * @param group the schema
