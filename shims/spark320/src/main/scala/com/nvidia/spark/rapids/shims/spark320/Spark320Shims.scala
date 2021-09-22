@@ -228,12 +228,16 @@ class Spark320Shims extends Spark32XShims {
         Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp + TypeSig.NULL,
           TypeSig.numericAndInterval + TypeSig.NULL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
           GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuAverage(childExprs.head)
+
+        // Average is not supported in ANSI mode right now, no matter the type
+        override val ansiTypeToCheck: Option[DataType] = None
       }),
     GpuOverrides.expr[Abs](
       "Absolute value",
