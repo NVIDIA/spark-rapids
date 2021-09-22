@@ -1091,19 +1091,20 @@ abstract class UnaryAstExprMeta[INPUT <: UnaryExpression](
  * Base class for metadata around `AggregateFunction`.
  */
 abstract class AggExprMeta[INPUT <: AggregateFunction](
-    expr: INPUT,
+    val expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
   override final def tagExprForGpu(): Unit = {
+    tagAggForGpu()
     if (needsAnsiCheck) {
       GpuOverrides.checkAndTagAnsiAgg(ansiTypeToCheck, this)
     }
-    tagAggForGpu()
   }
 
+  // not all aggs overwrite this
   def tagAggForGpu(): Unit = {}
 
   override final def convertToGpu(): GpuExpression =

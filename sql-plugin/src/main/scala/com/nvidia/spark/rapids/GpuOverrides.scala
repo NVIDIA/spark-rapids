@@ -741,18 +741,19 @@ object GpuOverrides extends Logging {
       if (checkType.isDefined) {
         val typeToCheck = checkType.get
         val failedType = typeToCheck match {
-          case _: CalendarIntervalType => true
           case _: DecimalType | LongType | IntegerType | ShortType | ByteType => true
           case _ =>  false
         }
         if (failedType) {
-          meta.willNotWorkOnGpu(s"Not supported in ANSI mode due to $typeToCheck")
+          meta.willNotWorkOnGpu(
+            s"ANSI mode not supported for ${meta.expr} with $typeToCheck result type")
         }
       } else {
         // Average falls into this category, where it produces Doubles, but
         // internally it uses Double and Long, and Long could overflow (technically)
         // and failOnError given that it is based on catalyst Add.
-        meta.willNotWorkOnGpu("Not supported in ANSI mode")
+        meta.willNotWorkOnGpu(
+          s"ANSI mode not supported for ${meta.expr}")
       }
     }
   }
@@ -2106,6 +2107,7 @@ object GpuOverrides extends Logging {
           GpuPivotFirst(pivotColumn, valueColumn, pivot.pivotColumnValues)
         }
 
+        // Pivot does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
     expr[Count](
@@ -2236,6 +2238,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuFirst(childExprs.head, a.ignoreNulls)
 
+        // First does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
     expr[Last](
@@ -2262,6 +2265,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuLast(childExprs.head, a.ignoreNulls)
 
+        // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
     expr[BRound](
@@ -3049,6 +3053,7 @@ object GpuOverrides extends Logging {
 
         override val supportBufferConversion: Boolean = true
 
+        // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
     expr[CollectSet](
@@ -3078,6 +3083,7 @@ object GpuOverrides extends Logging {
 
         override val supportBufferConversion: Boolean = true
 
+        // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
     expr[GetJsonObject](
