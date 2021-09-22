@@ -41,7 +41,7 @@ import org.apache.spark.sql.DataFrame
  */
 object ColumnarRdd {
 
-  lazy val convertMethod: Method = ShimLoader.newColumnarRDDClass()
+  lazy val convertMethod: Method = ShimLoader.loadColumnarRDD()
     .getDeclaredMethod("convert", classOf[DataFrame])
 
   def apply(df: DataFrame): RDD[Table] = {

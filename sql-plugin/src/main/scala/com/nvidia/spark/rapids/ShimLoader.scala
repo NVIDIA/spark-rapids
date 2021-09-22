@@ -289,16 +289,14 @@ object ShimLoader extends Logging {
     shimProviderClass = classname
   }
 
-  def newClassOf(className: String): Class[_] = {
+  def loadClass(className: String): Class[_] = {
     val loader = getShimClassLoader()
     logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
     loader.loadClass(className)
   }
 
   def newInstanceOf[T](className: String): T = {
-    val loader = getShimClassLoader()
-    logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
-    instantiateClass(loader.loadClass(className)).asInstanceOf[T]
+    instantiateClass(loadClass(className)).asInstanceOf[T]
   }
 
   // avoid cached constructors
@@ -350,7 +348,7 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
   }
 
-  def newColumnarRDDClass(): Class[_] = {
-    newClassOf("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
+  def loadColumnarRDD(): Class[_] = {
+    loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
 }
