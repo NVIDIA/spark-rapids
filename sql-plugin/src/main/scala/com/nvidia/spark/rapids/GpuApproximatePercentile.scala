@@ -99,11 +99,11 @@ case class GpuApproximatePercentile (
       case _ => makeArray(percentageExpression.eval())
     }
 
-  private def makeArray(v: Any)  = v match {
+  private def makeArray(v: Any): (Boolean, Either[Double, Array[Double]])  = v match {
     // Rule ImplicitTypeCasts can cast other numeric types to double
-    case null => (false, null)
-    case num: Double => (false, Array(num))
-    case arrayData: ArrayData => (true, arrayData.toDoubleArray())
+    case null => (false, Right(Array()))
+    case num: Double => (false, Left(num))
+    case arrayData: ArrayData => (true, Right(arrayData.toDoubleArray()))
   }
 
   // The result type is the same as the input type.
@@ -119,27 +119,48 @@ case class GpuApproximatePercentile (
 
 case class ApproxPercentileFromTDigestExpr(
     child: Expression,
-    percentiles: Array[Double],
+    percentiles: Either[Double, Array[Double]],
     finalDataType: DataType)
   extends GpuExpression {
   override def columnarEval(batch: ColumnarBatch): Any = {
     val expr = child.asInstanceOf[GpuExpression]
     withResource(expr.columnarEval(batch).asInstanceOf[GpuColumnVector]) { cv =>
-      withResource(cv.getBase.approxPercentile(percentiles)) { percentiles =>
-        if (finalDataType == DataTypes.DoubleType) {
-          GpuColumnVector.from(percentiles.incRefCount(), dataType)
-        } else {
-          // cast cuDF Array[Double] to Array[finalDataType]
-          withResource(percentiles.getChildColumnView(0)) { childView =>
-            withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
-                ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
-                stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
-              withResource(percentiles.replaceListChild(childCv)) { x =>
-                GpuColumnVector.from(x.copyToColumnVector(), dataType)
+
+      percentiles match {
+        case Left(p) =>
+          // scalar case - convert Array[Double] to finalDataType
+          withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
+            withResource(percentiles.getChildColumnView(0)) { childView =>
+              if (finalDataType == DataTypes.DoubleType) {
+                GpuColumnVector.from(childView.copyToColumnVector(), dataType)
+              } else {
+                withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
+                  ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
+                  stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
+                  GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
+                }
               }
             }
           }
-        }
+
+        case Right(p) =>
+          // array case - cast cuDF Array[Double] to Array[finalDataType]
+          withResource(cv.getBase.approxPercentile(p)) { percentiles =>
+            if (finalDataType == DataTypes.DoubleType) {
+              GpuColumnVector.from(percentiles.incRefCount(), dataType)
+            } else {
+              withResource(percentiles.getChildColumnView(0)) { childView =>
+                withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
+                  ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
+                  stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
+                  withResource(percentiles.replaceListChild(childCv)) { x =>
+                    GpuColumnVector.from(x.copyToColumnVector(), dataType)
+                  }
+                }
+              }
+            }
+          }
+
       }
     }
   }
