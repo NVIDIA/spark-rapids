@@ -464,7 +464,7 @@ abstract class SparkBaseShims extends Spark30XShims {
           TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
-            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
+            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
             }
           }
@@ -659,7 +659,7 @@ abstract class SparkBaseShims extends Spark30XShims {
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
-    if (serClass == classOf[ParquetCachedBatchSerializer]) {
+    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
       GpuColumnarToRowTransitionExec(plan)
     } else {
       GpuColumnarToRowExec(plan)
