@@ -181,6 +181,17 @@ _init_list_with_nans_and_no_nans = [
     _grpkey_strings_with_nulls,
     _grpkey_floats_with_nulls_and_nans]
 
+# grouping decimals with nulls
+_decimals_with_nulls = [('a', DecimalGen()), ('b', DecimalGen()), ('c', DecimalGen())]
+
+# grouping decimals with no nulls
+_decimals_with_no_nulls = [
+    ('a', DecimalGen(nullable=False)),
+    ('b', DecimalGen(nullable=False)),
+    ('c', DecimalGen(nullable=False))]
+
+_init_list_with_nans_and_no_nans_with_decimals = _init_list_with_nans_and_no_nans + [
+    _decimals_with_nulls, _decimals_with_no_nulls]
 
 def get_params(init_list, marked_params=[]):
     """
@@ -1095,9 +1106,10 @@ def test_agg_nested_map():
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_groupby_std_variance(data_gen, conf):
+    local_conf = copy_and_update(conf, {'spark.rapids.sql.decimalType.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=100),
         "data_table",
@@ -1109,14 +1121,14 @@ def test_groupby_std_variance(data_gen, conf):
         'var_pop(b),' +
         'var_samp(b)' +
         ' from data_table group by a',
-        conf=conf)
+        conf=local_conf)
 
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
+def xx(data_gen, conf, ansi_enabled):
     local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=100),
