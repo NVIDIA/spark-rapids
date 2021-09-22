@@ -1266,4 +1266,3 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true'})
->>>>>>> nvidia/branch-21.10
