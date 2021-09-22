@@ -100,8 +100,8 @@ object ColumnCastUtil extends Arm {
           }
 
           val newChild = convertTypeAToTypeB(struct,
-            StructType(Array(StructField("", m.keyType), StructField("", m.valueType)))
-            , predicate, toClose)
+            StructType(Array(StructField("", m.keyType), StructField("", m.valueType))),
+            predicate, toClose)
 
           if (struct == newChild) {
             cv
