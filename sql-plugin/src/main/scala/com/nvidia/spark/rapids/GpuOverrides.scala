@@ -3037,6 +3037,13 @@ object GpuOverrides extends Logging {
               s"Set ${RapidsConf.ENABLE_APPROX_PERCENTILE}=true to enable it")
           } else {
 
+            childExprs.head.typeMeta.dataType match {
+              case Some(_: DecimalType) =>
+                // See https://github.com/NVIDIA/spark-rapids/issues/3606
+                willNotWorkOnGpu("approx_percentile on GPU does not support decimal types")
+              case _ =>
+            }
+
             // check if the percentile expression can be supported on GPU
             childExprs(1).wrapped match {
               case lit: Literal => lit.value match {

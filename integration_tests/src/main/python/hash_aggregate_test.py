@@ -1128,19 +1128,19 @@ def test_hash_groupby_approx_percentile_double_scalar():
                                      ('v', DoubleGen())], length=100),
         0.05)
 
-# @ignore_order(local=True)
-# def test_hash_groupby_approx_percentile_decimal():
-#     compare_percentile_approx(
-#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-#                                      ('v', DecimalGen(nullable=False))], length=100),
-#         [0.05, 0.25, 0.5, 0.75, 0.95])
-#
-# @ignore_order(local=True)
-# def test_hash_groupby_approx_percentile_decimal_nullable():
-#     compare_percentile_approx(
-#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-#                                      ('v', DecimalGen(nullable=True))], length=100),
-#         [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@ignore_order(local=True)
+@pytest.mark.allow_non_gpu('ObjectHashAggregateExec,AggregateExpression,ApproximatePercentile,\
+    Literal,Alias,ShuffleExchangeExec,HashPartitioning')
+def test_hash_groupby_approx_percentile_decimal_fallback():
+    # decimal types are not supported yet - see https://github.com/NVIDIA/spark-rapids/issues/3606
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DecimalGen(nullable=False))], length=100)
+            .groupby('k')
+            .agg(f.percentile_approx('v', [0.25, 0.5])),
+        'ApproximatePercentile',
+        conf=_approx_percentile_conf)
 
 def compare_percentile_approx(df_fun, percentiles):
     p_exact_sql = create_percentile_sql("percentile", percentiles)
