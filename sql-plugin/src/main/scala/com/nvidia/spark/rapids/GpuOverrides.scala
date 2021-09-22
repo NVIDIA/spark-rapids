@@ -3053,7 +3053,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StddevPop](
       "Aggregation computing population standard deviation",
-      ExprChecks.aggNotReduction(
+      ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[StddevPop](c, conf, p, r) {
@@ -3061,7 +3061,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StddevSamp](
       "Aggregation computing sample standard deviation",
-      ExprChecks.aggNotReduction(
+      ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[StddevSamp](c, conf, p, r) {
@@ -3069,7 +3069,7 @@ object GpuOverrides extends Logging {
       }),
     expr[VariancePop](
       "Aggregation computing population variance",
-      ExprChecks.aggNotReduction(
+      ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[VariancePop](c, conf, p, r) {
@@ -3077,7 +3077,7 @@ object GpuOverrides extends Logging {
       }),
     expr[VarianceSamp](
       "Aggregation computing sample variance",
-      ExprChecks.aggNotReduction(
+      ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[VarianceSamp](c, conf, p, r) {
