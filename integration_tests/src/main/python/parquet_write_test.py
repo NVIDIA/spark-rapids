@@ -319,12 +319,14 @@ def test_write_map_nullable(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path)
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3476')
 @pytest.mark.allow_non_gpu("DataWritingCommandExec", "HiveTableScanExec")
 @pytest.mark.parametrize('allow_non_empty', [True, False])
 def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty):
     data_path = spark_tmp_path + "/CTAS"
     conf = {
         "spark.sql.hive.convertCTAS": "true",
+        "spark.sql.legacy.createHiveTableByDefault": "false",
         "spark.sql.legacy.allowNonEmptyLocationInCTAS": str(allow_non_empty)
     }
     def test_it(spark):

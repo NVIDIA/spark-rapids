@@ -17,11 +17,14 @@
 
 package org.apache.spark.sql.catalyst.expressions.rapids
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, TypeEnum, TypeSig}
+import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuExpression, GpuOverrides, ShimLoader, TypeEnum, TypeSig}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, GetTimestamp}
 import org.apache.spark.sql.rapids.{GpuGetTimestamp, UnixTimeExprMeta}
 
+/**
+ * GetTimestamp is marked as private so we had to put it in a place that could access it.
+ */
 object TimeStamp {
 
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
@@ -35,6 +38,9 @@ object TimeStamp {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[GetTimestamp](a, conf, p, r) {
+        override def shouldFallbackOnAnsiTimestamp: Boolean =
+          ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuGetTimestamp(lhs, rhs, sparkFormat, strfFormat)
         }

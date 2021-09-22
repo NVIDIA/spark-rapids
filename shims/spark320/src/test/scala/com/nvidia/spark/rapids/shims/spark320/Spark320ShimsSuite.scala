@@ -25,7 +25,8 @@ class Spark320ShimsSuite extends FunSuite {
   val sparkShims: SparkShims = new SparkShimServiceProvider().buildShim
   test("spark shims version") {
     // temporarily allow 3.2.1 while 3.2.0 release candidates are being produced
-    assert(sparkShims.getSparkShimVersion === SparkShimVersion(3, 2, 1))
+    assert(sparkShims.getSparkShimVersion === SparkShimVersion(3, 2, 0) ||
+      sparkShims.getSparkShimVersion === SparkShimVersion(3, 2, 1))
   }
 
   test("shuffle manager class") {

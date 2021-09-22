@@ -126,4 +126,5 @@ trait Spark30XShims extends SparkShims {
     ss.sparkContext.defaultParallelism
   }
 
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 }

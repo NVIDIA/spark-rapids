@@ -20,6 +20,9 @@
  * Jenkinsfile for building rapids-plugin on blossom
  *
  */
+import hudson.model.Result
+import hudson.model.Run
+import jenkins.model.CauseOfInterruption.UserInterruption
 
 @Library(['shared-libs', 'blossom-lib']) _
 @Library('blossom-github-lib@master')
@@ -127,7 +130,16 @@ pipeline {
             steps {
                 script {
                     githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
-                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
+                    // desc contains the PR ID and can be accessed from different builds
+                    currentBuild.description = githubHelper.getBuildDescription()
+                    try {
+                        // quiet period here in case the first build of two close dup triggers has not set desc
+                        sleep(time: 30, unit: "SECONDS")
+                        // abort duplicate running builds of the same PR (based on build desc)
+                        abortDupBuilds()
+                    } catch (e) { // do not block following build if abort failure
+                        echo "failed to try abort duplicate builds: " + e.toString()
+                    }
 
                     def title = githubHelper.getIssue().title
                     if (title ==~ /.*\[skip ci\].*/) {
@@ -164,7 +176,7 @@ pipeline {
 
             steps {
                 script {
-                    currentBuild.description = githubHelper.getBuildDescription()
+                    githubHelper.updateCommitStatus("$BUILD_URL", "Running", GitHubCommitState.PENDING)
                     checkout(
                             changelog: false,
                             poll: true,
@@ -423,6 +435,12 @@ pipeline {
                         }
                     }
                 } // end of DB runtime 8.2
+
+                stage('Dummy stage: blue ocean log view') {
+                    steps {
+                        echo "workaround for blue ocean bug https://issues.jenkins.io/browse/JENKINS-48879"
+                    }
+                } // Dummy stage
             } // end of parallel
         } // end of Premerge Test
     } // end of stages
@@ -453,7 +471,9 @@ pipeline {
                 }
 
                 if (TEMP_IMAGE_BUILD) {
-                    deleteDockerTempTag("${PREMERGE_TAG}") // clean premerge temp image
+                    container('cpu') {
+                        deleteDockerTempTag("${PREMERGE_TAG}") // clean premerge temp image
+                    }
                 }
             }
         }
@@ -522,7 +542,6 @@ void databricksBuild() {
         if (CLUSTER_ID) {
             container('cpu') {
                 retry(3) {
-                    sleep(time: 5, unit: "SECONDS")
                     sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
                 }
             }
@@ -547,4 +566,22 @@ void deleteDockerTempTag(String tag) {
         return
     }
     sh "curl -u $URM_CREDS_USR:$URM_CREDS_PSW -XDELETE https://${ARTIFACTORY_NAME}/artifactory/sw-spark-docker-local/plugin/${tag} || true"
+}
+
+void abortDupBuilds() {
+    Run prevBuild = currentBuild.rawBuild.getPreviousBuildInProgress()
+    while (prevBuild != null) {
+        if (prevBuild.isInProgress()) {
+            def prevDesc = prevBuild.description?.trim()
+            if (prevDesc && prevDesc == currentBuild.description?.trim()) {
+                def prevExecutor = prevBuild.getExecutor()
+                if (prevExecutor != null) {
+                    echo "...Aborting duplicate Build #${prevBuild.number}"
+                    prevExecutor.interrupt(Result.ABORTED,
+                            new UserInterruption("Build #${currentBuild.number}"))
+                }
+            }
+        }
+        prevBuild = prevBuild.getPreviousBuildInProgress()
+    }
 }

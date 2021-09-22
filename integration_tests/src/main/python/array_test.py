@@ -200,7 +200,7 @@ def test_array_transform(data_gen):
 
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
 array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
-        boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_min(data_gen):
@@ -211,14 +211,6 @@ def test_array_min(data_gen):
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
                 'spark.rapids.sql.hasNans': 'false'})
 
-@allow_non_gpu("ProjectExec", "ArrayMin", "Alias")
-@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
-def test_array_min_fallback(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-                'array_min(a)'),
-            "ArrayMin")
-
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -228,10 +220,18 @@ def test_array_max(data_gen):
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
                 'spark.rapids.sql.hasNans': 'false'})
 
-@allow_non_gpu("ProjectExec", "ArrayMax", "Alias")
-@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
-def test_array_max_fallback(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-                'array_max(a)'),
-            "ArrayMax")
+# We add in several types of processing for foldable functions because the output
+# can be different types.
+@pytest.mark.parametrize('query', [
+    'sequence(1, 5) as s',
+    'array(1, 2, 3) as a',
+    'array(sequence(1, 5), sequence(2, 7)) as a_a',
+    'array(map(1, "a", 2, "b")) as a_m',
+    'array(map_from_arrays(sequence(1, 2), array("1", "2"))) as a_m',
+    'array(struct(1 as a, 2 as b), struct(3 as a, 4 as b)) as a_s',
+    'array(struct(1 as a, sequence(1, 5) as b), struct(3 as a, sequence(2, 7) as b)) as a_s_a',
+    'array(array(struct(1 as a, 2 as b), struct(3 as a, 4 as b))) as a_a_s'], ids=idfn)
+def test_sql_array_scalars(query):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.sql('SELECT {}'.format(query)),
+            conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})

@@ -1,0 +1,4 @@
+META-INF/services/**
+com/nvidia/spark/rapids/*/RapidsShuffleManager*
+org/apache/spark/sql/rapids/shims/*/ProxyRapidsShuffleInternalManager*
+spark-*-info.properties
