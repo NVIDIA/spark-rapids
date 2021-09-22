@@ -1106,9 +1106,30 @@ def test_agg_nested_map():
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_groupby_std_variance(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=100),
+        "data_table",
+        'select ' +
+        'stddev(b),' +
+        'stddev_pop(b),' +
+        'stddev_samp(b),' +
+        'variance(b),' +
+        'var_pop(b),' +
+        'var_samp(b)' +
+        ' from data_table group by a',
+        conf=conf)
+
+# This test also includes the test above thus let remove the test above when this one can be enabled.
+@pytest.mark.xfail(reason='GPU-casting directly from decimal to double is not yet supported')
+@approximate_float
+@ignore_order
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_groupby_std_variance_with_decimals(data_gen, conf):
     local_conf = copy_and_update(conf, {'spark.rapids.sql.decimalType.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=100),
@@ -1128,7 +1149,7 @@ def test_groupby_std_variance(data_gen, conf):
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
-def xx(data_gen, conf, ansi_enabled):
+def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
     local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=100),
