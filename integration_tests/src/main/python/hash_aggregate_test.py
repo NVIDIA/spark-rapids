@@ -1158,7 +1158,7 @@ def test_count_fallback_when_ansi_enabled(data_gen):
     assert_gpu_fallback_collect(do_it, 'Count',
         conf={'spark.sql.ansi.enabled': 'true'})
 
-@ignore_order
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
 def test_no_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
