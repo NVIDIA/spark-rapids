@@ -1111,23 +1111,30 @@ def test_hash_groupby_approx_percentile_double_scalar():
                                      ('v', DoubleGen())], length=100),
         0.05)
 
+# The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
+# results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
+# compute approximate percentiles on CPU and GPU and assert that the GPU numbers are accurate within some percentage
+# of the CPU numbers
 def compare_percentile_approx(df_fun, percentiles):
+
+    # create SQL statements for exact and approx percentiles
     p_exact_sql = create_percentile_sql("percentile", percentiles)
+    p_approx_sql = create_percentile_sql("approx_percentile", percentiles)
 
     def run_exact(spark):
         df = df_fun(spark)
         df.createOrReplaceTempView("t")
         return spark.sql(p_exact_sql)
 
-    exact = run_with_cpu(run_exact, 'COLLECT', _approx_percentile_conf)
-
-    p_approx_sql = create_percentile_sql("approx_percentile", percentiles)
-
     def run_approx(spark):
         df = df_fun(spark)
         df.createOrReplaceTempView("t")
         return spark.sql(p_approx_sql)
 
+    # run exact percentile on CPU
+    exact = run_with_cpu(run_exact, 'COLLECT', _approx_percentile_conf)
+
+    # run approx_percentile on CPU and GPU
     approx_cpu, approx_gpu = run_with_cpu_and_gpu(run_approx, 'COLLECT', _approx_percentile_conf)
 
     for result in zip(exact, approx_cpu, approx_gpu):
