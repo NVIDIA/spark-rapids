@@ -75,6 +75,11 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
       "FROM salaries GROUP BY dept")
   }
 
+  test("array with nulls fall back to CPU") {
+    sqlFallbackTest("SELECT dept, approx_percentile(salary, array(CAST(NULL as double))) " +
+      "FROM salaries GROUP BY dept")
+  }
+
   test("fall back to CPU for reduction") {
     sqlFallbackTest("SELECT approx_percentile(salary, array(0.5)) FROM salaries")
   }

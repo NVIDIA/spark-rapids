@@ -3047,7 +3047,6 @@ object GpuOverrides extends Logging {
                   willNotWorkOnGpu(
                     "approx_percentile on GPU does not support empty percentiles arrays")
                 case a: GenericArrayData if a.array.contains(null) =>
-                  // we should not this case because Spark doesn't allow nulls in arrays here
                   willNotWorkOnGpu(
                     "approx_percentile on GPU does not support percentiles arrays containing nulls")
                 case _ =>
