@@ -173,8 +173,8 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
       return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
     } else {
       assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL128 : "type should be DECIMAL128";
-      System.out.println("KUHU getDecvimal in Rapids CV =" +
-          cudfCv.getBigDecimal(rowId).unscaledValue());
+//      System.out.println("KUHU getDecvimal in Rapids CV =" +
+//          cudfCv.getBigDecimal(rowId).unscaledValue());
       return Decimal.fromDecimal(new BigDecimal(cudfCv.getBigDecimal(rowId).unscaledValue(), scale));
     }
 
