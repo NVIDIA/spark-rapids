@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{GatherMap, NvtxColor}
-import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -36,8 +35,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 abstract class AbstractGpuJoinIterator(
     gatherNvtxName: String,
     targetSize: Long,
-    joinTime: GpuMetric,
-    totalTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
+    opTime: GpuMetric,
+    joinTime: GpuMetric) extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
   private[this] var nextCb: Option[ColumnarBatch] = None
   private[this] var gathererStore: Option[JoinGatherer] = None
 
@@ -48,6 +47,12 @@ abstract class AbstractGpuJoinIterator(
   /** Returns whether there are any more batches on the stream side of the join */
   protected def hasNextStreamBatch: Boolean
 
+  private def timedHasNextStreamBatch: (Boolean, Long) = {
+    val start = System.nanoTime()
+    val ret = hasNextStreamBatch
+    (ret, System.nanoTime() - start)
+  }
+
   /**
    * Called to setup the next join gatherer instance when the previous instance is done or
    * there is no previous instance.
@@ -56,32 +61,38 @@ abstract class AbstractGpuJoinIterator(
    * @return some gatherer to use next or None if there is no next gatherer or the loop should try
    *         to build the gatherer again (e.g.: to skip a degenerate join result batch)
    */
-  protected def setupNextGatherer(startNanoTime: Long): Option[JoinGatherer]
+  protected def setupNextGatherer(): Option[JoinGatherer]
 
   override def hasNext: Boolean = {
     if (closed) {
       return false
     }
+    val startTime = System.nanoTime()
+    var totalHasNextTime = 0L
     var mayContinue = true
     while (nextCb.isEmpty && mayContinue) {
-      val startNanoTime = System.nanoTime()
       if (gathererStore.exists(!_.isDone)) {
         nextCb = nextCbFromGatherer()
-      } else if (hasNextStreamBatch) {
-        // Need to refill the gatherer
-        gathererStore.foreach(_.close())
-        gathererStore = None
-        gathererStore = setupNextGatherer(startNanoTime)
-        nextCb = nextCbFromGatherer()
       } else {
-        mayContinue = false
+        // The only part we want to skip in the timing is hasNextStreamBatch
+        val tmp = timedHasNextStreamBatch
+        totalHasNextTime += tmp._2
+        if (tmp._1) {
+          // Need to refill the gatherer
+          gathererStore.foreach(_.close())
+          gathererStore = None
+          gathererStore = setupNextGatherer()
+          nextCb = nextCbFromGatherer()
+        } else {
+          mayContinue = false
+        }
       }
-      totalTime += (System.nanoTime() - startNanoTime)
     }
     if (nextCb.isEmpty) {
       // Nothing is left to return so close ASAP.
       close()
     }
+    opTime += (System.nanoTime() - startTime) - totalHasNextTime
     nextCb.isDefined
   }
 
@@ -144,14 +155,13 @@ abstract class SplittableJoinIterator(
     builtBatch: LazySpillableColumnarBatch,
     targetSize: Long,
     spillCallback: SpillCallback,
-    joinTime: GpuMetric,
-    streamTime: GpuMetric,
-    totalTime: GpuMetric)
+    opTime: GpuMetric,
+    joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
       gatherNvtxName,
       targetSize,
-      joinTime = joinTime,
-      totalTime = totalTime) with Logging {
+      opTime = opTime,
+      joinTime = joinTime) with Logging {
   // For some join types even if there is no stream data we might output something
   private var isInitialJoin = true
   // If the join explodes this holds batches from the stream side split into smaller pieces.
@@ -172,7 +182,7 @@ abstract class SplittableJoinIterator(
     isInitialJoin || pendingSplits.nonEmpty || stream.hasNext
   }
 
-  override def setupNextGatherer(startNanoTime: Long): Option[JoinGatherer] = {
+  override def setupNextGatherer(): Option[JoinGatherer] = {
     val wasInitialJoin = isInitialJoin
     isInitialJoin = false
     if (pendingSplits.nonEmpty || stream.hasNext) {
@@ -184,7 +194,6 @@ abstract class SplittableJoinIterator(
         val batch = withResource(stream.next()) { lazyBatch =>
           lazyBatch.releaseBatch()
         }
-        streamTime += (System.nanoTime() - startNanoTime)
         batch
       }
       withResource(cb) { cb =>

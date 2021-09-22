@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Table}
-import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
@@ -41,9 +40,8 @@ class GpuKeyBatchingIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    collectTime: GpuMetric,
     concatTime: GpuMetric,
-    totalTime: GpuMetric,
+    opTime: GpuMetric,
     peakDevMemory: GpuMetric,
     spillCallback: SpillCallback)
     extends Iterator[ColumnarBatch] with Arm {
@@ -155,21 +153,13 @@ class GpuKeyBatchingIterator(
   }
 
   override def next(): ColumnarBatch = {
-    var startHasNext = System.nanoTime()
     while (iter.hasNext) {
-      val hasNextTime = System.nanoTime() - startHasNext
-      totalTime += hasNextTime
-      collectTime += hasNextTime
-      val startNextTime = System.nanoTime()
       withResource(iter.next()) { cb =>
-        val nextTime = System.nanoTime() - startNextTime
-        totalTime += nextTime
-        collectTime += nextTime
         numInputBatches += 1
         val numRows = cb.numRows()
         if (numRows > 0) { // else filter it out...
           numInputRows += numRows
-          withResource(new MetricRange(totalTime)) { _ =>
+          withResource(new MetricRange(opTime)) { _ =>
             if (GpuColumnVector.isTaggedAsFinalBatch(cb)) {
               // No need to do a split on the final row and create extra work this is the last batch
               withResource(GpuColumnVector.from(cb)) { table =>
@@ -212,9 +202,8 @@ class GpuKeyBatchingIterator(
           }
         }
       }
-      startHasNext = System.nanoTime()
     }
-    val ret = withResource(new MetricRange(totalTime)) { _ =>
+    val ret = withResource(new MetricRange(opTime)) { _ =>
       // At the end of the iterator, nothing more to process
       concatPending()
     }
@@ -225,17 +214,15 @@ class GpuKeyBatchingIterator(
 }
 
 object GpuKeyBatchingIterator {
-  def makeFunc(
-      unboundOrderSpec: Seq[SortOrder],
+  def makeFunc(unboundOrderSpec: Seq[SortOrder],
       schema: Array[Attribute],
       targetSizeBytes: Long,
       numInputRows: GpuMetric,
       numInputBatches: GpuMetric,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      collectTime: GpuMetric,
       concatTime: GpuMetric,
-      totalTime: GpuMetric,
+      opTime: GpuMetric,
       peakDevMemory: GpuMetric,
       spillCallback: SpillCallback): Iterator[ColumnarBatch] => GpuKeyBatchingIterator = {
     val sorter = new GpuSorter(unboundOrderSpec, schema)
@@ -243,7 +230,7 @@ object GpuKeyBatchingIterator {
     def makeIter(iter: Iterator[ColumnarBatch]): GpuKeyBatchingIterator = {
       new GpuKeyBatchingIterator(iter, sorter, types, targetSizeBytes,
         numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-        collectTime, concatTime, totalTime, peakDevMemory, spillCallback)
+        concatTime, opTime, peakDevMemory, spillCallback)
     }
     makeIter
   }

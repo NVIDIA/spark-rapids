@@ -21,8 +21,7 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
-import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NoopMetric, SpillCallback}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
 
@@ -71,7 +70,8 @@ class GpuSerializableBatch(batch: ColumnarBatch)
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    // TODO I don't know of a way to make this work...
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), NoopMetric)
     withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
       val schemaArray = in.readObject().asInstanceOf[Array[DataType]]
       withResource(JCudfSerialization.readTableFrom(in)) { tableInfo =>
@@ -118,11 +118,11 @@ class GpuCartesianRDD(
     streamAttributes: Seq[Attribute],
     spillCallback: SpillCallback,
     targetSize: Long,
+    opTime: GpuMetric,
     joinTime: GpuMetric,
     joinOutputRows: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    totalTime: GpuMetric,
     var rdd1: RDD[GpuSerializableBatch],
     var rdd2: RDD[GpuSerializableBatch])
     extends RDD[ColumnarBatch](sc, Nil)
@@ -192,8 +192,8 @@ class GpuCartesianRDD(
         numOutputRows = numOutputRows,
         joinOutputRows = joinOutputRows,
         numOutputBatches = numOutputBatches,
-        joinTime = joinTime,
-        totalTime = totalTime)
+        opTime = opTime,
+        joinTime = joinTime)
     }
   }
 
@@ -234,8 +234,8 @@ case class GpuCartesianProductExec(
   protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
-    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   protected override def doExecute(): RDD[InternalRow] =
@@ -246,7 +246,8 @@ case class GpuCartesianProductExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val semWait = gpuLongMetric(SEMAPHORE_WAIT_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
 
@@ -270,7 +271,8 @@ case class GpuCartesianProductExec(
         l.cartesian(r).map(p => p._1 * p._2),
         targetSizeBytes,
         numOutputRows,
-        numOutputBatches)
+        numOutputBatches,
+        semWait)
     } else {
       val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
       val numFirstTableColumns = left.output.size
@@ -281,11 +283,11 @@ case class GpuCartesianProductExec(
         right.output,
         spillCallback,
         targetSizeBytes,
+        opTime,
         joinTime,
         joinOutputRows,
         numOutputRows,
         numOutputBatches,
-        totalTime,
         left.executeColumnar().map(cb => new GpuSerializableBatch(cb)),
         right.executeColumnar().map(cb => new GpuSerializableBatch(cb)))
     }

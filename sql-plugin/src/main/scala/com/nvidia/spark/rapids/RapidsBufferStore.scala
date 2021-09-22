@@ -263,7 +263,7 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: RapidsBuffer.SpillCallback,
+      override val spillCallback: SpillCallback,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
       deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
       extends RapidsBuffer with Arm {

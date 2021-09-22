@@ -3270,7 +3270,8 @@ object GpuOverrides extends Logging {
       (range, conf, p, r) => {
         new SparkPlanMeta[RangeExec](range, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuRangeExec(range.range, conf.gpuTargetBatchSizeBytes)
+            GpuRangeExec(range.start, range.end, range.step, range.numSlices, range.output,
+              conf.gpuTargetBatchSizeBytes)
         }
       }),
     exec[BatchScanExec](
