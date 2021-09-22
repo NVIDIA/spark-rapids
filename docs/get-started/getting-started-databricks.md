@@ -21,6 +21,39 @@ runtimes which may impact the behavior of the plugin.
 
 The number of GPUs per node dictates the number of Spark executors that can run in that node.
 
+## Limitations
+
+1. Adaptive query execution(AQE) and Delta optimization write do not work. These should be disabled
+when using the plugin. Queries may still see significant speedups even with AQE disabled.
+
+    ```bash 
+    spark.databricks.delta.optimizeWrite.enabled false
+    spark.sql.adaptive.enabled false
+    ```
+    
+    See [issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059) for more detail. 
+
+2. Dynamic partition pruning(DPP) does not work.  This results in poor performance for queries which
+   would normally benefit from DPP.  See
+   [issue-3143](https://github.com/NVIDIA/spark-rapids/issues/3143) for more detail.
+
+3. When selecting GPU nodes, Databricks requires the driver node to be a GPU node.  Outside of
+   Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
+
+4. Cannot spin off multiple executors on a multi-GPU node. 
+
+	Even though it is possible to set `spark.executor.resource.gpu.amount=N` (where N is the number
+    of GPUs per node) in the in Spark Configuration tab, Databricks overrides this to
+    `spark.executor.resource.gpu.amount=1`.  This will result in failed executors when starting the
+    cluster.
+
+5. Databricks makes changes to the runtime without notification.
+
+    Databricks makes changes to existing runtimes, applying patches, without notification.
+	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
+	regular integration tests on the Databricks environment to catch these issues and fix them once
+	detected.
+	
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to Clusters, then clicking `+ Create Cluster`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:

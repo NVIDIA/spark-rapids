@@ -147,15 +147,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.DoubleType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  ignore("Cast from string to date using random inputs") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/3478
+  test("Cast from string to date using random inputs") {
+    // We cannot do the full range of parsing unless it is prior to 3.2.0
+    assumePriorToSpark320
     testCastStringTo(DataTypes.DateType, generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8))
   }
 
-  ignore("Cast from string to date using random inputs with valid year prefix") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/3478
+  test("Cast from string to date using random inputs with valid year prefix") {
+    // We cannot do the full range of parsing unless it is prior to 3.2.0
+    assumePriorToSpark320
     testCastStringTo(DataTypes.DateType,
       generateRandomStrings(Some(DATE_CHARS), maxStringLen = 8, Some("2021")))
   }
@@ -171,6 +171,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
     Seq("2021-20-60", "not numbers", "666666666").foreach { value =>
       testCastStringTo(DataTypes.DateType, Seq(value), ansiMode = AnsiExpectFailure)
     }
+  }
+
+  test("Cast from string to timestamp") {
+    testCastStringTo(DataTypes.TimestampType,
+      timestampsAsStringsSeq(castStringToTimestamp = true, validOnly = false))
   }
 
   ignore("Cast from string to timestamp using random inputs") {
@@ -204,7 +209,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   private def testCastStringTo(
       toType: DataType,
       strings: Seq[String],
-      ansiMode: AnsiTestMode = AnsiDisabled) {
+      ansiMode: AnsiTestMode = AnsiDisabled): Unit = {
 
     def castDf(spark: SparkSession): Seq[Row] = {
       import spark.implicits._
@@ -232,6 +237,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+      // Tests that this is not true for are skipped in 3.2.0+
+      .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
     val tryGpu = Try(withGpuSparkSession(castDf, gpuConf)
       .sortBy(_.getInt(INDEX_ID)))
@@ -264,9 +271,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  ignore("Test all supported casts with in-range values") {
-    // Test ignored due to known issues
-    // https://github.com/NVIDIA/spark-rapids/issues/3478
+  test("Test all supported casts with in-range values") {
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
@@ -276,6 +281,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
+        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
       val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
       val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
@@ -313,7 +319,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def compareFloatToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]) = {
+  private def compareFloatToStringResults(fromCpu: Array[Row], fromGpu: Array[Row]): Unit = {
     fromCpu.zip(fromGpu).foreach {
       case (c, g) =>
         val cpuValue = c.getAs[String](0)
@@ -454,7 +460,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   private def testCastToString[T](
       dataType: DataType,
-      comparisonFunc: Option[(String, String) => Boolean] = None) {
+      comparisonFunc: Option[(String, String) => Boolean] = None): Unit = {
     val checks = GpuOverrides.expressions(classOf[Cast]).getChecks.get.asInstanceOf[CastChecks]
 
     assert(checks.gpuCanCast(dataType, DataTypes.StringType))
@@ -960,30 +966,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("CAST string to date - sanitize step") {
-    val testPairs = Seq(
-      ("2001-1", "2001-01"),
-      ("2001-01-1", "2001-01-01"),
-      ("2001-1-1", "2001-01-01"),
-      ("2001-01-1", "2001-01-01"),
-      ("2001-01-1 ", "2001-01-01 "),
-      ("2001-1-1 ", "2001-01-01 "),
-      ("2001-1-1 ZZZ", "2001-01-01 ZZZ"),
-      ("2001-1-1TZZZ", "2001-01-01TZZZ"),
-      ("3330-7 39 49: 1", "3330-7 39 49: 1"),
-      ("today", "today")
-    )
-    val inputs = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(GpuCast.sanitizeStringToDate(v)) { actual =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
-    }
-  }
-
   protected def testCastToDecimal(
     dataType: DataType,
     scale: Int,
@@ -992,7 +974,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
     ansiEnabled: Boolean = false,
-    gpuOnly: Boolean = false) {
+    gpuOnly: Boolean = false): Unit = {
 
     val dir = Files.createTempDirectory("spark-rapids-test").toFile
     val path = new File(dir,
@@ -1239,10 +1221,9 @@ object CastOpSuite {
     timestampValues.map(_.toDouble).toDF("c0")
   }
 
-  def timestampsAsStrings(session: SparkSession,
+  def timestampsAsStringsSeq(
       castStringToTimestamp: Boolean,
-      validOnly: Boolean): DataFrame = {
-    import session.sqlContext.implicits._
+      validOnly: Boolean): Seq[String] = {
 
     val specialDates = Seq(
       "epoch",
@@ -1279,6 +1260,7 @@ object CastOpSuite {
     )
 
     val validTimestamps = Seq(
+      "2030-8-1 1:2:3.012345Z",
       "2030-8-1 11:02:03.012345Z",
       "2030-9-11 11:02:03.012345Z",
       "2030-10-1 11:02:03.012345Z",
@@ -1295,7 +1277,8 @@ object CastOpSuite {
     } else {
       Seq(
         "200", // year too few digits
-        "20000", // year too many digits
+        "20000000", // year too many digits, even for 3.2.0+
+        "21\r\n", // year with 4 chars but not all digits
         "3330-7 39 49: 1",
         "1999\rGARBAGE",
         "1999-1\rGARBAGE",
@@ -1316,6 +1299,7 @@ object CastOpSuite {
         "2010-01-6T  12:34:56.000111Z",
         "2010-01-6 T 12:34:56.000111Z",
         "2010-01-6  T12:34:56.000111Z",
+        "2010-01-6  T1:3:5.000111Z",
         "2030-11-11 12:02:03.012345Z TRAILING TEXT",
         "2010-01-6 ",
         "2010-01-6 T",
@@ -1359,13 +1343,17 @@ object CastOpSuite {
       )
     }
 
-    val allValues = specialDates ++
+    var allValues =
         validYear ++
         validYearMonth ++
         validYearMonthDay ++
         invalidValues ++
         validTimestamps ++
         timestampWithoutDate
+
+    if (!VersionUtils.isSpark320OrLater) {
+      allValues = specialDates ++ allValues
+    }
 
     // these partial timestamp formats are not yet supported in cast string to timestamp but are
     // supported by cast string to date
@@ -1383,7 +1371,15 @@ object CastOpSuite {
 
     val valuesWithWhitespace = values.map(s => s"\t\n\t$s\r\n")
 
-    (values ++ valuesWithWhitespace).toDF("c0")
+    values ++ valuesWithWhitespace
+  }
+
+  def timestampsAsStrings(
+      session: SparkSession,
+      castStringToTimestamp: Boolean,
+      validOnly: Boolean): DataFrame = {
+    import session.sqlContext.implicits._
+    timestampsAsStringsSeq(castStringToTimestamp, validOnly).toDF("c0")
   }
 
   def validTimestamps(session: SparkSession): DataFrame = {
@@ -1424,7 +1420,7 @@ object CastOpSuite {
 
 }
 
-sealed trait AnsiTestMode;
+sealed trait AnsiTestMode
 case object AnsiDisabled extends AnsiTestMode
 case object AnsiExpectSuccess extends AnsiTestMode
 case object AnsiExpectFailure extends AnsiTestMode

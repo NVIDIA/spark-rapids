@@ -350,7 +350,7 @@ object RapidsConf {
 
   val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
-          "system use such as memory needed for kernels, kernel launches or JIT compilation.")
+          "system use such as memory needed for kernels and kernel launches.")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(ByteUnit.MiB.toBytes(1024))
 
@@ -629,6 +629,16 @@ object RapidsConf {
       "documentation for more details.")
     .booleanConf
     .createWithDefault(false)
+
+  val HAS_EXTENDED_YEAR_VALUES = conf("spark.rapids.sql.hasExtendedYearValues")
+      .doc("Spark 3.2.0+ extended parsing of years in dates and " +
+          "timestamps to support the full range of possible values. Prior " +
+          "to this it was limited to a positive 4 digit year. The Accelerator does not " +
+          "support the extended range yet. This config indicates if your data includes " +
+          "this extended range or not, or if you don't care about getting the correct " +
+          "values on values with the extended range.")
+      .booleanConf
+      .createWithDefault(true)
 
   val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
       .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
@@ -1163,7 +1173,14 @@ object RapidsConf {
       "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
       "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
       "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
-      "then there is no guarantee the RAPIDS Accelerator will function properly.")
+      "then there is no guarantee the RAPIDS Accelerator will function properly." +
+      "When tested in a combined jar with other Shims, it's expected that the provided " +
+      "implementation follows the same convention as existing Spark shims. If its class" +
+      " name has the form com.nvidia.spark.rapids.shims.<shimId>.YourSparkShimServiceProvider. " +
+      "The last package name component, i.e., shimId, can be used in the combined jar as the root" +
+      " directory /shimId for any incompatible classes. When tested in isolation, no special " +
+      "jar root is required"
+    )
     .stringConf
     .createOptional
 
@@ -1366,24 +1383,6 @@ object RapidsConf {
       printToggleHeader("Partitioning\n")
     }
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
-    if (asTable) {
-      printSectionHeader("JIT Kernel Cache Path")
-      println("""
-      |  CUDF can compile GPU kernels at runtime using a just-in-time (JIT) compiler. The
-      |  resulting kernels are cached on the filesystem. The default location for this cache is
-      |  under the `.cudf` directory in the user's home directory. When running in an environment
-      |  where the user's home directory cannot be written, such as running in a container
-      |  environment on a cluster, the JIT cache path will need to be specified explicitly with
-      |  the `LIBCUDF_KERNEL_CACHE_PATH` environment variable.
-      |  The specified kernel cache path should be specific to the user to avoid conflicts with
-      |  others running on the same host. For example, the following would specify the path to a
-      |  user-specific location under `/tmp`:
-      |
-      |  ```
-      |  --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH="/tmp/cudf-$USER"
-      |  ```
-      |""".stripMargin)
-    }
   }
   def main(args: Array[String]): Unit = {
     // Include the configs in PythonConfEntries
@@ -1524,6 +1523,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
+
+  lazy val hasExtendedYearValues: Boolean = get(HAS_EXTENDED_YEAR_VALUES)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 

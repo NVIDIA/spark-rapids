@@ -108,6 +108,46 @@ The version-specific directory names have one of the following forms / use cases
 - `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
    3.1.2 *inclusive*
 
+
+### Setting up an Integrated Development Environment
+
+Our project currently uses `build-helper-maven-plugin` for shimming against conflicting definitions of superclasses 
+in upstream versions that cannot be resolved without significant code duplication otherwise. To this end different 
+source directories with differently implemented same-named classes are 
+[added](https://www.mojohaus.org/build-helper-maven-plugin/add-source-mojo.html) 
+for compilation depending on the targeted Spark version.
+
+This may require some modifications to IDEs' standard Maven import functionality.
+
+#### IntelliJ IDEA
+
+_Last tested with 2021.2.1 Community Edition_
+
+To start working with the project in IDEA is as easy as 
+[opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent) 
+[pom.xml](pom.xml). 
+
+In order to make sure that IDEA handles profile-specific source code roots within a single Maven module correctly,
+[unselect](https://www.jetbrains.com/help/idea/2021.2/maven-importing.html) "Keep source and test folders on reimport".
+
+If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
+Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2021.2/maven-projects-tool-window.html) and
+select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0, and click "Reload" 
+if not triggered automatically.
+
+There is a known issue with the shims/spark3xx submodules. After being enabled once, a module such as shims/spark312 
+may remain active in IDEA even though you explicitly disable the Maven profile `release312` in the Maven tool window.
+With an extra IDEA shim module loaded the IDEA internal build "Build->Build Project" is likely to fail 
+(whereas it has no adverse effect on Maven build). As a workaround, locate the pom.xml under the extraneous IDEA module,
+right-click on it and select "Maven->Ignore Projects".
+
+If you see Scala symbols unresolved (highlighted red) in IDEA please try the following steps to resolve it:
+- Make sure there are no relevant poms in "File->Settings->Build Tools->Maven->Ignored Files" 
+- Restart IDEA and click "Reload All Maven Projects" again 
+
+#### Other IDEs
+We welcome pull requests with tips how to setup your favorite IDE!
+
 ### Your first issue
 
 1. Read the [Developer Overview](docs/dev/README.md) to understand how the RAPIDS Accelerator
@@ -264,6 +304,10 @@ Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
 
 If it fails, you can click the `Details` link of this check, and go to `Upload log -> Jenkins log for pull request xxx (click here)` to
 find the uploaded log.
+
+Options:
+1. Skip tests run by adding `[skip ci]` to title, this should only be used for doc-only change
+2. Run build and tests in databricks runtimes by adding `[databricks]` to title, this would add around 30-40 minutes
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md

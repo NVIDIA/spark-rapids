@@ -439,6 +439,9 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   test("ANSI mode: cast string to timestamp with parse error") {
     // Copied from Spark CastSuite
 
+    // All of the dates/timestamps here fail no matter what version of Spark used
+    val newConf = sparkConf.set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
+
     def checkCastWithParseError(str: String): Unit = {
       val exception = intercept[SparkException] {
         withGpuSparkSession(spark => {
@@ -451,7 +454,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
           val result = df.collect()
           result.foreach(println)
 
-        }, sparkConf)
+        }, newConf)
       }
       assert(exception.getCause.isInstanceOf[DateTimeException])
     }

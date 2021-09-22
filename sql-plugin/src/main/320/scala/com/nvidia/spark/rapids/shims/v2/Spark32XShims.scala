@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.sql.Spark32XShimsUtils
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
@@ -36,6 +35,7 @@ import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
+import org.apache.spark.sql.rapids.shims.v2.Spark32XShimsUtils
 
 /**
 * Shim base class that can be compiled with every supported 3.2.x
@@ -137,15 +137,5 @@ trait Spark32XShims extends SparkShims {
     Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
   }
 
-}
-
-// TODO dedupe utils inside shims
-object GpuJoinUtils {
-  def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
-    buildSide match {
-      case BuildRight => GpuBuildRight
-      case BuildLeft => GpuBuildLeft
-      case _ => throw new Exception("unknown buildSide Type")
-    }
-  }
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 }

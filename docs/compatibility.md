@@ -539,8 +539,7 @@ Casting from string to timestamp currently has the following limitations.
 | `"tomorrow"`                                                        | Yes               |
 | `"yesterday"`                                                       | Yes               |
 
-- <a name="Footnote1"></a>[1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
- milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
+- <a name="Footnote1"></a>[1] The timestamp portion must have 6 digits for milliseconds.
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
 
 Spark is very lenient when casting from string to timestamp because all date and time components

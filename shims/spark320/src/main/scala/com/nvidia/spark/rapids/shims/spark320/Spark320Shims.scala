@@ -21,9 +21,11 @@ import java.nio.ByteBuffer
 
 import scala.collection.mutable.ListBuffer
 
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.Spark32XShims
+import com.nvidia.spark.rapids.shims.v2._
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -36,9 +38,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
+import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.catalyst.plans.logical.CommandResult
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
@@ -60,11 +62,11 @@ import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims.v2._
-import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
+import org.apache.spark.sql.rapids.shims.v2.{GpuInMemoryTableScanExec, GpuTimeAdd, _}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
+import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark320Shims extends Spark32XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
@@ -171,7 +173,13 @@ class Spark320Shims extends Spark32XShims {
         override val timestampChecks: TypeSig = TIMESTAMP + DATE + STRING
         override val sparkTimestampSig: TypeSig = TIMESTAMP + DATE + STRING
 
-        // stringChecks are the same
+        // stringChecks are the same, but adding in PS note
+        private val fourDigitYearMsg: String = "Only 4 digit year parsing is available. To " +
+            s"enable parsing anyways set ${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false."
+        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY +
+            TypeSig.psNote(TypeEnum.DATE, fourDigitYearMsg) +
+            TypeSig.psNote(TypeEnum.TIMESTAMP, fourDigitYearMsg)
+
         // binaryChecks are the same
         override val decimalChecks: TypeSig = DECIMAL_64 + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
@@ -209,6 +217,38 @@ class Spark320Shims extends Spark32XShims {
           }
           super.tagExprForGpu()
         }
+      }),
+    GpuOverrides.expr[Average](
+      "Average aggregate operator",
+      ExprChecks.fullAgg(
+        TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        // NullType is not technically allowed by Spark, but in practice in 3.2.0
+        // it can show up
+        Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp + TypeSig.NULL,
+          TypeSig.numericAndInterval + TypeSig.NULL))),
+      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          val dataType = a.child.dataType
+          GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
+      }),
+    GpuOverrides.expr[Abs](
+      "Absolute value",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST unary minus does not support ANSI mode.")
+          }
+        }
+
+        // ANSI support for ABS was added in 3.2.0 SPARK-33275
+        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
       }),
     GpuOverrides.expr[RegExpReplace](
       "RegExpReplace support for string literal input patterns",
@@ -354,7 +394,70 @@ class Spark320Shims extends Spark32XShims {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
-      })
+      }),
+    GpuOverrides.expr[Literal](
+      "Holds a static value from the query",
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes,
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.CALENDAR
+          + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.DAYTIME)
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+            TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
+        TypeSig.all),
+      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
+    GpuOverrides.expr[TimeAdd](
+      "Adds interval to timestamp",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("interval", TypeSig.lit(TypeEnum.DAYTIME) + TypeSig.lit(TypeEnum.CALENDAR),
+          TypeSig.DAYTIME + TypeSig.CALENDAR)),
+      (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
+            lit.dataType match {
+              case CalendarIntervalType =>
+                val intvl = lit.value.asInstanceOf[CalendarInterval]
+                if (intvl.months != 0) {
+                  willNotWorkOnGpu("interval months isn't supported")
+                }
+              case _: DayTimeIntervalType => // Supported
+            }
+          }
+          checkTimeZoneId(timeAdd.timeZoneId)
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuTimeAdd(lhs, rhs)
+      }),
+    GpuOverrides.expr[SpecifiedWindowFrame](
+      "Specification of the width of the group (or \"frame\") of input rows " +
+        "around which a window function is evaluated",
+      ExprChecks.projectOnly(
+        TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+        TypeSig.numericAndInterval,
+        Seq(
+          ParamCheck("lower",
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.numericAndInterval),
+          ParamCheck("upper",
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.numericAndInterval))),
+      (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r)),
+    GpuOverrides.expr[WindowExpression](
+      "Calculates a return value for every input row of a table based on a group (or " +
+        "\"window\") of rows",
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("windowFunction",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all),
+          ParamCheck("windowSpec",
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
+              TypeSig.DAYTIME, TypeSig.numericAndInterval))),
+      (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -891,5 +994,12 @@ class Spark320Shims extends Spark32XShims {
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = plan match {
     case _: CommandResultExec => true
     case _ => false
+  }
+
+  override def registerKryoClasses(kryo: Kryo): Unit = {
+    kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
+      new KryoJavaSerializer())
+    kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
+      new KryoJavaSerializer())
   }
 }
