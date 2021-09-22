@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.lang.reflect.Method
+
 import ai.rapids.cudf.Table
 
 import org.apache.spark.rdd.RDD
@@ -39,15 +41,14 @@ import org.apache.spark.sql.DataFrame
  */
 object ColumnarRdd {
 
-  lazy val internalConverter: Class[_] = ShimLoader.newColumnarRDDClass()
+  lazy val convertMethod: Method = ShimLoader.newColumnarRDDClass()
+    .getDeclaredMethod("convert", classOf[DataFrame])
 
   def apply(df: DataFrame): RDD[Table] = {
     convert(df)
   }
 
   def convert(df: DataFrame): RDD[Table] = {
-    internalConverter
-      .getDeclaredMethod("convert", classOf[DataFrame])
-      .invoke(null, df).asInstanceOf[RDD[Table]]
+    convertMethod.invoke(null, df).asInstanceOf[RDD[Table]]
   }
 }
