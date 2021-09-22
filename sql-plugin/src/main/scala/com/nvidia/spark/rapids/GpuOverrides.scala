@@ -3120,30 +3120,23 @@ object GpuOverrides extends Logging {
       (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
 
         override def tagAggForGpu(): Unit = {
-          if (!conf.isApproxPercentileEnabled) {
-            willNotWorkOnGpu(s"approx_percentile on GPU is disabled. " +
-              s"Set ${RapidsConf.ENABLE_APPROX_PERCENTILE}=true to enable it")
-          } else {
-
-            // check if the percentile expression can be supported on GPU
-            childExprs(1).wrapped match {
-              case lit: Literal => lit.value match {
-                case null =>
-                  willNotWorkOnGpu(
-                    "approx_percentile on GPU only supports non-null literal percentiles")
-                case a: ArrayData if a.numElements == 0 =>
-                  willNotWorkOnGpu(
-                    "approx_percentile on GPU does not support empty percentiles arrays")
-                case a: ArrayData if (0 until a.numElements).exists(a.isNullAt) =>
-                  willNotWorkOnGpu(
-                    "approx_percentile on GPU does not support percentiles arrays containing nulls")
-                case _ =>
-                  // this is fine
-              }
+          // check if the percentile expression can be supported on GPU
+          childExprs(1).wrapped match {
+            case lit: Literal => lit.value match {
+              case null =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU only supports non-null literal percentiles")
+              case a: ArrayData if a.numElements == 0 =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU does not support empty percentiles arrays")
+              case a: ArrayData if (0 until a.numElements).exists(a.isNullAt) =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU does not support percentiles arrays containing nulls")
               case _ =>
-                willNotWorkOnGpu("approx_percentile on GPU only supports literal percentiles")
+                // this is fine
             }
-
+            case _ =>
+              willNotWorkOnGpu("approx_percentile on GPU only supports literal percentiles")
           }
         }
 
@@ -3159,7 +3152,8 @@ object GpuOverrides extends Logging {
           val aggBuffer = c.aggBufferAttributes.head
           aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
-      }),
+      }).disabledByDefault("The GPU implementation of approx_percentile is not bit-for-bit " +
+          "compatible with Apache Spark. See the compatibility guide for more information."),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(

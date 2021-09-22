@@ -87,7 +87,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
   def sqlFallbackTest(sql: String) {
 
     val conf = new SparkConf()
-      .set(RapidsConf.ENABLE_APPROX_PERCENTILE.key, "true")
+      .set("spark.rapids.sql.expression.ApproximatePercentile", "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ShuffleExchangeExec,ObjectHashAggregateExec,HashPartitioning," +
         "AggregateExpression,ApproximatePercentile,Literal,Alias")
@@ -120,7 +120,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
     }
 
     val conf = new SparkConf()
-      .set(RapidsConf.ENABLE_APPROX_PERCENTILE.key, "true")
+      .set("spark.rapids.sql.expression.ApproximatePercentile", "true")
 
     val approxPercentilesGpu = withGpuSparkSession(spark =>
       calcPercentiles(spark, dataType, rowsPerGroup, percentileArg, delta, approx = true)
