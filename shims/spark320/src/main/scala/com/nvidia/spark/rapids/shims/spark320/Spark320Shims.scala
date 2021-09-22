@@ -25,7 +25,7 @@ import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, Spark32XShims}
+import com.nvidia.spark.rapids.shims.v2._
 import com.nvidia.spark.rapids.spark320.RapidsShuffleManager
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
+import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -62,6 +62,7 @@ import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.python.shims.v2.GpuFlatMapGroupsInPandasExecMeta
 import org.apache.spark.sql.rapids.shims.v2.{GpuInMemoryTableScanExec, GpuTimeAdd, _}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
@@ -173,7 +174,13 @@ class Spark320Shims extends Spark32XShims {
         override val timestampChecks: TypeSig = TIMESTAMP + DATE + STRING
         override val sparkTimestampSig: TypeSig = TIMESTAMP + DATE + STRING
 
-        // stringChecks are the same
+        // stringChecks are the same, but adding in PS note
+        private val fourDigitYearMsg: String = "Only 4 digit year parsing is available. To " +
+            s"enable parsing anyways set ${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false."
+        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY +
+            TypeSig.psNote(TypeEnum.DATE, fourDigitYearMsg) +
+            TypeSig.psNote(TypeEnum.TIMESTAMP, fourDigitYearMsg)
+
         // binaryChecks are the same
         override val decimalChecks: TypeSig = DECIMAL_64 + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
@@ -231,6 +238,22 @@ class Spark320Shims extends Spark32XShims {
 
         // Average is not supported in ANSI mode right now, no matter the type
         override val ansiTypeToCheck: Option[DataType] = None
+      }),
+    GpuOverrides.expr[Abs](
+      "Absolute value",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST unary minus does not support ANSI mode.")
+          }
+        }
+
+        // ANSI support for ABS was added in 3.2.0 SPARK-33275
+        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
       }),
     GpuOverrides.expr[RegExpReplace](
       "RegExpReplace support for string literal input patterns",

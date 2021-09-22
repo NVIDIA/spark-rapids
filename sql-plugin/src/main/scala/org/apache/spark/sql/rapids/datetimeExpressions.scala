@@ -38,7 +38,7 @@ trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTy
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 }
 
 trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpression
@@ -47,7 +47,7 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
@@ -380,10 +380,17 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
    parent: Option[RapidsMeta[_, _, _]],
    rule: DataFromReplacementRule)
   extends BinaryExprMeta[A](expr, conf, parent, rule) {
+
+  def shouldFallbackOnAnsiTimestamp: Boolean
+
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
     checkTimeZoneId(expr.timeZoneId)
+
+    if (shouldFallbackOnAnsiTimestamp) {
+      willNotWorkOnGpu("ANSI mode is not supported")
+    }
 
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
