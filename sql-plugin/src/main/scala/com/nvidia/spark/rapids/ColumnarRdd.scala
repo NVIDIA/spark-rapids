@@ -42,9 +42,7 @@ object ColumnarRdd {
   lazy val internalConverter: Class[_] = ShimLoader.newColumnarRDDClass()
 
   def apply(df: DataFrame): RDD[Table] = {
-    internalConverter
-      .getDeclaredMethod("apply", classOf[DataFrame])
-      .invoke(null, df).asInstanceOf[RDD[Table]]
+    convert(df)
   }
 
   def convert(df: DataFrame): RDD[Table] = {
