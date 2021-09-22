@@ -64,8 +64,9 @@ case class GpuApproximatePercentile (
   // Attributes of fields in the aggregation buffer.
   override def aggBufferAttributes: Seq[AttributeReference] = outputBuf :: Nil
 
-  // Mark as lazy to avoid being initialized when creating a GpuApproximatePercentile.
-  override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException
+  // Spark does not use initialValues for approx percentile
+  override lazy val initialValues: Seq[GpuExpression] = throw new UnsupportedOperationException(
+    "approx_percentile does not support reduction")
 
   // the update expression will create a t-digest (List[Struct[Double, Double])
   override lazy val updateExpressions: Seq[Expression] =
