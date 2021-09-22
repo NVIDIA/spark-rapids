@@ -346,7 +346,7 @@ object ShimLoader extends Logging {
   }
 
   def newColumnarRDDClass(): Class[_] = {
-    newClassOf("com.nvidia.spark.rapids.InternalColumnarRddConverter")
+    newClassOf("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
 
 }

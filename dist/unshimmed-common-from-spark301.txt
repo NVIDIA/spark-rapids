@@ -5,6 +5,7 @@ META-INF/maven/**
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
+com/nvidia/spark/rapids/ColumnarRdd*
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/GpuKryoRegistrator*
 com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
