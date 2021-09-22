@@ -96,11 +96,7 @@ case class GpuApproximatePercentile (
   override def nullable: Boolean = false
 
   // Mark as lazy so that percentageExpression is not evaluated during tree transformation.
-  private lazy val (returnPercentileArray, percentiles) =
-    percentageExpression match {
-      case GpuLiteral(v, _) => makeArray(v)
-      case _ => makeArray(percentageExpression.eval())
-    }
+  private lazy val (returnPercentileArray, percentiles) = makeArray(percentageExpression.value)
 
   private def makeArray(v: Any): (Boolean, Either[Double, Array[Double]])  = v match {
     // Rule ImplicitTypeCasts can cast other numeric types to double
