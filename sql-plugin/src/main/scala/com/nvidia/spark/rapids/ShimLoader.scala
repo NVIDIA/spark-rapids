@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URL
 
 import scala.collection.JavaConverters._
+
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
