@@ -131,14 +131,10 @@ case class ApproxPercentileFromTDigestExpr(
           // scalar case - convert Array[Double] to finalDataType
           withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
             withResource(percentiles.getChildColumnView(0)) { childView =>
-              if (finalDataType == DataTypes.DoubleType) {
-                GpuColumnVector.from(childView.copyToColumnVector(), dataType)
-              } else {
-                withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
+              withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
                   ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
                   stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
-                  GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
-                }
+                GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
               }
             }
           }
@@ -151,8 +147,8 @@ case class ApproxPercentileFromTDigestExpr(
             } else {
               withResource(percentiles.getChildColumnView(0)) { childView =>
                 withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
-                  ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
-                  stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
+                    ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
+                    stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
                   withResource(percentiles.replaceListChild(childCv)) { x =>
                     GpuColumnVector.from(x.copyToColumnVector(), dataType)
                   }
@@ -165,6 +161,9 @@ case class ApproxPercentileFromTDigestExpr(
     }
   }
   override def nullable: Boolean = false
-  override def dataType: DataType = new ArrayType(finalDataType, false)
+  override def dataType: DataType = percentiles match {
+    case Left(_) => finalDataType
+    case Right(_) => ArrayType(finalDataType, false)
+  }
   override def children: Seq[Expression] = Seq(child)
 }

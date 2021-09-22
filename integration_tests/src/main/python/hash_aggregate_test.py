@@ -1094,32 +1094,53 @@ def test_agg_nested_map():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_repeated_keys():
+def test_hash_groupby_approx_percentile_long_repeated_keys():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile():
+def test_hash_groupby_approx_percentile_long():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_decimal():
+def test_hash_groupby_approx_percentile_long_scalar():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', DecimalGen(nullable=False))], length=100),
+                                     ('v', LongRangeGen())], length=100),
+        0.5)
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_double():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DoubleGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_decimal_nullable():
+def test_hash_groupby_approx_percentile_double_scalar():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', DecimalGen(nullable=True))], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+                                     ('v', DoubleGen())], length=100),
+        0.05)
+
+# @ignore_order(local=True)
+# def test_hash_groupby_approx_percentile_decimal():
+#     compare_percentile_approx(
+#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+#                                      ('v', DecimalGen(nullable=False))], length=100),
+#         [0.05, 0.25, 0.5, 0.75, 0.95])
+#
+# @ignore_order(local=True)
+# def test_hash_groupby_approx_percentile_decimal_nullable():
+#     compare_percentile_approx(
+#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+#                                      ('v', DecimalGen(nullable=True))], length=100),
+#         [0.05, 0.25, 0.5, 0.75, 0.95])
 
 def compare_percentile_approx(df_fun, percentiles):
     p_exact_sql = create_percentile_sql("percentile", percentiles)
@@ -1149,19 +1170,38 @@ def compare_percentile_approx(df_fun, percentiles):
         cpu = result[1]['the_percentile']
         gpu = result[2]['the_percentile']
 
-        for x in zip(exact, cpu, gpu):
-            exact = x[0]
-            cpu = x[1]
-            gpu = x[2]
-            gpu_delta = abs(float(gpu) - float(exact))
-            cpu_delta = abs(float(cpu) - float(exact))
-            if gpu_delta > cpu_delta:
-                # GPU is less accurate so make sure we are within some tolerance
-                if gpu_delta == 0:
-                    assert abs(gpu_delta / cpu_delta) - 1 < 0.001
-                else:
-                    assert abs(cpu_delta / gpu_delta) - 1 < 0.001
+        print(exact)
+        print(cpu)
+        print(gpu)
+
+        if exact is not None:
+            if isinstance(exact, list):
+                for x in zip(exact, cpu, gpu):
+                    exact = x[0]
+                    cpu = x[1]
+                    gpu = x[2]
+                    gpu_delta = abs(float(gpu) - float(exact))
+                    cpu_delta = abs(float(cpu) - float(exact))
+                    if gpu_delta > cpu_delta:
+                        # GPU is less accurate so make sure we are within some tolerance
+                        if gpu_delta == 0:
+                            assert abs(gpu_delta / cpu_delta) - 1 < 0.001
+                        else:
+                            assert abs(cpu_delta / gpu_delta) - 1 < 0.001
+            else:
+                gpu_delta = abs(float(gpu) - float(exact))
+                cpu_delta = abs(float(cpu) - float(exact))
+                if gpu_delta > cpu_delta:
+                    # GPU is less accurate so make sure we are within some tolerance
+                    if gpu_delta == 0:
+                        assert abs(gpu_delta / cpu_delta) - 1 < 0.001
+                    else:
+                        assert abs(cpu_delta / gpu_delta) - 1 < 0.001
 
 def create_percentile_sql(func_name, percentiles):
-    return """select k, {}(v, array({})) as the_percentile from t group by k""".format(
-        func_name, ",".join(str(i) for i in percentiles))
+    if isinstance(percentiles, list):
+        return """select k, {}(v, array({})) as the_percentile from t group by k""".format(
+            func_name, ",".join(str(i) for i in percentiles))
+    else:
+        return """select k, {}(v, {}) as the_percentile from t group by k""".format(
+            func_name, percentiles)
