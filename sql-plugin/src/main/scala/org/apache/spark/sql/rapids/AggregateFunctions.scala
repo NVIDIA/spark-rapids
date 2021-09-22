@@ -424,8 +424,6 @@ class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
  * generated in the output of libcudf's M2 aggregate.
  */
 class CudfMean(ref: Expression) extends CudfAggregate(ref) {
-  @transient val rapidsAvgType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
-
   override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
     throw new UnsupportedOperationException("CudfMean is not supported in reduction")
   override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
