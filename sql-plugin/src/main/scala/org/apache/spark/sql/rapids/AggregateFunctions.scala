@@ -1130,8 +1130,8 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
   protected def divideByZeroEvalResult: Expression = {
-    if (nullOnDivideByZero) GpuLiteral.create(null, DoubleType)
-    else GpuLiteral.create(Double.NaN, DoubleType)
+    if (nullOnDivideByZero) GpuLiteral(null, DoubleType)
+    else GpuLiteral(Double.NaN, DoubleType)
   }
 
   override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
@@ -1211,6 +1211,8 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
     GpuCast(GpuGetStructField(m2Struct, 2), DoubleType))
 }
 
+// TODO: Shim for Spark >=3.1.0:
+//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean = true)
   extends GpuM2(child, nullOnDivideByZero) {
 
@@ -1226,6 +1228,8 @@ case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean = true)
   override def prettyName: String = "stddev_pop"
 }
 
+// TODO: Shim for Spark >=3.1.0:
+//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean = true)
   extends GpuM2(child, nullOnDivideByZero) {
 
@@ -1244,6 +1248,8 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean = true)
   override def prettyName: String = "stddev_samp"
 }
 
+// TODO: Shim for Spark >=3.1.0:
+//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean = true)
   extends GpuM2(child, nullOnDivideByZero) {
 
@@ -1259,6 +1265,8 @@ case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean = true)
   override def prettyName: String = "var_pop"
 }
 
+// TODO: Shim for Spark >=3.1.0:
+//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean = true)
   extends GpuM2(child, nullOnDivideByZero) {
 
