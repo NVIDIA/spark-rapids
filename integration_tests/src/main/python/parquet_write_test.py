@@ -372,7 +372,6 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
     data_path = spark_tmp_path + "/CTAS"
     conf = {
         "spark.sql.hive.convertCTAS": "true",
-        "spark.sql.legacy.createHiveTableByDefault": "false",
         "spark.sql.legacy.allowNonEmptyLocationInCTAS": str(allow_non_empty)
     }
     def test_it(spark):
