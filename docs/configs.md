@@ -322,6 +322,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.StddevPop"></a>spark.rapids.sql.expression.StddevPop|`stddev_pop`|Aggregation computing population standard deviation|true|None|
 <a name="sql.expression.StddevSamp"></a>spark.rapids.sql.expression.StddevSamp|`stddev_samp`, `std`, `stddev`|Aggregation computing sample standard deviation|true|None|
 <a name="sql.expression.Sum"></a>spark.rapids.sql.expression.Sum|`sum`|Sum aggregate operator|true|None|
+<a name="sql.expression.VariancePop"></a>spark.rapids.sql.expression.VariancePop|`var_pop`|Aggregation computing population variance|true|None|
+<a name="sql.expression.VarianceSamp"></a>spark.rapids.sql.expression.VarianceSamp|`var_samp`, `variance`|Aggregation computing sample variance|true|None|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero| |Normalize NaN and zero|true|None|
 <a name="sql.expression.ScalarSubquery"></a>spark.rapids.sql.expression.ScalarSubquery| |Subquery that will return only one row and one column|true|None|
 <a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
