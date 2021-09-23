@@ -1091,16 +1091,34 @@ abstract class UnaryAstExprMeta[INPUT <: UnaryExpression](
  * Base class for metadata around `AggregateFunction`.
  */
 abstract class AggExprMeta[INPUT <: AggregateFunction](
-    expr: INPUT,
+    val expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends ExprMeta[INPUT](expr, conf, parent, rule) {
 
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs.head.convertToGpu())
+  override final def tagExprForGpu(): Unit = {
+    tagAggForGpu()
+    if (needsAnsiCheck) {
+      GpuOverrides.checkAndTagAnsiAgg(ansiTypeToCheck, this)
+    }
+  }
 
-  def convertToGpu(child: Expression): GpuExpression
+  // not all aggs overwrite this
+  def tagAggForGpu(): Unit = {}
+
+  override final def convertToGpu(): GpuExpression =
+    convertToGpu(childExprs.map(_.convertToGpu()))
+
+  def convertToGpu(childExprs: Seq[Expression]): GpuExpression
+
+  // Set to false if the aggregate doesn't overflow and therefore
+  // shouldn't error
+  val needsAnsiCheck: Boolean = true
+
+  // The type to use to determine whether the aggregate could overflow.
+  // Set to None, if we should fallback for all types
+  val ansiTypeToCheck: Option[DataType] = Some(expr.dataType)
 }
 
 /**
@@ -1111,10 +1129,7 @@ abstract class ImperativeAggExprMeta[INPUT <: ImperativeAggregate](
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends ExprMeta[INPUT](expr, conf, parent, rule) {
-
-  override final def convertToGpu(): GpuExpression =
-    convertToGpu(childExprs.map(_.convertToGpu()))
+  extends AggExprMeta[INPUT](expr, conf, parent, rule) {
 
   def convertToGpu(childExprs: Seq[Expression]): GpuExpression
 }

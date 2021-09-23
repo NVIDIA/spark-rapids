@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark311db
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
 import com.nvidia.spark.rapids.spark311db.RapidsShuffleManager
 import org.apache.parquet.schema.MessageType
 

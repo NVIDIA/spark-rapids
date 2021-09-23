@@ -190,56 +190,26 @@ case class GpuSubtract(
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
 
-  private[this] def ltZero(rows: Int, op: BinaryOperable): ColumnVector = {
-    op match {
-      case cv: ColumnVector =>
-        withResource(Scalar.fromByte(0.toByte)) { zero =>
-          cv.lessThan(zero)
-        }
-      case s: Scalar =>
-        if (s.isValid) {
-          val isLess = dataType match {
-            case ByteType => s.getByte < 0
-            case ShortType => s.getShort < 0
-            case IntegerType => s.getInt < 0
-            case LongType => s.getLong < 0
-            case other => throw new IllegalArgumentException(s"Unexpected type $other")
-          }
-          withResource(Scalar.fromBool(isLess)) { n =>
-            ColumnVector.fromScalar(n, rows)
-          }
-        } else {
-          withResource(Scalar.fromNull(DType.BOOL8)) { n =>
-            ColumnVector.fromScalar(n, rows)
-          }
-        }
-    }
-  }
-
   override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val ret = super.doColumnar(lhs, rhs)
     // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
-      // Check overflow. It is true when both arguments have opposite sign and
-      // result has same sign as subtrahend (rhs).
-      // TODO the math here could probably be cleaned up and made more efficient
+      // Check overflow. It is true if the arguments have different signs and
+      // the sign of the result is different from the sign of x.
+      // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
       closeOnExcept(ret) { r =>
-        val numRows = r.getRowCount.toInt
-        val hasOverflow = withResource(ltZero(numRows, rhs)) { rhsLz =>
-          val argsOpSign = withResource(ltZero(numRows, lhs)) { lhsLz =>
-            lhsLz.notEqualTo(rhsLz)
-          }
-          withResource(argsOpSign) { argsOpSign =>
-            val resultAndSubtrahendSameSign = withResource(ltZero(numRows, r)) { resultLz =>
-              rhsLz.equalTo(resultLz)
-            }
-            withResource(resultAndSubtrahendSameSign) { resultAndSubtrahendSameSign =>
-              resultAndSubtrahendSameSign.and(argsOpSign)
-            }
+        val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
+          withResource(lhs.bitXor(r)) { xrXor =>
+            xyXor.bitAnd(xrXor)
           }
         }
-        withResource(hasOverflow) { hasOverflow =>
-          withResource(hasOverflow.any()) { any =>
+        val signDiffCV = withResource(signCV) { sign =>
+          withResource(Scalar.fromInt(0)) { zero =>
+            sign.lessThan(zero)
+          }
+        }
+        withResource(signDiffCV) { signDiff =>
+          withResource(signDiff.any()) { any =>
             if (any.isValid && any.getBoolean) {
               throw new ArithmeticException("One or more rows overflow for Subtract operation.")
             }
