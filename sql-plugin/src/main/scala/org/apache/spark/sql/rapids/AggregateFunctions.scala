@@ -1125,6 +1125,7 @@ case class GpuToCpuCollectBufferTransition(
 abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
 
+  override def children: Seq[Expression] = Seq(child)
   override def dataType: DataType = DoubleType
   override def nullable: Boolean = true
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
@@ -1224,7 +1225,6 @@ case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean = true)
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevPop)
   }
 
-  override def children: Seq[Expression] = Seq(child)
   override def prettyName: String = "stddev_pop"
 }
 
@@ -1244,7 +1244,6 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean = true)
       GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevSamp))
   }
 
-  override def children: Seq[Expression] = Seq(child)
   override def prettyName: String = "stddev_samp"
 }
 
@@ -1261,7 +1260,6 @@ case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean = true)
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), varPop)
   }
 
-  override def children: Seq[Expression] = Seq(child)
   override def prettyName: String = "var_pop"
 }
 
@@ -1280,6 +1278,5 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean = true
       GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), varSamp))
   }
 
-  override def children: Seq[Expression] = Seq(child)
   override def prettyName: String = "var_samp"
 }
