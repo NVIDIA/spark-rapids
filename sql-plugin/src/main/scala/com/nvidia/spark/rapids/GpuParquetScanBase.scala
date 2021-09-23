@@ -613,10 +613,12 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
     val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
     // check if there are cols with precision that can be stored in an int
-    val typeCastingNeeded = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
-    if (readDataSchema.length > inputTable.getNumberOfColumns || typeCastingNeeded) {
+    val hasDecimalAsInt = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
+    val hasUnsignedType = existsUnsignedType(clippedSchema.asGroupType())
+    if (readDataSchema.length > inputTable.getNumberOfColumns
+        || hasDecimalAsInt || hasUnsignedType) {
       // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
-      // To type casting or anyting like that
+      // To type casting or anything like that
       val clippedGroups = clippedSchema.asGroupType()
       val newColumns = new Array[ColumnVector](readDataSchema.length)
       try {
@@ -626,12 +628,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             val readField = readDataSchema(writeAt)
             if (areNamesEquiv(clippedGroups, readAt, readField.name, isSchemaCaseSensitive)) {
               val origCol = table.getColumn(readAt)
-              val col: ColumnVector = if (typeCastingNeeded) {
+              val col: ColumnVector = if (hasDecimalAsInt || hasUnsignedType) {
                 ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
-                  (dt, cv) => cv.getType.isDecimalType &&
-                      !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()),
-                  (dt, cv) =>
-                    cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType])))
+                  (dt, cv) => needDecimalCast(cv, dt) || needUnsignedToSignedCast(cv, dt),
+                  (dt, cv) => decimalCastOrUnsignedCast(cv, dt))
               } else {
                 origCol.incRefCount()
               }
@@ -653,6 +653,54 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       }
     } else {
       inputTable
+    }
+  }
+
+  /**
+   * Need to convert cudf unsigned integer to wider signed integer that Spark expects
+   * After Spark 3.2.0, Spark reads uint8 as int16, uint16 as int32, uint32 as int64
+   * TODO uint64 -> Decimal(20,0) depends CUDF, see issue #3475
+   *
+   * @param group the schema
+   * @return if has unsigned integer
+   */
+  def existsUnsignedType(group: GroupType): Boolean = {
+    group.getFields.asScala.exists(
+      field => {
+        if (field.isPrimitive) {
+          val t = field.getOriginalType
+          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) || (t == OriginalType.UINT_32)
+        } else {
+          existsUnsignedType(field.asGroupType)
+        }
+      }
+    )
+  }
+
+  def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
+    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType())
+  }
+
+  def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {
+    (cv.getType.equals(DType.UINT8) && dt.isInstanceOf[ShortType]) ||
+      (cv.getType.equals(DType.UINT16) && dt.isInstanceOf[IntegerType]) ||
+      (cv.getType.equals(DType.UINT32) && dt.isInstanceOf[LongType])
+  }
+
+  // Will do cast if needDecimalCast or needUnsignedToSignedCast test is true
+  // in ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB.
+  // Note: The behavior of unsigned to signed is decided by the Spark,
+  // this means the parameter dt is from Spark meta module.
+  // This implements the requested type behavior accordingly for GPU.
+  // This is suitable for all Spark versions, no need to add to shim layer.
+  private def decimalCastOrUnsignedCast(cv: ColumnView, dt: DataType): ColumnView = {
+    if (needDecimalCast(cv, dt)) {
+      cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
+    } else if (needUnsignedToSignedCast(cv, dt)) {
+      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
+    } else {
+      throw new IllegalStateException("Logical error: should only be " +
+        "decimal cast or unsigned to signed cast")
     }
   }
 
@@ -1362,3 +1410,4 @@ object ParquetPartitionReader {
     })
   }
 }
+
