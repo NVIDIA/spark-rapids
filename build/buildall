@@ -40,6 +40,7 @@ BUILD_PARALLELISM=1
 
 time (
 echo -n "$SPARK_SHIM_VERSIONS" | xargs -I% -P $BUILD_PARALLELISM -n 1 \
+  bash -c "
   mvn -U clean install \
     -Dbuildver=% \
     -Drat.skip=true \
@@ -47,7 +48,8 @@ echo -n "$SPARK_SHIM_VERSIONS" | xargs -I% -P $BUILD_PARALLELISM -n 1 \
     -Dmaven.javadoc.skip=true \
     -Dskip \
     -Dmaven.scalastyle.skip=true \
-    -pl aggregator -am
+    -pl aggregator -am || exit 255
+    "
 )
 
 # install 301 skipping only tests
