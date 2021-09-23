@@ -146,7 +146,11 @@ def test_cache_expand_exec(data_gen, enable_vectorized_conf):
     assert_gpu_and_cpu_are_equal_collect(op_df, conf = conf)
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
-                                      decimal_struct_gen] + all_gen, ids=idfn)
+                                      ArrayGen(
+                                          StructGen([['child0', StringGen()],
+                                                     ['child1',
+                                                      StructGen([['child0', IntegerGen()]])]])),
+                                      decimal_struct_gen] + single_level_array_gens_no_null + all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @allow_non_gpu('CollectLimitExec')
 def test_cache_partial_load(data_gen, enable_vectorized_conf):
@@ -182,13 +186,18 @@ def test_cache_diff_req_order(spark_tmp_path):
 # This test doesn't allow negative scale for Decimals as ` df.write.mode('overwrite').parquet(data_path)`
 # writes parquet which doesn't allow negative decimals
 @pytest.mark.parametrize('data_gen', [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
+                                      ArrayGen(
+                                          StructGen([['child0', StringGen()],
+                                                     ['child1',
+                                                      StructGen([['child0', IntegerGen()]])]])),
                                      pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
                                      pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
                                      BooleanGen(), DateGen(), TimestampGen(), decimal_gen_default, decimal_gen_scale_precision,
-                                     decimal_gen_same_scale_precision, decimal_gen_64bit], ids=idfn)
+                                     decimal_gen_same_scale_precision, decimal_gen_64bit] + single_level_array_gens_no_null, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
+@allow_non_gpu("SortExec", "ShuffleExchangeExec", "RangePartitioning")
 def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
     data_path_gpu = spark_tmp_path + '/PARQUET_DATA'
     def read_parquet_cached(data_path):
@@ -208,7 +217,11 @@ def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
     assert_gpu_and_cpu_are_equal_collect(read_parquet_cached(data_path_gpu), conf)
 
 @pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', StructGen([['child1', byte_gen]])]]),
-                                      decimal_struct_gen]+ all_gen, ids=idfn)
+                                      decimal_struct_gen,
+                                      ArrayGen(
+                                          StructGen([['child0', StringGen()],
+                                                     ['child1',
+                                                      StructGen([['child0', IntegerGen()]])]]))] + single_level_array_gens_no_null + all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
     def func(spark):
