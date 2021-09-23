@@ -67,8 +67,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       scale: Int,
       outOfRangeValue: BigDecimal)(
       session: SparkSession): DataFrame = {
-    // while creating timestamps we multiply the value by 1000 because spark divides it by 1000
-    // before casting it to integral types
     generateValidValuesDecimalDF(lowerValue, upperValue, precision, scale)(session)
         .union(makeUnaryDF(session, Seq(outOfRangeValue), DecimalType(precision, scale)))
   }
