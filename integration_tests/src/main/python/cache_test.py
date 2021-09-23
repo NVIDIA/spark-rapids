@@ -211,6 +211,9 @@ def test_cache_columnar(spark_tmp_path, data_gen, enable_vectorized, ts_write):
     # rapids-spark doesn't support LEGACY read for parquet
     conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
           'spark.sql.legacy.parquet.datetimeRebaseModeInRead' : 'CORRECTED',
+          # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+          'spark.sql.legacy.parquet.int96RebaseModeInWrite' : 'CORRECTED',
+          'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
           'spark.sql.inMemoryColumnarStorage.enableVectorizedReader' : enable_vectorized,
           'spark.sql.parquet.outputTimestampType': ts_write}
 
