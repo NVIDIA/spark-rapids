@@ -1122,12 +1122,17 @@ case class GpuToCpuCollectBufferTransition(
  * This is also a GPU-based implementation of 'CentralMomentAgg' aggregation class in Spark with
  * the fixed 'momentOrder' variable set to '2'.
  */
-abstract class GpuM2(child: Expression)
+abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
 
   override def dataType: DataType = DoubleType
   override def nullable: Boolean = true
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
+
+  protected def divideByZeroEvalResult: Expression = {
+    if (nullOnDivideByZero) GpuLiteral.create(null, DoubleType)
+    else GpuLiteral.create(Double.NaN, DoubleType)
+  }
 
   override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
   override lazy val initialValues: Seq[GpuLiteral] =
@@ -1206,7 +1211,9 @@ abstract class GpuM2(child: Expression)
     GpuCast(GpuGetStructField(m2Struct, 2), DoubleType))
 }
 
-case class GpuStddevPop(child: Expression) extends GpuM2(child) {
+case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean = true)
+  extends GpuM2(child, nullOnDivideByZero) {
+
   override lazy val evaluateExpression: Expression = {
     // stddev_pop = sqrt(m2 / n).
     val stddevPop = GpuSqrt(GpuDivide(bufferM2, bufferN, failOnErrorOverride = false))
@@ -1219,15 +1226,17 @@ case class GpuStddevPop(child: Expression) extends GpuM2(child) {
   override def prettyName: String = "stddev_pop"
 }
 
-case class GpuStddevSamp(child: Expression) extends GpuM2(child) {
+case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean = true)
+  extends GpuM2(child, nullOnDivideByZero) {
+
   override lazy val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
     val stddevSamp =
       GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
         failOnErrorOverride = false))
 
-    // Set nulls for the rows where n == 0 and n == 1.
-    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), GpuLiteral(null, DoubleType),
+    // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
+    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
       GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevSamp))
   }
 
@@ -1235,7 +1244,9 @@ case class GpuStddevSamp(child: Expression) extends GpuM2(child) {
   override def prettyName: String = "stddev_samp"
 }
 
-case class GpuVariancePop(child: Expression) extends GpuM2(child) {
+case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean = true)
+  extends GpuM2(child, nullOnDivideByZero) {
+
   override lazy val evaluateExpression: Expression = {
     // var_pop = m2 / n.
     val varPop = GpuDivide(bufferM2, bufferN, failOnErrorOverride = false)
@@ -1248,14 +1259,16 @@ case class GpuVariancePop(child: Expression) extends GpuM2(child) {
   override def prettyName: String = "var_pop"
 }
 
-case class GpuVarianceSamp(child: Expression) extends GpuM2(child) {
+case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean = true)
+  extends GpuM2(child, nullOnDivideByZero) {
+
   override lazy val evaluateExpression: Expression = {
     // var_samp = m2 / (n - 1.0).
     val varSamp = GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
       failOnErrorOverride = false)
 
-    // Set nulls for the rows where n == 0 and n == 1.
-    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), GpuLiteral(null, DoubleType),
+    // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
+    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
       GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), varSamp))
   }
 

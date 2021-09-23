@@ -3108,7 +3108,8 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[StddevPop](c, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuStddevPop(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuStddevPop(childExprs.head)
       }),
     expr[StddevSamp](
       "Aggregation computing sample standard deviation",
@@ -3116,7 +3117,8 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[StddevSamp](c, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuStddevSamp(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuStddevSamp(childExprs.head)
       }),
     expr[VariancePop](
       "Aggregation computing population variance",
@@ -3124,7 +3126,8 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[VariancePop](c, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuVariancePop(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuVariancePop(childExprs.head)
       }),
     expr[VarianceSamp](
       "Aggregation computing sample variance",
@@ -3132,7 +3135,8 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (c, conf, p, r) => new AggExprMeta[VarianceSamp](c, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuVarianceSamp(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuVarianceSamp(childExprs.head)
       }),
     expr[GetJsonObject](
       "Extracts a json object from path",
