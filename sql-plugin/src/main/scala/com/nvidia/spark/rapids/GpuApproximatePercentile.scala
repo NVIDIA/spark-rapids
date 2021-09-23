@@ -130,9 +130,9 @@ case class ApproxPercentileFromTDigestExpr(
         case Left(p) =>
           // For the scalar case, we still pass cuDF an array of percentiles
           // (containing a single item) and then extract the child column from the resulting
-          // array and return that (after converting from Double to finalDataType
+          // array and return that (after converting from Double to finalDataType)
           withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
-            withResource(percentiles.getChildColumnView(0)) { childView =>
+            withResource(percentiles.extractListElement(0)) { childView =>
               withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
                   ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
                   stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
@@ -147,7 +147,7 @@ case class ApproxPercentileFromTDigestExpr(
             if (finalDataType == DataTypes.DoubleType) {
               GpuColumnVector.from(percentiles.incRefCount(), dataType)
             } else {
-              withResource(percentiles.getChildColumnView(0)) { childView =>
+              withResource(percentiles.extractListElement(0)) { childView =>
                 withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
                     ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
                     stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
