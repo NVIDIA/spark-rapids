@@ -165,7 +165,7 @@ abstract class SparkBaseShims extends Spark30XShims {
 
         // stringChecks are the same
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = DECIMAL_64 + STRING
+        override val decimalChecks: TypeSig = gpuNumeric + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same

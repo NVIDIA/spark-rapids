@@ -22,7 +22,7 @@ import java.time.DateTimeException
 import scala.util.Random
 
 import org.apache.spark.{SparkConf, SparkException}
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Alias, AnsiCast, CastBase, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
@@ -34,9 +34,12 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   private val sparkConf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
+    .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
     .set("spark.sql.storeAssignmentPolicy", "ANSI") // note this is the default in 3.0.0
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
+    .set(RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT.key, "true")
+    .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
@@ -52,7 +55,55 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       .union(Seq[Timestamp](new Timestamp(outOfRangeValue * 1000)).toDF("c0"))
   }
 
-  def generateValidValuesTimestampsDF(lowerValid: Long, upperValid: Long)(
+  def makeUnaryDF[A](session: SparkSession, data: Seq[A], dataType: DataType): DataFrame = {
+    session.createDataFrame(session.sparkContext.parallelize(data.map(Row(_))),
+      StructType(Seq(StructField("c0", dataType))))
+  }
+
+  def generateOutOfRangeDecimalDF(
+      lowerValue: BigDecimal,
+      upperValue: BigDecimal,
+      precision: Int,
+      scale: Int,
+      outOfRangeValue: BigDecimal)(
+      session: SparkSession): DataFrame = {
+    // while creating timestamps we multiply the value by 1000 because spark divides it by 1000
+    // before casting it to integral types
+    generateValidValuesDecimalDF(lowerValue, upperValue, precision, scale)(session)
+        .union(makeUnaryDF(session, Seq(outOfRangeValue), DecimalType(precision, scale)))
+  }
+
+  def generateValidValuesDecimalDF(lowerValid: BigDecimal,
+      upperValid: BigDecimal,
+      precision: Int,
+      scale: Int)(
+      session: SparkSession): DataFrame = {
+    //static seed
+    val r = new Random(4135277987418063300L)
+
+    val seq = for (_ <- 1 to 100) yield r.nextInt(2) match {
+      case 0 =>
+        val tmp = (upperValid * BigDecimal(r.nextDouble()))
+            .setScale(scale, BigDecimal.RoundingMode.HALF_EVEN)
+        if (tmp.precision > precision) {
+          null
+        } else {
+          tmp
+        }
+      case 1 =>
+        val tmp = (lowerValid * BigDecimal(r.nextDouble()))
+            .setScale(scale, BigDecimal.RoundingMode.HALF_EVEN)
+        if (tmp.precision > precision) {
+          null
+        } else {
+          tmp
+        }
+    }
+    makeUnaryDF(session, seq, DecimalType(precision, scale))
+  }
+
+  def generateValidValuesTimestampsDF(lowerValid: Long,
+      upperValid: Long)(
       session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     //static seed
@@ -95,6 +146,27 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     generateValidValuesTimestampsDF(Byte.MinValue, Byte.MaxValue), sparkConf,
     assumeCondition = before3_1_0) {
     frame => testCastTo(DataTypes.ByteType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast overflow decimals to bytes",
+    generateOutOfRangeDecimalDF(Byte.MinValue, Byte.MaxValue, 10, 0, Byte.MaxValue + 1)) {
+    frame => testCastTo(DataTypes.ByteType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast overflow decimals to shorts",
+    generateOutOfRangeDecimalDF(Short.MinValue, Short.MaxValue, 10, 0, Short.MaxValue + 1)) {
+    frame => testCastTo(DataTypes.ShortType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast overflow decimals to Ints",
+    generateOutOfRangeDecimalDF(Int.MinValue, Int.MaxValue, 10, 0, Int.MaxValue.toLong + 1)) {
+    frame => testCastTo(DataTypes.IntegerType)(frame)
+  }
+
+  testCastFailsForBadInputs("ansi_cast overflow decimals to longs",
+    generateOutOfRangeDecimalDF(Long.MinValue, Long.MaxValue, 18, -3,
+      BigDecimal("999999999999999999000"))) {
+    frame => testCastTo(DataTypes.LongType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow timestamps to bytes",
@@ -700,16 +772,20 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
         val (isAllowed, reason) = withCpuSparkSession(assumeCondition, conf = sparkConf)
         assume(isAllowed, reason)
       }
+      var caughtException = false
       try {
         withGpuSparkSession(spark => {
           val input = frame(spark).repartition(1)
           transformation(input).collect()
         }, sparkConf)
-        fail("should have thrown an exception due to input values that are not safe " +
-          "for an ansi_cast")
       } catch {
         case e: Exception =>
-          assert(exceptionContains(e, msg))
+          caughtException = true
+          assert(exceptionContains(e, msg), s""""$msg" not in "${e.getMessage}"""")
+      }
+      if (!caughtException) {
+        fail("should have thrown an exception due to input values that are not safe " +
+            "for an ansi_cast")
       }
     }
   }
