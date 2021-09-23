@@ -3107,7 +3107,9 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
-      (c, conf, p, r) => new AggExprMeta[StddevPop](c, conf, p, r) {
+      (a, conf, p, r) => new AggExprMeta[StddevPop](a, conf, p, r) {
+        // TODO: Shim for Spark >=3.1.0:
+        //  GpuStddevPop(childExprs.head, a.nullOnDivideByZero)
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuStddevPop(childExprs.head)
       }),
@@ -3116,7 +3118,9 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
-      (c, conf, p, r) => new AggExprMeta[StddevSamp](c, conf, p, r) {
+      (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
+        // TODO: Shim for Spark >=3.1.0:
+        //  GpuStddevSamp(childExprs.head, a.nullOnDivideByZero)
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuStddevSamp(childExprs.head)
       }),
@@ -3125,7 +3129,9 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
-      (c, conf, p, r) => new AggExprMeta[VariancePop](c, conf, p, r) {
+      (a, conf, p, r) => new AggExprMeta[VariancePop](a, conf, p, r) {
+        // TODO: Shim for Spark >=3.1.0:
+        //  VariancePop(childExprs.head, a.nullOnDivideByZero)
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuVariancePop(childExprs.head)
       }),
@@ -3134,7 +3140,9 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
-      (c, conf, p, r) => new AggExprMeta[VarianceSamp](c, conf, p, r) {
+      (a, conf, p, r) => new AggExprMeta[VarianceSamp](a, conf, p, r) {
+        // TODO: Shim for Spark >=3.1.0:
+        //  VarianceSamp(childExprs.head, a.nullOnDivideByZero)
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuVarianceSamp(childExprs.head)
       }),
