@@ -9,7 +9,7 @@ support all data types. The RAPIDS Accelerator for Apache Spark has further
 restrictions on what types are supported for processing. This tries
 to document what operations are supported and what data types each operation supports.
 Because Apache Spark is under active development too and this document was generated
-against version 3.0.2 of Spark. Most of this should still
+against version 3.0.1 of Spark. Most of this should still
 apply to other versions of Spark, but there may be slight changes.
 
 # General limitations

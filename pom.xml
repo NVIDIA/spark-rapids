@@ -1128,14 +1128,4 @@
             </snapshots>
         </repository>
     </repositories>
-<distributionManagement>
-  <repository>
-    <id>local-release</id>
-    <url>file:/home/tgraves/local_repo/release</url>
-  </repository>
-  <snapshotRepository>
-    <id>local-snapshot</id>
-    <url>file:/home/tgraves/local_repo/snapshot</url>
-  </snapshotRepository>
-</distributionManagement>
 </project>
