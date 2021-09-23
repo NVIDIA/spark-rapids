@@ -1131,8 +1131,7 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
   protected def divideByZeroEvalResult: Expression = {
-    if (nullOnDivideByZero) GpuLiteral(null, DoubleType)
-    else GpuLiteral(Double.NaN, DoubleType)
+    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
   }
 
   override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
@@ -1173,7 +1172,7 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
 
   // Before merging we have 3 columns and we need to combine them into a structs column.
   // This is because we are going to do the merging using libcudf's native MERGE_M2 aggregate,
-  // which only accept one column in the input.
+  // which only accepts one column in the input.
   //
   // We cast `n` to be an Integer, as that's what MERGE_M2 expects. Note that Spark keeps
   // `n` as Double thus we also need to cast `n` back to Double after merging.
