@@ -1122,8 +1122,10 @@ def test_groupby_std_variance(data_gen, conf):
         ' from data_table group by a',
         conf=conf)
 
+
+# xfail because GPU-casting directly from decimal to double is not yet supported.
 # This test also includes the test above thus let remove the test above when this one can be enabled.
-@pytest.mark.xfail(reason='GPU-casting directly from decimal to double is not yet supported')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3610')
 @approximate_float
 @ignore_order
 @incompat
@@ -1143,6 +1145,7 @@ def test_groupby_std_variance_with_decimals(data_gen, conf):
         'var_samp(b)' +
         ' from data_table group by a',
         conf=local_conf)
+
 
 @ignore_order
 @incompat
