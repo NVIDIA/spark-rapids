@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.shims.spark313
 
 import org.apache.spark.{SparkConf, TaskContext}
-import org.apache.spark.shuffle.{ShuffleHandle, ShuffleReader, ShuffleReadMetricsReporter}
+import org.apache.spark.shuffle._
 import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
 
 /**
