@@ -1189,33 +1189,12 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-def test_groupby_std_variance(data_gen, conf):
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, data_gen, length=100),
-        "data_table",
-        'select ' +
-        'stddev(b),' +
-        'stddev_pop(b),' +
-        'stddev_samp(b),' +
-        'variance(b),' +
-        'var_pop(b),' +
-        'var_samp(b)' +
-        ' from data_table group by a',
-        conf=conf)
-
-
-# xfail because GPU-casting directly from decimal to double is not yet supported.
-# This test also includes the test above thus let remove the test above when this one can be enabled.
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3610')
-@approximate_float
-@ignore_order
-@incompat
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-def test_groupby_std_variance_with_decimals(data_gen, conf):
-    local_conf = copy_and_update(conf, {'spark.rapids.sql.decimalType.enabled': 'true'})
+def test_groupby_std_variance(data_gen, conf):
+    local_conf = copy_and_update(conf, {
+        'spark.rapids.sql.decimalType.enabled': 'true', 
+        'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=100),
         "data_table",
