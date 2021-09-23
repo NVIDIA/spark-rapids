@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION, SparkConf, SparkEnv}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
+import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -288,10 +289,14 @@ object ShimLoader extends Logging {
     shimProviderClass = classname
   }
 
-  def newInstanceOf[T](className: String): T = {
+  def loadClass(className: String): Class[_] = {
     val loader = getShimClassLoader()
     logDebug(s"Loading $className using $loader with the parent loader ${loader.getParent}")
-    instantiateClass(loader.loadClass(className)).asInstanceOf[T]
+    loader.loadClass(className)
+  }
+
+  def newInstanceOf[T](className: String): T = {
+    instantiateClass(loadClass(className)).asInstanceOf[T]
   }
 
   // avoid cached constructors
@@ -339,4 +344,11 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
 
+  def newInternalExclusiveModeGpuDiscoveryPlugin(): ResourceDiscoveryPlugin = {
+    newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
+  }
+
+  def loadColumnarRDD(): Class[_] = {
+    loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
+  }
 }
