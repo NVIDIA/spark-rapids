@@ -52,9 +52,9 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
 }
 
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) {
+    extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
 
-  override def getReader[K, C](
+  def getReader[K, C](
       handle: ShuffleHandle,
       startPartition: Int,
       endPartition: Int,
@@ -64,7 +64,7 @@ class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     self.getReader(handle, startPartition, endPartition, context, metrics)
   }
 
-  override def getReaderForRange[K, C](
+  def getReaderForRange[K, C](
       handle: ShuffleHandle,
       startMapIndex: Int,
       endMapIndex: Int,
