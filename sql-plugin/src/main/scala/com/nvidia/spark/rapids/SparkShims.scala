@@ -90,23 +90,6 @@ trait SparkShims {
   def parquetRebaseRead(conf: SQLConf): String
   def parquetRebaseWrite(conf: SQLConf): String
   def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
-  def hasSeparateINT96RebaseConf: Boolean
-
-  def int96ParquetRebaseRead(conf: SQLConf): String = {
-    parquetRebaseRead(conf)
-  }
-
-  def int96ParquetRebaseWrite(conf: SQLConf): String = {
-    parquetRebaseWrite(conf)
-  }
-
-  def int96ParquetRebaseReadKey: String = {
-    parquetRebaseReadKey
-  }
-
-  def int96ParquetRebaseWriteKey: String = {
-    parquetRebaseWriteKey
-  }
 
   def getParquetFilters(
     schema: MessageType,

@@ -111,8 +111,6 @@ trait Spark30XShims extends SparkShims {
 
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = false
 
-  override def hasSeparateINT96RebaseConf: Boolean = true
-
   override def shouldFailDivOverflow(): Boolean = false
 
   override def leafNodeDefaultParallelism(ss: SparkSession): Int = {

@@ -82,8 +82,6 @@ def test_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader_confs, 
             conf=rebase_write_corrected_conf)
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
         'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
