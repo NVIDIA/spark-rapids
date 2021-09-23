@@ -42,7 +42,8 @@ import org.apache.parquet.filter2.predicate.FilterApi
 import org.apache.parquet.format.converter.ParquetMetadataConverter
 import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.metadata._
-import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, Type, Types}
+import org.apache.parquet.schema.{GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -52,15 +53,16 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetFilters, ParquetReadSupport}
+import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.util.SerializableConfiguration
+import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 
 /**
@@ -112,6 +114,27 @@ object GpuParquetScanBase {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
     tagSupport(scan.sparkSession, schema, scanMeta)
+  }
+
+  def throwIfNeeded(
+      table: Table,
+      isCorrectedInt96Rebase: Boolean,
+      isCorrectedDateTimeRebase: Boolean,
+      hasInt96Timestamps: Boolean): Unit = {
+    (0 until table.getNumberOfColumns).foreach { i =>
+      val col = table.getColumn(i)
+      // if col is a day
+      if (!isCorrectedDateTimeRebase && RebaseHelper.isDateRebaseNeededInRead(col)) {
+        throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+      }
+      // if col is a time
+      else if (hasInt96Timestamps && !isCorrectedInt96Rebase ||
+          !hasInt96Timestamps && !isCorrectedDateTimeRebase) {
+        if (RebaseHelper.isTimeRebaseNeededInRead(col)) {
+          throw DataSourceUtils.newRebaseExceptionInRead("Parquet")
+        }
+      }
+    }
   }
 
   def tagSupport(
@@ -170,6 +193,21 @@ object GpuParquetScanBase {
       meta.willNotWorkOnGpu("GpuParquetScan does not support int96 timestamp conversion")
     }
 
+    sqlConf.get(ShimLoader.getSparkShims.int96ParquetRebaseReadKey) match {
+      case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
+        meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
+            s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is EXCEPTION")
+      }
+      case "CORRECTED" => // Good
+      case "LEGACY" => // really is EXCEPTION for us...
+        if (schemaMightNeedNestedRebase) {
+          meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
+              s"${ShimLoader.getSparkShims.int96ParquetRebaseReadKey} is LEGACY")
+        }
+      case other =>
+        meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
+    }
+
     sqlConf.get(ShimLoader.getSparkShims.parquetRebaseReadKey) match {
       case "EXCEPTION" => if (schemaMightNeedNestedRebase) {
         meta.willNotWorkOnGpu("Nested timestamp and date values are not supported when " +
@@ -223,6 +261,27 @@ object GpuParquetPartitionReaderFactoryBase {
   private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
   // Copied from Spark
   private val SPARK_LEGACY_DATETIME = "org.apache.spark.legacyDateTime"
+  // Copied from Spark
+  private val SPARK_LEGACY_INT96 = "org.apache.spark.legacyINT96"
+
+  def isCorrectedInt96RebaseMode(
+      lookupFileMeta: String => String,
+      isCorrectedInt96ModeConfig: Boolean): Boolean = {
+    // If there is no version, we return the mode specified by the config.
+    Option(lookupFileMeta(SPARK_VERSION_METADATA_KEY)).map { version =>
+      // Files written by Spark 3.0 and earlier follow the legacy hybrid calendar and we need to
+      // rebase the INT96 timestamp values.
+      // Files written by Spark 3.1 and latter may also need the rebase if they were written with
+      // the "LEGACY" rebase mode.
+      if (version >= "3.1.0") {
+        lookupFileMeta(SPARK_LEGACY_INT96) == null
+      } else if (version >= "3.0.0") {
+        lookupFileMeta(SPARK_LEGACY_DATETIME) == null
+      } else {
+        false
+      }
+    }.getOrElse(isCorrectedInt96ModeConfig)
+  }
 
   def isCorrectedRebaseMode(
       lookupFileMeta: String => String,
@@ -240,7 +299,8 @@ object GpuParquetPartitionReaderFactoryBase {
 
 // contains meta about all the blocks in a file
 private case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaData],
-    partValues: InternalRow, schema: MessageType, isCorrectedRebaseMode: Boolean)
+    partValues: InternalRow, schema: MessageType, isCorrectedInt96RebaseMode: Boolean,
+    isCorrectedRebaseMode: Boolean, hasInt96Timestamps: Boolean)
 
 private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) extends Arm {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
@@ -252,6 +312,19 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val pushDownInFilterThreshold = sqlConf.parquetFilterPushDownInFilterThreshold
   private val rebaseMode = ShimLoader.getSparkShims.parquetRebaseRead(sqlConf)
   private val isCorrectedRebase = "CORRECTED" == rebaseMode
+  val int96RebaseMode = ShimLoader.getSparkShims.int96ParquetRebaseRead(sqlConf)
+  private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
+
+
+  def isParquetTimeInInt96(parquetType: Type): Boolean = {
+    parquetType match {
+      case p:PrimitiveType =>
+        p.getPrimitiveTypeName == PrimitiveTypeName.INT96
+      case g:GroupType => //GroupType
+        g.getFields.asScala.exists(t => isParquetTimeInInt96(t))
+      case _ => false
+    }
+  }
 
   def filterBlocks(
       file: PartitionedFile,
@@ -275,9 +348,15 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       None
     }
 
+    val hasInt96Timestamps = isParquetTimeInInt96(fileSchema)
+
     val isCorrectedRebaseForThisFile =
-    GpuParquetPartitionReaderFactoryBase.isCorrectedRebaseMode(
-      footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
+      GpuParquetPartitionReaderFactoryBase.isCorrectedRebaseMode(
+        footer.getFileMetaData.getKeyValueMetaData.get, isCorrectedRebase)
+
+    val isCorrectedInt96RebaseForThisFile =
+      GpuParquetPartitionReaderFactoryBase.isCorrectedInt96RebaseMode(
+        footer.getFileMetaData.getKeyValueMetaData.get, isInt96CorrectedRebase)
 
     val blocks = if (pushedFilters.isDefined) {
       // Use the ParquetFileReader to perform dictionary-level filtering
@@ -301,7 +380,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
     val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
     ParquetFileInfoWithBlockMeta(filePath, clipped, file.partitionValues,
-      clippedSchema, isCorrectedRebaseForThisFile)
+      clippedSchema, isCorrectedInt96RebaseForThisFile, isCorrectedRebaseForThisFile,
+      hasInt96Timestamps)
   }
 }
 
@@ -372,7 +452,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           ParquetDataBlock(block),
           file.partitionValues,
           ParquetSchemaWrapper(singleFileInfo.schema),
-          ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode)))
+          ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
+            singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
@@ -425,7 +506,8 @@ case class GpuParquetPartitionReaderFactory(
     new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema,
       debugDumpPrefix, maxReadBatchSizeRows,
-      maxReadBatchSizeBytes, metrics, singleFileInfo.isCorrectedRebaseMode)
+      maxReadBatchSizeBytes, metrics, singleFileInfo.isCorrectedInt96RebaseMode,
+      singleFileInfo.isCorrectedRebaseMode, singleFileInfo.hasInt96Timestamps)
   }
 }
 
@@ -799,7 +881,8 @@ private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockB
 }
 
 /** Parquet extra information containing isCorrectedRebaseMode */
-case class ParquetExtraInfo(isCorrectedRebaseMode: Boolean) extends ExtraInfo
+case class ParquetExtraInfo(isCorrectedRebaseMode: Boolean,
+    isCorrectedInt96RebaseMode: Boolean, hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
 private case class ParquetSingleDataBlockMeta(
@@ -890,9 +973,11 @@ class MultiFileParquetPartitionReader(
     // We need to ensure all files we are going to combine have the same datetime
     // rebase mode.
     if (nextBlockInfo.extraInfo.isCorrectedRebaseMode !=
-        currentBlockInfo.extraInfo.isCorrectedRebaseMode) {
-      logInfo(s"datetime rebase mode for the next file ${nextBlockInfo.filePath} is " +
-        s"different then current file ${currentBlockInfo.filePath}, splitting into another batch.")
+        currentBlockInfo.extraInfo.isCorrectedRebaseMode &&
+        nextBlockInfo.extraInfo.isCorrectedInt96RebaseMode !=
+            currentBlockInfo.extraInfo.isCorrectedInt96RebaseMode) {
+      logInfo(s"datetime rebase mode for the next file ${nextBlockInfo.filePath} is different " +
+          s"then current file ${currentBlockInfo.filePath}, splitting into another batch.")
       return true
     }
 
@@ -950,13 +1035,11 @@ class MultiFileParquetPartitionReader(
     }
 
     closeOnExcept(table) { _ =>
-      if (!extraInfo.isCorrectedRebaseMode) {
-        (0 until table.getNumberOfColumns).foreach { i =>
-          if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
-            throw RebaseHelper.newRebaseExceptionInRead("Parquet")
-          }
-        }
-      }
+      GpuParquetScanBase.throwIfNeeded(
+        table,
+        extraInfo.isCorrectedInt96RebaseMode,
+        extraInfo.isCorrectedRebaseMode,
+        extraInfo.hasInt96Timestamps)
     }
     evolveSchemaIfNeededAndClose(table, splits.mkString(","), clippedSchema)
   }
@@ -1036,11 +1119,13 @@ class MultiFileCloudParquetPartitionReader(
     execMetrics) with ParquetPartitionReaderBase {
 
   case class HostMemoryBuffersWithMetaData(
-    override val partitionedFile: PartitionedFile,
-    override val memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
-    override val bytesRead: Long,
-    isCorrectRebaseMode: Boolean,
-    clippedSchema: MessageType) extends HostMemoryBuffersWithMetaDataBase
+      override val partitionedFile: PartitionedFile,
+      override val memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
+      override val bytesRead: Long,
+      isCorrectRebaseMode: Boolean,
+      isCorrectInt96RebaseMode: Boolean,
+      hasInt96Timestamps: Boolean,
+      clippedSchema: MessageType) extends HostMemoryBuffersWithMetaDataBase
 
   private class ReadBatchRunner(filterHandler: GpuParquetFileFilterHandler,
       file: PartitionedFile,
@@ -1066,21 +1151,24 @@ class MultiFileCloudParquetPartitionReader(
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
           return HostMemoryBuffersWithMetaData(file, Array((null, 0)), bytesRead,
-            fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.schema)
+            fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
         }
         blockChunkIter = fileBlockMeta.blocks.iterator.buffered
         if (isDone) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // got close before finishing
           HostMemoryBuffersWithMetaData(file, Array((null, 0)), bytesRead,
-            fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.schema)
+            fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
         } else {
           if (readDataSchema.isEmpty) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
             // overload size to be number of rows with null buffer
             HostMemoryBuffersWithMetaData(file, Array((null, numRows)), bytesRead,
-              fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.schema)
+              fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+              fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
           } else {
             val filePath = new Path(new URI(file.filePath))
             while (blockChunkIter.hasNext) {
@@ -1093,10 +1181,12 @@ class MultiFileCloudParquetPartitionReader(
               // got close before finishing
               hostBuffers.foreach(_._1.safeClose())
               HostMemoryBuffersWithMetaData(file, Array((null, 0)), bytesRead,
-                fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.schema)
+                fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
             } else {
               HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
-                fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.schema)
+                fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema)
             }
           }
         }
@@ -1152,7 +1242,8 @@ class MultiFileCloudParquetPartitionReader(
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val (hostBuffer, size) = memBuffersAndSize.head
         val nextBatch = readBufferToTable(buffer.isCorrectRebaseMode,
-          buffer.clippedSchema, buffer.partitionedFile.partitionValues,
+          buffer.isCorrectInt96RebaseMode, buffer.hasInt96Timestamps, buffer.clippedSchema,
+          buffer.partitionedFile.partitionValues,
           hostBuffer, size, buffer.partitionedFile.filePath)
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
@@ -1165,8 +1256,11 @@ class MultiFileCloudParquetPartitionReader(
     }
   }
 
+
   private def readBufferToTable(
       isCorrectRebaseMode: Boolean,
+      isCorrectInt96RebaseMode: Boolean,
+      hasInt96Timestamps: Boolean,
       clippedSchema: MessageType,
       partValues: InternalRow,
       hostBuffer: HostMemoryBuffer,
@@ -1197,17 +1291,12 @@ class MultiFileCloudParquetPartitionReader(
         Table.readParquet(parseOpts, hostBuffer, 0, dataSize)
       }
       closeOnExcept(table) { _ =>
-        if (!isCorrectRebaseMode) {
-          (0 until table.getNumberOfColumns).foreach { i =>
-            if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
-              throw RebaseHelper.newRebaseExceptionInRead("Parquet")
-            }
-          }
-        }
+        GpuParquetScanBase.throwIfNeeded(table, isCorrectInt96RebaseMode, isCorrectRebaseMode,
+          hasInt96Timestamps)
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
-            s"but read ${table.getNumberOfColumns} from $fileName")
+              s"but read ${table.getNumberOfColumns} from $fileName")
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
@@ -1257,7 +1346,9 @@ class ParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     execMetrics: Map[String, GpuMetric],
-    isCorrectedRebaseMode: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
+    isCorrectedInt96RebaseMode: Boolean,
+    isCorrectedRebaseMode: Boolean,
+    hasInt96Timestamps: Boolean) extends FilePartitionReaderBase(conf, execMetrics)
   with ParquetPartitionReaderBase {
 
   private val blockIterator:  BufferedIterator[BlockMetaData] = clippedBlocks.iterator.buffered
@@ -1339,13 +1430,8 @@ class ParquetPartitionReader(
           Table.readParquet(parseOpts, dataBuffer, 0, dataSize)
         }
         closeOnExcept(table) { _ =>
-          if (!isCorrectedRebaseMode) {
-            (0 until table.getNumberOfColumns).foreach { i =>
-              if (RebaseHelper.isDateTimeRebaseNeededRead(table.getColumn(i))) {
-                throw RebaseHelper.newRebaseExceptionInRead("Parquet")
-              }
-            }
-          }
+          GpuParquetScanBase.throwIfNeeded(table, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
+            hasInt96Timestamps)
           maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
           if (readDataSchema.length < table.getNumberOfColumns) {
             throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
