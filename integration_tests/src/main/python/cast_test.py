@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from functools import reduce
 from spark_session import is_before_spark_311, is_before_spark_320
-from marks import allow_non_gpu
+from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
 
@@ -95,3 +95,12 @@ def test_cast_string_timestamp_fallback():
             'Cast',
             conf = {'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
+
+@approximate_float
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType()], ids=idfn)
+def test_cast_decimal_to(data_gen, to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
+            conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+                {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}))
