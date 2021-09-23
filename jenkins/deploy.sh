@@ -18,10 +18,13 @@
 # Argument(s):
 #   SIGN_FILE:  true/false, whether to sign the jar/pom file to de deployed
 #   DATABRICKS: true/fasle, whether deploying for databricks
+#   VERSIONS_BUILT: The spark versions built before calling this script
 #
 # Used environment(s):
 #   SQL_PL:         The path of module 'sql-plugin', relative to project root path.
 #   DIST_PL:        The path of module 'dist', relative to project root path.
+#   AGGREGATOR_PL:  The path of the module 'aggregator', relative to project root path.
+#   TESTS_PL:       The path of the module 'integration_tests', relative to the project root path.
 #   SERVER_ID:      The repository id for this deployment.
 #   SERVER_URL:     The url where to deploy artifacts.
 #   GPG_PASSPHRASE: The passphrase used to sign files, only required when <SIGN_FILE> is true.
@@ -30,6 +33,7 @@
 set -e
 SIGN_FILE=$1
 DATABRICKS=$2
+VERSIONS_BUILT=$3
 
 ###### Build the path of jar(s) to be deployed ######
 
@@ -78,16 +82,19 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 # Distribution jar is a shaded artifact so use the reduced dependency pom.
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -DpomFile=${DIST_PL}/dependency-reduced-pom.xml
+            -Dfile=$FPATH.jar -DpomFile=$AGGREGATOR_PL/dependency-reduced-pom.xml
 
 ###### Deploy integration tests jar(s) ######
 TESTS_ART_ID=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.artifactId -DforceStdout`
 TESTS_ART_VER=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.version -DforceStdout`
-TESTS_FPATH="$TESTS_PL/target/$TESTS_ART_ID-$TESTS_ART_VER"
 TESTS_DOC_JARS="-Dsources=${TESTS_FPATH}-sources.jar -Djavadoc=${TESTS_FPATH}-javadoc.jar"
-$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+VERSIONS_LIST=${VERSIONS_BUILT//','/' '}
+for VER in ${VERSIONS_LIST}; do
+    TESTS_FPATH="deployjars/$TESTS_ART_ID-$TESTS_ART_VER-spark$VER"
+    $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $TESTS_DOC_JARS \
             -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
+done
 
 ###### Deploy profiling tool jar(s) ######
 TOOL_PL=${TOOL_PL:-"tools"}
