@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Testing
+title: RAPIDS Accelerator for Apache Spark Distribution Packaging
 nav_order: 1
 parent: Developer Overview
 ---
