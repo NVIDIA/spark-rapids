@@ -419,11 +419,25 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   }
 }
 
+/**
+ * Trait that makes it easy to check whether we are dealing with the
+ * a RAPIDS Shuffle Manager
+ *
+ * TODO name does not match its function anymore
+ */
 trait VisibleShuffleManager {
   def isDriver: Boolean
   def initialize: Unit
 }
 
+/**
+ * A simple proxy wrapper allowing to delay loading of the
+ * real implementation to a later point when ShimLoader
+ * has already updated Spark classloaders.
+ *
+ * @param conf
+ * @param isDriver
+ */
 abstract class ProxyRapidsShuffleInternalManagerBase(
     conf: SparkConf,
     override val isDriver: Boolean
