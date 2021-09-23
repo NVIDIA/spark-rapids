@@ -9,7 +9,7 @@ support all data types. The RAPIDS Accelerator for Apache Spark has further
 restrictions on what types are supported for processing. This tries
 to document what operations are supported and what data types each operation supports.
 Because Apache Spark is under active development too and this document was generated
-against version 3.1.2 of Spark. Most of this should still
+against version 3.0.1 of Spark. Most of this should still
 apply to other versions of Spark, but there may be slight changes.
 
 # General limitations
@@ -561,30 +561,6 @@ Accelerator supports are described below.
 <td><em>PS<br/>not allowed for grouping expressions;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><em>PS<br/>not allowed for grouping expressions;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><em>PS<br/>not allowed for grouping expressions if containing Array or Map as child;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><b>NS</b></td>
-</tr>
-<tr>
-<td rowspan="1">InMemoryTableScanExec</td>
-<td rowspan="1">Implementation of InMemoryTableScanExec to use GPU accelerated Caching</td>
-<td rowspan="1">None</td>
-<td>Input/Output</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types NULL, BINARY, CALENDAR, ARRAY, MAP, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -4880,7 +4856,7 @@ are limited.
 <tr>
 <td rowSpan="3">ElementAt</td>
 <td rowSpan="3">`element_at`</td>
-<td rowSpan="3">Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map.</td>
+<td rowSpan="3">Returns element of array at given(1-based) index in value if column is array. Returns value for the given key in value if column is map</td>
 <td rowSpan="3">None</td>
 <td rowSpan="3">project</td>
 <td>array/map</td>
@@ -9755,74 +9731,11 @@ are limited.
 <td> </td>
 </tr>
 <tr>
-<td rowSpan="5">RegExpReplace</td>
-<td rowSpan="5">`regexp_replace`</td>
-<td rowSpan="5">RegExpReplace support for string literal input patterns</td>
-<td rowSpan="5">None</td>
-<td rowSpan="5">project</td>
-<td>regex</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><em>PS<br/>very limited regex support;<br/>Literal value only</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
-<td>pos</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td><em>PS<br/>only a value of 1 is supported</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-</tr>
-<tr>
+<td rowSpan="4">RegExpReplace</td>
+<td rowSpan="4">`regexp_replace`</td>
+<td rowSpan="4">RegExpReplace support for string literal input patterns</td>
+<td rowSpan="4">None</td>
+<td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>
 <td> </td>
@@ -9844,6 +9757,27 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td>regex</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>very limited regex support;<br/>Literal value only</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td>rep</td>
 <td> </td>
 <td> </td>
@@ -9855,6 +9789,27 @@ are limited.
 <td> </td>
 <td> </td>
 <td><em>PS<br/>Literal value only</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -12513,6 +12468,74 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="3">TimeSub</td>
+<td rowSpan="3"> </td>
+<td rowSpan="3">Subtracts interval from timestamp</td>
+<td rowSpan="3">None</td>
+<td rowSpan="3">project</td>
+<td>start</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>interval</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>months not supported;<br/>Literal value only</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">ToDegrees</td>
 <td rowSpan="2">`degrees`</td>
 <td rowSpan="2">Converts radians to degrees</td>
@@ -12743,6 +12766,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="3">TransformValues</td>
 <td rowSpan="3">`transform_values`</td>
 <td rowSpan="3">Transform values in a map using a transform function</td>
@@ -12809,32 +12858,6 @@ are limited.
 <td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="4">UnaryMinus</td>
@@ -13137,6 +13160,32 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<th>Expression</th>
+<th>SQL Functions(s)</th>
+<th>Description</th>
+<th>Notes</th>
+<th>Context</th>
+<th>Param/Output</th>
+<th>BOOLEAN</th>
+<th>BYTE</th>
+<th>SHORT</th>
+<th>INT</th>
+<th>LONG</th>
+<th>FLOAT</th>
+<th>DOUBLE</th>
+<th>DATE</th>
+<th>TIMESTAMP</th>
+<th>STRING</th>
+<th>DECIMAL</th>
+<th>NULL</th>
+<th>BINARY</th>
+<th>CALENDAR</th>
+<th>ARRAY</th>
+<th>MAP</th>
+<th>STRUCT</th>
+<th>UDT</th>
+</tr>
+<tr>
 <td rowSpan="2">UnscaledValue</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Convert a Decimal to an unscaled long value for some aggregation optimizations</td>
@@ -13182,32 +13231,6 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-</tr>
-<tr>
-<th>Expression</th>
-<th>SQL Functions(s)</th>
-<th>Description</th>
-<th>Notes</th>
-<th>Context</th>
-<th>Param/Output</th>
-<th>BOOLEAN</th>
-<th>BYTE</th>
-<th>SHORT</th>
-<th>INT</th>
-<th>LONG</th>
-<th>FLOAT</th>
-<th>DOUBLE</th>
-<th>DATE</th>
-<th>TIMESTAMP</th>
-<th>STRING</th>
-<th>DECIMAL</th>
-<th>NULL</th>
-<th>BINARY</th>
-<th>CALENDAR</th>
-<th>ARRAY</th>
-<th>MAP</th>
-<th>STRUCT</th>
-<th>UDT</th>
 </tr>
 <tr>
 <td rowSpan="2">Upper</td>
@@ -13886,16 +13909,16 @@ are limited.
 <td rowSpan="4">window</td>
 <td>input</td>
 <td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13912,7 +13935,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13920,7 +13943,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13930,7 +13953,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13949,20 +13972,20 @@ are limited.
 <tr>
 <td>result</td>
 <td> </td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
-<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>unsupported child types DATE, TIMESTAMP</em></td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15617,7 +15640,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><b>NS</b></td>
 <td> </td>
@@ -15638,11 +15661,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15659,11 +15682,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15680,11 +15703,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15701,11 +15724,11 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
-<td> </td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15722,7 +15745,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><em>PS<br/>Conversion may produce different results and requires spark.rapids.sql.castFloatToString.enabled to be true.</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
@@ -15743,7 +15766,7 @@ and the accelerator produces the same result.
 <td>S</td>
 <td>S</td>
 <td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td><em>PS<br/>Conversion may produce different results and requires spark.rapids.sql.castFloatToString.enabled to be true.</em></td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
@@ -15756,17 +15779,17 @@ and the accelerator produces the same result.
 </tr>
 <tr>
 <th>DATE</th>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15777,17 +15800,17 @@ and the accelerator produces the same result.
 </tr>
 <tr>
 <th>TIMESTAMP</th>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15827,7 +15850,7 @@ and the accelerator produces the same result.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td> </td>
@@ -15912,12 +15935,12 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
-<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>The array's child type must also support being cast to the desired child type;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15933,7 +15956,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -15954,14 +15977,14 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
+<td><em>PS<br/>the struct's children must also support being cast to string</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
-<td><em>PS<br/>the struct's children must also support being cast to the desired child type(s);<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, MAP, UDT</em></td>
+<td><em>PS<br/>the struct's children must also support being cast to the desired child type(s);<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td> </td>
 </tr>
 <tr>
@@ -15975,7 +15998,7 @@ and the accelerator produces the same result.
 <td> </td>
 <td> </td>
 <td> </td>
-<td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
