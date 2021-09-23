@@ -75,7 +75,7 @@ case class GpuApproximatePercentile (
       accuracyExpression) :: Nil
 
   // the merge expression will merge t-digests
-  override lazy val mergeExpressions: Seq[GpuExpression] =
+  override lazy val mergeExpressions: Seq[Expression] =
     new CudfTDigest(outputBuf,
       percentageExpression,
       accuracyExpression) :: Nil
