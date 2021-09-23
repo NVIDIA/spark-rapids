@@ -22,7 +22,7 @@ import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 
-import org.apache.spark.sql.types.{ArrayType, DataType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, StructType, MapType, StructField}
 
 /**
  * This class casts a column to another column if the predicate passed resolves to true.
@@ -190,6 +190,26 @@ object ColumnCastUtil extends Arm {
             newView
           } else {
             cv
+          }
+        case m: MapType =>
+          // map is list of structure
+          val struct = cv.getChildColumnView(0)
+          toClose += struct
+          
+          if(cv.getType != DType.LIST || struct.getType != DType.STRUCT) {
+            throw new IllegalStateException("Map should be List(Structure) in column view")
+          }
+
+          val newChild = convertTypeAToTypeB(struct,
+            StructType(Array(StructField("", m.keyType), StructField("", m.valueType))),
+            predicate, toClose)
+
+          if (struct == newChild) {
+            cv
+          } else {
+            val newView = cv.replaceListChild(newChild)
+            toClose += newView
+            newView
           }
         case _ =>
           if (predicate(dataType, cv)) {

@@ -1160,6 +1160,7 @@ def test_count_fallback_when_ansi_enabled(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
+@ignore_order(local=True)
 def test_no_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
