@@ -90,4 +90,56 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frameFromParquetWithSchema("disorder-read-schema.parquet", StructType(Seq(
       StructField("c3_long", LongType),
       StructField("c1_int", IntegerType))))) { frame => frame }
+
+  /**
+   * Column schema of unsigned-int.parquet is:
+   * TODO: array nest type is blocked by issue: https://github.com/rapidsai/cudf/issues/9240
+   *
+   * message root {
+   *   required int32 a (UINT_8);
+   *   required int32 b (UINT_16);
+   *   required int32 c (UINT_32);
+   *   required group g {
+   *     required int32 c1 (UINT_8);
+   *     required int32 c2 (UINT_16);
+   *     required int32 c3 (UINT_32);
+   *   }
+   *   required group m1 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_8);
+   *       optional int32 value (UINT_8);
+   *     }
+   *   }
+   *   required group m2 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_16);
+   *       optional int32 value (UINT_16);
+   *     }
+   *   }
+   *   required group m3 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_32);
+   *       optional int32 value (UINT_32);
+   *     }
+   *   }
+   *   optional group m4 (MAP) {
+   *     repeated group key_value {
+   *       required int32 key (UINT_32);
+   *       required group value {
+   *         required int32 c1 (UINT_8);
+   *         required int32 c2 (UINT_16);
+   *         required int32 c3 (UINT_32);
+   *       }
+   *     }
+   *   }
+   * }
+   *
+   */
+  testSparkResultsAreEqual("Test Parquet unsigned int: uint8, uint16, uint32",
+    frameFromParquet("unsigned-int.parquet"),
+    // CPU version throws an exception when Spark < 3.2, so skip when Spark < 3.2.
+    // The exception is like "Parquet type not supported: INT32 (UINT_8)"
+    assumeCondition = (_ => (VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+"))) {
+    frame => frame.select(col("*"))
+  }
 }

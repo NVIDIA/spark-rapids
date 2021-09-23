@@ -14,17 +14,20 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.v2
+package com.nvidia.spark.rapids.shims.spark311cdh
 
 import java.net.URI
 import java.nio.ByteBuffer
 
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
+import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
@@ -45,6 +48,7 @@ import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, Shuffle
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
@@ -55,14 +59,44 @@ import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
-import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.execution.python.shims.v2._
-import org.apache.spark.sql.rapids.shims.v2.{GpuColumnarToRowTransitionExec, GpuInMemoryTableScanExec, GpuSchemaUtils, HadoopFSUtilsShim}
+import org.apache.spark.sql.rapids.execution.python.GpuPythonUDF
+import org.apache.spark.sql.rapids.execution.python.shims.spark311cdh._
+import org.apache.spark.sql.rapids.shims.spark311cdh._
+import org.apache.spark.sql.rapids.shims.v2.{GpuInMemoryTableScanExec, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
+/**
+ * Base Shim for Spark 3.1.1 that can be used by other 3.1.x versions and to easily diff
+ */
 abstract class SparkBaseShims extends Spark31XShims {
+
+  override def parquetRebaseReadKey: String =
+    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
+  override def parquetRebaseWriteKey: String =
+    SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE.key
+  override def avroRebaseReadKey: String =
+    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_READ.key
+  override def avroRebaseWriteKey: String =
+    SQLConf.LEGACY_AVRO_REBASE_MODE_IN_WRITE.key
+  override def parquetRebaseRead(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
+  override def parquetRebaseWrite(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
+
+  override def getParquetFilters(
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive)
+  }
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
@@ -208,16 +242,12 @@ abstract class SparkBaseShims extends Spark31XShims {
         TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
         Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagAggForGpu(): Unit = {
+        override def tagExprForGpu(): Unit = {
           val dataType = a.child.dataType
           GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
         }
 
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = 
-          GpuAverage(childExprs.head)
-
-        // Average is not supported in ANSI mode right now, no matter the type
-        override val ansiTypeToCheck: Option[DataType] = None
+        override def convertToGpu(child: Expression): GpuExpression = GpuAverage(child)
       }),
     GpuOverrides.expr[Abs](
       "Absolute value",
@@ -441,8 +471,7 @@ abstract class SparkBaseShims extends Spark31XShims {
           TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
-            if (!scan.relation.cacheBuilder.serializer
-              .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+            if (!scan.relation.cacheBuilder.serializer.isInstanceOf[ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
             }
           }
@@ -637,7 +666,7 @@ abstract class SparkBaseShims extends Spark31XShims {
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
     val serClass = Class.forName(serName)
-    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+    if (serClass == classOf[ParquetCachedBatchSerializer]) {
       GpuColumnarToRowTransitionExec(plan)
     } else {
       GpuColumnarToRowExec(plan)
@@ -827,6 +856,8 @@ abstract class SparkBaseShims extends Spark31XShims {
   }
 
   override def hasAliasQuoteFix: Boolean = false
+
+  override def hasCastFloatTimestampUpcast: Boolean = false
 
   override def filesFromFileIndex(fileIndex: PartitioningAwareFileIndex): Seq[FileStatus] = {
     fileIndex.allFiles()

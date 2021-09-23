@@ -16142,12 +16142,12 @@ and the accelerator produces the same result.
 <tr>
 <th>DECIMAL</th>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td> </td>
 <td><b>NS</b></td>
 <td>S</td>
@@ -16546,12 +16546,12 @@ and the accelerator produces the same result.
 <tr>
 <th>DECIMAL</th>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td> </td>
 <td><b>NS</b></td>
 <td>S</td>
