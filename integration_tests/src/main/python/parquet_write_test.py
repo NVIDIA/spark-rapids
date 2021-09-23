@@ -366,7 +366,6 @@ def test_roundtrip_with_rebase_values(spark_tmp_path, ts_write_data_gen, date_ti
         data_path,
         conf=all_confs)
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3476')
 @pytest.mark.allow_non_gpu("DataWritingCommandExec", "HiveTableScanExec")
 @pytest.mark.parametrize('allow_non_empty', [True, False])
 def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty):
