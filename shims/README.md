@@ -121,8 +121,3 @@ Note that we currently have to manually code up the delegation methods to the tu
 ```
 This could be automatically generated with a simple tool processing the `scalap` output or Scala macros at 
 build/compile time. Pull requests are welcome.
- 
-
-
-
-
