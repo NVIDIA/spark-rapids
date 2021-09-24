@@ -393,7 +393,6 @@
             </build>
             <modules>
                 <module>aggregator</module>
-                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
