@@ -173,7 +173,7 @@ object AggregateUtils {
  *
  * For example, the `GpuM2` aggregate can have either a `CudfM2` or a `CudfMergeM2`
  * `CudfAggregate`. The reference used for `CudfM2` is that of 3 columns
- * (n, mean, m2), but the reference used for `CudfMergeM2` is that of a struct 
+ * (n, mean, m2), but the reference used for `CudfMergeM2` is that of a struct
  * (m2struct). In other words, this is the shape cuDF expects.
  *
  * In the update case, `boundCudfAggregate` follows Spark, for the aggregates we have
@@ -497,8 +497,7 @@ class GpuHashAggregateIterator(
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
-    val aggregates = boundExpressions.boundCudfAggregates.flatMap(_.boundCudfAggregate)
-    val aggBatchTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
+    val aggBatchTypes = aggBufferAttributes.map(_.dataType)
 
     // Use the out of core sort iterator to sort the batches by grouping key
     outOfCoreIter = Some(GpuOutOfCoreSortIterator(
