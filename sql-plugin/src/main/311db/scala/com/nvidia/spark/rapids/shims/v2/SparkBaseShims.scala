@@ -167,7 +167,7 @@ abstract class SparkBaseShims extends Spark30XShims {
 
         // stringChecks are the same
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = DECIMAL_64 + STRING
+        override val decimalChecks: TypeSig = gpuNumeric + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same
@@ -464,12 +464,12 @@ abstract class SparkBaseShims extends Spark30XShims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
-          TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
+            + TypeSig.ARRAY).nested(), TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer
-              .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+                .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
             }
           }

@@ -600,6 +600,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_CAST_DECIMAL_TO_FLOAT = conf("spark.rapids.sql.castDecimalToFloat.enabled")
+      .doc("Casting from decimal to floating point types on the GPU returns results that have " +
+          "tiny difference compared to results returned from CPU.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
       "on the GPU. Currently hex values aren't supported on the GPU. Also note that casting from " +
@@ -1517,6 +1523,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val areLeftSemiJoinsEnabled: Boolean = get(ENABLE_LEFT_SEMI_JOIN)
 
   lazy val areLeftAntiJoinsEnabled: Boolean = get(ENABLE_LEFT_ANTI_JOIN)
+
+  lazy val isCastDecimalToFloatEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_FLOAT)
 
   lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
