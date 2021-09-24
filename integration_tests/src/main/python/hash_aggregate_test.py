@@ -1228,3 +1228,45 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
         'var_samp(c)' +
         ' from data_table group by a',
         conf=local_conf)
+
+
+@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
+               'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
+               'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
+               'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
+               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
+               'AggregateExpression')
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
+def test_groupby_std_variance_partial_replace_fallback(data_gen,
+                                                       conf,
+                                                       replace_mode,
+                                                       aqe_enabled,
+                                                       use_obj_hash_agg):
+    local_conf = copy_and_update(conf, {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
+            'spark.sql.adaptive.enabled': aqe_enabled,
+            'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg})
+
+    cpu_clz, gpu_clz = ['StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp'], ['GpuStddevPop', 'GpuStddevSamp', 'GpuVariancePop', 'GpuVarianceSamp']
+    exist_clz, non_exist_clz = [], []
+    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage (
+    # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
+    # set the expected exist_classes according to runtime.
+    if is_databricks_runtime():
+        if replace_mode == 'partial':
+            exist_clz, non_exist_clz = cpu_clz, gpu_clz
+        else:
+            exist_clz, non_exist_clz = gpu_clz, cpu_clz
+    else:
+        exist_clz = cpu_clz + gpu_clz
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen, length=100)
+            .groupby('a')
+            .agg(f.stddev('b')),
+        exist_classes=','.join(exist_clz),
+        non_exist_classes=','.join(non_exist_clz),
+        conf=local_conf)
