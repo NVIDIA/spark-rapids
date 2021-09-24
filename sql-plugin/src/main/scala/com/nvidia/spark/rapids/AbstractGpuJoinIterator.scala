@@ -49,12 +49,6 @@ abstract class AbstractGpuJoinIterator(
   protected def hasNextStreamBatch: Boolean
 
   /**
-   * Called when a result batch is about to be produced. Any custom resources that were allocated
-   * to produce a result should be freed or made spillable here.
-   */
-  protected def freeIntermediateResources(): Unit = {}
-
-  /**
    * Called to setup the next join gatherer instance when the previous instance is done or
    * there is no previous instance.
    * @param startNanoTime system nanoseconds timestamp at the top of the iterator loop, useful for
@@ -124,7 +118,6 @@ abstract class AbstractGpuJoinIterator(
       if (ret.isDefined) {
         // We are about to return something. We got everything we need from it so now let it spill
         // if there is more to be gathered later on.
-        freeIntermediateResources()
         gathererStore.foreach(_.allowSpilling())
       }
       ret
@@ -237,12 +230,25 @@ abstract class SplittableJoinIterator(
    * the splits in the stream-side input
    * @param cb stream-side input batch to split
    * @param numBatches number of splits to produce with approximately the same number of rows each
+   * @param oom a prior OOM exception that this will try to recover from by splitting
    */
   protected def splitAndSave(
       cb: ColumnarBatch,
-      numBatches: Int): Unit = {
+      numBatches: Int,
+      oom: Option[OutOfMemoryError] = None): Unit = {
     val batchSize = cb.numRows() / numBatches
-    logInfo(s"Split stream batch into $numBatches batches of about $batchSize rows")
+    if (oom.isDefined && batchSize < 100) {
+      // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
+      // small but we want to at least give it a chance to work (mostly for tests where the
+      // targetSize can be set really small)
+      throw oom.get
+    }
+    val msg = s"Split stream batch into $numBatches batches of about $batchSize rows"
+    if (oom.isDefined) {
+      logWarning(s"OOM Encountered: $msg")
+    } else {
+      logInfo(msg)
+    }
     val splits = withResource(GpuColumnVector.from(cb)) { tab =>
       val splitIndexes = (1 until numBatches).map(num => num * batchSize)
       tab.contiguousSplit(splitIndexes: _*)
