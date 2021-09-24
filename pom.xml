@@ -286,6 +286,7 @@
                 <module>api_validation</module>
                 <module>tools</module>
                 <module>aggregator</module>
+                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -436,6 +437,7 @@
             <modules>
                 <module>aggregator</module>
                 <module>api_validation</module>
+                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -480,6 +482,7 @@
             <modules>
                 <module>aggregator</module>
                 <module>api_validation</module>
+                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -519,6 +522,7 @@
             </build>
             <modules>
                 <module>aggregator</module>
+                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
@@ -568,6 +572,7 @@
             </repositories>
             <modules>
                 <module>aggregator</module>
+                <module>tests-spark310+</module>
             </modules>
         </profile>
         <profile>
