@@ -285,6 +285,7 @@
             <modules>
                 <module>api_validation</module>
                 <module>tools</module>
+                <module>tests-spark310+</module>
                 <module>aggregator</module>
             </modules>
         </profile>
