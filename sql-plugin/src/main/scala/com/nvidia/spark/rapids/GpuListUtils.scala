@@ -30,7 +30,7 @@ object GpuListUtils extends Arm {
    * both listCol and newDataCol alive longer than the returned ColumnView.
    * @param listCol the list column to use as a template
    * @param newDataCol the new data column.
-   * @return a new ColumnView. But throws an scala.IllegalArgumentException if data column does
+   * @return a new ColumnView. Throws IllegalArgumentException if data column does
    *                           not match the original data column in size.
    */
   def replaceListDataColumnAsView(
