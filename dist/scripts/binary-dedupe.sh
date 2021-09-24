@@ -75,3 +75,43 @@ mv "$SPARK3XX_COMMON_DIR" $PARALLEL_WORLDS_DIR/
 #  spark30x-common
 #  spark31x-common
 #  spark32x-common
+
+# Verify that all class files in the conventional jar location are bitwise
+# identical regardless of the Spark-version-specific jar.
+#
+# At this point the duplicate classes have not been removed from version-specific jar
+# locations such as parallel-world/spark312.
+# For each unshimmed class file look for all of its copies inside /spark3* and
+# and count the number of distinct checksums. There are two representative cases
+# 1) The class is contributed to the unshimmed location via the unshimmed-from-each-spark3xx list. These are classes
+#    carrying the shim classifier in their package name such as
+#    com.nvidia.spark.rapids.spark312.RapidsShuffleManager. They are by unique by construction,
+#    and will have zero copies in any non-spark312 shims. Although such classes are currently excluded from
+#    being copied to the /spark312 Parallel World we keep the algorithm below general without assuming this.
+#
+# 2) The class is contributed to the unshimmed location via unshimmed-common. These are classes that
+#    that have the same package and class name across all parallel worlds.
+#
+#  So if the number of distinct class files per class in the unshimmed location is < 2, the jar
+#  is content is as expected
+#
+#  If we find an unshimmed class file occurring > 1  we fail the build and the code must be refactored
+#  until bitwise-identity of each unshimmed class is restored.
+
+# Determine the list of unshimmed class files
+UNSHIMMED_LIST_TXT=unshimmed-result.txt
+find . -name '*.class' -not -path './'$PARALLEL_WORLDS_DIR/'spark*' | \
+  cut -d/ -f 3- | sort > $UNSHIMMED_LIST_TXT
+
+for classFile in $(< $UNSHIMMED_LIST_TXT); do
+  DISTINCT_COPIES=$(find . -path "./*/$classFile" -exec md5sum {} + |
+    cut -d' ' -f 1 | sort -u | wc -l)
+  ((DISTINCT_COPIES == 1)) || {
+    echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";
+    exit 2;
+  }
+done
+
+# Remove unshimmed classes from parallel worlds
+xargs --arg-file="$UNSHIMMED_LIST_TXT" -P 4 -n 100 -I% \
+  find . -path "./$PARALLEL_WORLDS_DIR/spark*/%" -exec rm {} +
