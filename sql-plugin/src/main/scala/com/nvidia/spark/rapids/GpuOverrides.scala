@@ -23,6 +23,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -725,6 +726,38 @@ object GpuOverrides extends Logging {
   private val nanAggPsNote = "Input must not contain NaNs and" +
       s" ${RapidsConf.HAS_NANS} must be false."
 
+  /**
+   * Helper function specific to ANSI mode for the aggregate functions that should
+   * fallback, since we don't have the same overflow checks that Spark provides in
+   * the CPU
+   * @param checkType Something other than `None` triggers logic to detect whether
+   *                  the agg should fallback in ANSI mode. Otherwise (None), it's
+   *                  an automatic fallback.
+   * @param meta agg expression meta
+   */
+  def checkAndTagAnsiAgg(checkType: Option[DataType], meta: AggExprMeta[_]): Unit = {
+    val failOnError = SQLConf.get.ansiEnabled
+    if (failOnError) {
+      if (checkType.isDefined) {
+        val typeToCheck = checkType.get
+        val failedType = typeToCheck match {
+          case _: DecimalType | LongType | IntegerType | ShortType | ByteType => true
+          case _ =>  false
+        }
+        if (failedType) {
+          meta.willNotWorkOnGpu(
+            s"ANSI mode not supported for ${meta.expr} with $typeToCheck result type")
+        }
+      } else {
+        // Average falls into this category, where it produces Doubles, but
+        // internally it uses Double and Long, and Long could overflow (technically)
+        // and failOnError given that it is based on catalyst Add.
+        meta.willNotWorkOnGpu(
+          s"ANSI mode not supported for ${meta.expr}")
+      }
+    }
+  }
+
   def expr[INPUT <: Expression](
       desc: String,
       pluginChecks: ExprChecks,
@@ -1038,7 +1071,16 @@ object GpuOverrides extends Logging {
         TypeSig.gpuNumeric,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuUnaryMinus(child)
+        val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST unary minus does not support ANSI mode.")
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuUnaryMinus(child, ansiEnabled)
       }),
     expr[UnaryPositive](
       "A numeric value with a + in front of it",
@@ -1078,13 +1120,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT, TypeSig.DATE, TypeSig.DATE),
       (a, conf, p, r) => new UnaryExprMeta[DayOfYear](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfYear(child)
-      }),
-    expr[Abs](
-      "Absolute value",
-      ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
-      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child)
       }),
     expr[Acos](
       "Inverse cosine",
@@ -1379,8 +1414,11 @@ object GpuOverrides extends Logging {
       "Natural log 1 + expr",
       ExprChecks.mathUnary,
       (a, conf, p, r) => new UnaryExprMeta[Log1p](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression =
-          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType)))
+        override def convertToGpu(child: Expression): GpuExpression = {
+          // No need for overflow checking on the GpuAdd in Double as Double handles overflow
+          // the same in all modes.
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false))
+        }
       }),
     expr[Log2](
       "Log base 2",
@@ -1529,6 +1567,8 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[DateFormatClass](a, conf, p, r) {
+        override def shouldFallbackOnAnsiTimestamp: Boolean = false
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDateFormatClass(lhs, rhs, strfFormat)
       }
@@ -1542,7 +1582,10 @@ object GpuOverrides extends Logging {
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
-      (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r){
+      (a, conf, p, r) => new UnixTimeExprMeta[ToUnixTimestamp](a, conf, p, r) {
+        override def shouldFallbackOnAnsiTimestamp: Boolean =
+          ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
@@ -1561,7 +1604,10 @@ object GpuOverrides extends Logging {
         ("format", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
-      (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r){
+      (a, conf, p, r) => new UnixTimeExprMeta[UnixTimestamp](a, conf, p, r) {
+        override def shouldFallbackOnAnsiTimestamp: Boolean =
+          ShimLoader.getSparkShims.shouldFallbackOnAnsiTimestamp
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           if (conf.isImprovedTimestampOpsEnabled) {
             // passing the already converted strf string for a little optimization
@@ -1637,6 +1683,8 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.STRING, "Only a limited number of formats are supported"),
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
+        override def shouldFallbackOnAnsiTimestamp: Boolean = false
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           // passing the already converted strf string for a little optimization
           GpuFromUnixTime(lhs, rhs, strfFormat)
@@ -1658,8 +1706,16 @@ object GpuOverrides extends Logging {
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
+        private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST Addition does not support ANSI mode.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuAdd(lhs, rhs)
+          GpuAdd(lhs, rhs, failOnError = ansiEnabled)
       }),
     expr[Subtract](
       "Subtraction",
@@ -1669,8 +1725,16 @@ object GpuOverrides extends Logging {
         ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
+        private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagSelfForAst(): Unit = {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkInAst("AST Subtraction does not support ANSI mode.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuSubtract(lhs, rhs)
+          GpuSubtract(lhs, rhs, ansiEnabled)
       }),
     expr[Multiply](
       "Multiplication",
@@ -1708,6 +1772,10 @@ object GpuOverrides extends Logging {
                     s" to fit on the GPU $intermediateResult")
               }
             case _ => // NOOP
+          }
+
+          if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
           }
         }
 
@@ -2048,7 +2116,7 @@ object GpuOverrides extends Logging {
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
           TypeSig.all))),
       (pivot, conf, p, r) => new ImperativeAggExprMeta[PivotFirst](pivot, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           checkAndTagFloatNanAgg("Pivot", pivot.pivotColumn.dataType, conf, this)
           // If pivotColumnValues doesn't have distinct values, fall back to CPU
           if (pivot.pivotColumnValues.distinct.lengthCompare(pivot.pivotColumnValues.length) != 0) {
@@ -2060,6 +2128,9 @@ object GpuOverrides extends Logging {
           val Seq(pivotColumn, valueColumn) = childExprs
           GpuPivotFirst(pivotColumn, valueColumn, pivot.pivotColumnValues)
         }
+
+        // Pivot does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Count](
       "Count aggregate operator",
@@ -2067,13 +2138,14 @@ object GpuOverrides extends Logging {
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
           "input", _gpuCommonTypes + TypeSig.STRUCT.nested(_gpuCommonTypes), TypeSig.all))),
-      (count, conf, p, r) => new ExprMeta[Count](count, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+      (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
             willNotWorkOnGpu("count of multiple columns not supported")
           }
         }
-        override def convertToGpu(): GpuExpression = GpuCount(childExprs.map(_.convertToGpu()))
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuCount(childExprs)
       }),
     expr[Max](
       "Max aggregate operator",
@@ -2097,12 +2169,16 @@ object GpuOverrides extends Logging {
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = max.child.dataType
           checkAndTagFloatNanAgg("Max", dataType, conf, this)
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuMax(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuMax(childExprs.head)
+
+        // Max does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Min](
       "Min aggregate operator",
@@ -2126,12 +2202,16 @@ object GpuOverrides extends Logging {
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
           checkAndTagFloatNanAgg("Min", dataType, conf, this)
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuMin(child)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuMin(childExprs.head)
+
+        // Min does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Sum](
       "Sum aggregate operator",
@@ -2148,12 +2228,13 @@ object GpuOverrides extends Logging {
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
+        override def tagAggForGpu(): Unit = {
           val dataType = a.child.dataType
           checkAndTagFloatAgg(dataType, conf, this)
         }
 
-        override def convertToGpu(child: Expression): GpuExpression = GpuSum(child, a.dataType)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuSum(childExprs.head, a.dataType)
       }),
     expr[First](
       "first aggregate operator", {
@@ -2175,9 +2256,12 @@ object GpuOverrides extends Logging {
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
-      (a, conf, p, r) => new ExprMeta[First](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression =
-          GpuFirst(childExprs.head.convertToGpu(), a.ignoreNulls)
+      (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuFirst(childExprs.head, a.ignoreNulls)
+
+        // First does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[Last](
       "last aggregate operator", {
@@ -2199,9 +2283,12 @@ object GpuOverrides extends Logging {
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
       },
-      (a, conf, p, r) => new ExprMeta[Last](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression =
-          GpuLast(childExprs.head.convertToGpu(), a.ignoreNulls)
+      (a, conf, p, r) => new AggExprMeta[Last](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuLast(childExprs.head, a.ignoreNulls)
+
+        // Last does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
@@ -2503,12 +2590,9 @@ object GpuOverrides extends Logging {
     expr[ArrayMin](
       "Returns the minimum value in the array",
       ExprChecks.unaryProject(
-        // TODO add back in STRING support once https://github.com/rapidsai/cudf/issues/9156
-        //   is fixed
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL -
-            TypeSig.STRING)
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
             .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
             .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
@@ -2523,12 +2607,9 @@ object GpuOverrides extends Logging {
     expr[ArrayMax](
       "Returns the maximum value in the array",
       ExprChecks.unaryProject(
-        // TODO add back in STRING support once https://github.com/rapidsai/cudf/issues/9156
-        //   is fixed
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL - TypeSig.STRING,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL
-            - TypeSig.STRING)
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
             .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
             .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
@@ -2987,6 +3068,9 @@ object GpuOverrides extends Logging {
           new GpuToCpuCollectBufferConverter()
 
         override val supportBufferConversion: Boolean = true
+
+        // Last does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[CollectSet](
       "Collect a set of unique elements, not supported in reduction",
@@ -3014,6 +3098,9 @@ object GpuOverrides extends Logging {
           new GpuToCpuCollectBufferConverter()
 
         override val supportBufferConversion: Boolean = true
+
+        // Last does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
       }),
     expr[GetJsonObject](
       "Extracts a json object from path",
@@ -3047,8 +3134,8 @@ object GpuOverrides extends Logging {
 
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    commonExpressions ++ GpuHiveOverrides.exprs ++ ShimLoader.getSparkShims.getExprs ++
-      TimeStamp.getExprs
+    commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
+        ShimLoader.getSparkShims.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,

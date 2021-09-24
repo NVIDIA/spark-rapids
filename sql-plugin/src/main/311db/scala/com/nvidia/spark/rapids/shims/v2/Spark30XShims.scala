@@ -90,12 +90,6 @@ trait Spark30XShims extends SparkShims {
         TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
-  override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
-    ss.sparkContext.defaultParallelism
-  }
-
-  override def shouldFailDivOverflow(): Boolean = false
-
   override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
     def recurse(
         plan: SparkPlan,
@@ -116,4 +110,14 @@ trait Spark30XShims extends SparkShims {
   }
 
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = false
+
+  override def hasSeparateINT96RebaseConf: Boolean = true
+
+  override def shouldFailDivOverflow(): Boolean = false
+
+  override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
+    ss.sparkContext.defaultParallelism
+  }
+
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 }

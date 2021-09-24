@@ -60,4 +60,7 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
     }
   }
 
+  /** Get numeric and interval TypeSig */
+  override def getNumericAndInterval(): TypeSig =
+    TypeSig.numeric + TypeSig.CALENDAR + TypeSig.DAYTIME + TypeSig.YEARMONTH
 }

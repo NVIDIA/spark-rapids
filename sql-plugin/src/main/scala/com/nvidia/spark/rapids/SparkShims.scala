@@ -90,6 +90,23 @@ trait SparkShims {
   def parquetRebaseRead(conf: SQLConf): String
   def parquetRebaseWrite(conf: SQLConf): String
   def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand
+  def hasSeparateINT96RebaseConf: Boolean
+
+  def int96ParquetRebaseRead(conf: SQLConf): String = {
+    parquetRebaseRead(conf)
+  }
+
+  def int96ParquetRebaseWrite(conf: SQLConf): String = {
+    parquetRebaseWrite(conf)
+  }
+
+  def int96ParquetRebaseReadKey: String = {
+    parquetRebaseReadKey
+  }
+
+  def int96ParquetRebaseWriteKey: String = {
+    parquetRebaseWriteKey
+  }
 
   def getParquetFilters(
     schema: MessageType,
@@ -218,7 +235,13 @@ trait SparkShims {
 
   def shouldFailDivByZero(): Boolean
 
-  def shouldFailDivOverflow(): Boolean
+  def shouldFailDivOverflow: Boolean
+
+  /**
+   * This is specifically in relation to SPARK-33498 which went into 3.1.0. We cannot fully support
+   * it right now, so we fall back to the CPU in those cases.
+   */
+  def shouldFallbackOnAnsiTimestamp(): Boolean
 
   def createTable(table: CatalogTable,
     sessionCatalog: SessionCatalog,

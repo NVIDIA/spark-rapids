@@ -54,6 +54,8 @@ trait Spark32XShims extends SparkShims {
   override final def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
 
+  override def hasSeparateINT96RebaseConf: Boolean = true
+
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
@@ -137,15 +139,5 @@ trait Spark32XShims extends SparkShims {
     Spark32XShimsUtils.leafNodeDefaultParallelism(ss)
   }
 
-}
-
-// TODO dedupe utils inside shims
-object GpuJoinUtils {
-  def getGpuBuildSide(buildSide: BuildSide): GpuBuildSide = {
-    buildSide match {
-      case BuildRight => GpuBuildRight
-      case BuildLeft => GpuBuildLeft
-      case _ => throw new Exception("unknown buildSide Type")
-    }
-  }
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 }

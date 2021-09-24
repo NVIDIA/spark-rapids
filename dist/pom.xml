@@ -191,7 +191,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -200,7 +200,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -208,7 +208,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -246,7 +246,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -255,7 +255,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -312,6 +312,8 @@
                                             file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"/>
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -468,7 +470,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -477,7 +479,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -485,7 +487,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -523,7 +525,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -532,7 +534,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -565,6 +567,8 @@
                                             file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"/>
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -714,7 +718,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -724,7 +728,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark302"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -732,7 +736,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -741,7 +745,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -750,7 +754,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark312"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -783,6 +787,8 @@
                                                 file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"/>
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -966,7 +972,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -975,7 +981,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -983,7 +989,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1033,7 +1039,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1042,7 +1048,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1098,6 +1104,8 @@
                                             file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"/>
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1300,7 +1308,7 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
                                             </patternset>
                                         </unzip>
 
@@ -1309,7 +1317,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark301"
                                         >
                                             <patternset id="excludeMeta">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1317,7 +1325,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includeMeta">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1367,7 +1375,7 @@
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
                                             <patternset id="includes-spark311">
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1376,7 +1384,7 @@
                                                 dest="${project.build.directory}/parallel-world/spark311"
                                         >
                                             <patternset id="excludes-spark311">
-                                                <excludesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <excludesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>
@@ -1456,6 +1464,8 @@
                                             file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"/>
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1553,8 +1563,8 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                             </patternset>
                                         </unzip>
                                         <unzip
@@ -1650,8 +1660,8 @@
                                                 dest="${project.build.directory}/parallel-world"
                                         >
                                             <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-base.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-extras.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
                                                 <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                                             </patternset>
                                         </unzip>

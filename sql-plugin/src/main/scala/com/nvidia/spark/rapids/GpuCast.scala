@@ -19,17 +19,16 @@ package com.nvidia.spark.rapids
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
-import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.YearParseUtil
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
-import org.apache.spark.sql.rapids.RegexReplace
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -63,6 +62,11 @@ class CastExprMeta[INPUT <: CastBase](
       willNotWorkOnGpu(s"Casting child type $fromDataType to $toDataType is not supported")
     }
     (fromDataType, toDataType) match {
+      case ( _: DecimalType, _: FloatType | _: DoubleType) if !conf.isCastDecimalToFloatEnabled =>
+        willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
+            "to convert decimal data types to floating point and this can produce results that " +
+            "slightly differ from the default behavior in Spark.  To enable this operation on " +
+            s"the GPU, set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT} to true.")
       case (_: FloatType | _: DoubleType, _: DecimalType) if !conf.isCastFloatToDecimalEnabled =>
         willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
             "to convert floating point data types to decimals and this can produce results that " +
@@ -81,17 +85,22 @@ class CastExprMeta[INPUT <: CastBase](
             "\"-1.7976931348623158E308\" in both these cases the GPU returns Double.MaxValue " +
             "while CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this " +
             s"operation on the GPU, set ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-      case (_: StringType, _: TimestampType) if !conf.isCastStringToTimestampEnabled =>
-        willNotWorkOnGpu("the GPU only supports a subset of formats " +
-            "when casting strings to timestamps. Refer to the CAST documentation " +
-            "for more details. To enable this operation on the GPU, set" +
-            s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+      case (_: StringType, _: TimestampType) =>
+        if (!conf.isCastStringToTimestampEnabled) {
+          willNotWorkOnGpu("the GPU only supports a subset of formats " +
+              "when casting strings to timestamps. Refer to the CAST documentation " +
+              "for more details. To enable this operation on the GPU, set" +
+              s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+        }
+        YearParseUtil.tagParseStringAsDate(conf, this)
+      case (_: StringType, _: DateType) =>
+        YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DecimalType) if !conf.isCastStringToDecimalEnabled =>
         // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
         willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
             "results which slightly differed from the correct results when the string represents " +
             "any number exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For " +
-            "instance, the GPU returns 99999999999999987 given input string " +
+            "instance, the GPU returns 99999999999999987 when given the input string " +
             "\"99999999999999999\". The cause of divergence is that we can not cast strings " +
             "containing scientific notation to decimal directly. So, we have to cast strings " +
             "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
@@ -349,20 +358,44 @@ object GpuCast extends Arm {
         castStructToString(input, fields, ansiMode, legacyCastToString,
           stringToDateAnsiModeEnabled)
 
-      // ansi cast from larger-than-integer integral types, to integer
-      case (LongType, IntegerType) if ansiMode =>
+      // ansi cast from larger-than-long integral-like types, to long
+      case (dt: DecimalType, LongType) if ansiMode =>
+        // This is a work around for https://github.com/rapidsai/cudf/issues/9282
+        val min = BigDecimal(Long.MinValue)
+            .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
+        val max = BigDecimal(Long.MaxValue)
+            .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
+        assertValuesInRange(input, Scalar.fromDecimal(min), Scalar.fromDecimal(max))
+        if (dt.precision <= DType.DECIMAL32_MAX_PRECISION && dt.scale < 0) {
+          // This is a work around for https://github.com/rapidsai/cudf/issues/9281
+          withResource(input.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))) { tmp =>
+            tmp.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+          }
+        } else {
+          input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
+
+      case (dt: DecimalType, LongType) if dt.precision <= DType.DECIMAL32_MAX_PRECISION &&
+          dt.scale < 0 =>
+        // This is a work around for https://github.com/rapidsai/cudf/issues/9281
+        withResource(input.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))) { tmp =>
+          tmp.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
+
+      // ansi cast from larger-than-integer integral-like types, to integer
+      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
           Scalar.fromInt(Int.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
-      // ansi cast from larger-than-short integral types, to short
-      case (LongType | IntegerType, ShortType) if ansiMode =>
+      // ansi cast from larger-than-short integral-like types, to short
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
-      // ansi cast from larger-than-byte integral types, to byte
-      case (LongType | IntegerType | ShortType, ByteType) if ansiMode =>
+      // ansi cast from larger-than-byte integral-like types, to byte
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))

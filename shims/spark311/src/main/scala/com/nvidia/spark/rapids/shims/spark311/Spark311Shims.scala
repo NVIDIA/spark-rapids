@@ -17,7 +17,12 @@
 package com.nvidia.spark.rapids.shims.spark311
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
 import com.nvidia.spark.rapids.spark311.RapidsShuffleManager
+import org.apache.parquet.schema.MessageType
+
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.internal.SQLConf
 
 class Spark311Shims extends SparkBaseShims {
 
@@ -25,5 +30,36 @@ class Spark311Shims extends SparkBaseShims {
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
+  }
+
+  override def int96ParquetRebaseRead(conf: SQLConf): String = {
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
+  }
+
+  override def int96ParquetRebaseWrite(conf: SQLConf): String = {
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
+  }
+
+  override def int96ParquetRebaseReadKey: String = {
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
+  }
+
+  override def int96ParquetRebaseWriteKey: String = {
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+  }
+
+  override def hasCastFloatTimestampUpcast: Boolean = false
+
+  override def getParquetFilters(
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive)
   }
 }

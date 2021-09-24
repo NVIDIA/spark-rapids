@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims.spark311db
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
 import com.nvidia.spark.rapids.spark311db.RapidsShuffleManager
 import org.apache.parquet.schema.MessageType
 
@@ -42,4 +43,20 @@ class Spark311dbShims extends SparkBaseShims {
       datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+
+  override def int96ParquetRebaseRead(conf: SQLConf): String = {
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
+  }
+
+  override def int96ParquetRebaseWrite(conf: SQLConf): String = {
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
+  }
+
+  override def int96ParquetRebaseReadKey: String = {
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
+  }
+
+  override def int96ParquetRebaseWriteKey: String = {
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+  }
 }

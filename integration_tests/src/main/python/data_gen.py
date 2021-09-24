@@ -176,11 +176,11 @@ class StringGen(DataGen):
             length = _MAX_CHOICES
         self._start(rand, lambda : strs[rand.randrange(0, length)])
 
-_BYTE_MIN = -(1 << 7)
-_BYTE_MAX = (1 << 7) - 1
+BYTE_MIN = -(1 << 7)
+BYTE_MAX = (1 << 7) - 1
 class ByteGen(DataGen):
     """Generate Bytes"""
-    def __init__(self, nullable=True, min_val =_BYTE_MIN, max_val = _BYTE_MAX, special_cases=[]):
+    def __init__(self, nullable=True, min_val = BYTE_MIN, max_val = BYTE_MAX, special_cases=[]):
         super().__init__(ByteType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val

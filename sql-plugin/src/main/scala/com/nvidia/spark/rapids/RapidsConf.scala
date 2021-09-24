@@ -600,6 +600,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_CAST_DECIMAL_TO_FLOAT = conf("spark.rapids.sql.castDecimalToFloat.enabled")
+      .doc("Casting from decimal to floating point types on the GPU returns results that have " +
+          "tiny difference compared to results returned from CPU.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
       "on the GPU. Currently hex values aren't supported on the GPU. Also note that casting from " +
@@ -629,6 +635,16 @@ object RapidsConf {
       "documentation for more details.")
     .booleanConf
     .createWithDefault(false)
+
+  val HAS_EXTENDED_YEAR_VALUES = conf("spark.rapids.sql.hasExtendedYearValues")
+      .doc("Spark 3.2.0+ extended parsing of years in dates and " +
+          "timestamps to support the full range of possible values. Prior " +
+          "to this it was limited to a positive 4 digit year. The Accelerator does not " +
+          "support the extended range yet. This config indicates if your data includes " +
+          "this extended range or not, or if you don't care about getting the correct " +
+          "values on values with the extended range.")
+      .booleanConf
+      .createWithDefault(true)
 
   val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
       .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
@@ -1508,11 +1524,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val areLeftAntiJoinsEnabled: Boolean = get(ENABLE_LEFT_ANTI_JOIN)
 
+  lazy val isCastDecimalToFloatEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_FLOAT)
+
   lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
+
+  lazy val hasExtendedYearValues: Boolean = get(HAS_EXTENDED_YEAR_VALUES)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
