@@ -1186,8 +1186,8 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 
 
 # Tests for standard deviation and variance aggregations.
+@ignore_order(local=True)
 @approximate_float
-@ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
@@ -1209,7 +1209,8 @@ def test_groupby_std_variance(data_gen, conf):
         conf=local_conf)
 
 
-@ignore_order
+@ignore_order(local=True)
+@approximate_float
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
@@ -1230,31 +1231,33 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
         conf=local_conf)
 
 
-@allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
+@ignore_order(local=True)
+@approximate_float
+@allow_non_gpu('KnownFloatingPointNormalized', 'NormalizeNaNAndZero',
+               'HashAggregateExec', 'SortAggregateExec',
+               'Cast', 
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
-               'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
+               'SortArray', 'Alias', 'Literal', 'Count',
                'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
                'AggregateExpression')
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 def test_groupby_std_variance_partial_replace_fallback(data_gen,
                                                        conf,
                                                        replace_mode,
-                                                       aqe_enabled,
-                                                       use_obj_hash_agg):
+                                                       aqe_enabled):
     local_conf = copy_and_update(conf, {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
-            'spark.sql.adaptive.enabled': aqe_enabled,
-            'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg})
+                                        'spark.sql.adaptive.enabled': aqe_enabled})
 
-    cpu_clz, gpu_clz = ['StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp'], ['GpuStddevPop', 'GpuStddevSamp', 'GpuVariancePop', 'GpuVarianceSamp']
-    exist_clz, non_exist_clz = [], []
-    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage (
-    # map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
+    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage
+    # (map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
     # set the expected exist_classes according to runtime.
+    cpu_clz, gpu_clz = ['StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp'], \
+                       ['GpuStddevPop', 'GpuStddevSamp', 'GpuVariancePop', 'GpuVarianceSamp']
+    exist_clz, non_exist_clz = [], []
     if is_databricks_runtime():
         if replace_mode == 'partial':
             exist_clz, non_exist_clz = cpu_clz, gpu_clz
@@ -1266,7 +1269,14 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
             .groupby('a')
-            .agg(f.stddev('b')),
+            .agg(
+                f.stddev('b'),
+                f.stddev_pop('b'),
+                f.stddev_samp('b'),
+                f.variance('b'),
+                f.var_pop('b'),
+                f.var_samp('b')
+            ),
         exist_classes=','.join(exist_clz),
         non_exist_classes=','.join(non_exist_clz),
         conf=local_conf)
