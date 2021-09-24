@@ -104,7 +104,7 @@ find . -name '*.class' -not -path './'$PARALLEL_WORLDS_DIR/'spark*' | \
   cut -d/ -f 3- | sort > $UNSHIMMED_LIST_TXT
 
 for classFile in $(< $UNSHIMMED_LIST_TXT); do
-  DISTINCT_COPIES=$(find . -path "./*/$classFile" -exec md5sum {} + |
+  DISTINCT_COPIES=$(find ./"$PARALLEL_WORLDS_DIR" -path "./*/$classFile" -exec md5sum {} + |
     cut -d' ' -f 1 | sort -u | wc -l)
   ((DISTINCT_COPIES == 1)) || {
     echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";
