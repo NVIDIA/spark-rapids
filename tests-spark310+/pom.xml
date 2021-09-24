@@ -45,6 +45,7 @@
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>
         </dependency>
+        <!-- use aggregator jar because accessing internal classesa-->
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
