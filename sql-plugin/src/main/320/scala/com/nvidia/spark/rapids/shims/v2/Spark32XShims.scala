@@ -53,7 +53,14 @@ trait Spark32XShims extends SparkShims {
     conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_READ)
   override final def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.PARQUET_REBASE_MODE_IN_WRITE)
-
+  override def int96ParquetRebaseRead(conf: SQLConf): String =
+    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ)
+  override def int96ParquetRebaseWrite(conf: SQLConf): String =
+    conf.getConf(SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE)
+  override def int96ParquetRebaseReadKey: String =
+    SQLConf.PARQUET_INT96_REBASE_MODE_IN_READ.key
+  override def int96ParquetRebaseWriteKey: String =
+    SQLConf.PARQUET_INT96_REBASE_MODE_IN_WRITE.key
   override def hasSeparateINT96RebaseConf: Boolean = true
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
