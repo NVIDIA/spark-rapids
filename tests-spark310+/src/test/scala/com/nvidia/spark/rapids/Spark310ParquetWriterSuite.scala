@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Table, TableWriter}
-import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
+import com.nvidia.spark.rapids.shims.v2.{ParquetCachedBatchSerializer, ParquetOutputFileFormat}
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
@@ -144,7 +144,7 @@ class Spark310ParquetWriterSuite extends SparkQueryCompareTestSuite {
     withResource(cudfCols) { _ =>
       val cb = new ColumnarBatch(gpuCols, ROWS)
       whenSplitCalled(cb)
-      val ser = new com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer
+      val ser = new ParquetCachedBatchSerializer
       val dummySchema = new StructType(
         Array(StructField("empty", ByteType, false),
           StructField("empty", ByteType, false),
