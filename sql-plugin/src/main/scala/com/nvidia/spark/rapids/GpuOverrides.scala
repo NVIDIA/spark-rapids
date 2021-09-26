@@ -1219,9 +1219,10 @@ object GpuOverrides {
       }),
     expr[NaNvl](
       "Evaluates to `left` iff left is not NaN, `right` otherwise",
-      ExprChecks.binaryProject(TypeSig.fp, TypeSig.fp,
-        ("lhs", TypeSig.fp, TypeSig.fp),
-        ("rhs", TypeSig.fp, TypeSig.fp)),
+      ExprChecks.binaryProject(TypeSig.fp + TypeSig.DECIMAL_128_FULL,
+        TypeSig.fp + TypeSig.DECIMAL_128_FULL,
+        ("lhs", TypeSig.fp + TypeSig.DECIMAL_128_FULL, TypeSig.fp + TypeSig.DECIMAL_128_FULL),
+        ("rhs", TypeSig.fp + TypeSig.DECIMAL_128_FULL, TypeSig.fp + TypeSig.DECIMAL_128_FULL)),
       (a, conf, p, r) => new BinaryExprMeta[NaNvl](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuNaNvl(lhs, rhs)
@@ -1752,8 +1753,10 @@ object GpuOverrides {
       ExprChecks.binaryProjectAndAst(
         TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
+        ("lhs",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.orderable),
+        ("rhs",
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
@@ -2190,8 +2193,8 @@ object GpuOverrides {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric +
+        TypeSig.numeric, TypeSig.numeric,
+        ("value", TypeSig.numeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -2211,8 +2214,8 @@ object GpuOverrides {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric +
+        TypeSig.numeric, TypeSig.numeric,
+        ("value", TypeSig.numeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),

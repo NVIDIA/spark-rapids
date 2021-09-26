@@ -909,7 +909,7 @@ eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 eq_gens_with_decimal_gen =  eq_gens + decimal_gens
 
 #gen for testing round operator
-round_gens = numeric_gens + decimal_gens
+round_gens = numeric_gens + decimal_gens + [decimal_gen_128bit]
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
