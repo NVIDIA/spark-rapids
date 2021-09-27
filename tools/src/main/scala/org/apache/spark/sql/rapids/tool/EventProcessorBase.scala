@@ -20,11 +20,11 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
 
-trait EventProcessorBase extends Logging {
+abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener with Logging {
 
-  type T <: AppBase
+ // type T <: AppBase
 
-  def processAnyEvent(app: T, event: SparkListenerEvent): Unit = {
+  def processAnyEvent(event: SparkListenerEvent): Unit = {
     event match {
       case _: SparkListenerLogStart =>
         doSparkListenerLogStart(app, event.asInstanceOf[SparkListenerLogStart])
@@ -120,6 +120,14 @@ trait EventProcessorBase extends Logging {
     app.sparkVersion = event.sparkVersion
   }
 
+  override def onOtherEvent(event: SparkListenerEvent): Unit = event match {
+    case SparkListenerLogStart(sparkVersion) =>
+      app.sparkVersion = sparkVersion
+    case _ =>
+      val wasResourceProfileAddedEvent = doSparkListenerResourceProfileAddedReflect(app, event)
+      if (!wasResourceProfileAddedEvent) doOtherEvent(app, event)
+  }
+
   def doSparkListenerResourceProfileAdded(
       app: T,
       event: SparkListenerResourceProfileAdded): Unit = {}
@@ -187,9 +195,17 @@ trait EventProcessorBase extends Logging {
       app: T,
       event: SparkListenerStageSubmitted): Unit = {}
 
+  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
+    doSparkListenerStageSubmitted(app, stageSubmitted)
+  }
+
   def doSparkListenerStageCompleted(
       app: T,
       event: SparkListenerStageCompleted): Unit = {}
+
+  override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
+    doSparkListenerStageCompleted(app, stageCompleted)
+  }
 
   def doSparkListenerTaskGettingResult(
       app: T,

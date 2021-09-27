@@ -234,7 +234,7 @@ class ApplicationInfo(
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
-  private lazy val eventProcessor =  new EventsProcessor()
+  private lazy val eventProcessor =  new EventsProcessor(this)
 
   // Process all events
   processEvents()
@@ -243,7 +243,7 @@ class ApplicationInfo(
   aggregateAppInfo
 
   override def processEvent(event: SparkListenerEvent) = {
-    eventProcessor.processAnyEvent(this, event)
+    eventProcessor.processAnyEvent(event)
     false
   }
 

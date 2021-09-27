@@ -63,12 +63,12 @@ class QualAppInfo(
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
 
-  private lazy val eventProcessor =  new QualEventProcessor()
+  private lazy val eventProcessor =  new QualEventProcessor(this)
 
   processEvents()
 
   override def processEvent(event: SparkListenerEvent): Boolean = {
-    eventProcessor.processAnyEvent(this, event)
+    eventProcessor.processAnyEvent(event)
     false
   }
 
