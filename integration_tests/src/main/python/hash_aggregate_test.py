@@ -1193,10 +1193,10 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_groupby_std_variance(data_gen, conf):
     local_conf = copy_and_update(conf, {
-        'spark.rapids.sql.decimalType.enabled': 'true', 
+        'spark.rapids.sql.decimalType.enabled': 'true',
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, data_gen, length=100),
+        lambda spark : gen_df(spark, data_gen, length=1000),
         "data_table",
         'select ' +
         'stddev(b),' +
@@ -1218,7 +1218,7 @@ def test_groupby_std_variance(data_gen, conf):
 def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
     local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, data_gen, length=100),
+        lambda spark : gen_df(spark, data_gen, length=1000),
         "data_table",
         'select ' +
         'stddev(c),' +
@@ -1235,7 +1235,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
 @approximate_float
 @allow_non_gpu('KnownFloatingPointNormalized', 'NormalizeNaNAndZero',
                'HashAggregateExec', 'SortAggregateExec',
-               'Cast', 
+               'Cast',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
                'SortArray', 'Alias', 'Literal', 'Count',
@@ -1267,7 +1267,7 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
         exist_clz = cpu_clz + gpu_clz
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: gen_df(spark, data_gen, length=100)
+        lambda spark: gen_df(spark, data_gen, length=1000)
             .groupby('a')
             .agg(
                 f.stddev('b'),
