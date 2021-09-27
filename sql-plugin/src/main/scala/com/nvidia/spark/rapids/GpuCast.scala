@@ -289,8 +289,7 @@ object GpuCast extends Arm {
     }
   }
 
-
-  def recursiveDoColumnar(
+  def doCast(
       input: ColumnView,
       fromDataType: DataType,
       toDataType: DataType,
@@ -492,7 +491,7 @@ object GpuCast extends Arm {
 
       case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
         withResource(input.getChildColumnView(0)) { childView =>
-          withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo,
+          withResource(doCast(childView, nestedFrom, nestedTo,
             ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) { childColumnVector =>
             withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
           }
@@ -631,7 +630,7 @@ object GpuCast extends Arm {
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType, StringType,
+          columns += doCast(firstColumnView, inputSchema.head.dataType, StringType,
             ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
@@ -639,7 +638,7 @@ object GpuCast extends Arm {
             // legacy: ","
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
-            val nonFirstColumn = recursiveDoColumnar(nonFirstColumnView,
+            val nonFirstColumn = doCast(nonFirstColumnView,
               inputSchema(nonFirstIndex).dataType, StringType, ansiMode, legacyCastToString,
                 stringToDateAnsiModeEnabled)
             if (legacyCastToString) {
@@ -1029,12 +1028,12 @@ object GpuCast extends Arm {
     // as possible
     withResource(input.getChildColumnView(0)) { kvStructColumn =>
       val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
-        recursiveDoColumnar(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
+        doCast(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
           stringToDateAnsiModeEnabled)
       }
       withResource(castKey) { castKey =>
         val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
-          recursiveDoColumnar(valueColumn, from.valueType, to.valueType,
+          doCast(valueColumn, from.valueType, to.valueType,
             ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         withResource(castValue) { castValue =>
@@ -1059,7 +1058,7 @@ object GpuCast extends Arm {
       stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
     withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
       from.indices.foreach { index =>
-        childColumns += recursiveDoColumnar(
+        childColumns += doCast(
           input.getChildColumnView(index),
           from(index).dataType,
           to(index).dataType,
@@ -1355,7 +1354,7 @@ case class GpuCast(
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
-    recursiveDoColumnar(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString,
+    doCast(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString,
       stringToDateAnsiModeEnabled)
 
 }

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{GroupByAggregation, GroupByAggregationOnColumn}
-import com.nvidia.spark.rapids.GpuCast.recursiveDoColumnar
+import com.nvidia.spark.rapids.GpuCast.doCast
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
@@ -108,8 +108,11 @@ case class GpuApproximatePercentile (
 
   // The result type is the same as the input type.
   private lazy val internalDataType: DataType = {
-    if (returnPercentileArray) ArrayType(child.dataType,
-      containsNull = false) else child.dataType
+    if (returnPercentileArray) {
+      ArrayType(child.dataType, containsNull = false)
+    } else {
+      child.dataType
+    }
   }
 
   override def dataType: DataType = internalDataType
@@ -117,15 +120,22 @@ case class GpuApproximatePercentile (
   override def children: Seq[Expression] = Seq(child, percentageExpression, accuracyExpression)
 }
 
+/**
+ * This expression computes an approximate percentile using a t-digest as input.
+ *
+ * @param child Expression that produces the t-digests.
+ * @param percentiles Percentile scalar, or percentiles array to evaluate.
+ * @param finalDataType Data type for results
+ */
 case class ApproxPercentileFromTDigestExpr(
     child: Expression,
     percentiles: Either[Double, Array[Double]],
     finalDataType: DataType)
   extends GpuExpression {
+
   override def columnarEval(batch: ColumnarBatch): Any = {
     val expr = child.asInstanceOf[GpuExpression]
     withResource(expr.columnarEval(batch).asInstanceOf[GpuColumnVector]) { cv =>
-
       percentiles match {
         case Left(p) =>
           // For the scalar case, we still pass cuDF an array of percentiles
@@ -133,7 +143,7 @@ case class ApproxPercentileFromTDigestExpr(
           // array and return that (after converting from Double to finalDataType)
           withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
             withResource(percentiles.extractListElement(0)) { childView =>
-              withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
+              withResource(doCast(childView, DataTypes.DoubleType, finalDataType,
                   ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
                   stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
                 GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
@@ -147,8 +157,8 @@ case class ApproxPercentileFromTDigestExpr(
             if (finalDataType == DataTypes.DoubleType) {
               GpuColumnVector.from(percentiles.incRefCount(), dataType)
             } else {
-              withResource(percentiles.extractListElement(0)) { childView =>
-                withResource(recursiveDoColumnar(childView, DataTypes.DoubleType, finalDataType,
+              withResource(percentiles.getChildColumnView(0)) { childView =>
+                withResource(doCast(childView, DataTypes.DoubleType, finalDataType,
                     ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
                     stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
                   withResource(percentiles.replaceListChild(childCv)) { x =>
