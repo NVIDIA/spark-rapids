@@ -30,12 +30,11 @@ import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualAppInfo(
-    numOutputRows: Int,
-    eventLogInfo: EventLogInfo,
+    eventLogInfo: Option[EventLogInfo],
     hadoopConf: Configuration,
     pluginTypeChecker: Option[PluginTypeChecker],
     readScorePercent: Int)
-  extends AppBase(numOutputRows, eventLogInfo, hadoopConf) with Logging {
+  extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
   var isPluginEnabled = false
@@ -327,12 +326,12 @@ case class QualificationSummaryInfo(
 object QualAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
-      numRows: Int,
       hadoopConf: Configuration,
       pluginTypeChecker: Option[PluginTypeChecker],
       readScorePercent: Int): Option[QualAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(numRows, path, hadoopConf, pluginTypeChecker, readScorePercent)
+        val app = new QualAppInfo(Some(path), hadoopConf, pluginTypeChecker,
+          readScorePercent)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {

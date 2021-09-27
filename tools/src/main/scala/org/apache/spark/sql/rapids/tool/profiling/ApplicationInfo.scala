@@ -185,11 +185,10 @@ object SparkPlanInfoWithStage {
  * Used only for Profiling.
  */
 class ApplicationInfo(
-    numRows: Int,
     hadoopConf: Configuration,
     eLogInfo: EventLogInfo,
     val index: Int)
-  extends AppBase(numRows, eLogInfo, hadoopConf) with Logging {
+  extends AppBase(Some(eLogInfo), hadoopConf) with Logging {
 
   // executorId to executor info
   val executorIdToInfo = new HashMap[String, ExecutorInfoClass]()
