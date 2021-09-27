@@ -890,6 +890,24 @@ class OpcodeSuite extends FunSuite {
     checkEquivNotCompiled(result, ref)
   }
 
+  test("FALLBACK TO CPU: exception handling - unsupported") {
+    val myudf1: Int => Int = { a =>
+      var x:Int = 0
+      try {
+        x = a
+      } catch {
+        case ex: Exception => { }
+      }
+      x
+    }
+
+    val u1 = makeUdf(myudf1)
+    val dataset = List(1, 5, 3, 7).toDS()
+    val result = dataset.withColumn("new", u1('value))
+    val ref = dataset.withColumn("new", col("value"))
+    checkEquivNotCompiled(result, ref)
+  }
+
   test("conditional doubles test2") {
     val myudf: Double => Double = { x =>
       val t =
