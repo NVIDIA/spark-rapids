@@ -161,26 +161,28 @@ object AggregateUtils {
 }
 
 /**
- * Structure containing the original expressions, and a seq of `CudfAggregate`
- * that corresponds to such a `GpuAggregateExpression.` For example, a
- * `GpuAverage` aggregate, means we have two `CudfAggregate` instances, one
- * for the count and one for the sum (hence the sequence).
+ * Structure containing the original expressions, and an object of `CudfAggregate`
+ * that is an instance of `GpuAggregateExpression`. We may have multiple `CudfAggregate`
+ * objects for a complete aggregation.
+ * For example, in `GpuAverage` aggregate we have two `CudfAggregate` instances, one
+ * for the count (in the update stage) and one for the sum (of count, in the merge stage).
  *
- * For `boundUpdateAggregates` and `boundMergeAggregates` items, each from those have a reference
- * that is bound to the update and merge buffer attributes, respectively.
+ * The `boundUpdateAggregates` and `boundMergeAggregates` items are used to hold references
+ * that are bound to the update and merge buffer attributes, respectively. We store these
+ * attributes of different stages separately because they can be incompatible when moving
+ * from stage to stage.
  * For example, the `GpuM2` aggregate can have either a `CudfM2` or a `CudfMergeM2`
- * `CudfAggregate`. The reference used for `CudfM2` is that of 3 columns
- * (n, mean, m2), but the reference used for `CudfMergeM2` is that of a struct
- * (m2struct). In other words, this is the shape cuDF expects.
+ * `CudfAggregate`. The reference used for `CudfM2` bounds to three columns of Double type
+ * (n, mean, m2), while the reference used for `CudfMergeM2` bounds to one column of STRUCT type
+ * (m2struct).
  *
- * In the update case, `boundUpdateAggregates` follows Spark, for the aggregates we have
+ * In the update case, `boundUpdateAggregates` shape follows Spark, for the aggregates we have
  * currently implemented. The update case must match the shape outputted by the preUpdate
  * step.
  *
  * In the merge case, `boundMergeAggregates` shape needs to be the result of the preMerge
- * step. In the case of `CudfMergeM2`, preMerge takes 3 columns and turns them
- * into the desired struct.
- *
+ * step. In the case of `CudfMergeM2`, preMerge takes three columns and turns them into the
+ * desired struct column, which is required by `CudfMergeM2`.
  */
 case class BoundCudfAggregate(
     aggExpression: GpuAggregateExpression,
