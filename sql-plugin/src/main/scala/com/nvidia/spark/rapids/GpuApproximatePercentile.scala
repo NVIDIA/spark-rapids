@@ -136,7 +136,7 @@ case class ApproxPercentileFromTDigestExpr(
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val expr = child.asInstanceOf[GpuExpression]
-    withResource(expr.columnarEval(batch).asInstanceOf[GpuColumnVector]) { cv =>
+    withResource(GpuExpressionsUtils.columnarEvalToColumn(expr, batch)) { cv =>
       percentiles match {
         case Left(p) =>
           // For the scalar case, we still pass cuDF an array of percentiles
@@ -145,8 +145,8 @@ case class ApproxPercentileFromTDigestExpr(
           withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
             withResource(percentiles.extractListElement(0)) { childView =>
               withResource(doCast(childView, DataTypes.DoubleType, finalDataType,
-                  ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
-                  stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
+                  ansiMode = false, legacyCastToString = false,
+                  stringToDateAnsiModeEnabled = false)) { childCv =>
                 GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
               }
             }
@@ -160,8 +160,8 @@ case class ApproxPercentileFromTDigestExpr(
             } else {
               withResource(percentiles.getChildColumnView(0)) { childView =>
                 withResource(doCast(childView, DataTypes.DoubleType, finalDataType,
-                    ansiMode = SQLConf.get.ansiEnabled, legacyCastToString = false,
-                    stringToDateAnsiModeEnabled = SQLConf.get.ansiEnabled)) { childCv =>
+                    ansiMode = false, legacyCastToString = false,
+                    stringToDateAnsiModeEnabled = false)) { childCv =>
                   withResource(percentiles.replaceListChild(childCv)) { x =>
                     GpuColumnVector.from(x.copyToColumnVector(), dataType)
                   }
