@@ -30,7 +30,7 @@
 #   GPG_PASSPHRASE: The passphrase used to sign files, only required when <SIGN_FILE> is true.
 ###
 
-set -e
+set -ex
 SIGN_FILE=$1
 DATABRICKS=$2
 VERSIONS_BUILT=$3
@@ -82,24 +82,24 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 # Distribution jar is a shaded artifact so use the reduced dependency pom.
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -DpomFile=$AGGREGATOR_PL/dependency-reduced-pom.xml
+            -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER
 
 ###### Deploy integration tests jar(s) ######
 TESTS_ART_ID=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.artifactId -DforceStdout`
 TESTS_ART_VER=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.version -DforceStdout`
-TESTS_DOC_JARS="-Dsources=${TESTS_FPATH}-sources.jar -Djavadoc=${TESTS_FPATH}-javadoc.jar"
+TESTS_DOC_JARS="-Dsources=deployjars/$TESTS_ART_ID-$TESTS_ART_VER-sources.jar -Djavadoc=deployjars/$TESTS_ART_ID-$TESTS_ART_VER-javadoc.jar"
 VERSIONS_LIST=${VERSIONS_BUILT//','/' '}
 for VER in ${VERSIONS_LIST}; do
     TESTS_FPATH="deployjars/$TESTS_ART_ID-$TESTS_ART_VER-spark$VER"
     $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $TESTS_DOC_JARS \
-            -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
+            -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml -Dclassifier=spark$VER
 done
 
 ###### Deploy profiling tool jar(s) ######
 TOOL_PL=${TOOL_PL:-"tools"}
-TOOL_ART_ID=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.artifactId -DforceStdout`
-TOOL_ART_VER=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.version -DforceStdout`
+TOOL_ART_ID=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.artifactId -DforceStdout -Prelease311`
+TOOL_ART_VER=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.version -DforceStdout -Prelease311`
 TOOL_FPATH="$TOOL_PL/target/$TOOL_ART_ID-$TOOL_ART_VER"
 TOOL_DOC_JARS="-Dsources=${TOOL_FPATH}-sources.jar -Djavadoc=${TOOL_FPATH}-javadoc.jar"
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
