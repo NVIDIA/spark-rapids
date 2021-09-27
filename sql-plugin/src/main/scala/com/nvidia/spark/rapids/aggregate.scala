@@ -166,30 +166,28 @@ object AggregateUtils {
  * `GpuAverage` aggregate, means we have two `CudfAggregate` instances, one
  * for the count and one for the sum (hence the sequence).
  *
- * `boundCudfAggregate` items have a reference that is bound to either the
- * update or merge buffer attributes, so it can mean different things depending
- * on the stage of the aggregate.
- *
+ * For `boundUpdateAggregates` and `boundMergeAggregates` items, each from those have a reference
+ * that is bound to the update and merge buffer attributes, respectively.
  * For example, the `GpuM2` aggregate can have either a `CudfM2` or a `CudfMergeM2`
  * `CudfAggregate`. The reference used for `CudfM2` is that of 3 columns
  * (n, mean, m2), but the reference used for `CudfMergeM2` is that of a struct
  * (m2struct). In other words, this is the shape cuDF expects.
  *
- * In the update case, `boundCudfAggregate` follows Spark, for the aggregates we have
+ * In the update case, `boundUpdateAggregates` follows Spark, for the aggregates we have
  * currently implemented. The update case must match the shape outputted by the preUpdate
  * step.
  *
- * In the merge case, `boundCudfAggregate` shape needs to be the result of the preMerge
+ * In the merge case, `boundMergeAggregates` shape needs to be the result of the preMerge
  * step. In the case of `CudfMergeM2`, preMerge takes 3 columns and turns them
  * into the desired struct.
  *
  */
 case class BoundCudfAggregate(
     aggExpression: GpuAggregateExpression,
-    boundCudfAggregate: Seq[CudfAggregate],
-    boundMergeAggs: Seq[CudfAggregate])
+    boundUpdateAggregates: Seq[CudfAggregate],
+    boundMergeAggregates: Seq[CudfAggregate])
 
-  /** Utility class to hold all of the metrics related to hash aggregation */
+/** Utility class to hold all of the metrics related to hash aggregation */
 case class GpuHashAggregateMetrics(
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
@@ -341,7 +339,7 @@ class GpuHashAggregateIterator(
   }
 
   private def computeTargetMergeBatchSize(confTargetSize: Long): Long = {
-    val aggregates = boundExpressions.boundCudfAggregates.flatMap(_.boundCudfAggregate)
+    val aggregates = boundExpressions.boundCudfAggregates.flatMap(_.boundUpdateAggregates)
     val mergedTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
     AggregateUtils.computeTargetBatchSize(confTargetSize, mergedTypes, mergedTypes,isReductionOnly)
   }
