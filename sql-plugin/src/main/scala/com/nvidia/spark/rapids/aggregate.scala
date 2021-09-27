@@ -149,14 +149,13 @@ object AggregateUtils {
     val mergeExpressionsSeq = aggExpressions.map(_.aggregateFunction.mergeExpressions)
 
     aggExpressions.zipWithIndex.map { case (expr, modeIndex) =>
-      val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
+      val updateAggs =
         GpuBindReferences.bindGpuReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
             .asInstanceOf[Seq[CudfAggregate]]
-      } else {
+      val mergeAggs =
         GpuBindReferences.bindGpuReferences(mergeExpressionsSeq(modeIndex), mergeBufferAttributes)
             .asInstanceOf[Seq[CudfAggregate]]
-      }
-      BoundCudfAggregate(expr, cudfAggregates)
+      BoundCudfAggregate(expr, updateAggs, mergeAggs)
     }
   }
 }
@@ -187,9 +186,10 @@ object AggregateUtils {
  */
 case class BoundCudfAggregate(
     aggExpression: GpuAggregateExpression,
-    boundCudfAggregate: Seq[CudfAggregate])
+    boundCudfAggregate: Seq[CudfAggregate],
+    boundMergeAggs: Seq[CudfAggregate])
 
-/** Utility class to hold all of the metrics related to hash aggregation */
+  /** Utility class to hold all of the metrics related to hash aggregation */
 case class GpuHashAggregateMetrics(
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
@@ -841,26 +841,20 @@ class GpuHashAggregateIterator(
         dataTypes ++=
           groupingExpressions.map(_.dataType)
 
-        for (BoundCudfAggregate(aggExp, aggregates) <- boundCudfAggregates) {
+        for (BoundCudfAggregate(aggExp, updateAggs, mergeAggs) <- boundCudfAggregates) {
           val aggFn = aggExp.aggregateFunction
           if ((aggExp.mode == Partial || aggExp.mode == Complete) && ! merge) {
             preStep ++= aggFn.preUpdate
             postStep ++= aggFn.postUpdate
             postStepAttr ++= aggFn.postUpdateAttr
+            cudfAggregates ++= updateAggs.map(_.updateAggregate)
+            dataTypes ++= updateAggs.map(_.updateDataType)
           } else {
             preStep ++= aggFn.preMerge
             postStep ++= aggFn.postMerge
             postStepAttr ++= aggFn.postMergeAttr
-          }
-
-          aggregates.map { a =>
-            if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
-              cudfAggregates += a.updateAggregate
-              dataTypes += a.updateDataType
-            } else {
-              cudfAggregates += a.mergeAggregate
-              dataTypes += a.dataType
-            }
+            cudfAggregates ++= mergeAggs.map(_.mergeAggregate)
+            dataTypes ++= mergeAggs.map(_.dataType)
           }
         }
 
@@ -892,17 +886,18 @@ class GpuHashAggregateIterator(
         // we ask the appropriate merge or update CudfAggregates, what their
         // reduction merge or update aggregates functions are
         val cvs = mutable.ArrayBuffer[GpuColumnVector]()
-        boundCudfAggregates.foreach { case BoundCudfAggregate(aggExp, aggs) =>
-          aggs.foreach { agg =>
-            val aggFn = if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
-              agg.updateReductionAggregate
+        boundCudfAggregates.foreach { case BoundCudfAggregate(aggExp, updateAggs, mergeAggs) =>
+          val aggs =
+            if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
+              updateAggs.map(a => (a.dataType, a.updateReductionAggregate))
             } else {
-              agg.mergeReductionAggregate
+              mergeAggs.map(a => (a.dataType, a.mergeReductionAggregate))
             }
+          aggs.foreach { case (dataType, aggFn) =>
             withResource(aggFn(GpuColumnVector.extractColumns(toAggregateBatch))) { res =>
-              val rapidsType = GpuColumnVector.getNonNestedRapidsType(agg.dataType)
+              val rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType)
               withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
-                cvs += GpuColumnVector.from(cv.castTo(rapidsType), agg.dataType)
+                cvs += GpuColumnVector.from(cv.castTo(rapidsType), dataType)
               }
             }
           }
