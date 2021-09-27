@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{GroupByAggregation, GroupByAggregationOnColumn}
 import com.nvidia.spark.rapids.GpuCast.doCast
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
@@ -131,7 +132,7 @@ case class ApproxPercentileFromTDigestExpr(
     child: Expression,
     percentiles: Either[Double, Array[Double]],
     finalDataType: DataType)
-  extends GpuExpression {
+  extends GpuExpression with ShimExpression {
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val expr = child.asInstanceOf[GpuExpression]
