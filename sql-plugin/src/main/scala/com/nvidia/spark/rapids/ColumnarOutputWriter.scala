@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.OutputStream
+
 import scala.collection.mutable
 
 import ai.rapids.cudf.{HostBufferConsumer, HostMemoryBuffer, NvtxColor, NvtxRange, Table, TableWriter}
@@ -79,27 +81,11 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
     buffers += Tuple2(buffer, len)
 
   def writeBufferedData(): Unit = {
-    val toProcess = buffers.dequeueAll(_ => true)
-    try {
-      toProcess.foreach(ops => {
-        val buffer = ops._1
-        var len = ops._2
-        var offset: Long = 0
-        while (len > 0) {
-          val toCopy = math.min(tempBuffer.length, len).toInt
-          buffer.getBytes(tempBuffer, 0, offset, toCopy)
-          outputStream.write(tempBuffer, 0, toCopy)
-          len = len - toCopy
-          offset = offset + toCopy
-        }
-      })
-    } finally {
-      toProcess.map(_._1).safeClose()
-    }
+    ColumnarOutputWriter.writeBufferedData(buffers, tempBuffer, outputStream)
   }
 
   /**
-   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically 
+   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
    * partitioned tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */
@@ -178,5 +164,29 @@ abstract class ColumnarOutputWriter(path: String, context: TaskAttemptContext,
     tableWriter.close()
     writeBufferedData()
     outputStream.close()
+  }
+}
+
+object ColumnarOutputWriter {
+  // write buffers to outputStream via tempBuffer and close buffers
+  def writeBufferedData(buffers: mutable.Queue[(HostMemoryBuffer, Long)],
+      tempBuffer: Array[Byte], outputStream: OutputStream): Unit = {
+    val toProcess = buffers.dequeueAll(_ => true)
+    try {
+      toProcess.foreach(ops => {
+        val buffer = ops._1
+        var len = ops._2
+        var offset: Long = 0
+        while (len > 0) {
+          val toCopy = math.min(tempBuffer.length, len).toInt
+          buffer.getBytes(tempBuffer, 0, offset, toCopy)
+          outputStream.write(tempBuffer, 0, toCopy)
+          len = len - toCopy
+          offset = offset + toCopy
+        }
+      })
+    } finally {
+      toProcess.map(_._1).safeClose()
+    }
   }
 }
