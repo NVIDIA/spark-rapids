@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.SparkListenerEvent
+import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
@@ -64,6 +64,9 @@ class QualAppInfo(
 
   private lazy val eventProcessor =  new QualEventProcessor(this)
 
+  def getEventListener: SparkListener = {
+    eventProcessor
+  }
   processEvents()
 
   override def processEvent(event: SparkListenerEvent): Boolean = {

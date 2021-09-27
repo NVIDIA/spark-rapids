@@ -552,11 +552,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("streaming qualification app") {
     TrampolineUtil.withTempDir { eventLogDir =>
+      val typeChecker = new PluginTypeChecker()
+      val qualApp = new QualAppInfo(None, new Configuration(),
+        Some(typeChecker), 20)
+      val listener = qualApp.getEventListener
       val appId = ToolTestUtils.runAndCollect("streaming") { spark =>
-        val typeChecker = new PluginTypeChecker()
-        val qualApp = new QualAppInfo(None, spark.sparkContext.hadoopConfiguration,
-          Some(typeChecker), 20)
-
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
@@ -566,6 +566,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "FROM t1 JOIN t2 ON t1.a = t2.a) AS t " +
           "GROUP BY a ORDER BY a")
       }
+      val qualInfo = qualApp.aggregateStats()
+      assert(qualInfo.nonEmpty)
+      assert(qualInfo.get.appName.equals("streaming"))
     }
   }
 }
