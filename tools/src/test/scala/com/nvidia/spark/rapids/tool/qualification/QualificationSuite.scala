@@ -31,7 +31,7 @@ import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, S
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.{QualAppInfo, QualificationSummaryInfo}
+import org.apache.spark.sql.rapids.tool.qualification.{QualAppInfo, QualificationSummaryInfo, RunningQualApp}
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -553,8 +553,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("streaming qualification app") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val typeChecker = new PluginTypeChecker()
-      val qualApp = new QualAppInfo(None, new Configuration(),
-        Some(typeChecker), 20)
+      val qualApp = new RunningQualApp(new Configuration(), Some(typeChecker), 20)
       val listener = qualApp.getEventListener
       val appId = ToolTestUtils.runAndCollect("streaming") { spark =>
         spark.sparkContext.addSparkListener(listener)

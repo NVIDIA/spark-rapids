@@ -119,7 +119,7 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       event: SparkListenerLogStart): Unit  = {
     app.sparkVersion = event.sparkVersion
   }
-  
+
   def doSparkListenerSQLExecutionStart(
       app: T,
       event: SparkListenerSQLExecutionStart): Unit = {}

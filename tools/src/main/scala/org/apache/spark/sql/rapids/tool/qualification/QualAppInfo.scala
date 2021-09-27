@@ -76,23 +76,27 @@ class QualAppInfo(
 
   // time in ms
   private def calculateAppDuration(startTime: Long): Option[Long] = {
-    val estimatedResult =
-      this.appEndTime match {
-        case Some(t) => this.appEndTime
-        case None =>
-          if (lastSQLEndTime.isEmpty && lastJobEndTime.isEmpty) {
-            None
-          } else {
-            logWarning(s"Application End Time is unknown for $appId, estimating based on" +
-              " job and sql end times!")
-            // estimate the app end with job or sql end times
-            val sqlEndTime = if (this.lastSQLEndTime.isEmpty) 0L else this.lastSQLEndTime.get
-            val jobEndTime = if (this.lastJobEndTime.isEmpty) 0L else lastJobEndTime.get
-            val maxEndTime = math.max(sqlEndTime, jobEndTime)
-            if (maxEndTime == 0) None else Some(maxEndTime)
-          }
-      }
-    ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
+    if (startTime > 0) {
+      val estimatedResult =
+        this.appEndTime match {
+          case Some(t) => this.appEndTime
+          case None =>
+            if (lastSQLEndTime.isEmpty && lastJobEndTime.isEmpty) {
+              None
+            } else {
+              logWarning(s"Application End Time is unknown for $appId, estimating based on" +
+                " job and sql end times!")
+              // estimate the app end with job or sql end times
+              val sqlEndTime = if (this.lastSQLEndTime.isEmpty) 0L else this.lastSQLEndTime.get
+              val jobEndTime = if (this.lastJobEndTime.isEmpty) 0L else lastJobEndTime.get
+              val maxEndTime = math.max(sqlEndTime, jobEndTime)
+              if (maxEndTime == 0) None else Some(maxEndTime)
+            }
+        }
+      ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
+    } else {
+      None
+    }
   }
 
   /**
