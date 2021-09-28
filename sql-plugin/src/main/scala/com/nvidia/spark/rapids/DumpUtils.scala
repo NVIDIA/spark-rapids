@@ -21,12 +21,13 @@ import java.util.Random
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, CompressionType, DType, HostBufferConsumer, HostMemoryBuffer, ParquetColumnWriterOptions, ParquetWriterOptions, Table, TableWriter}
+import ai.rapids.cudf.{
+  ColumnView, CompressionType, DType, HostBufferConsumer, HostMemoryBuffer,
+  ParquetColumnWriterOptions, ParquetWriterOptions, Table, TableWriter
+}
 import ai.rapids.cudf.ParquetColumnWriterOptions.{listBuilder, structBuilder, NestedBuilder}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object DumpUtils extends Logging with Arm {
@@ -56,7 +57,6 @@ object DumpUtils extends Logging with Arm {
    * @return parquet file path if dump is successful, e.g. /tmp/my-debug-prefix-123.parquet
    */
   def dumpToParquetFile(table: Table, filePrefix: String): Option[String] = {
-    logWarning("my-debug begin dump")
     if (table.getNumberOfColumns == 0) {
       logWarning("dump to parquet failed, has no column, file prefix is " + filePrefix)
       None
@@ -67,48 +67,17 @@ object DumpUtils extends Logging with Arm {
 
   private def dumpToParquetFileImp(table: Table, filePrefix: String): String = {
     val path = genPath(filePrefix)
-
-    // write data, Note not close the table
-    val dumper = new GpuTableToParquetDumper(path, table)
-
-    try {
-      // should not impact table
+    withResource(new ParquetDumper(path, table)) { dumper =>
       dumper.writeTable(table)
       path
-    } finally {
-      dumper.close()
     }
   }
 
   private def dumpToParquetFileImpl(columnarBatch: ColumnarBatch, filePrefix: String): String = {
-    // generate path, retry if file exists
-    val path = genPath(filePrefix)
-
-    // construct schema according field types
-    val schema = genSchema(columnarBatch)
-
-    // write data, Note not close the column
-    val dumper = new GpuColumnBatchToParquetDumper(path, schema)
-    try {
-      dumper.writeBatch(columnarBatch)
-    } finally {
-      dumper.close()
+    // transform to table then dump
+    withResource(GpuColumnVector.from(columnarBatch)) { table =>
+      dumpToParquetFileImp(table, filePrefix)
     }
-
-    path
-  }
-
-  private def genSchema(columnarBatch: ColumnarBatch): StructType = {
-    val fields = new Array[StructField](columnarBatch.numCols())
-    for (i <- 0 until columnarBatch.numCols()) {
-      // ,() are invalid in column name, replace these characters
-      val name = ("c" + i + "_" + columnarBatch.column(i).dataType())
-        .replace(',', '_')
-        .replace('(', '[')
-        .replace(')', ']')
-      fields(i) = StructField(name, columnarBatch.column(i).dataType())
-    }
-    StructType(fields)
   }
 
   private def genPath(filePrefix: String): String = {
@@ -125,42 +94,19 @@ object DumpUtils extends Logging with Arm {
   }
 }
 
-// used for dump column batch to parquet
-class GpuColumnBatchToParquetDumper(
-    path: String,
-    schema: StructType)
-  extends ParquetDumper(path) {
+// parquet dumper
+class ParquetDumper(path: String, table: Table) extends HostBufferConsumer
+  with Arm with AutoCloseable {
+  private[this] val outputStream = new FileOutputStream(path)
+  private[this] val tempBuffer = new Array[Byte](128 * 1024)
+  private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
 
-  override val tableWriter: TableWriter = {
-    val writeOptionBuilder = GpuParquetFileFormat
-      // avoid anything conversion, just dump as it is
-      .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
-      .withCompressionType(ParquetDumper.COMPRESS_TYPE)
-    Table.writeParquetChunked(writeOptionBuilder.build(), this)
-  }
-}
-
-// used for dump table to parquet
-class GpuTableToParquetDumper(
-    path: String,
-    table: Table)
-  extends ParquetDumper(path) {
-
-  override val tableWriter: TableWriter = {
+  val tableWriter: TableWriter = {
     // avoid anything conversion, just dump as it is
     val builder = ParquetDumper.parquetWriterOptionsFromTable(ParquetWriterOptions.builder(), table)
       .withCompressionType(ParquetDumper.COMPRESS_TYPE)
     Table.writeParquetChunked(builder.build(), this)
   }
-}
-
-// parquet dumper
-abstract class ParquetDumper(path: String) extends HostBufferConsumer with Arm {
-  private[this] val outputStream = new FileOutputStream(path)
-  private[this] val tempBuffer = new Array[Byte](128 * 1024)
-  private[this] val buffers = mutable.Queue[(HostMemoryBuffer, Long)]()
-
-  val tableWriter: TableWriter
 
   override
   def handleBuffer(buffer: HostMemoryBuffer, len: Long): Unit =
@@ -170,34 +116,9 @@ abstract class ParquetDumper(path: String) extends HostBufferConsumer with Arm {
     ColumnarOutputWriter.writeBufferedData(buffers, tempBuffer, outputStream)
   }
 
-  def writeBatch(batch: ColumnarBatch): Long = {
-    val startTimestamp = System.nanoTime
-    withResource(GpuColumnVector.from(batch)) { table =>
-      tableWriter.write(table)
-    }
-
-    GpuSemaphore.releaseIfNecessary(TaskContext.get)
-    val gpuTime = System.nanoTime - startTimestamp
+  def writeTable(table: Table): Unit = {
+    tableWriter.write(table)
     writeBufferedData()
-    gpuTime
-  }
-
-  def writeTable(table: Table): Long = {
-    val startTimestamp = System.nanoTime
-
-    val columns = new Array[ColumnVector](table.getNumberOfColumns)
-    for (i <- 0 until table.getNumberOfColumns) columns(i) = table.getColumn(i)
-
-    // copy to new table and write
-    withResource(new Table(columns: _*)) { newTable =>
-      tableWriter.write(newTable)
-    }
-
-    // Batch is no longer needed, write process from here does not use GPU.
-    GpuSemaphore.releaseIfNecessary(TaskContext.get)
-    val gpuTime = System.nanoTime - startTimestamp
-    writeBufferedData()
-    gpuTime
   }
 
   /**
@@ -280,6 +201,6 @@ object ParquetDumper extends Arm {
   }
 
   private def getTypeName(t: DType): String = {
-    "c_" + t.toString.replace(" ", "_")
+    "c_" + t.toString.replace(' ', '_')
   }
 }

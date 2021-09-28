@@ -173,20 +173,19 @@ object ColumnarOutputWriter {
       tempBuffer: Array[Byte], outputStream: OutputStream): Unit = {
     val toProcess = buffers.dequeueAll(_ => true)
     try {
-      toProcess.foreach(ops => {
-        val buffer = ops._1
-        var len = ops._2
+      toProcess.foreach { case (buffer, len) =>
         var offset: Long = 0
-        while (len > 0) {
-          val toCopy = math.min(tempBuffer.length, len).toInt
+        var left = len
+        while (left > 0) {
+          val toCopy = math.min(tempBuffer.length, left).toInt
           buffer.getBytes(tempBuffer, 0, offset, toCopy)
           outputStream.write(tempBuffer, 0, toCopy)
-          len = len - toCopy
+          left = left - toCopy
           offset = offset + toCopy
         }
-      })
+      }
     } finally {
-      toProcess.map(_._1).safeClose()
+      toProcess.map { case (buffer, len) => buffer }.safeClose()
     }
   }
 }
