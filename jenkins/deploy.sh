@@ -100,7 +100,7 @@ done
 TOOL_PL=${TOOL_PL:-"tools"}
 TOOL_ART_ID=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.artifactId -DforceStdout -Prelease311`
 TOOL_ART_VER=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.version -DforceStdout -Prelease311`
-TOOL_FPATH="$TOOL_PL/target/$TOOL_ART_ID-$TOOL_ART_VER"
+TOOL_FPATH="deployjars/$TOOL_ART_ID-$TOOL_ART_VER"
 TOOL_DOC_JARS="-Dsources=${TOOL_FPATH}-sources.jar -Djavadoc=${TOOL_FPATH}-javadoc.jar"
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $TOOL_DOC_JARS \
