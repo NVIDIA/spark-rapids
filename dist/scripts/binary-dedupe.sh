@@ -14,62 +14,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This script de-duplicates .class files at the binary level.
-# We could also diff classes using scalap / javap outputs.
-# However, with observed warnings in the output we have no guarantee that the
-# output is complete, and that the complete output would not exhibit diffs.
-# Binary diff may generate false positives for difference between classes at the
-# JVM / JDK level due to some potentially irrelevant difference in annotations.
-# However, most importantly, it guarantees to have no false negatives
-# for identical classes.
-
-# We use first shim e.g spark301 as a reference for the following algorithm of identifying
-# identical bytecode across all supported Spark shims:
-# 1. diff spark301 with all other shims pairwise and store the list of identical files
-#    in spark301-spark302.ident
-# 2. count the diff files from Step 1 which is (numShimsInBuild - 1)
-# 3. Call sort on all the diff files and replace duplicate entries with
-#    uniq counts
-# 4. all entries that occur (numShimsInBuild - 1) times are identical for all shims
-#    and constitute the list for spark3xx-common
 
 # PWD should be dist/target
 set -ex
 
-PARALLEL_WORLDS_DIR=parallel-world
-SHIM_DIRS=$(find "$PARALLEL_WORLDS_DIR" -maxdepth 1 -type d -path "*/spark3*" | cut -d/ -f 2)
-REF_SHIM=$(<<< "$SHIM_DIRS" head -1)
-SHIMS_TO_COMPARE=$(<<< "$SHIM_DIRS" tail --lines=+2)
-NUM_DIFFS=$(<<< "$SHIMS_TO_COMPARE" wc -l)
-DIFFDIR=binary-diffs
-DIFFLABEL="DEDUPE_BINARYDIFF_$(date +%s)"
-
-mkdir $DIFFDIR
-<<< "$SHIMS_TO_COMPARE" xargs -I% -n 1 bash -c \
-  "diff -q -s -r --label $DIFFLABEL \
-    $PARALLEL_WORLDS_DIR/$REF_SHIM $PARALLEL_WORLDS_DIR/% |
-    grep ^Files\ $DIFFLABEL\ and\ .*\.class\ are\ identical |
-    cut -d' ' -f 4 |
-    cut -d/ -f 3- > $DIFFDIR/$REF_SHIM-%.identical"
+[[ "${SKIP_BINARY_DEDUPE:-0}" == "1" ]] && {
+  echo "Skipping binary-dedupe. Unset SKIP_BINARY_DEDUPE to activate binary-dedupe"
+  exit 0
+}
 
 SPARK3XX_COMMON_TXT=$PWD/spark3xx-common.txt
 SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
-sort $DIFFDIR/* | uniq -c | grep "^ \+$NUM_DIFFS " | \
-  awk '{print $2}' > "$SPARK3XX_COMMON_TXT"
 
-mkdir "$SPARK3XX_COMMON_DIR"
-cd $PARALLEL_WORLDS_DIR/"$REF_SHIM"
-xargs --arg-file="$SPARK3XX_COMMON_TXT" -n 100 -I% cp --parent % "$SPARK3XX_COMMON_DIR"
-cd -
-echo PWD
+# This script de-duplicates .class files at the binary level.
+# We could also diff classes using scalap / javap outputs.
+# However, with observed warnings in the output we have no guarantee that the
+# output is complete, and that the complete output would not exhibit diffs.
+# We compute and compare checksum signatures of same-named classes
 
-# it's now safe to delete duplicate .class files from the original locations
-# don't use rm */% because globbing is broken for files containing $
-for shimDir in $SHIM_DIRS; do
-  xargs --arg-file="$SPARK3XX_COMMON_TXT" -P 4 -n 100 -I% rm "$PARALLEL_WORLDS_DIR/$shimDir/%"
-done
+# The following pipeline determines identical classes across shims in this build.
+# If the files are absent in some shims but are identical in the same shim
+#
+echo "Retrieving class files hashing to a single value"
+find . -path './parallel-world/spark*' -type f -name '*class' | \
+  xargs -L 1000 sha1sum -b | \
+  awk -F/ '$1=$1' | \
+  awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | tr -s ' ' | \
+  sort -k3 -k2,2 -u | uniq -f 2 -c | grep '^\s\+1 .*' | \
+  awk '{$1=""; $3=""; print $0 }' | tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
 
-mv "$SPARK3XX_COMMON_DIR" $PARALLEL_WORLDS_DIR/
+echo "Deleting duplicates of spark3xx-common classes"
+xargs --arg-file="$SPARK3XX_COMMON_TXT" -P 6 -n 1 -I% bash -c "
+    shim=\$(echo '%' | cut -d'/' -f 2)
+    class_file=\$(echo '%' | cut -d'/' -f 3-)
+    class_dir=\$(dirname \$class_file)
+    dest_dir=$SPARK3XX_COMMON_DIR/\$class_dir
+    mkdir -p \$dest_dir && \
+      cp ./parallel-world/\$shim\/\$class_file \$dest_dir/ && \
+      find ./parallel-world -path './parallel-world/spark3*/'\$class_file -exec rm {} + || exit 255
+  "
+
+mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
 # TODO further dedupe by FEATURE version lines:
 #  spark30x-common
@@ -100,11 +85,11 @@ mv "$SPARK3XX_COMMON_DIR" $PARALLEL_WORLDS_DIR/
 
 # Determine the list of unshimmed class files
 UNSHIMMED_LIST_TXT=unshimmed-result.txt
-find . -name '*.class' -not -path './'$PARALLEL_WORLDS_DIR/'spark*' | \
+find . -name '*.class' -not -path './parallel-world/spark*' | \
   cut -d/ -f 3- | sort > $UNSHIMMED_LIST_TXT
 
 for classFile in $(< $UNSHIMMED_LIST_TXT); do
-  DISTINCT_COPIES=$(find ./"$PARALLEL_WORLDS_DIR" -path "./*/$classFile" -exec md5sum {} + |
+  DISTINCT_COPIES=$(find './parallel-world' -path "./*/$classFile" -exec sha1sum -b {} + |
     cut -d' ' -f 1 | sort -u | wc -l)
   ((DISTINCT_COPIES == 1)) || {
     echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";
@@ -113,5 +98,5 @@ for classFile in $(< $UNSHIMMED_LIST_TXT); do
 done
 
 # Remove unshimmed classes from parallel worlds
-xargs --arg-file="$UNSHIMMED_LIST_TXT" -P 4 -n 100 -I% \
-  find . -path "./$PARALLEL_WORLDS_DIR/spark*/%" -exec rm {} +
+xargs --arg-file="$UNSHIMMED_LIST_TXT" -P 6 -n 100 -I% \
+  find . -path './parallel-world/spark*/%' -exec rm {} +
