@@ -1136,6 +1136,7 @@ def test_hash_reduction_avg_nulls_ansi(data_gen, conf):
     )
 
 
+@ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
   'HashPartitioning', 'ShuffleExchangeExec', 'Sum')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
@@ -1148,6 +1149,7 @@ def test_sum_fallback_when_ansi_enabled(data_gen):
         conf={'spark.sql.ansi.enabled': 'true'})
 
 
+@ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
   'HashPartitioning', 'ShuffleExchangeExec', 'Average')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
@@ -1160,6 +1162,7 @@ def test_avg_fallback_when_ansi_enabled(data_gen):
         conf={'spark.sql.ansi.enabled': 'true'})
 
 
+@ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression',
   'HashPartitioning', 'ShuffleExchangeExec', 'Count', 'Literal')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
@@ -1173,7 +1176,6 @@ def test_count_fallback_when_ansi_enabled(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
-@ignore_order(local=True)
 def test_no_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)
