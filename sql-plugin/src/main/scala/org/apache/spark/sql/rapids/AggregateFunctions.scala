@@ -1210,8 +1210,6 @@ abstract class GpuM2(child: Expression)
     GpuCast(GpuGetStructField(m2Struct, 2), DoubleType))
 }
 
-// TODO: Shim for Spark >=3.1.0:
-//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuStddevPop(child: Expression)
   extends GpuM2(child) {
 
@@ -1226,8 +1224,6 @@ case class GpuStddevPop(child: Expression)
   override def prettyName: String = "stddev_pop"
 }
 
-// TODO: Shim for Spark >=3.1.0:
-//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuStddevSamp(child: Expression)
   extends GpuM2(child) {
 
@@ -1245,8 +1241,6 @@ case class GpuStddevSamp(child: Expression)
   override def prettyName: String = "stddev_samp"
 }
 
-// TODO: Shim for Spark >=3.1.0:
-//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuVariancePop(child: Expression)
   extends GpuM2(child) {
 
@@ -1261,8 +1255,6 @@ case class GpuVariancePop(child: Expression)
   override def prettyName: String = "var_pop"
 }
 
-// TODO: Shim for Spark >=3.1.0:
-//  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
 case class GpuVarianceSamp(child: Expression)
   extends GpuM2(child) {
 
