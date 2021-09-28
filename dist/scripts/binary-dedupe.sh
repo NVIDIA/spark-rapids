@@ -33,8 +33,12 @@ SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
 # We compute and compare checksum signatures of same-named classes
 
 # The following pipeline determines identical classes across shims in this build.
-# If the files are absent in some shims but are identical in the same shim
-#
+# - checksum all class files
+# - move the varying-prefix shim3xy to the left so it can be easily skipped for uniq and sort
+# - sort by path, secondary sort by checksum, print one line per group
+# - produce uniq count for paths
+# - filter the paths with count=1, the class files without diverging checksums
+# - put the path starting with /spark3xy back together for the final list
 echo "Retrieving class files hashing to a single value"
 find . -path './parallel-world/spark*' -type f -name '*class' | \
   xargs -L 1000 sha1sum -b | \
