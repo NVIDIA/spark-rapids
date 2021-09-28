@@ -34,6 +34,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
@@ -3146,6 +3147,57 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuVarianceSamp(childExprs.head)
       }),
+    expr[ApproximatePercentile](
+      "Approximate percentile",
+      ExprChecks.groupByOnly(
+        // note that output can be single number or array depending on whether percentiles param
+        // is a single number or an array
+        TypeSig.gpuNumeric + TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
+        TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
+          TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+        Seq(
+          ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric + TypeSig.DATE +
+            TypeSig.TIMESTAMP),
+          ParamCheck("percentage", TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
+          ParamCheck("accuracy", TypeSig.INT, TypeSig.INT))),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
+
+        override def tagAggForGpu(): Unit = {
+          // check if the percentile expression can be supported on GPU
+          childExprs(1).wrapped match {
+            case lit: Literal => lit.value match {
+              case null =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU only supports non-null literal percentiles")
+              case a: ArrayData if a.numElements == 0 =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU does not support empty percentiles arrays")
+              case a: ArrayData if (0 until a.numElements).exists(a.isNullAt) =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU does not support percentiles arrays containing nulls")
+              case _ =>
+                // this is fine
+            }
+            case _ =>
+              willNotWorkOnGpu("approx_percentile on GPU only supports literal percentiles")
+          }
+        }
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuApproximatePercentile(childExprs.head,
+              childExprs(1).asInstanceOf[GpuLiteral],
+              childExprs(2).asInstanceOf[GpuLiteral])
+
+        override def aggBufferAttribute: AttributeReference = {
+          // Spark's ApproxPercentile has an aggregation buffer named "buf" with type "BinaryType"
+          // so we need to replace that here with the GPU aggregation buffer reference, which is
+          // a t-digest type
+          val aggBuffer = c.aggBufferAttributes.head
+          aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+        }
+      }).disabledByDefault("The GPU implementation of approx_percentile is not bit-for-bit " +
+          "compatible with Apache Spark. See the compatibility guide for more information."),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
@@ -3572,6 +3624,7 @@ object GpuOverrides extends Logging {
     neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
     neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
 
