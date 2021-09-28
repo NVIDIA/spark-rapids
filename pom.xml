@@ -85,6 +85,10 @@
             <id>release301</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
+                <property>
+                    <name>buildver</name>
+                    <value>301</value>
+                </property>
             </activation>
             <properties>
                 <spark.version>${spark301.version}</spark.version>
