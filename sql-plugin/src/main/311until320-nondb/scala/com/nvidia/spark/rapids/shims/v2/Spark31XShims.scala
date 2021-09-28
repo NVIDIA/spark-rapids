@@ -16,9 +16,6 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.GpuLiteral
-
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DoubleType
 
@@ -33,9 +30,4 @@ trait Spark31XShims extends Spark30XShims {
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
   override def int96ParquetRebaseWriteKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
-
-  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
-    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
-    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
-  }    
 }

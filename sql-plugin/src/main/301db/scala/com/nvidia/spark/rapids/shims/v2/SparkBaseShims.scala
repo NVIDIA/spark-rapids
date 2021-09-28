@@ -56,7 +56,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
+import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuLiteral, GpuStringReplace, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
@@ -315,7 +315,7 @@ abstract class SparkBaseShims extends Spark30XShims {
             GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
           }
 
-          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = 
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
             GpuAverage(childExprs.head)
 
           // Average is not supported in ANSI mode right now, no matter the type
@@ -690,4 +690,6 @@ abstract class SparkBaseShims extends Spark30XShims {
     kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
   }
+
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = GpuLiteral(Double.NaN)
 }

@@ -24,7 +24,6 @@ import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
 import org.apache.spark.sql.execution.SparkPlan
@@ -34,7 +33,6 @@ import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
-import org.apache.spark.sql.types.DoubleType
 
 /**
 * Shim base class that can be compiled with every supported 3.0.x
@@ -129,9 +127,4 @@ trait Spark30XShims extends SparkShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
-
-  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
-    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
-    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
-  }
 }
