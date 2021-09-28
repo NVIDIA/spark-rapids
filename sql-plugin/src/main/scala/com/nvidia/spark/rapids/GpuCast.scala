@@ -1365,7 +1365,8 @@ object GpuCast extends Arm {
         val absBound = math.pow(10, absBoundPrecision).toInt
       (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
       } else {
-        val absBound: BigInteger = new BigInteger(math.pow(10, DType.DECIMAL128_MAX_PRECISION).toString)
+        val absBound: BigInteger = new BigInteger(
+          math.pow(10, DType.DECIMAL128_MAX_PRECISION).toString)
         (Scalar.fromDecimal(0, absBound.negate()), Scalar.fromDecimal(0, absBound))
       }
     val checkedInput = if (ansiMode) {

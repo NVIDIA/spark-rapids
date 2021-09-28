@@ -127,14 +127,14 @@ def test_union_by_name(data_gen):
     pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample)]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
 ], ids=idfn)
-def test_coalece_types(data_gen):
+def test_coalesce_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen).coalesce(2),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('num_parts', [1, 10, 100, 1000, 2000], ids=idfn)
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
-def test_coalece_df(num_parts, length):
+def test_coalesce_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens)]
     assert_gpu_and_cpu_are_equal_collect(

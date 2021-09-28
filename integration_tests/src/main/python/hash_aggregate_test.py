@@ -26,8 +26,7 @@ from spark_session import is_before_spark_311, with_cpu_session
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
-                       'spark.rapids.sql.castStringToFloat.enabled': 'true',
-                       'spark.rapids.sql.explain' : 'ALL'
+                       'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
 
 _no_nans_float_smallbatch_conf = _no_nans_float_conf.copy()

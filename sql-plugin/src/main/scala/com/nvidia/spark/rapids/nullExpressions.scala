@@ -35,7 +35,6 @@ object GpuNvl extends Arm {
 
   def apply(lhs: ColumnVector, rhs: Scalar): ColumnVector = {
     withResource(lhs.isNotNull) { isLhsNotNull =>
-      println(s"KUHU lhs.type=${lhs.getType} rhs.type=${rhs.getType}")
       isLhsNotNull.ifElse(lhs, rhs)
     }
   }

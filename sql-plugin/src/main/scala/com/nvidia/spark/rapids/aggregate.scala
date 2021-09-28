@@ -31,7 +31,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, ExprId, Expression, If, NamedExpression, NullsFirst, Projection, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst, Projection, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -504,8 +504,6 @@ class GpuHashAggregateIterator(
         // batches coming out of the sort need to be merged
         withResource(keyBatchingIter.next()) { batch =>
           val vectors = GpuColumnVector.extractColumns(batch)
-//          println("KUHU AGG ITER BATCH")
-          //printCvs(vectors)
           computeAggregate(vectors, merge = true, isSorted = true)
         }
       }
@@ -575,13 +573,10 @@ class GpuHashAggregateIterator(
     withResource(new NvtxWithMetrics("prep agg batch", NvtxColor.CYAN, aggTime)) { _ =>
       boundExpressions.boundInputReferences.safeMap { ref =>
         val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
-//        println("KUHU PROCESS INCOMING BATCH")
-        //printCvs(Seq(childCv))
         if (childCv.dataType == ref.dataType) {
           childCv
         } else {
           withResource(childCv) { childCv =>
-//            println("KUHU CAST IN PROCESS INCOMING BATCH")
             val rapidsType = GpuColumnVector.getNonNestedRapidsType(ref.dataType)
             GpuColumnVector.from(childCv.getBase.castTo(rapidsType), ref.dataType)
           }
