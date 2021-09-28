@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.DoubleType
 
 trait Spark31XShims extends Spark30XShims {
   override def hasSeparateINT96RebaseConf: Boolean = true
