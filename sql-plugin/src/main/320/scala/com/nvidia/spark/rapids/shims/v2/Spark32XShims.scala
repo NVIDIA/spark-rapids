@@ -23,7 +23,6 @@ import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.DateFormatter
@@ -37,7 +36,6 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.rapids.shims.v2.Spark32XShimsUtils
-import org.apache.spark.sql.types.DoubleType
 
 /**
 * Shim base class that can be compiled with every supported 3.2.x
@@ -149,7 +147,4 @@ trait Spark32XShims extends SparkShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
-
-  override def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression =
-    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
 }

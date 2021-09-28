@@ -1122,7 +1122,7 @@ case class GpuToCpuCollectBufferTransition(
  * This is also a GPU-based implementation of 'CentralMomentAgg' aggregation class in Spark with
  * the fixed 'momentOrder' variable set to '2'.
  */
-abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
+abstract class GpuM2(child: Expression)
   extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
 
   override def children: Seq[Expression] = Seq(child)
@@ -1131,7 +1131,7 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
   protected def divideByZeroEvalResult: Expression =
-    ShimLoader.getSparkShims.getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero)
+    ShimLoader.getSparkShims.getCentralMomentDivideByZeroEvalResult
 
   override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
   override lazy val initialValues: Seq[GpuLiteral] =
@@ -1212,8 +1212,8 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
 
 // TODO: Shim for Spark >=3.1.0:
 //  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
-case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean = true)
-  extends GpuM2(child, nullOnDivideByZero) {
+case class GpuStddevPop(child: Expression)
+  extends GpuM2(child) {
 
   override lazy val evaluateExpression: Expression = {
     // stddev_pop = sqrt(m2 / n).
@@ -1228,8 +1228,8 @@ case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean = true)
 
 // TODO: Shim for Spark >=3.1.0:
 //  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
-case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean = true)
-  extends GpuM2(child, nullOnDivideByZero) {
+case class GpuStddevSamp(child: Expression)
+  extends GpuM2(child) {
 
   override lazy val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
@@ -1247,8 +1247,8 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean = true)
 
 // TODO: Shim for Spark >=3.1.0:
 //  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
-case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean = true)
-  extends GpuM2(child, nullOnDivideByZero) {
+case class GpuVariancePop(child: Expression)
+  extends GpuM2(child) {
 
   override lazy val evaluateExpression: Expression = {
     // var_pop = m2 / n.
@@ -1263,8 +1263,8 @@ case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean = true)
 
 // TODO: Shim for Spark >=3.1.0:
 //  `nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate`
-case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean = true)
-  extends GpuM2(child, nullOnDivideByZero) {
+case class GpuVarianceSamp(child: Expression)
+  extends GpuM2(child) {
 
   override lazy val evaluateExpression: Expression = {
     // var_samp = m2 / (n - 1.0).

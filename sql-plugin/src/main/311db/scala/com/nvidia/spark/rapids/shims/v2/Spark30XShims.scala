@@ -130,6 +130,8 @@ trait Spark30XShims extends SparkShims {
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 
-  override def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression =
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
+    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
     GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
+  }
 }

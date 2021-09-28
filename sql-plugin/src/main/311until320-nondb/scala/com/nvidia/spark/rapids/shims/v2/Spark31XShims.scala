@@ -34,6 +34,8 @@ trait Spark31XShims extends Spark30XShims {
   override def int96ParquetRebaseWriteKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
 
-  override def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression =
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
+    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
     GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
+  }    
 }

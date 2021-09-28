@@ -281,7 +281,7 @@ trait SparkShims {
 
   def registerKryoClasses(kryo: Kryo): Unit
 
-  def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression
+  def getCentralMomentDivideByZeroEvalResult(): Expression
 }
 
 abstract class SparkCommonShims extends SparkShims {

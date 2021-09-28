@@ -129,6 +129,5 @@ trait Spark30XShims extends SparkShims {
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 
-  override def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression =
-    GpuLiteral(Double.NaN)
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = GpuLiteral(Double.NaN)
 }
