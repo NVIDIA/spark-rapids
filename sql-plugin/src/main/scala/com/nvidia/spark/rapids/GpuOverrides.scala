@@ -1219,10 +1219,9 @@ object GpuOverrides {
       }),
     expr[NaNvl](
       "Evaluates to `left` iff left is not NaN, `right` otherwise",
-      ExprChecks.binaryProject(TypeSig.fp + TypeSig.DECIMAL_128_FULL,
-        TypeSig.fp + TypeSig.DECIMAL_128_FULL,
-        ("lhs", TypeSig.fp + TypeSig.DECIMAL_128_FULL, TypeSig.fp + TypeSig.DECIMAL_128_FULL),
-        ("rhs", TypeSig.fp + TypeSig.DECIMAL_128_FULL, TypeSig.fp + TypeSig.DECIMAL_128_FULL)),
+      ExprChecks.binaryProject(TypeSig.fp + TypeSig.DECIMAL_64, TypeSig.fp + TypeSig.DECIMAL_64,
+        ("lhs", TypeSig.fp + TypeSig.DECIMAL_64, TypeSig.fp + TypeSig.DECIMAL_128_FULL),
+        ("rhs", TypeSig.fp + TypeSig.DECIMAL_64, TypeSig.fp + TypeSig.DECIMAL_128_FULL)),
       (a, conf, p, r) => new BinaryExprMeta[NaNvl](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuNaNvl(lhs, rhs)
