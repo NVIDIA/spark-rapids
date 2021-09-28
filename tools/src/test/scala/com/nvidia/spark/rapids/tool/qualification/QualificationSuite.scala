@@ -99,6 +99,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  /*
   test("test order asc") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
@@ -549,25 +550,31 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
+  */
 
   test("streaming qualification app") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val typeChecker = new PluginTypeChecker()
-      val qualApp = new RunningQualApp(new Configuration(), Some(typeChecker), 20)
-      val listener = qualApp.getEventListener
       val appId = ToolTestUtils.runAndCollect("streaming") { spark =>
+        val typeChecker = new PluginTypeChecker()
+        val qualApp = new RunningQualApp(new Configuration(), Some(typeChecker), 20)
+        val listener = qualApp.getEventListener
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
         testData.createOrReplaceTempView("t1")
         testData.createOrReplaceTempView("t2")
-        spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
+        val df = spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
           "FROM t1 JOIN t2 ON t1.a = t2.a) AS t " +
           "GROUP BY a ORDER BY a")
+
+        // do inside application to simulate similar calling
+        val qualInfo = qualApp.aggregateStats()
+        logWarning("values is: " + qualInfo)
+        assert(qualInfo.nonEmpty)
+        assert(qualInfo.get.appName.equals("streaming"))
+
+        df
       }
-      val qualInfo = qualApp.aggregateStats()
-      assert(qualInfo.nonEmpty)
-      assert(qualInfo.get.appName.equals("streaming"))
     }
   }
 }

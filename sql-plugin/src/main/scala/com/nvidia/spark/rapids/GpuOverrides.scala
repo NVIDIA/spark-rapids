@@ -3608,7 +3608,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         Seq.empty
       }
       wrap.runAfterTagRules()
+      logWarning("after tag rules")
       if (conf.shouldExplain) {
+        logWarning("in explain")
         wrap.tagForExplain()
         val explain = wrap.explain(conf.shouldExplainAll)
         if (explain.nonEmpty) {
@@ -3618,10 +3620,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           }
         }
       }
-      val convertedPlan = wrap.convertIfNeeded()
-      val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
-      GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
-      sparkPlan
+
+      // val convertedPlan = wrap.convertIfNeeded()
+      // val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
+      // GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
+      // sparkPlan
+      plan
     }
   }
 
