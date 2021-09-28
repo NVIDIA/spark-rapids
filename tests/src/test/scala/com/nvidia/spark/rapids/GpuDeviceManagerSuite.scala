@@ -20,8 +20,8 @@ import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer}
 import org.scalatest.{BeforeAndAfter, FunSuite}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
 
