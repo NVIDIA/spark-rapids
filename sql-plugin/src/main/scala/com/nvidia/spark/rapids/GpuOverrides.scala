@@ -1687,7 +1687,7 @@ object GpuOverrides {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
               //check const from cudf
-              if (intermediateResult.precision > 38) {
+              if (intermediateResult.precision > DType.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the multiply is too large" +
                     s" to fit on the GPU $intermediateResult")
               }
