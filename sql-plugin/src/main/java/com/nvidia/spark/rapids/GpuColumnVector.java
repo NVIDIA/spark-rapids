@@ -455,7 +455,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  private static DType toRapidsOrNull(DataType type) {
+  private static DType toNonNestedRapidsOrNull(DataType type) {
     if (type instanceof LongType) {
       return DType.INT64;
     } else if (type instanceof DoubleType) {
@@ -494,12 +494,22 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return null;
   }
 
+  public static DType getRapidsType(DataType type) {
+    if (type instanceof ArrayType) {
+      return DType.LIST;
+    } else if (type instanceof StructType) {
+      return DType.STRUCT;
+    } else {
+      return getNonNestedRapidsType(type);
+    }
+  }
+
   public static boolean isNonNestedSupportedType(DataType type) {
-    return toRapidsOrNull(type) != null;
+    return toNonNestedRapidsOrNull(type) != null;
   }
 
   public static DType getNonNestedRapidsType(DataType type) {
-    DType result = toRapidsOrNull(type);
+    DType result = toNonNestedRapidsOrNull(type);
     if (result == null) {
       throw new IllegalArgumentException(type + " is not supported for GPU processing yet.");
     }
@@ -812,7 +822,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   private static String buildColumnTypeString(DataType sparkType) {
-    DType dtype = toRapidsOrNull(sparkType);
+    DType dtype = toNonNestedRapidsOrNull(sparkType);
     if (dtype != null) {
       return dtype.toString();
     }
