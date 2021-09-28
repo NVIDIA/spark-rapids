@@ -255,7 +255,7 @@ _init_list_no_nans_with_decimal = _init_list_no_nans + [_grpkey_small_decimals]
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=100)).groupby('a').agg(f.sum('b'))),
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf=conf
     )
 
@@ -269,7 +269,7 @@ def test_hash_decimal_sum(data_gen, conf):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_max(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=100)).groupby('a').agg(f.max('b'))),
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')))
         conf=conf
     )
 
@@ -284,7 +284,19 @@ def test_hash_decimal_max(data_gen, conf):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_min(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(debug_df(gen_df(spark, data_gen, length=100)).groupby('a').agg(f.min('b'))),
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.min('b')),
+        conf=conf
+    )
+
+@shuffle_test
+@approximate_float
+@incompat
+@ignore_order
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_bigdecimal, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_hash_grpby_sum(data_gen, conf):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
         conf=conf
     )
 
@@ -296,7 +308,7 @@ def test_hash_decimal_min(data_gen, conf):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_decimal_count(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: debug_df(gen_df(spark, data_gen, length=100).groupby('a').agg(f.count('b'))),
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.count('b')),
         conf=conf
     )
 

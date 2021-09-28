@@ -529,9 +529,6 @@ private object GpuRowToColumnConverter {
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       val bigDecimal = row.getDecimal(column, precision, scale).toJavaBigDecimal
       builder.append(bigDecimal)
-//      println(s"KUHU NotNullDecimalConverter value being written $bigDecimal")
-      // We are basing our DType.DECIMAL on precision in GpuColumnVector#toRapidsOrNull so we can
-      // safely assume the underlying vector is Int if precision < 10 otherwise Long
       if (precision <= Decimal.MAX_INT_DIGITS) {
         4
       } else if (precision <= Decimal.MAX_LONG_DIGITS) {

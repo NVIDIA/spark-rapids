@@ -1181,7 +1181,7 @@ object GpuCast extends Arm {
       ansiMode: Boolean): ColumnVector = {
     // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
     val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
-//      case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
+      case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
       case bound => (-bound.toLong + 1, bound.toLong - 1)
     }
     // At first, we conduct overflow check onto input column.

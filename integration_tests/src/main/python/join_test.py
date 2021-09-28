@@ -105,9 +105,8 @@ def create_nested_df(spark, key_data_gen, data_gen, left_length, right_length):
 def test_sortmerge_join(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
-        return debug_df(left.join(right, left.a == right.r_a, join_type))
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.explain' : 'ALL'}
+        return left.join(right, left.a == right.r_a, join_type)
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
     conf.update(_sortmerge_join_conf)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 

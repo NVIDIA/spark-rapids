@@ -97,7 +97,7 @@ def test_case_when(data_gen):
                 f.when(f.lit(False), f.col('_c0'))),
             conf = allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen, decimal_gen_128bit], ids=idfn)
 def test_nanvl(data_gen):
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -125,7 +125,7 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct, ids=idfn)
+@pytest.mark.parametrize('data_gen', [DecimalGen(precision=20, scale=3)], ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -135,12 +135,17 @@ def test_coalesce(data_gen):
     command_args = [f.col('_c' + str(x)) for x in range(0, num_cols)]
     command_args.append(s1)
     data_type = data_gen.data_type
+    print("KUHU python args" + str(gen))
+    print("KUHU python s1=" + str(s1))
+    # print(str(*command_args))
+    # print(str(gen))
+    # print(str(*command_args))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen).select(
                 f.coalesce(*command_args)),
             conf = allow_negative_scale_of_decimal_conf)
 
-def test_coalesce_constant_output():
+def test_coalece_constant_output():
     # Coalesce can allow a constant value as output. Technically Spark should mark this
     # as foldable and turn it into a constant, but it does not, so make sure our code
     # can deal with it.  (This means something like + will get two constant scalar values)
