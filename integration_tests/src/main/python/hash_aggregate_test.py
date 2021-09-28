@@ -1357,19 +1357,9 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
     local_conf = copy_and_update(conf, {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
                                         'spark.sql.adaptive.enabled': aqe_enabled})
 
-    # For aggregations without distinct, Databricks runtime removes the partial Aggregate stage
-    # (map-side combine). There only exists an AggregateExec in Databricks runtimes. So, we need to
-    # set the expected exist_classes according to runtime.
-    cpu_clz, gpu_clz = ['StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp'], \
-                       ['GpuStddevPop', 'GpuStddevSamp', 'GpuVariancePop', 'GpuVarianceSamp']
-    exist_clz, non_exist_clz = [], []
-    if is_databricks_runtime():
-        if replace_mode == 'partial':
-            exist_clz, non_exist_clz = cpu_clz, gpu_clz
-        else:
-            exist_clz, non_exist_clz = gpu_clz, cpu_clz
-    else:
-        exist_clz = cpu_clz + gpu_clz
+    exist_clz = ['StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
+                 'GpuStddevPop', 'GpuStddevSamp', 'GpuVariancePop', 'GpuVarianceSamp']
+    non_exist_clz = []
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=1000)

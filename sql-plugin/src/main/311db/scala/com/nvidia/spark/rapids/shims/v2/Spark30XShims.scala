@@ -34,6 +34,7 @@ import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
+import org.apache.spark.sql.types.DoubleType
 
 /**
 * Shim base class that can be compiled with every supported 3.0.x
@@ -130,5 +131,5 @@ trait Spark30XShims extends SparkShims {
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 
   override def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression =
-    GpuLiteral(Double.NaN)
+    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
 }
