@@ -431,6 +431,67 @@ def _assert_gpu_and_cpu_are_equal(func,
 
     assert_equal(from_cpu, from_gpu)
 
+def run_with_cpu(func,
+    mode,
+    conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, mode)
+    conf = _prep_incompat_conf(conf)
+
+    print("run_with_cpu")
+
+    def run_on_cpu():
+        print('### CPU RUN ###')
+        global cpu_start
+        cpu_start = time.time()
+        global from_cpu
+        from_cpu = with_cpu_session(bring_back, conf=conf)
+        global cpu_end
+        cpu_end = time.time()
+
+    run_on_cpu()
+
+    print('### {}: CPU TOOK {} ###'.format(collect_type,
+        cpu_end - cpu_start))
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+
+    return from_cpu
+
+def run_with_cpu_and_gpu(func,
+    mode,
+    conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, mode)
+    conf = _prep_incompat_conf(conf)
+
+    def run_on_cpu():
+        print('### CPU RUN ###')
+        global cpu_start
+        cpu_start = time.time()
+        global from_cpu
+        from_cpu = with_cpu_session(bring_back, conf=conf)
+        global cpu_end
+        cpu_end = time.time()
+
+    def run_on_gpu():
+        print('### GPU RUN ###')
+        global gpu_start
+        gpu_start = time.time()
+        global from_gpu
+        from_gpu = with_gpu_session(bring_back, conf=conf)
+        global gpu_end
+        gpu_end = time.time()
+
+    run_on_cpu()
+    run_on_gpu()
+
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
+        gpu_end - gpu_start, cpu_end - cpu_start))
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
+    return (from_cpu, from_gpu)
+
 def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
@@ -503,3 +564,15 @@ def assert_gpu_and_cpu_error(df_fun, conf, error_message):
     """
     assert_py4j_exception(lambda: with_cpu_session(df_fun, conf), error_message)
     assert_py4j_exception(lambda: with_gpu_session(df_fun, conf), error_message)
+
+def with_cpu_sql(df_fun, table_name, sql, conf=None, debug=False):
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        if debug:
+            return data_gen.debug_df(spark.sql(sql))
+        else:
+            return spark.sql(sql)
+    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
