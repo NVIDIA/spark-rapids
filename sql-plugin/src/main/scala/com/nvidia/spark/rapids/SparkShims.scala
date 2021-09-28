@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -136,11 +136,6 @@ trait SparkShims {
     condition: Option[Expression],
     targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase
 
-
-  def getGpuBroadcastExchangeExec(
-      mode: BroadcastMode,
-      child: SparkPlan): GpuBroadcastExchangeExecBase
-
   def getGpuShuffleExchangeExec(
       outputPartitioning: Partitioning,
       child: SparkPlan,
@@ -148,6 +143,10 @@ trait SparkShims {
 
   def getGpuShuffleExchangeExec(
       queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase
+
+  def newBroadcastQueryStageExec(
+      old: BroadcastQueryStageExec,
+      newPlan: SparkPlan): BroadcastQueryStageExec
 
   def getMapSizesByExecutorId(
     shuffleId: Int,

@@ -19,7 +19,6 @@ import java.util.Optional
 import java.util.concurrent.{Callable, Future}
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostColumnVector, NvtxColor}
@@ -45,8 +44,8 @@ import org.apache.spark.util.KnownSizeEstimation
  * @param mode Broadcast mode
  * @param child Input to broadcast
  */
-case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkPlan)
-    extends GpuBroadcastExchangeExecBaseWithFuture(mode, child) {
+case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
+    extends GpuBroadcastExchangeExecBase(mode, child) {
 
   import GpuMetric._
 
@@ -96,23 +95,22 @@ case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkP
                   null, null, List.empty.asJava)
                 new RapidsHostColumnVector(dataTypes(i), hcv)
               }
-              val rowCount = hostColumns.headOption.map(_.getRowCount.toInt).getOrElse(0)
+              val rowCount = cb.header.getNumRows
               new ColumnarBatch(hostColumns.toArray, rowCount)
             }
 
             val broadcasted = try {
-              val rows = new ListBuffer[InternalRow]()
-              gpuBatches.foreach(cb => rows.appendAll(cb.rowIterator().asScala))
-
-              val numRows = rows.length
+              val numRows = gpuBatches.map(_.numRows).sum
               checkRowLimit(numRows)
               numOutputRows += numRows
 
               val relation = withResource(new NvtxWithMetrics(
                 "broadcast build", NvtxColor.DARK_GREEN, buildTime)) { _ =>
                 val toUnsafe = UnsafeProjection.create(output, output)
-                val unsafeRows = rows.iterator.map(toUnsafe)
-                 val relation = ShimLoader.getSparkShims
+                val unsafeRows = gpuBatches.flatMap {
+                  _.rowIterator().asScala.map(r => toUnsafe(r).copy())
+                }
+                val relation = ShimLoader.getSparkShims
                     .broadcastModeTransform(mode, unsafeRows.toArray)
 
                 val dataSize = relation match {
@@ -171,4 +169,7 @@ case class GpuBroadcastToCpuExec(override val mode: BroadcastMode, child: SparkP
     GpuBroadcastExchangeExecBase.executionContext.submit[Broadcast[Any]](task)
   }
 
+  override def doCanonicalize(): SparkPlan = {
+    GpuBroadcastToCpuExec(mode.canonicalized, child.canonicalized)
+  }
 }

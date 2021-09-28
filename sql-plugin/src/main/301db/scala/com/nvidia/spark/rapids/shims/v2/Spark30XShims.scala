@@ -64,6 +64,10 @@ trait Spark30XShims extends SparkShims {
     plan.sqlContext.sparkSession
   }
 
+  override def newBroadcastQueryStageExec(
+      old: BroadcastQueryStageExec,
+      newPlan: SparkPlan): BroadcastQueryStageExec = BroadcastQueryStageExec(old.id, newPlan)
+
   override def getDateFormatter(): DateFormatter = {
     DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
   }
