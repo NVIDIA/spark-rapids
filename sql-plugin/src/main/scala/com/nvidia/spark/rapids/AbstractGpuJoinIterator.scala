@@ -75,9 +75,9 @@ abstract class AbstractGpuJoinIterator(
         nextCb = nextCbFromGatherer()
       } else {
         // The only part we want to skip in the timing is hasNextStreamBatch
-        val tmp = timedHasNextStreamBatch
-        totalHasNextTime += tmp._2
-        if (tmp._1) {
+        val (hasNextValue, hasNextTime) = timedHasNextStreamBatch
+        totalHasNextTime += hasNextTime
+        if (hasNextValue) {
           // Need to refill the gatherer
           gathererStore.foreach(_.close())
           gathererStore = None
