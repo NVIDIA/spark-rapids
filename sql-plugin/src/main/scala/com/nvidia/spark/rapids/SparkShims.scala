@@ -280,6 +280,8 @@ trait SparkShims {
   def leafNodeDefaultParallelism(ss: SparkSession): Int
 
   def registerKryoClasses(kryo: Kryo): Unit
+
+  def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression
 }
 
 abstract class SparkCommonShims extends SparkShims {

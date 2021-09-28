@@ -18,12 +18,13 @@ package com.nvidia.spark.rapids.shims.v2
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuExec, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuLiteral, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
 import org.apache.spark.sql.execution.SparkPlan
@@ -136,4 +137,7 @@ trait Spark30XShims extends SparkShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
+
+  override def getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero: Boolean): Expression =
+    GpuLiteral(Double.NaN)
 }

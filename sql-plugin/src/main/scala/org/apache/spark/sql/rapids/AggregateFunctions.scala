@@ -1130,9 +1130,8 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   override def nullable: Boolean = true
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
-  protected def divideByZeroEvalResult: Expression = {
-    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
-  }
+  protected def divideByZeroEvalResult: Expression =
+    ShimLoader.getSparkShims.getCentralMomentDivideByZeroEvalResult(nullOnDivideByZero)
 
   override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
   override lazy val initialValues: Seq[GpuLiteral] =
