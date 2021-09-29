@@ -149,7 +149,7 @@ trait GpuGenerator extends GpuUnevaluable {
    *                               the output of the given `generator` is empty.
    * @param numOutputRows          Gpu spark metric of output rows
    * @param numOutputBatches       Gpu spark metric of output batches
-   * @param totalTime              Gpu spark metric of total time costed by GpuGenerateExec
+   * @param opTime                 Gpu spark metric of time on GPU by GpuGenerateExec
    * @return result iterator
    */
   def fixedLenLazyArrayGenerate(inputIterator: Iterator[ColumnarBatch],
@@ -159,7 +159,7 @@ trait GpuGenerator extends GpuUnevaluable {
       outer: Boolean,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
+      opTime: GpuMetric): Iterator[ColumnarBatch] = {
     throw new NotImplementedError("The method should be implemented by specific generators.")
   }
 }
@@ -358,7 +358,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       outer: Boolean,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
+      opTime: GpuMetric): Iterator[ColumnarBatch] = {
 
     val numArrayColumns = boundLazyProjectList.length
     val numOtherColumns = boundOthersProjectList.length
@@ -397,7 +397,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
           fetchNextBatch()
         }
 
-        withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, totalTime)) { _ =>
+        withResource(new NvtxWithMetrics("GpuGenerateExec", NvtxColor.PURPLE, opTime)) { _ =>
           withResource(new Array[ColumnVector](numExplodeColumns + numOtherColumns)) { result =>
 
             withResource(GpuProjectExec.project(currentBatch, boundOthersProjectList)) { cb =>

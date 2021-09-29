@@ -138,6 +138,7 @@ case class GpuMapInPandasExec(
           sessionLocalTimeZone,
           pythonRunnerConf,
           batchSize,
+          spillCallback.semaphoreWaitTime,
           onDataWriteFinished = null,
           pythonOutputSchema,
           // We can not assert the result batch from Python has the same row number with the

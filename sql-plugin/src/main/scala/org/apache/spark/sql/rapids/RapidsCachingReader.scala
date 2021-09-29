@@ -141,7 +141,8 @@ class RapidsCachingReader[K, C](
       val itRange = new NvtxRange("Shuffle Iterator prep", NvtxColor.BLUE)
       try {
         val cachedIt = cachedBufferIds.iterator.map(bufferId => {
-          GpuSemaphore.acquireIfNecessary(context)
+          // No good way to get a metric in here for semaphore wait time
+          GpuSemaphore.acquireIfNecessary(context, NoopMetric)
           val cb = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
             buffer.getColumnarBatch(sparkTypes)
           }
