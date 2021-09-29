@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.ParquetColumnWriterOptions._
+import ai.rapids.cudf.ColumnWriterOptions._
 import com.nvidia.spark.RebaseHelper
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
@@ -117,8 +117,8 @@ object GpuParquetFileFormat {
     }
   }
 
-  def parquetWriterOptionsFromField[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions](
-      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
+  def parquetWriterOptionsFromField[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
+      builder: ColumnWriterOptions.NestedBuilder[T, V],
       dataType: DataType,
       name: String,
       writeInt96: Boolean,
@@ -167,8 +167,8 @@ object GpuParquetFileFormat {
     builder.asInstanceOf[T]
   }
 
-  def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions](
-      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
+  def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
+      builder: ColumnWriterOptions.NestedBuilder[T, V],
       schema: StructType,
       writeInt96: Boolean): T = {
     // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
