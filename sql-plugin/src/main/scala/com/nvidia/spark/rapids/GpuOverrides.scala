@@ -20,6 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
@@ -3605,9 +3606,12 @@ object GpuOverrideUtil extends Logging {
     try {
       fn(plan)
     } catch {
-      case t =>
+      case NonFatal(t) =>
         logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
         planOriginal
+      case fatal =>
+        logError("Encountered a fatal exception applying GPU overrides " + fatal, fatal)
+        throw fatal
     }
   }
 }
