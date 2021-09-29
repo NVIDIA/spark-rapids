@@ -134,12 +134,11 @@ Default value: `1`
 
 The RAPIDS Accelerator can further limit the number of tasks that are actively sharing the GPU.
 It does this using a semaphore. When metrics or documentation refers to the GPU semaphore it
-is referring to this.
-This restriction is useful for avoiding GPU out of memory errors while still allowing full
-concurrency for the
-portions of the job that are not executing on the GPU. Care is taken to try and avoid doing
-I/O or other CPU operations while the GPU semaphore is held. But in the case of a join two batches
-are required for processing and it is not always possible to avoid this case.
+is referring to this. This restriction is useful for avoiding GPU out of memory errors while 
+still allowing full concurrency for the portions of the job that are not executing on the GPU. 
+Care is taken to try and avoid doing I/O or other CPU operations while the GPU semaphore is held. 
+But in the case of a join two batches are required for processing, and it is not always possible 
+to avoid this case.
 
 Some queries benefit significantly from
 setting this to a value between `2` and `4`, with `2` typically providing the most benefit, and

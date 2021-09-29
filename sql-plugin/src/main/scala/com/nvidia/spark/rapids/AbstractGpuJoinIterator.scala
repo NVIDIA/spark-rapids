@@ -29,8 +29,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Base class for iterators producing the results of a join.
  * @param gatherNvtxName name to use for the NVTX range when producing the join gather maps
  * @param targetSize configured target batch size in bytes
+ * @param opTime metric to record op time in the iterator
  * @param joinTime metric to record GPU time spent in join
- * @param totalTime metric to record total time in the iterator
  */
 abstract class AbstractGpuJoinIterator(
     gatherNvtxName: String,
@@ -144,9 +144,8 @@ abstract class AbstractGpuJoinIterator(
  * @param builtBatch batch for the built side input of the join
  * @param targetSize configured target batch size in bytes
  * @param spillCallback callback to use when spilling
+ * @param opTime metric to record time spent for this operation
  * @param joinTime metric to record GPU time spent in join
- * @param streamTime metric to record time spent producing streaming side batches
- * @param totalTime metric to record total time in the iterator
  */
 abstract class SplittableJoinIterator(
     gatherNvtxName: String,

@@ -70,7 +70,8 @@ class GpuSerializableBatch(batch: ColumnarBatch)
   }
 
   private def readObject(in: ObjectInputStream): Unit = {
-    // TODO I don't know of a way to make this work...
+    // There is no good way to tie this object deserialization to a specific metric, and I am not
+    // sure it is worth trying.
     GpuSemaphore.acquireIfNecessary(TaskContext.get(), NoopMetric)
     withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
       val schemaArray = in.readObject().asInstanceOf[Array[DataType]]
