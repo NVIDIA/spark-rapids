@@ -1076,42 +1076,45 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-# tests disabled due to https://github.com/NVIDIA/spark-rapids/issues/3692
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_long_repeated_keys():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
+                                     ('v', LongRangeGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
 
-# @ignore_order(local=True)
-# def test_hash_groupby_approx_percentile_long_repeated_keys():
-#     compare_percentile_approx(
-#         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
-#                                      ('v', LongRangeGen())], length=100),
-#         [0.05, 0.25, 0.5, 0.75, 0.95])
-#
-# @ignore_order(local=True)
-# def test_hash_groupby_approx_percentile_long():
-#     compare_percentile_approx(
-#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-#                                      ('v', LongRangeGen())], length=100),
-#         [0.05, 0.25, 0.5, 0.75, 0.95])
-#
-# @ignore_order(local=True)
-# def test_hash_groupby_approx_percentile_long_scalar():
-#     compare_percentile_approx(
-#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-#                                      ('v', LongRangeGen())], length=100),
-#         0.5)
-#
-# @ignore_order(local=True)
-# def test_hash_groupby_approx_percentile_double():
-#     compare_percentile_approx(
-#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-#                                      ('v', DoubleGen())], length=100),
-#         [0.05, 0.25, 0.5, 0.75, 0.95])
-#
-# @ignore_order(local=True)
-# def test_hash_groupby_approx_percentile_double_scalar():
-#     compare_percentile_approx(
-#         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-#                                      ('v', DoubleGen())], length=100),
-#         0.05)
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_long():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', LongRangeGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_long_scalar():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', LongRangeGen())], length=100),
+        0.5)
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_double():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DoubleGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_double_scalar():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DoubleGen())], length=100),
+        0.05)
 
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
