@@ -424,7 +424,7 @@ _gen_data_for_collect_list_op = _gen_data_for_collect_op + [[
 
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op + _gen_data_for_collect_list_op, ids=idfn)
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     assert_gpu_and_cpu_are_equal_collect(
