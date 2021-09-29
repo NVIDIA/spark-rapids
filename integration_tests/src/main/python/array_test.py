@@ -53,7 +53,8 @@ def test_nested_array_index(data_gen):
 
 @pytest.mark.parametrize('data_gen', all_basic_gens +
                          [decimal_gen_default, decimal_gen_scale_precision]
-                         + [StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
+                         + [StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
+                            StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
 def test_make_array(data_gen):
     (s1, s2) = gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     assert_gpu_and_cpu_are_equal_collect(
