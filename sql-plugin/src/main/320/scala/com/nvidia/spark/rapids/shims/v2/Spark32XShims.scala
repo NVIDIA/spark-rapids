@@ -37,6 +37,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.rapids.shims.v2.Spark32XShimsUtils
+import org.apache.spark.sql.types.DoubleType
 
 /**
 * Shim base class that can be compiled with every supported 3.2.x
