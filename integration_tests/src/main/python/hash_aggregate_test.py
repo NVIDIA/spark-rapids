@@ -1076,6 +1076,7 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long_repeated_keys():
     compare_percentile_approx(
@@ -1083,6 +1084,7 @@ def test_hash_groupby_approx_percentile_long_repeated_keys():
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long():
     compare_percentile_approx(
@@ -1090,6 +1092,7 @@ def test_hash_groupby_approx_percentile_long():
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long_scalar():
     compare_percentile_approx(
@@ -1097,6 +1100,7 @@ def test_hash_groupby_approx_percentile_long_scalar():
                                      ('v', LongRangeGen())], length=100),
         0.5)
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double():
     compare_percentile_approx(
@@ -1104,6 +1108,7 @@ def test_hash_groupby_approx_percentile_double():
                                      ('v', DoubleGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double_scalar():
     compare_percentile_approx(
