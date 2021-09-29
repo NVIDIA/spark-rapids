@@ -155,7 +155,7 @@ object GpuOrcFileFormat extends Logging {
   }
 
   /**
-   * (We could try to merge this with `parquetWriterOptionsFromField` after fixing the issue
+   * (We could try to merge this with `parquetWriterOptionsFromSchema` after fixing the issue
    *  https://github.com/rapidsai/cudf/issues/7654)
    */
   def orcWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
