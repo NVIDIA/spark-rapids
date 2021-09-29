@@ -20,11 +20,9 @@ import java.time.ZoneId
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
-
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -61,6 +59,8 @@ import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.v2.GpuTimeAdd
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
+
+import scala.util.control.NonFatal
 
 /**
  * Base class for all ReplacementRules
@@ -3599,22 +3599,36 @@ object GpuOverrides extends Logging {
     "rapids.gpu.postColToRowProcessing")
 }
 
+// work around any GpuOverride failures
+object GpuOverrideUtil extends Logging {
+  def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
+    val planOriginal = plan.clone()
+    try {
+      fn(plan)
+    } catch {
+      case t =>
+        logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
+        planOriginal
+    }
+  }
+}
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
     GpuOverrides().apply(plan)
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
-  }
+  }(sparkPlan)
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(plan: SparkPlan): SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       GpuOverrides.logDuration(conf.shouldExplain,
@@ -3631,7 +3645,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else {
       plan
     }
-  }
+  }(sparkPlan)
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
