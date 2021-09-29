@@ -20,9 +20,10 @@ import java.time.ZoneId
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
+
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuOverrides.exec
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
@@ -59,8 +60,6 @@ import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims.v2.GpuTimeAdd
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
-
-import scala.util.control.NonFatal
 
 /**
  * Base class for all ReplacementRules
