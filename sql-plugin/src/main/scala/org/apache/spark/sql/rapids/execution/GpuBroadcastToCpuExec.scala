@@ -58,6 +58,7 @@ case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
     val buildTime = gpuLongMetric(BUILD_TIME)
     val broadcastTime = gpuLongMetric("broadcastTime")
     val totalTime = gpuLongMetric(TOTAL_TIME)
+    val dataTypes = child.output.map(_.dataType)
 
     val task = new Callable[Broadcast[Any]]() {
       override def call(): Broadcast[Any] = {
@@ -82,21 +83,22 @@ case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
             }
 
             // deserialize to host buffers in the driver and then convert to rows
-            val dataTypes = child.output.map(_.dataType)
-
-            val gpuBatches = serializedBatches.safeMap { cb =>
-              val hostColumns = (0 until cb.header.getNumColumns).map { i =>
-                val columnHeader = cb.header.getColumnHeader(i)
-                val hcv = new HostColumnVector(
-                  columnHeader.getType,
-                  columnHeader.rowCount,
-                  Optional.of(columnHeader.nullCount),
-                  cb.buffer,
-                  null, null, List.empty.asJava)
-                new RapidsHostColumnVector(dataTypes(i), hcv)
+            val gpuBatches = withResource(serializedBatches) { _ =>
+              serializedBatches.safeMap { cb =>
+                val hostColumns = (0 until cb.header.getNumColumns).map { i =>
+                  val columnHeader = cb.header.getColumnHeader(i)
+                  val hcv = new HostColumnVector(
+                    columnHeader.getType,
+                    columnHeader.rowCount,
+                    Optional.of(columnHeader.nullCount),
+                    cb.buffer,
+                    null, null, List.empty.asJava)
+                  cb.buffer.incRefCount()
+                  new RapidsHostColumnVector(dataTypes(i), hcv)
+                }
+                val rowCount = cb.header.getNumRows
+                new ColumnarBatch(hostColumns.toArray, rowCount)
               }
-              val rowCount = cb.header.getNumRows
-              new ColumnarBatch(hostColumns.toArray, rowCount)
             }
 
             val broadcasted = try {
