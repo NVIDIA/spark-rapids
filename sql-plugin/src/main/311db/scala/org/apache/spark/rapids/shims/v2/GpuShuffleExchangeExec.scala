@@ -30,7 +30,7 @@ case class GpuShuffleExchangeExec(
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin,
     cpuOutputPartitioning: Partitioning)
-  extends GpuShuffleExchangeExecBase(outputPartitioning, child) with ShuffleExchangeLike {
+  extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child) with ShuffleExchangeLike {
 
   override val outputPartitioning: Partitioning = cpuOutputPartitioning
 
