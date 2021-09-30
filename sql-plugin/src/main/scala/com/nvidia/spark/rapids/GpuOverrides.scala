@@ -446,9 +446,6 @@ object GpuOverrides {
 
   private[this] val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
 
-  private[this] val _notNullCudfTypes = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
-    TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
-
   val pluginSupportedOrderableSig: TypeSig =
     _gpuCommonTypes + TypeSig.STRUCT.nested(_gpuCommonTypes)
 
@@ -1445,7 +1442,8 @@ object GpuOverrides {
     expr[KnownNotNull](
       "Tag an expression as known to not be null",
       ExprChecks.unaryProjectInputMatchesOutput(
-        _notNullCudfTypes, TypeSig.all),
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.BINARY + TypeSig.CALENDAR +
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(), TypeSig.all),
       (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownNotNull(child)
@@ -1685,7 +1683,7 @@ object GpuOverrides {
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
-              if (intermediateResult.precision > DType.DECIMAL128_MAX_PRECISION) {
+              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the multiply is too large" +
                     s" to fit on the GPU $intermediateResult")
               }
@@ -2104,8 +2102,8 @@ object GpuOverrides {
     expr[Sum](
       "Sum aggregate operator",
       ExprChecksImpl(
-        ExprChecks.fullAgg(TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG +
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        ExprChecks.fullAgg(
+          TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
           Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
@@ -2187,7 +2185,7 @@ object GpuOverrides {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric, TypeSig.numeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
@@ -2208,7 +2206,7 @@ object GpuOverrides {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric, TypeSig.numeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
@@ -3038,8 +3036,7 @@ object GpuOverrides {
       "Hash based partitioning",
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
-        (TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
         TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =

@@ -121,8 +121,8 @@ class GpuBroadcastNestedLoopJoinMeta(
 }
 
 /**
-  * An iterator that does a cross join against a stream of batches.
-  */
+ * An iterator that does a cross join against a stream of batches.
+ */
 class CrossJoinIterator(
     builtBatch: LazySpillableColumnarBatch,
     stream: Iterator[LazySpillableColumnarBatch],

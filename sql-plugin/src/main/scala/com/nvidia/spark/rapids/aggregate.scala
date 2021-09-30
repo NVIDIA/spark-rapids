@@ -503,8 +503,7 @@ class GpuHashAggregateIterator(
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
         withResource(keyBatchingIter.next()) { batch =>
-          val vectors = GpuColumnVector.extractColumns(batch)
-          computeAggregate(vectors, merge = true, isSorted = true)
+          computeAggregate(GpuColumnVector.extractColumns(batch), merge = true, isSorted = true)
         }
       }
     }
