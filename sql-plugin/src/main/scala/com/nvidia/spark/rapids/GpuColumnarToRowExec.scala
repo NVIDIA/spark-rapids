@@ -261,7 +261,6 @@ object CudfRowTransitions {
          FloatType | DoubleType | BooleanType | DateType | TimestampType => true
     case dt: DecimalType if dt.precision <= Decimal.MAX_LONG_DIGITS => true
     case _ => false
-
   }
 
   def areAllSupported(schema: Seq[Attribute]): Boolean =

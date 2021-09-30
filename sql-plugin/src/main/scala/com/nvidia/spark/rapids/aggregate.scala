@@ -828,8 +828,7 @@ class GpuHashAggregateIterator(
               }
               ret
             }
-            val ret = new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
-            ret
+            new ColumnarBatch(resCols.toArray, result.getRowCount.toInt)
           }
         }
       } else {
