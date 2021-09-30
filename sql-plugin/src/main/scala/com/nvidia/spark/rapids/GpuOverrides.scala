@@ -463,7 +463,7 @@ object GpuOverrides extends Logging {
 
   private[this] val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
 
-  private[this] val _notNullCudfTypes = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+  private[this] val _notNullCudfTypes = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
     TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
   val pluginSupportedOrderableSig: TypeSig =
@@ -860,9 +860,9 @@ object GpuOverrides extends Logging {
       "Holds a static value from the query",
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.CALENDAR
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.CALENDAR
             + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
                 TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
@@ -877,7 +877,7 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
-            + TypeSig.DECIMAL_64).nested(),
+            + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -888,7 +888,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+            TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         // This is the only NOOP operator.  It goes away when things are bound
@@ -1768,7 +1768,7 @@ object GpuOverrides extends Logging {
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
               val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
-              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+              if (intermediateResult.precision > DType.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the multiply is too large" +
                     s" to fit on the GPU $intermediateResult")
               }
@@ -2217,8 +2217,8 @@ object GpuOverrides extends Logging {
     expr[Sum](
       "Sum aggregate operator",
       ExprChecksImpl(
-        ExprChecks.fullAgg(
-          TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        ExprChecks.fullAgg(TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG +
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
           Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
@@ -2294,7 +2294,7 @@ object GpuOverrides extends Logging {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
+        TypeSig.gpuNumeric, TypeSig.gpuNumeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
@@ -2315,7 +2315,7 @@ object GpuOverrides extends Logging {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
+        TypeSig.gpuNumeric, TypeSig.gpuNumeric,
         ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
@@ -3139,6 +3139,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuVarianceSamp(childExprs.head)
       }),
+    /* Disabled because does not compile on DEC 128 CUDF branch yet
     expr[ApproximatePercentile](
       "Approximate percentile",
       ExprChecks.groupByOnly(
@@ -3190,6 +3191,7 @@ object GpuOverrides extends Logging {
         }
       }).disabledByDefault("The GPU implementation of approx_percentile is not bit-for-bit " +
           "compatible with Apache Spark. See the compatibility guide for more information."),
+     */
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
@@ -3268,7 +3270,8 @@ object GpuOverrides extends Logging {
       "Hash based partitioning",
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
+        (TypeSig.commonCudfTypes + TypeSig.NULL +
+          TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
         TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
@@ -3349,7 +3352,7 @@ object GpuOverrides extends Logging {
       "The backend for most select, withColumn and dropColumn statements",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
     exec[RangeExec](

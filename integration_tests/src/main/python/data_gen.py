@@ -845,6 +845,7 @@ decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
 decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
 decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
 decimal_gen_64bit = DecimalGen(precision=12, scale=2)
+decimal_gen_128bit = DecimalGen(precision=20, scale=2)
 
 null_gen = NullGen()
 

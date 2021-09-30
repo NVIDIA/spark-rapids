@@ -234,8 +234,11 @@ object GpuDeviceManager extends Logging {
             features += "ARENA"
             init | RmmAllocationMode.ARENA
           case c if "async".equalsIgnoreCase(c) =>
+            throw new IllegalArgumentException("TODO NEED TO MAKE THIS WORK WITH DEC 128")
+            /*
             features += "ASYNC"
             init | RmmAllocationMode.CUDA_ASYNC
+             */
           case c if "none".equalsIgnoreCase(c) =>
             // Pooling is disabled.
             init

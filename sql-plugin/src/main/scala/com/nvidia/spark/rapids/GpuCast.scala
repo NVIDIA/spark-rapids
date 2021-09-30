@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.math.BigInteger
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
@@ -1309,6 +1310,7 @@ object GpuCast extends Arm {
     val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
       val absBound = math.pow(10, absBoundPrecision).toLong
       (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
+
     } else {
       val absBound = math.pow(10, absBoundPrecision).toInt
       (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))

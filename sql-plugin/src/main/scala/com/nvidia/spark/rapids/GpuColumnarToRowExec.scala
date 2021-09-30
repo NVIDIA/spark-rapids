@@ -258,8 +258,12 @@ object CudfRowTransitions {
   def isSupportedType(dataType: DataType): Boolean = dataType match {
     // Only fixed width for now...
     case ByteType | ShortType | IntegerType | LongType |
-         FloatType | DoubleType | BooleanType | DateType | TimestampType | _: DecimalType => true
-    case _ => false
+         FloatType | DoubleType | BooleanType | DateType | TimestampType => true
+    case _ => if(dataType.isInstanceOf[DecimalType] &&
+      dataType.asInstanceOf[DecimalType].precision <=
+        ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION) {
+      true
+    } else false
   }
 
   def areAllSupported(schema: Seq[Attribute]): Boolean =
