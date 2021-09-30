@@ -149,45 +149,45 @@ object AggregateUtils {
     val mergeExpressionsSeq = aggExpressions.map(_.aggregateFunction.mergeExpressions)
 
     aggExpressions.zipWithIndex.map { case (expr, modeIndex) =>
-      val cudfAggregates = if (expr.mode == Partial || expr.mode == Complete) {
+      val updateAggs =
         GpuBindReferences.bindGpuReferences(updateExpressionsSeq(modeIndex), aggBufferAttributes)
             .asInstanceOf[Seq[CudfAggregate]]
-      } else {
+      val mergeAggs =
         GpuBindReferences.bindGpuReferences(mergeExpressionsSeq(modeIndex), mergeBufferAttributes)
             .asInstanceOf[Seq[CudfAggregate]]
-      }
-      BoundCudfAggregate(expr, cudfAggregates)
+      BoundCudfAggregate(expr, updateAggs, mergeAggs)
     }
   }
 }
 
 /**
- * Structure containing the original expressions, and a seq of `CudfAggregate`
- * that corresponds to such a `GpuAggregateExpression.` For example, a
- * `GpuAverage` aggregate, means we have two `CudfAggregate` instances, one
- * for the count and one for the sum (hence the sequence).
+ * Structure containing the original expressions, and an object of `CudfAggregate`
+ * that is an instance of `GpuAggregateExpression`. We may have multiple `CudfAggregate`
+ * objects for a complete aggregation.
+ * For example, in `GpuAverage` aggregate we have two `CudfAggregate` instances, one
+ * for the count (in the update stage) and one for the sum (of count, in the merge stage).
  *
- * `boundCudfAggregate` items have a reference that is bound to either the
- * update or merge buffer attributes, so it can mean different things depending
- * on the stage of the aggregate.
- *
+ * The `boundUpdateAggregates` and `boundMergeAggregates` items are used to hold references
+ * that are bound to the update and merge buffer attributes, respectively. We store these
+ * attributes of different stages separately because they can be incompatible when moving
+ * from stage to stage.
  * For example, the `GpuM2` aggregate can have either a `CudfM2` or a `CudfMergeM2`
- * `CudfAggregate`. The reference used for `CudfM2` is that of 3 columns
- * (n, mean, m2), but the reference used for `CudfMergeM2` is that of a struct 
- * (m2struct). In other words, this is the shape cuDF expects.
+ * `CudfAggregate`. The reference used for `CudfM2` bounds to three columns of Double type
+ * (n, mean, m2), while the reference used for `CudfMergeM2` bounds to one column of STRUCT type
+ * (m2struct).
  *
- * In the update case, `boundCudfAggregate` follows Spark, for the aggregates we have
+ * In the update case, `boundUpdateAggregates` shape follows Spark, for the aggregates we have
  * currently implemented. The update case must match the shape outputted by the preUpdate
  * step.
  *
- * In the merge case, `boundCudfAggregate` shape needs to be the result of the preMerge
- * step. In the case of `CudfMergeM2`, preMerge takes 3 columns and turns them
- * into the desired struct.
- *
+ * In the merge case, `boundMergeAggregates` shape needs to be the result of the preMerge
+ * step. In the case of `CudfMergeM2`, preMerge takes three columns and turns them into the
+ * desired struct column, which is required by `CudfMergeM2`.
  */
 case class BoundCudfAggregate(
     aggExpression: GpuAggregateExpression,
-    boundCudfAggregate: Seq[CudfAggregate])
+    boundUpdateAggregates: Seq[CudfAggregate],
+    boundMergeAggregates: Seq[CudfAggregate])
 
 /** Utility class to hold all of the metrics related to hash aggregation */
 case class GpuHashAggregateMetrics(
@@ -342,7 +342,7 @@ class GpuHashAggregateIterator(
   }
 
   private def computeTargetMergeBatchSize(confTargetSize: Long): Long = {
-    val aggregates = boundExpressions.boundCudfAggregates.flatMap(_.boundCudfAggregate)
+    val aggregates = boundExpressions.boundCudfAggregates.flatMap(_.boundUpdateAggregates)
     val mergedTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
     AggregateUtils.computeTargetBatchSize(confTargetSize, mergedTypes, mergedTypes,isReductionOnly)
   }
@@ -500,8 +500,7 @@ class GpuHashAggregateIterator(
     val aggBufferAttributes = groupingAttributes ++
         aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
     val sorter = new GpuSorter(ordering, aggBufferAttributes)
-    val aggregates = boundExpressions.boundCudfAggregates.flatMap(_.boundCudfAggregate)
-    val aggBatchTypes = groupingExpressions.map(_.dataType) ++ aggregates.map(_.dataType)
+    val aggBatchTypes = aggBufferAttributes.map(_.dataType)
 
     // Use the out of core sort iterator to sort the batches by grouping key
     outOfCoreIter = Some(GpuOutOfCoreSortIterator(
@@ -852,26 +851,20 @@ class GpuHashAggregateIterator(
         dataTypes ++=
           groupingExpressions.map(_.dataType)
 
-        for (BoundCudfAggregate(aggExp, aggregates) <- boundCudfAggregates) {
+        for (BoundCudfAggregate(aggExp, updateAggs, mergeAggs) <- boundCudfAggregates) {
           val aggFn = aggExp.aggregateFunction
           if ((aggExp.mode == Partial || aggExp.mode == Complete) && ! merge) {
             preStep ++= aggFn.preUpdate
             postStep ++= aggFn.postUpdate
             postStepAttr ++= aggFn.postUpdateAttr
+            cudfAggregates ++= updateAggs.map(_.updateAggregate)
+            dataTypes ++= updateAggs.map(_.updateDataType)
           } else {
             preStep ++= aggFn.preMerge
             postStep ++= aggFn.postMerge
             postStepAttr ++= aggFn.postMergeAttr
-          }
-
-          aggregates.map { a =>
-            if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
-              cudfAggregates += a.updateAggregate
-              dataTypes += a.updateDataType
-            } else {
-              cudfAggregates += a.mergeAggregate
-              dataTypes += a.dataType
-            }
+            cudfAggregates ++= mergeAggs.map(_.mergeAggregate)
+            dataTypes ++= mergeAggs.map(_.dataType)
           }
         }
 
@@ -903,17 +896,18 @@ class GpuHashAggregateIterator(
         // we ask the appropriate merge or update CudfAggregates, what their
         // reduction merge or update aggregates functions are
         val cvs = mutable.ArrayBuffer[GpuColumnVector]()
-        boundCudfAggregates.foreach { case BoundCudfAggregate(aggExp, aggs) =>
-          aggs.foreach { agg =>
-            val aggFn = if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
-              agg.updateReductionAggregate
+        boundCudfAggregates.foreach { case BoundCudfAggregate(aggExp, updateAggs, mergeAggs) =>
+          val aggs =
+            if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
+              updateAggs.map(a => (a.dataType, a.updateReductionAggregate))
             } else {
-              agg.mergeReductionAggregate
+              mergeAggs.map(a => (a.dataType, a.mergeReductionAggregate))
             }
+          aggs.foreach { case (dataType, aggFn) =>
             withResource(aggFn(GpuColumnVector.extractColumns(toAggregateBatch))) { res =>
-              val rapidsType = GpuColumnVector.getNonNestedRapidsType(agg.dataType)
+              val rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType)
               withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
-                cvs += GpuColumnVector.from(cv.castTo(rapidsType), agg.dataType)
+                cvs += GpuColumnVector.from(cv.castTo(rapidsType), dataType)
               }
             }
           }
