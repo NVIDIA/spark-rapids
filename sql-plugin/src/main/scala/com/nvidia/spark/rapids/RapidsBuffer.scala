@@ -58,24 +58,33 @@ object StorageTier extends Enumeration {
   val GDS: StorageTier = Value(3, "GPUDirect Storage")
 }
 
-object RapidsBuffer {
+abstract class SpillCallback extends Serializable {
+
   /**
    * Callback type for when a batch is spilled from one storage tier to another. This is
    * intended to only be used for metrics gathering in parts of the GPU plan that can spill.
    * No GPU memory should ever be allocated from this callback, blocking in this function
    * is strongly discouraged. It should be as light weight as possible. It takes three arguments
-   * <ul>
-   * <li><code>from</code> the storage tier the data is being spilled from.</li>
-   * <li><code>to</code> the storage tier the data is being spilled to.</li>
-   * <li><code>amount</code> the amount of data in bytes that is spilled.</li>
-   * </ul>
+   *
+   * @param from the storage tier the data is being spilled from.
+   * @param to the storage tier the data is being spilled to.
+   * @param amount the amount of data in bytes that is spilled.
    */
-  type SpillCallback = (StorageTier, StorageTier, Long) => Unit
+  def apply (from: StorageTier, to: StorageTier, amount: Long): Unit
+
+  def semaphoreWaitTime: GpuMetric
+}
+
+object RapidsBuffer {
 
   /**
    * A default NOOP callback for when a buffer is spilled
    */
-  def defaultSpillCallback(to: StorageTier, from: StorageTier, amount: Long): Unit = ()
+  val defaultSpillCallback: SpillCallback = new SpillCallback {
+    override def apply(from: StorageTier, to: StorageTier, amount: Long): Unit = ()
+
+    override def semaphoreWaitTime: GpuMetric = NoopMetric
+  }
 }
 
 /** Interface provided by all types of RAPIDS buffers */
@@ -92,7 +101,7 @@ trait RapidsBuffer extends AutoCloseable {
   /** The storage tier for this buffer */
   val storageTier: StorageTier
 
-  val spillCallback: RapidsBuffer.SpillCallback
+  val spillCallback: SpillCallback
 
   /**
    * Get the columnar batch within this buffer. The caller must have
@@ -221,5 +230,5 @@ sealed class DegenerateRapidsBuffer(
 
   override def close(): Unit = {}
 
-  override val spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback
+  override val spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback
 }

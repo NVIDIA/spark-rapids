@@ -50,6 +50,15 @@ trait Spark30XShims extends SparkShims {
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ)
   override def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
+  override def int96ParquetRebaseRead(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
+  override def int96ParquetRebaseWrite(conf: SQLConf): String =
+    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
+  override def int96ParquetRebaseReadKey: String =
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
+  override def int96ParquetRebaseWriteKey: String =
+    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+  override def hasSeparateINT96RebaseConf: Boolean = true
 
   override def sessionFromPlan(plan: SparkPlan): SparkSession = {
     plan.sqlContext.sparkSession
@@ -110,8 +119,6 @@ trait Spark30XShims extends SparkShims {
   }
 
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = false
-
-  override def hasSeparateINT96RebaseConf: Boolean = true
 
   override def shouldFailDivOverflow(): Boolean = false
 

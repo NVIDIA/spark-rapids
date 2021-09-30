@@ -59,6 +59,8 @@ struct_gens = [basic_struct_gen, basic_struct_gen_with_no_null_child, nested_2d_
 
 double_gen = [pytest.param(DoubleGen(), marks=[incompat])]
 
+basic_nested_gens = single_level_array_gens + map_string_string_gen + [all_basic_struct_gen]
+
 # data types supported by AST expressions
 ast_gen = [boolean_gen, byte_gen, short_gen, int_gen, long_gen, timestamp_gen]
 
@@ -109,21 +111,10 @@ def test_sortmerge_join(data_gen, join_type, batch_size):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
-def test_sortmerge_join_array(data_gen, join_type, batch_size):
-    def do_join(spark):
-        left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
-        return left.join(right, left.key == right.r_key, join_type)
-    conf = copy_and_update(_sortmerge_join_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', map_string_string_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
-def test_sortmerge_join_map(data_gen, join_type, batch_size):
+def test_sortmerge_join_nested(data_gen, join_type, batch_size):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
         return left.join(right, left.key == right.r_key, join_type)
@@ -143,17 +134,6 @@ def test_sortmerge_join_array_as_key(data_gen, join_type):
         return left.join(right, left.a == right.r_a, join_type)
     assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=_sortmerge_join_conf)
 
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test out of core joins too
-def test_sortmerge_join_struct(data_gen, join_type, batch_size):
-    def do_join(spark):
-        left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
-        return left.join(right, left.key == right.r_key, join_type)
-    conf = copy_and_update(_sortmerge_join_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
-
 # For spark to insert a shuffled hash join it has to be enabled with
 # "spark.sql.join.preferSortMergeJoin" = "false" and both sides have to
 # be larger than a broadcast hash join would want
@@ -164,19 +144,9 @@ def test_sortmerge_join_struct(data_gen, join_type, batch_size):
 # this happen, if test fails something might have changed related to that.
 @validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens, ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_hash_join_array(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_nested_df(spark, short_gen, data_gen, 50, 500)
-        return left.join(right, left.key == right.r_key, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_hash_join_conf)
-
-@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', map_string_string_gen, ids=idfn)
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_hash_join_map(data_gen, join_type):
+def test_hash_join_nested(data_gen, join_type):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 50, 500)
         return left.join(right, left.key == right.r_key, join_type)
@@ -196,33 +166,11 @@ def test_broadcast_join_right_table(data_gen, join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens_no_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', basic_nested_gens, ids=idfn)
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_broadcast_join_right_table_array(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
-        return left.join(broadcast(right), left.key == right.r_key, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', map_string_string_gen, ids=idfn)
-# Not all join types can be translated to a broadcast join, but this tests them to be sure we
-# can handle what spark is doing
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_broadcast_join_right_table_map(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
-        return left.join(broadcast(right), left.key == right.r_key, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=allow_negative_scale_of_decimal_conf)
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
-# Not all join types can be translated to a broadcast join, but this tests them to be sure we
-# can handle what spark is doing
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_broadcast_join_right_table_struct(data_gen, join_type):
+def test_broadcast_join_right_table_nested(data_gen, join_type):
     def do_join(spark):
         left, right = create_nested_df(spark, short_gen, data_gen, 500, 500)
         return left.join(broadcast(right), left.key == right.r_key, join_type)
@@ -246,7 +194,7 @@ def test_broadcast_join_right_table_with_job_group(data_gen, join_type):
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_cartesian_join(data_gen, batch_size):
     def do_join(spark):
@@ -305,7 +253,7 @@ def test_cartesian_join_with_condition(data_gen, batch_size):
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + basic_nested_gens, ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_broadcast_nested_loop_join(data_gen, batch_size):
     def do_join(spark):

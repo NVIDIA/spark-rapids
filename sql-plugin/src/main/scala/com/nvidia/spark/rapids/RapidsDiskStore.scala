@@ -89,7 +89,7 @@ class RapidsDiskStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback,
+      spillCallback: SpillCallback,
       deviceStorage: RapidsDeviceMemoryStore)
       extends RapidsBufferBase(
         id, size, meta, spillPriority, spillCallback, deviceStorage = deviceStorage) {

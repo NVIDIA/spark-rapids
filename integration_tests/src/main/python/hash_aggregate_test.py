@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql,\
     assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
-    assert_cpu_and_gpu_are_equal_collect_with_capture
+    assert_cpu_and_gpu_are_equal_collect_with_capture, run_with_cpu, run_with_cpu_and_gpu
 from conftest import is_databricks_runtime
 from data_gen import *
 from functools import reduce
@@ -24,6 +24,8 @@ from pyspark.sql.types import *
 from marks import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311, with_cpu_session
+
+_approx_percentile_conf = { 'spark.rapids.sql.expression.ApproximatePercentile': 'true' }
 
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
@@ -422,7 +424,7 @@ _gen_data_for_collect_list_op = _gen_data_for_collect_op + [[
 
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op + _gen_data_for_collect_list_op, ids=idfn)
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1074,6 +1076,113 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_long_repeated_keys():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
+                                     ('v', LongRangeGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_long():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', LongRangeGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_long_scalar():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', LongRangeGen())], length=100),
+        0.5)
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_double():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DoubleGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_double_scalar():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', DoubleGen())], length=100),
+        0.05)
+
+# The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
+# results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
+# compute approximate percentiles on CPU and GPU and assert that the GPU numbers are accurate within some percentage
+# of the CPU numbers
+def compare_percentile_approx(df_fun, percentiles):
+
+    # create SQL statements for exact and approx percentiles
+    p_exact_sql = create_percentile_sql("percentile", percentiles)
+    p_approx_sql = create_percentile_sql("approx_percentile", percentiles)
+
+    def run_exact(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView("t")
+        return spark.sql(p_exact_sql)
+
+    def run_approx(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView("t")
+        return spark.sql(p_approx_sql)
+
+    # run exact percentile on CPU
+    exact = run_with_cpu(run_exact, 'COLLECT', _approx_percentile_conf)
+
+    # run approx_percentile on CPU and GPU
+    approx_cpu, approx_gpu = run_with_cpu_and_gpu(run_approx, 'COLLECT', _approx_percentile_conf)
+
+    for result in zip(exact, approx_cpu, approx_gpu):
+        # assert that keys match
+        assert result[0]['k'] == result[1]['k']
+        assert result[1]['k'] == result[2]['k']
+
+        exact = result[0]['the_percentile']
+        cpu = result[1]['the_percentile']
+        gpu = result[2]['the_percentile']
+
+        if exact is not None:
+            if isinstance(exact, list):
+                for x in zip(exact, cpu, gpu):
+                    exact = x[0]
+                    cpu = x[1]
+                    gpu = x[2]
+                    gpu_delta = abs(float(gpu) - float(exact))
+                    cpu_delta = abs(float(cpu) - float(exact))
+                    if gpu_delta > cpu_delta:
+                        # GPU is less accurate so make sure we are within some tolerance
+                        if gpu_delta == 0:
+                            assert abs(gpu_delta / cpu_delta) - 1 < 0.001
+                        else:
+                            assert abs(cpu_delta / gpu_delta) - 1 < 0.001
+            else:
+                gpu_delta = abs(float(gpu) - float(exact))
+                cpu_delta = abs(float(cpu) - float(exact))
+                if gpu_delta > cpu_delta:
+                    # GPU is less accurate so make sure we are within some tolerance
+                    if gpu_delta == 0:
+                        assert abs(gpu_delta / cpu_delta) - 1 < 0.001
+                    else:
+                        assert abs(cpu_delta / gpu_delta) - 1 < 0.001
+
+def create_percentile_sql(func_name, percentiles):
+    if isinstance(percentiles, list):
+        return """select k, {}(v, array({})) as the_percentile from t group by k""".format(
+            func_name, ",".join(str(i) for i in percentiles))
+    else:
+        return """select k, {}(v, {}) as the_percentile from t group by k""".format(
+            func_name, percentiles)
+
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
@@ -1123,6 +1232,7 @@ def test_hash_reduction_avg_nulls_ansi(data_gen, conf):
     )
 
 
+@ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
   'HashPartitioning', 'ShuffleExchangeExec', 'Sum')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
@@ -1135,6 +1245,7 @@ def test_sum_fallback_when_ansi_enabled(data_gen):
         conf={'spark.sql.ansi.enabled': 'true'})
 
 
+@ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression', 'Cast',
   'HashPartitioning', 'ShuffleExchangeExec', 'Average')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
@@ -1147,6 +1258,7 @@ def test_avg_fallback_when_ansi_enabled(data_gen):
         conf={'spark.sql.ansi.enabled': 'true'})
 
 
+@ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'Alias', 'AggregateExpression',
   'HashPartitioning', 'ShuffleExchangeExec', 'Count', 'Literal')
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
@@ -1160,7 +1272,6 @@ def test_count_fallback_when_ansi_enabled(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _no_overflow_ansi_gens, ids=idfn)
-@ignore_order(local=True)
 def test_no_fallback_when_ansi_enabled(data_gen):
     def do_it(spark):
         df = gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100)

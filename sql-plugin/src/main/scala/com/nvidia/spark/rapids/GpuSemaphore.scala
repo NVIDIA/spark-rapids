@@ -71,22 +71,9 @@ object GpuSemaphore {
    * NOTE: A task completion listener will automatically be installed to ensure
    *       the semaphore is always released by the time the task completes.
    */
-  def acquireIfNecessary(context: TaskContext): Unit = {
-    if (enabled && context != null) {
-      getInstance.acquireIfNecessary(context, None)
-    }
-  }
-
-  /**
-   * Tasks must call this when they begin to use the GPU.
-   * If the task has not already acquired the GPU semaphore then it is acquired,
-   * blocking if necessary.
-   * NOTE: A task completion listener will automatically be installed to ensure
-   *       the semaphore is always released by the time the task completes.
-   */
   def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
     if (enabled && context != null) {
-      getInstance.acquireIfNecessary(context, Some(waitMetric))
+      getInstance.acquireIfNecessary(context, waitMetric)
     }
   }
 
@@ -116,8 +103,8 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
   // Map to track which tasks have acquired the semaphore.
   private val activeTasks = new ConcurrentHashMap[Long, MutableInt]
 
-  def acquireIfNecessary(context: TaskContext, waitMetric: Option[GpuMetric] = None): Unit = {
-    withResource(NvtxWithMetrics.apply("Acquire GPU", NvtxColor.RED, waitMetric)) { _ =>
+  def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
+    withResource(new NvtxWithMetrics("Acquire GPU", NvtxColor.RED, waitMetric)) { _ =>
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
       if (refs == null || refs.getValue == 0) {

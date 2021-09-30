@@ -41,11 +41,11 @@ class Spark311CDHShims extends SparkBaseShims {
     super.getExecs ++ Seq(
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested()
-          .withPsNote(TypeEnum.DECIMAL,
-            "Negative scales aren't supported at the moment even with " +
-              "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. This is because Parquet " +
-              "doesn't support negative scale for decimal values"),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
+            + TypeSig.ARRAY).nested().withPsNote(TypeEnum.DECIMAL,
+              "Negative scales aren't supported at the moment even with " +
+                  "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. " +
+                  "This is because Parquet doesn't support negative scale for decimal values"),
           TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
@@ -97,22 +97,6 @@ class Spark311CDHShims extends SparkBaseShims {
     sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
   }
 
-  override def int96ParquetRebaseRead(conf: SQLConf): String = {
-    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
-  }
-
-  override def int96ParquetRebaseWrite(conf: SQLConf): String = {
-    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
-  }
-
-  override def int96ParquetRebaseReadKey: String = {
-    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
-  }
-
-  override def int96ParquetRebaseWriteKey: String = {
-    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
-  }
-  
   override def hasCastFloatTimestampUpcast: Boolean = false
 
   override def getParquetFilters(

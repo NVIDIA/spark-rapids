@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{ast, GatherMap, NvtxColor, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
 
 import org.apache.spark.TaskContext
@@ -128,13 +127,13 @@ class CrossJoinIterator(
     stream: Iterator[LazySpillableColumnarBatch],
     targetSize: Long,
     buildSide: GpuBuildSide,
-    joinTime: GpuMetric,
-    totalTime: GpuMetric)
+    opTime: GpuMetric,
+    joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
       "Cross join gather",
       targetSize,
-      joinTime,
-      totalTime) {
+      opTime,
+      joinTime) {
   override def close(): Unit = {
     if (!closed) {
       super.close()
@@ -144,7 +143,7 @@ class CrossJoinIterator(
 
   override def hasNextStreamBatch: Boolean = stream.hasNext
 
-  override def setupNextGatherer(startTime: Long): Option[JoinGatherer] = {
+  override def setupNextGatherer(): Option[JoinGatherer] = {
     val streamBatch = stream.next()
 
     // Don't close the built side because it will be used for each stream and closed
@@ -186,8 +185,8 @@ class ConditionalNestedLoopJoinIterator(
     targetSize: Long,
     condition: ast.CompiledExpression,
     spillCallback: SpillCallback,
-    joinTime: GpuMetric,
-    totalTime: GpuMetric)
+    opTime: GpuMetric,
+    joinTime: GpuMetric)
     extends SplittableJoinIterator(
       s"$joinType join gather",
       stream,
@@ -195,9 +194,8 @@ class ConditionalNestedLoopJoinIterator(
       builtBatch,
       targetSize,
       spillCallback,
-      joinTime = joinTime,
-      streamTime = NoopMetric,
-      totalTime = totalTime) {
+      opTime = opTime,
+      joinTime = joinTime) {
   override def close(): Unit = {
     if (!closed) {
       super.close()
@@ -303,18 +301,18 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      joinTime: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
+      opTime: GpuMetric,
+      joinTime: GpuMetric): Iterator[ColumnarBatch] = {
     val joinIterator = if (boundCondition.isEmpty) {
       // Semi and anti nested loop joins without a condition are degenerate joins and should have
       // been handled at a higher level rather than calling this method.
       assert(joinType.isInstanceOf[InnerLike], s"Unexpected unconditional join type: $joinType")
-      new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, joinTime, totalTime)
+      new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, opTime, joinTime)
     } else {
       val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
       new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
         stream, streamAttributes, targetSize, compiledAst, spillCallback,
-        joinTime = joinTime, totalTime = totalTime)
+        opTime = opTime, joinTime = joinTime)
     }
     joinIterator.map { cb =>
         joinOutputRows += cb.numRows()
@@ -328,7 +326,8 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       rowCounts: RDD[Long],
       targetSizeBytes: Long,
       numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
+      numOutputBatches: GpuMetric,
+      semWait: GpuMetric): RDD[ColumnarBatch] = {
     // Hash aggregate explodes the rows out, so if we go too large
     // it can blow up. The size of a Long is 8 bytes so we just go with
     // that as our estimate, no nulls.
@@ -346,7 +345,7 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
         numOutputRows += ret.numRows()
         numOutputBatches += 1
         // grab the semaphore for downstream processing
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
         ret
       })
     }
@@ -374,10 +373,10 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
-    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   /** BuildRight means the right relation <=> the broadcast relation. */
@@ -475,6 +474,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
       val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
       val buildTime = gpuLongMetric(BUILD_TIME)
+      val opTime = gpuLongMetric(OP_TIME)
       val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
       lazy val builtBatch = makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
       joinType match {
@@ -497,7 +497,6 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           val buildSide = getGpuBuildSide
           val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
           val joinTime = gpuLongMetric(JOIN_TIME)
-          val totalTime = gpuLongMetric(TOTAL_TIME)
           streamed.executeColumnar().mapPartitions { streamedIter =>
             val lazyStream = streamedIter.map { cb =>
               withResource(cb) { cb =>
@@ -509,8 +508,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
               lazyStream,
               targetSizeBytes,
               buildSide,
-              joinTime = joinTime,
-              totalTime = totalTime)
+              opTime = opTime,
+              joinTime = joinTime)
           }
       }
     }
@@ -544,12 +543,14 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
       val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
       val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+      val semWait = gpuLongMetric(SEMAPHORE_WAIT_TIME)
       val counts = streamed.executeColumnar().map(getRowCountAndClose)
       GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
         counts.map(s => s * buildCount),
         targetSizeBytes,
         numOutputRows,
-        numOutputBatches)
+        numOutputBatches,
+        semWait)
     }
   }
 
@@ -564,7 +565,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val streamAttributes = streamed.output
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val nestedLoopJoinType = joinType
@@ -583,8 +584,8 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         numOutputRows = numOutputRows,
         joinOutputRows = joinOutputRows,
         numOutputBatches = numOutputBatches,
-        joinTime = joinTime,
-        totalTime = totalTime)
+        opTime = opTime,
+        joinTime = joinTime)
     }
   }
 }
