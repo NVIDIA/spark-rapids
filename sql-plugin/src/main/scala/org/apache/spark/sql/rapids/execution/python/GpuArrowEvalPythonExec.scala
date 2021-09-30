@@ -61,7 +61,7 @@ class RebatchingRoundoffIterator(
     targetRoundoff: Int,
     inputRows: GpuMetric,
     inputBatches: GpuMetric,
-    spillCallback: RapidsBuffer.SpillCallback)
+    spillCallback: SpillCallback)
     extends Iterator[ColumnarBatch] with Arm {
   var pending: Option[SpillableColumnarBatch] = None
 
@@ -104,7 +104,7 @@ class RebatchingRoundoffIterator(
   }
 
   override def next(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), spillCallback.semaphoreWaitTime)
 
     val combined : ColumnarBatch = if (pending.isDefined) {
       if (!wrapped.hasNext) {
@@ -191,7 +191,7 @@ class BatchQueue extends AutoCloseable with Arm {
     mutable.Queue[SpillableColumnarBatch]()
   private var isSet = false
 
-  def add(batch: ColumnarBatch, spillCallback: RapidsBuffer.SpillCallback): Unit = synchronized {
+  def add(batch: ColumnarBatch, spillCallback: SpillCallback): Unit = synchronized {
     queue.enqueue(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
       spillCallback))
     if (!isSet) {
@@ -256,6 +256,8 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
   private[python] final def updateMinReadTargetBatchSize(size: Int) = {
     self.minReadTargetBatchSize = size
   }
+
+  def semWait: GpuMetric
 
   protected def newReaderIterator(
       stream: DataInputStream,
@@ -326,7 +328,8 @@ trait GpuPythonArrowOutput extends Arm { self: GpuArrowPythonRunner =>
             stream.readInt() match {
               case SpecialLengths.START_ARROW_STREAM =>
                 val builder = ArrowIPCOptions.builder()
-                builder.withCallback(() => GpuSemaphore.acquireIfNecessary(TaskContext.get()))
+                builder.withCallback(() =>
+                  GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait))
                 arrowReader = Table.readArrowIPCChunked(builder.build(),
                   new StreamToBufferProvider(stream))
                 read()
@@ -358,6 +361,7 @@ class GpuArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
+    val semWait: GpuMetric,
     onDataWriteFinished: () => Unit,
     val pythonOutSchema: StructType,
     var minReadTargetBatchSize: Int = 1)
@@ -529,6 +533,7 @@ case class GpuArrowEvalPythonExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
+    val semWait = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
@@ -606,6 +611,7 @@ case class GpuArrowEvalPythonExec(
           timeZone,
           runnerConf,
           targetBatchSize,
+          semWait,
           () => queue.finish(),
           pythonOutputSchema)
 

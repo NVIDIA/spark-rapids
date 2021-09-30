@@ -89,7 +89,7 @@ class GroupingIterator(
     partitionSpec: Seq[Expression],
     inputRows: GpuMetric,
     inputBatches: GpuMetric,
-    spillCallback: RapidsBuffer.SpillCallback) extends Iterator[ColumnarBatch] with Arm {
+    spillCallback: SpillCallback) extends Iterator[ColumnarBatch] with Arm {
 
   // Currently do it in a somewhat ugly way. In the future cuDF will provide a dedicated API.
   // Current solution assumes one group data exists in only one batch, so just split the
@@ -541,6 +541,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
+          spillCallback.semaphoreWaitTime,
           () => queue.finish(),
           pythonOutputSchema)
 

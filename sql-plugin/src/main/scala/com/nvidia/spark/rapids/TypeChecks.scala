@@ -1606,6 +1606,31 @@ object ExprChecks {
       (WindowAggExprContext,
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
+
+  /**
+   * An aggregation check where group by is supported by the plugin, but Spark also supports
+   * reduction and window operations on these.
+   */
+  def groupByOnly(
+      outputCheck: TypeSig,
+      sparkOutputSig: TypeSig,
+      paramCheck: Seq[ParamCheck] = Seq.empty,
+      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
+    val noneParamCheck = paramCheck.map { pc =>
+      ParamCheck(pc.name, TypeSig.none, pc.spark)
+    }
+    val noneRepeatCheck = repeatingParamCheck.map { pc =>
+      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
+    }
+    ExprChecksImpl(Map(
+      (ReductionAggExprContext,
+        ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
+      (GroupByAggExprContext,
+        ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+      (WindowAggExprContext,
+        ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck))))
+  }
+
   /**
    * An aggregation check where group by and window operations are supported by the plugin, but
    * Spark also supports reduction on these.

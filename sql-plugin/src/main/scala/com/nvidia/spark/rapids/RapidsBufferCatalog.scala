@@ -250,7 +250,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
     deviceStorage.addTable(id, table, contigBuffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**
@@ -265,7 +265,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
     deviceStorage.addContiguousTable(id, contigTable, initialSpillPriority, spillCallback)
 
   /**
@@ -282,7 +282,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: RapidsBuffer.SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): Unit =
     deviceStorage.addBuffer(id, buffer, tableMeta, initialSpillPriority, spillCallback)
 
   /**

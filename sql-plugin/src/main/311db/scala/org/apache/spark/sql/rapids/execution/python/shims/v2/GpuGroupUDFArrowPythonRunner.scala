@@ -68,11 +68,12 @@ class GpuGroupUDFArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
+    semWait: GpuMetric,
     onDataWriteFinished: () => Unit,
     override val pythonOutSchema: StructType,
     minReadTargetBatchSize: Int)
     extends GpuArrowPythonRunner(funcs, evalType, argOffsets, pythonInSchema, timeZoneId, conf,
-      batchSize, onDataWriteFinished, pythonOutSchema, minReadTargetBatchSize) {
+      batchSize, semWait, onDataWriteFinished, pythonOutSchema, minReadTargetBatchSize) {
 
   protected override def newWriterThread(
       env: SparkEnv,

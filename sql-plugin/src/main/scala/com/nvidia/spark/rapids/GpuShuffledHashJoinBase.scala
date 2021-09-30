@@ -37,11 +37,11 @@ abstract class GpuShuffledHashJoinBase(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     BUILD_DATA_SIZE -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
-    STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
+    STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   override def requiredChildDistribution: Seq[Distribution] =
@@ -62,7 +62,7 @@ abstract class GpuShuffledHashJoinBase(
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
     val buildTime = gpuLongMetric(BUILD_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
@@ -73,6 +73,7 @@ abstract class GpuShuffledHashJoinBase(
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
+        val stIt = new CollectTimeIterator("shuffled join stream", streamIter, streamTime)
         val startTime = System.nanoTime()
 
         withResource(ConcatAndConsumeAll.getSingleBatchWithVerification(buildIter,
@@ -80,12 +81,11 @@ abstract class GpuShuffledHashJoinBase(
           // doJoin will increment the reference counts as needed for the builtBatch
           val delta = System.nanoTime() - startTime
           buildTime += delta
-          totalTime += delta
           buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
 
-          doJoin(builtBatch, streamIter, targetSize, spillCallback,
+          doJoin(builtBatch, stIt, targetSize, spillCallback,
             numOutputRows, joinOutputRows, numOutputBatches,
-            streamTime, joinTime, totalTime)
+            opTime, joinTime)
         }
       }
     }
