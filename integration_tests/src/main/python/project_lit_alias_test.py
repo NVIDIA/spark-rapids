@@ -24,9 +24,9 @@ import pyspark.sql.functions as f
 def test_project_alias(data_gen):
     dec = Decimal('123123123123123123123123123.456')
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : debug_df(binary_op_df(spark, data_gen).select(
+        lambda spark : binary_op_df(spark, data_gen).select(
             f.col('a').alias('col1'),
             f.col('b').alias('col2'),
-            f.lit(dec))))
+            f.lit(dec)))
 
 

@@ -509,6 +509,12 @@ private object GpuRowToColumnConverter {
 
   private class DecimalConverter(
     precision: Int, scale: Int) extends NotNullDecimalConverter(precision, scale) {
+    private val appendedSize = if (precision <= Decimal.MAX_LONG_DIGITS) {
+      8 + VALIDITY
+    } else {
+      16 + VALIDITY
+    }
+
     override def append(
       row: SpecializedGetters,
       column: Int,
@@ -518,34 +524,30 @@ private object GpuRowToColumnConverter {
       } else {
         super.append(row, column, builder)
       }
-      16 + VALIDITY
+      appendedSize
     }
   }
 
   private class NotNullDecimalConverter(precision: Int, scale: Int) extends TypeConverter {
+    private val appendedSize = if (precision <= Decimal.MAX_INT_DIGITS) {
+      4
+    } else if (precision <= Decimal.MAX_LONG_DIGITS) {
+      8
+    } else {
+      16
+    }
+
     override def append(
       row: SpecializedGetters,
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       val bigDecimal = row.getDecimal(column, precision, scale).toJavaBigDecimal
       builder.append(bigDecimal)
-      if (precision <= Decimal.MAX_INT_DIGITS) {
-        4
-      } else if (precision <= Decimal.MAX_LONG_DIGITS) {
-        8
-      } else {
-        16
-      }
+      appendedSize
     }
 
     override def getNullSize: Double = {
-      if (precision <= Decimal.MAX_INT_DIGITS) {
-        4
-      } else if (precision <= Decimal.MAX_LONG_DIGITS) {
-        8
-      } else {
-        16
-      } + VALIDITY
+      appendedSize + VALIDITY
     }
   }
 }
