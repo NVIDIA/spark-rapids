@@ -23,6 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.RapidsConf.TEST_CONF
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
@@ -3603,14 +3604,15 @@ object GpuOverrides extends Logging {
 object GpuOverrideUtil extends Logging {
   def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
     val planOriginal = plan.clone()
+    val failOnError = TEST_CONF.get(plan.conf)
     try {
       fn(plan)
     } catch {
-      case NonFatal(t) =>
+      case NonFatal(t) if !failOnError =>
         logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
         planOriginal
       case fatal =>
-        logError("Encountered a fatal exception applying GPU overrides " + fatal, fatal)
+        logError("Encountered an exception applying GPU overrides " + fatal, fatal)
         throw fatal
     }
   }
