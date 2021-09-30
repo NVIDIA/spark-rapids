@@ -100,12 +100,6 @@ abstract class SparkBaseShims extends Spark30XShims {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
   }
 
-  override def getGpuBroadcastExchangeExec(
-      mode: BroadcastMode,
-      child: SparkPlan): GpuBroadcastExchangeExecBase = {
-    GpuBroadcastExchangeExec(mode, child)
-  }
-
   override def getGpuShuffleExchangeExec(
       outputPartitioning: Partitioning,
       child: SparkPlan,
