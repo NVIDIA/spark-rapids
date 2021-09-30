@@ -97,7 +97,7 @@ def test_case_when(data_gen):
                 f.when(f.lit(False), f.col('_c0'))),
             conf = allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen, decimal_gen_128bit], ids=idfn)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_nanvl(data_gen):
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type

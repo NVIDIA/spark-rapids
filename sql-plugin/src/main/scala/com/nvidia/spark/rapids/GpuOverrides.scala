@@ -1150,7 +1150,7 @@ object GpuOverrides {
       "Checks if a value is null",
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
+            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
@@ -1159,7 +1159,7 @@ object GpuOverrides {
       "Checks if a value is not null",
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
+            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
@@ -2084,7 +2084,7 @@ object GpuOverrides {
         ExprChecks.fullAgg(
           TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL , TypeSig.orderable))
+            TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
@@ -2187,8 +2187,8 @@ object GpuOverrides {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric +
+        TypeSig.gpuNumeric, TypeSig.gpuNumeric,
+        ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -2208,8 +2208,8 @@ object GpuOverrides {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.numeric, TypeSig.numeric,
-        ("value", TypeSig.numeric +
+        TypeSig.gpuNumeric, TypeSig.gpuNumeric,
+        ("value", TypeSig.gpuNumeric +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -3039,7 +3039,7 @@ object GpuOverrides {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL +
-          TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT).nested(),
+          TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
         TypeSig.all)),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
@@ -3242,7 +3242,7 @@ object GpuOverrides {
       "The backend for most data being exchanged between processes",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
         TypeSig.STRUCT + TypeSig.MAP).nested()
-        .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
+          .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
@@ -3305,7 +3305,6 @@ object GpuOverrides {
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-          //TODO add decimal128 after testing
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
@@ -3318,7 +3317,6 @@ object GpuOverrides {
             .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64)
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-          //TODO add decimal128 after testing
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
@@ -3331,7 +3329,6 @@ object GpuOverrides {
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-          //TODO add decimal128 after testing
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),

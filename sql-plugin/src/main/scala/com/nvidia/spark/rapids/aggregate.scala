@@ -427,7 +427,7 @@ class GpuHashAggregateIterator(
       batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
     withResource(batches) { _ =>
       withResource(concatenateBatches(batches)) { concatVectors =>
-        withResource( computeAggregate(concatVectors, merge = true)) { mergedBatch =>
+        withResource(computeAggregate(concatVectors, merge = true)) { mergedBatch =>
           LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
         }
       }
@@ -769,8 +769,6 @@ class GpuHashAggregateIterator(
       isSorted: Boolean = false): ColumnarBatch  = {
     val aggModeCudfAggregates = boundExpressions.aggModeCudfAggregates
     val computeAggTime = metrics.computeAggTime
-//    println("KUHU compute toaggcvs")
-    //printCvs(toAggregateCvs)
     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
       if (groupingExpressions.nonEmpty) {
         // Perform group by aggregation

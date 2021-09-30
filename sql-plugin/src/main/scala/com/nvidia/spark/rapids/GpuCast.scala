@@ -578,7 +578,6 @@ object GpuCast extends Arm {
           val maxPredicate = if (inclusiveMax) {
             values.greaterThan(maxValue)
           } else {
-            //returning wroong results kuhu
             values.greaterOrEqualTo(maxValue)
           }
           withResource(maxPredicate) { maxPredicate =>
@@ -1357,18 +1356,14 @@ object GpuCast extends Arm {
     if (isFrom32Bit && absBoundPrecision > Decimal.MAX_INT_DIGITS) {
       return input.copyToColumnVector()
     }
-    val (minValueScalar, maxValueScalar) =
-      if (input.getType.getTypeId == DType.DTypeEnum.DECIMAL64) {
-        val absBound = math.pow(10, absBoundPrecision).toLong
-        (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
-      } else if (input.getType.getTypeId == DType.DTypeEnum.DECIMAL32) {
-        val absBound = math.pow(10, absBoundPrecision).toInt
+    val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
+      val absBound = math.pow(10, absBoundPrecision).toLong
       (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
-      } else {
-        val absBound: BigInteger = new BigInteger(
-          math.pow(10, DType.DECIMAL128_MAX_PRECISION).toString)
-        (Scalar.fromDecimal(0, absBound.negate()), Scalar.fromDecimal(0, absBound))
-      }
+
+    } else {
+      val absBound = math.pow(10, absBoundPrecision).toInt
+      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
+    }
     val checkedInput = if (ansiMode) {
       assertValuesInRange(input,
         minValue = minValueScalar,

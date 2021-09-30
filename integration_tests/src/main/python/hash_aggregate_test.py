@@ -216,7 +216,7 @@ _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
-    'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning', 'SortExec', 'SortOrder')
+    'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
 
 params_markers_for_confs = [
     (_no_nans_float_conf_partial, [_excluded_operators_marker]),
@@ -239,8 +239,8 @@ _init_list_no_nans_with_decimal = _init_list_no_nans + [
 
 @shuffle_test
 @approximate_float
-@incompat
 @ignore_order
+@incompat
 @pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
