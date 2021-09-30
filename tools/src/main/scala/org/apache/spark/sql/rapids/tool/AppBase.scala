@@ -106,10 +106,12 @@ abstract class AppBase(
               isDone
             }
           } catch {
-            case e: OutOfMemoryError =>
-              logError(s"OOM error while processing large files. Increase heap size " +
-                  s"to process ${eventlog.toString}")
-              throw e
+            case o: OutOfMemoryError =>
+              logError(s"OOM error while processing large file ${eventlog.toString}. " +
+                  s"Increase heap size.", o)
+              throw o
+            case e: Exception =>
+              logError(s"Unexpected exception processing log ${eventlog.toString}, skipping!", e)
           }
         }
       }
