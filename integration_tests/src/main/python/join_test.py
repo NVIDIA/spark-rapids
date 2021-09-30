@@ -30,7 +30,7 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(FloatGen(), marks=[incompat]),
            pytest.param(DoubleGen(), marks=[incompat]),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
-           decimal_gen_neg_scale, decimal_gen_64bit, decimal_gen_128bit]
+           decimal_gen_neg_scale, decimal_gen_64bit]
 
 all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),

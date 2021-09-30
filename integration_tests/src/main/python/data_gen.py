@@ -240,32 +240,6 @@ class DecimalGen(DataGen):
             length = _MAX_CHOICES
         self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
 
-class BigDecimalGen(DataGen):
-    """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
-        if precision is None:
-            #Maximum number of decimal digits a decimal type can represent is 18
-            precision = 38
-            scale = 0
-        DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
-        DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
-        super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
-        self.scale = scale
-        self.precision = precision
-        pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
-        self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
-
-    def __repr__(self):
-        return super().__repr__() + '(' + str(self.precision) + ',' + str(self.scale) + ')'
-
-    def start(self, rand):
-        strs = self.base_strs
-        try:
-            length = int(len(strs))
-        except OverflowError:
-            length = _MAX_CHOICES
-        self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
-
 LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):
@@ -696,7 +670,6 @@ def _mark_as_lit(data, data_type):
         return f.create_map(*col_array)
     else:
         # lit does not take a data type so we might have to cast it
-        print("KUHU LIT CAST" + str(data_type) + " "  + str(data))
         return f.lit(data).cast(data_type)
 
 def _gen_scalars_common(data_gen, count, seed=0):
@@ -725,7 +698,6 @@ def gen_scalars(data_gen, count, seed=0, force_no_nulls=False):
 def gen_scalar(data_gen, seed=0, force_no_nulls=False):
     """Generate a single scalar value."""
     v = list(gen_scalars(data_gen, 1, seed=seed, force_no_nulls=force_no_nulls))
-    print ("KUHU v[0]=" + str(v[0]))
     return v[0]
 
 def gen_scalar_values(data_gen, count, seed=0, force_no_nulls=False):
@@ -887,7 +859,7 @@ double_gens = [double_gen]
 double_n_long_gens = [double_gen, long_gen]
 int_n_long_gens = [int_gen, long_gen]
 decimal_gens_no_neg = [decimal_gen_default, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision, decimal_gen_64bit, decimal_gen_128bit]
+        decimal_gen_same_scale_precision, decimal_gen_64bit]
 
 decimal_gens = [decimal_gen_neg_scale] + decimal_gens_no_neg
 
@@ -912,7 +884,7 @@ eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 eq_gens_with_decimal_gen =  eq_gens + decimal_gens
 
 #gen for testing round operator
-round_gens = numeric_gens + decimal_gens + [decimal_gen_128bit]
+round_gens = numeric_gens + decimal_gens
 
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
@@ -963,7 +935,7 @@ no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            FloatGen(), DoubleGen(), BooleanGen(), DateGen(), TimestampGen(),
            decimal_gen_default, decimal_gen_scale_precision, decimal_gen_same_scale_precision,
-           decimal_gen_64bit, DecimalGen(precision=20, scale=3)]
+           decimal_gen_64bit]
 
 # Pyarrow will complain the error as below if the timestamp is out of range for both CPU and GPU,
 # so narrow down the time range to avoid exceptions causing test failures.

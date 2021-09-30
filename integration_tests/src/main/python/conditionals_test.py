@@ -140,7 +140,7 @@ def test_coalesce(data_gen):
                 f.coalesce(*command_args)),
             conf = allow_negative_scale_of_decimal_conf)
 
-def test_coalece_constant_output():
+def test_coalesce_constant_output():
     # Coalesce can allow a constant value as output. Technically Spark should mark this
     # as foldable and turn it into a constant, but it does not, so make sure our code
     # can deal with it.  (This means something like + will get two constant scalar values)
