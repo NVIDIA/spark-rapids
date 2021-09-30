@@ -24,11 +24,14 @@ import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrig
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBaseWithMetrics
 
 case class GpuShuffleExchangeExec(
-    override val outputPartitioning: Partitioning,
+    gpuOutputPartitioning: Partitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)
-    extends GpuShuffleExchangeExecBaseWithMetrics(outputPartitioning, child)
+    shuffleOrigin: ShuffleOrigin,
+    cpuOutputPartitioning: Partitioning)
+    extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
         with ShuffleExchangeLike {
+
+  override val outputPartitioning: Partitioning = cpuOutputPartitioning
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 

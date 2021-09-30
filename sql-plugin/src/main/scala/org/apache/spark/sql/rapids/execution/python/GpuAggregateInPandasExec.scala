@@ -62,7 +62,8 @@ class GpuAggregateInPandasExecMeta(
       groupingNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
       resultNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans.head.convertIfNeeded()
+      childPlans.head.convertIfNeeded(),
+      aggPandas.groupingExpressions
     )
 }
 
@@ -78,10 +79,11 @@ class GpuAggregateInPandasExecMeta(
  * scheduling GPU resources for its Python processes.
  */
 case class GpuAggregateInPandasExec(
-    groupingExpressions: Seq[NamedExpression],
+    gpuGroupingExpressions: Seq[NamedExpression],
     udfExpressions: Seq[GpuPythonUDF],
     resultExpressions: Seq[NamedExpression],
-    child: SparkPlan)
+    child: SparkPlan,
+    cpuGroupingExpressions: Seq[NamedExpression])
   extends ShimUnaryExecNode with GpuPythonExecBase {
 
   override val output: Seq[Attribute] = resultExpressions.map(_.toAttribute)
@@ -91,10 +93,10 @@ case class GpuAggregateInPandasExec(
   override def producedAttributes: AttributeSet = AttributeSet(output)
 
   override def requiredChildDistribution: Seq[Distribution] = {
-    if (groupingExpressions.isEmpty) {
+    if (cpuGroupingExpressions.isEmpty) {
       AllTuples :: Nil
     } else {
-      ClusteredDistribution(groupingExpressions) :: Nil
+      ClusteredDistribution(cpuGroupingExpressions) :: Nil
     }
   }
 
@@ -111,7 +113,7 @@ case class GpuAggregateInPandasExec(
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(groupingExpressions.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
+    Seq(cpuGroupingExpressions.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)))
 
   // One batch as input to keep the integrity for each group.
   // (This should be replaced by an iterator that can split batches on key boundaries eventually.
@@ -126,7 +128,7 @@ case class GpuAggregateInPandasExec(
   // When groupingExpressions is not empty, the input batch will be split into multiple
   // batches by the grouping expressions, and processed by Python executors group by group,
   // so better to coalesce the output batches.
-  override def coalesceAfter: Boolean = groupingExpressions.nonEmpty
+  override def coalesceAfter: Boolean = gpuGroupingExpressions.nonEmpty
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
@@ -177,7 +179,7 @@ case class GpuAggregateInPandasExec(
       // First projects the input batches to (groupingExpressions + allInputs), which is minimum
       // necessary for the following processes.
       // Doing this can reduce the data size to be split, probably getting a better performance.
-      val groupingRefs = GpuBindReferences.bindGpuReferences(groupingExpressions, childOutput)
+      val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions, childOutput)
       val pyInputRefs = GpuBindReferences.bindGpuReferences(allInputs, childOutput)
       val miniIter = inputIter.map { batch =>
         mNumInputBatches += 1
@@ -188,7 +190,7 @@ case class GpuAggregateInPandasExec(
       }
 
       // Second splits into separate group batches.
-      val miniAttrs = groupingExpressions ++ allInputs
+      val miniAttrs = gpuGroupingExpressions ++ allInputs
       val pyInputIter = BatchGroupedIterator(miniIter, miniAttrs.asInstanceOf[Seq[Attribute]],
           groupingRefs.indices, spillCallback)
         .map { groupedBatch =>
@@ -252,7 +254,7 @@ case class GpuAggregateInPandasExec(
 
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
 
-        val combinedAttrs = groupingExpressions.map(_.toAttribute) ++ pyOutAttributes
+        val combinedAttrs = gpuGroupingExpressions.map(_.toAttribute) ++ pyOutAttributes
         val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs)
         // Gets the combined batch for each group and projects for the output.
         new CombiningIterator(queue, pyOutputIterator, pyRunner, mNumOutputRows,

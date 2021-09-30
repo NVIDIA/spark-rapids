@@ -177,8 +177,9 @@ class GroupingIterator(
 trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
 
   def windowExpression: Seq[Expression]
-  def partitionSpec: Seq[Expression]
-  def orderSpec: Seq[SortOrder]
+  def gpuPartitionSpec: Seq[Expression]
+  def cpuPartitionSpec: Seq[Expression]
+  def cpuOrderSpec: Seq[SortOrder]
 
   // Used to choose the default python modules
   // please refer to `GpuPythonHelper` for details.
@@ -188,18 +189,18 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
   def projectResult(joinedBatch: ColumnarBatch): ColumnarBatch
 
   override def requiredChildDistribution: Seq[Distribution] = {
-    if (partitionSpec.isEmpty) {
+    if (cpuPartitionSpec.isEmpty) {
       // Only show warning when the number of bytes is larger than 100 MiB?
       logWarning("No Partition Defined for Window operation! Moving all data to a single "
         + "partition, this can cause serious performance degradation.")
       AllTuples :: Nil
     } else {
-      ClusteredDistribution(partitionSpec) :: Nil
+      ClusteredDistribution(cpuPartitionSpec) :: Nil
     }
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(partitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ orderSpec)
+    Seq(cpuPartitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ cpuOrderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -511,7 +512,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
         numInputRows, numInputBatches, spillCallback)
       val pyInputIterator = groupedIterator.map { batch =>

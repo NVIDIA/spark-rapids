@@ -53,7 +53,7 @@ import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPy
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
 import org.apache.spark.sql.rapids.shims.v2.GpuSchemaUtils
@@ -101,11 +101,13 @@ abstract class SparkBaseShims extends Spark30XShims {
   }
 
   override def getGpuShuffleExchangeExec(
-      outputPartitioning: Partitioning,
+      gpuOutputPartitioning: Partitioning,
       child: SparkPlan,
+      cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
     val canChangeNumPartitions = cpuShuffle.forall(_.canChangeNumPartitions)
-    GpuShuffleExchangeExec(outputPartitioning, child, canChangeNumPartitions)
+    GpuShuffleExchangeExec(gpuOutputPartitioning, child, canChangeNumPartitions,
+      cpuOutputPartitioning)
   }
 
   override def getGpuShuffleExchangeExec(
@@ -146,8 +148,10 @@ abstract class SparkBaseShims extends Spark30XShims {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),
               partitionSpec.map(_.convertToGpu()),
-              orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-              childPlans.head.convertIfNeeded()
+              // leave ordering expression on the CPU, it's not used for GPU computation
+              winPy.orderSpec,
+              childPlans.head.convertIfNeeded(),
+              winPy.partitionSpec
             )
           }
         }).disabledByDefault("it only supports row based frame for now"),

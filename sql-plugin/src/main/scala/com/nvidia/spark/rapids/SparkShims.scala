@@ -137,8 +137,9 @@ trait SparkShims {
     targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase
 
   def getGpuShuffleExchangeExec(
-      outputPartitioning: Partitioning,
+      gpuOutputPartitioning: Partitioning,
       child: SparkPlan,
+      cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec] = None): GpuShuffleExchangeExecBase
 
   def getGpuShuffleExchangeExec(

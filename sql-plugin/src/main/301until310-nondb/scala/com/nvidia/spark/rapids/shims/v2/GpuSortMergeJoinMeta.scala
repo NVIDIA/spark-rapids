@@ -85,7 +85,9 @@ class GpuSortMergeJoinMeta(
       None,
       left,
       right,
-      join.isSkewJoin)
+      join.isSkewJoin,
+      join.leftKeys,
+      join.rightKeys)
     // The GPU does not yet support conditional joins, so conditions are implemented
     // as a filter after the join when possible.
     condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)

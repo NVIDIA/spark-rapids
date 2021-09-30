@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, NamedExpression, Projection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
@@ -396,13 +396,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // Insert a sort after the last hash-based op before the query result if there are no
       // intermediate nodes that have a specified sort order. This helps with the size of
       // Parquet and Orc files
+      // FIXME: This is passing a GPU sort order as a CPU sort order since there is not an easy
+      //        way to "undo" a GPU expression into a CPU expression. This could theoretically
+      //        cause problems with validating sort orders later in the plan if the expressions
+      //        are complex expressions with operators rather than simple attributes.
       plan match {
         case _: GpuHashJoin =>
-          val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          val gpuSortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch, gpuSortOrder)
         case _: GpuHashAggregateExec =>
-          val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          val gpuSortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch, gpuSortOrder)
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))

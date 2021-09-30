@@ -61,15 +61,17 @@ class GpuSortMeta(
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans.head.convertIfNeeded(),
-      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort)
+      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort,
+      sort.sortOrder)
   }
 }
 
 case class GpuSortExec(
-    sortOrder: Seq[SortOrder],
+    gpuSortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan,
-    sortType: SortExecType)
+    sortType: SortExecType,
+    cpuSortOrder: Seq[SortOrder])
   extends ShimUnaryExecNode with GpuExec {
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
@@ -80,14 +82,14 @@ case class GpuSortExec(
 
   override def output: Seq[Attribute] = child.output
 
-  override def outputOrdering: Seq[SortOrder] = sortOrder
+  override def outputOrdering: Seq[SortOrder] = cpuSortOrder
 
   // sort performed is local within a given partition so will retain
   // child operator's partitioning
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
-    if (global) OrderedDistribution(sortOrder) :: Nil else UnspecifiedDistribution :: Nil
+    if (global) OrderedDistribution(cpuSortOrder) :: Nil else UnspecifiedDistribution :: Nil
 
   override def outputBatching: CoalesceGoal = sortType match {
     // We produce a single batch if we know that our input will be a single batch
@@ -113,7 +115,7 @@ case class GpuSortExec(
   private [this] lazy val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sorter = new GpuSorter(sortOrder, output)
+    val sorter = new GpuSorter(gpuSortOrder, output)
 
     val sortTime = gpuLongMetric(SORT_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)

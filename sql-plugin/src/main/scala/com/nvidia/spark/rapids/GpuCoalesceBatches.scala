@@ -101,7 +101,7 @@ object CoalesceGoal {
         a // They are equal so it does not matter
       } else {
         // Nothing is the same so there is no guarantee
-        BatchedByKey(Seq.empty)
+        BatchedByKey(Seq.empty, Seq.empty)
       }
     case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
     case _ => b
@@ -127,7 +127,7 @@ object CoalesceGoal {
     case (_, RequireSingleBatch) => false
     case (_: BatchedByKey, _: TargetSize) => true
     case (_: TargetSize, _: BatchedByKey) => false
-    case (BatchedByKey(aOrder), BatchedByKey(bOrder)) =>
+    case (BatchedByKey(aOrder, _), BatchedByKey(bOrder, _)) =>
       aOrder.length == bOrder.length &&
           aOrder.zip(bOrder).forall {
             case (a, b) => a.satisfies(b)
@@ -187,10 +187,11 @@ case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGo
  * for a key, the batch may still run into limits on set by Spark or cudf. It should be noted
  * that it is required that a node in the Spark plan that requires this should also require
  * an input ordering that satisfies this ordering as well.
- * @param order the keys that should be used for batching.
+ * @param gpuOrder the GPU keys that should be used for batching.
+ * @param cpuOrder the CPU keys that should be used for batching.
  */
-case class BatchedByKey(order: Seq[SortOrder]) extends CoalesceGoal {
-  override def children: Seq[Expression] = order
+case class BatchedByKey(gpuOrder: Seq[SortOrder], cpuOrder: Seq[SortOrder]) extends CoalesceGoal {
+  override def children: Seq[Expression] = gpuOrder
 }
 
 abstract class AbstractGpuCoalesceIterator(
@@ -546,14 +547,14 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = goal match {
     case batchingGoal: BatchedByKey =>
-      Seq(batchingGoal.order)
+      Seq(batchingGoal.cpuOrder)
     case _ =>
       super.requiredChildOrdering
   }
 
   override def outputOrdering: Seq[SortOrder] = goal match {
     case batchingGoal: BatchedByKey =>
-      batchingGoal.order
+      batchingGoal.cpuOrder
     case _ =>
       child.outputOrdering
   }
@@ -590,7 +591,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-          val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.order, output.toArray, targetSize,
+          val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
             numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
             concatTime, totalTime, peakDevMemory, callback)
           batches.mapPartitions { iter =>

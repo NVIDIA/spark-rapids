@@ -113,6 +113,7 @@ class GpuShuffleMeta(
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
       childPlans.head.convertIfNeeded(),
+      shuffle.outputPartitioning,
       Some(shuffle))
 }
 
@@ -129,8 +130,8 @@ object GpuShuffleMeta {
  * Performs a shuffle that will result in the desired partitioning.
  */
 abstract class GpuShuffleExchangeExecBaseWithMetrics(
-    outputPartitioning: Partitioning,
-    child: SparkPlan) extends GpuShuffleExchangeExecBase(outputPartitioning, child) {
+    gpuOutputPartitioning: Partitioning,
+    child: SparkPlan) extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child) {
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
   @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
@@ -146,12 +147,12 @@ abstract class GpuShuffleExchangeExecBaseWithMetrics(
  * Performs a shuffle that will result in the desired partitioning.
  */
 abstract class GpuShuffleExchangeExecBase(
-    override val outputPartitioning: Partitioning,
+    gpuOutputPartitioning: Partitioning,
     child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   private lazy val useRapidsShuffle = {
-    outputPartitioning match {
+    gpuOutputPartitioning match {
       case gpuPartitioning: GpuPartitioning => gpuPartitioning.usesRapidsShuffle
       case _ => false
     }
@@ -203,7 +204,7 @@ abstract class GpuShuffleExchangeExecBase(
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
-      outputPartitioning,
+      gpuOutputPartitioning,
       sparkTypes,
       serializer,
       useRapidsShuffle,

@@ -476,8 +476,10 @@ class Spark320Shims extends Spark32XShims {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),
               partitionSpec.map(_.convertToGpu()),
-              orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-              childPlans.head.convertIfNeeded()
+              // leave ordering expression on the CPU, it's not used for GPU computation
+              winPy.orderSpec,
+              childPlans.head.convertIfNeeded(),
+              winPy.partitionSpec
             )
           }
         }).disabledByDefault("it only supports row based frame for now"),
@@ -788,11 +790,12 @@ class Spark320Shims extends Spark32XShims {
   }
 
   override def getGpuShuffleExchangeExec(
-      outputPartitioning: Partitioning,
+      gpuOutputPartitioning: Partitioning,
       child: SparkPlan,
+      cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
     val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
-    GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
+    GpuShuffleExchangeExec(gpuOutputPartitioning, child, shuffleOrigin, cpuOutputPartitioning)
   }
 
   override def getGpuShuffleExchangeExec(

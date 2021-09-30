@@ -210,11 +210,14 @@ object GpuFileFormatWriter extends Logging {
         } else {
           OutOfCoreSort
         }
+        // TODO: Using a GPU ordering as a CPU ordering here. Should be OK for now since we do not
+        //       support bucket expressions yet and the rest should be simple attributes.
         GpuSortExec(
           orderingExpr,
           global = false,
           child = empty2NullPlan,
-          sortType = sortType).executeColumnar()
+          sortType = sortType,
+          orderingExpr).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single

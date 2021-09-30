@@ -27,9 +27,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuWindowInPandasExec(
     windowExpression: Seq[Expression],
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan) extends GpuWindowInPandasExecBase {
+    gpuPartitionSpec: Seq[Expression],
+    cpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan,
+    cpuPartitionSpec: Seq[Expression]) extends GpuWindowInPandasExecBase {
 
   override final def pythonModuleKey: String = "spark"
 

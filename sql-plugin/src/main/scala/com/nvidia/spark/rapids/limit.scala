@@ -141,8 +141,10 @@ class GpuCollectLimitMeta(
 
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
-      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded())))
+      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+        GpuSinglePartitioning,
+        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
+        SinglePartition))
 
 }
 
@@ -260,9 +262,10 @@ object GpuTopN extends Arm {
  */
 case class GpuTopN(
     limit: Int,
-    sortOrder: Seq[SortOrder],
+    gpuSortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan) extends GpuExec with ShimUnaryExecNode {
+    child: SparkPlan,
+    cpuSortOrder: Seq[SortOrder]) extends GpuExec with ShimUnaryExecNode {
 
   override def output: Seq[Attribute] = {
     projectList.map(_.toAttribute)
@@ -279,7 +282,7 @@ case class GpuTopN(
   ) ++ spillMetrics
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sorter = new GpuSorter(sortOrder, child.output)
+    val sorter = new GpuSorter(gpuSortOrder, child.output)
     val boundProjectExprs = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val totalTime = gpuLongMetric(TOTAL_TIME)
     val inputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
@@ -305,12 +308,12 @@ case class GpuTopN(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def outputOrdering: Seq[SortOrder] = sortOrder
+  override def outputOrdering: Seq[SortOrder] = cpuSortOrder
 
   override def outputPartitioning: Partitioning = SinglePartition
 
   override def simpleString(maxFields: Int): String = {
-    val orderByString = truncatedString(sortOrder, "[", ",", "]", maxFields)
+    val orderByString = truncatedString(gpuSortOrder, "[", ",", "]", maxFields)
     val outputString = truncatedString(output, "[", ",", "]", maxFields)
 
     s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString)"

@@ -162,13 +162,17 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         fixedUpWindowOps,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-        input)
+        input,
+        getPartitionSpecs,
+        getOrderSpecs)
     } else {
       GpuWindowExec(
         fixedUpWindowOps,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-        input)
+        input,
+        getPartitionSpecs,
+        getOrderSpecs)
     }
 
     if (isPostNeeded) {
@@ -367,8 +371,10 @@ object GpuWindowExec extends Arm {
 
 trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   val windowOps: Seq[NamedExpression]
-  val partitionSpec: Seq[Expression]
-  val orderSpec: Seq[SortOrder]
+  val gpuPartitionSpec: Seq[Expression]
+  val gpuOrderSpec: Seq[SortOrder]
+  val cpuPartitionSpec: Seq[Expression]
+  val cpuOrderSpec: Seq[SortOrder]
 
   import GpuMetric._
 
@@ -379,21 +385,26 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   override def output: Seq[Attribute] = windowOps.map(_.toAttribute)
 
   override def requiredChildDistribution: Seq[Distribution] = {
-    if (partitionSpec.isEmpty) {
+    if (cpuPartitionSpec.isEmpty) {
       // Only show warning when the number of bytes is larger than 100 MiB?
       logWarning("No Partition Defined for Window operation! Moving all data to a single "
           + "partition, this can cause serious performance degradation.")
       AllTuples :: Nil
-    } else ClusteredDistribution(partitionSpec) :: Nil
+    } else ClusteredDistribution(cpuPartitionSpec) :: Nil
   }
 
-  lazy val partitionOrdering: Seq[SortOrder] = {
+  lazy val gpuPartitionOrdering: Seq[SortOrder] = {
     val shims = ShimLoader.getSparkShims
-    partitionSpec.map(shims.sortOrder(_, Ascending))
+    gpuPartitionSpec.map(shims.sortOrder(_, Ascending))
+  }
+
+  lazy val cpuPartitionOrdering: Seq[SortOrder] = {
+    val shims = ShimLoader.getSparkShims
+    cpuPartitionSpec.map(shims.sortOrder(_, Ascending))
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(partitionOrdering ++ orderSpec)
+    Seq(cpuPartitionOrdering ++ cpuOrderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -1335,9 +1346,11 @@ class GpuRunningWindowIterator(
 
 case class GpuRunningWindowExec(
     windowOps: Seq[NamedExpression],
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan
+    gpuPartitionSpec: Seq[Expression],
+    gpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan,
+    cpuPartitionSpec: Seq[Expression],
+    cpuOrderSpec: Seq[SortOrder]
 ) extends GpuWindowBaseExec {
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -1346,8 +1359,8 @@ case class GpuRunningWindowExec(
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(orderSpec, child.output)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuRunningWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
@@ -1358,17 +1371,19 @@ case class GpuRunningWindowExec(
 
 case class GpuWindowExec(
     windowOps: Seq[NamedExpression],
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan
+    gpuPartitionSpec: Seq[Expression],
+    gpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan,
+    cpuPartitionSpec: Seq[Expression],
+    cpuOrderSpec: Seq[SortOrder]
   ) extends GpuWindowBaseExec {
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
 
-  override def outputBatching: CoalesceGoal = if (partitionSpec.isEmpty) {
+  override def outputBatching: CoalesceGoal = if (gpuPartitionSpec.isEmpty) {
     RequireSingleBatch
   } else {
-    BatchedByKey(partitionOrdering)
+    BatchedByKey(gpuPartitionOrdering, cpuPartitionOrdering)
   }
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -1377,8 +1392,8 @@ case class GpuWindowExec(
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(orderSpec, child.output)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
 
     child.executeColumnar().mapPartitions { iter =>
         new GpuWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
