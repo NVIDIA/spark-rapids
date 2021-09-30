@@ -26,10 +26,13 @@ import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrig
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 
 case class GpuShuffleExchangeExec(
-    override val outputPartitioning: Partitioning,
+    gpuOutputPartitioning: Partitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)
+    shuffleOrigin: ShuffleOrigin,
+    cpuOutputPartitioning: Partitioning)
   extends GpuShuffleExchangeExecBase(outputPartitioning, child) with ShuffleExchangeLike {
+
+  override val outputPartitioning: Partitioning = cpuOutputPartitioning
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
   override def doMapOutputStatisticsFuture: Future[MapOutputStatistics] = {

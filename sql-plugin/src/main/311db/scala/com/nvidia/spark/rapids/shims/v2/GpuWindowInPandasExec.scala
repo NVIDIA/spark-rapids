@@ -38,9 +38,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuWindowInPandasExec(
     projectList: Seq[Expression],  // parameter name is different
-    partitionSpec: Seq[Expression],
+    gpuPartitionSpec: Seq[Expression],
     orderSpec: Seq[SortOrder],
-    child: SparkPlan) extends GpuWindowInPandasExecBase {
+    child: SparkPlan,
+    cpuPartitionSpec: Seq[Expression]) extends GpuWindowInPandasExecBase {
 
   override final def pythonModuleKey: String = "databricks"
 
@@ -194,7 +195,7 @@ case class GpuWindowInPandasExec(
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
         numInputRows, numInputBatches, spillCallback)
       val pyInputIterator = groupedIterator.map { batch =>
