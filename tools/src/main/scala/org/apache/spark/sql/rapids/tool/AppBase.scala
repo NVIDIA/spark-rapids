@@ -84,34 +84,25 @@ abstract class AppBase(
       val logFiles = reader.listEventLogFiles
       logFiles.foreach { file =>
         Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
-          try {
-            val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-            // Using find as foreach with conditional to exit early if we are done.
-            // Do NOT use a while loop as it is much much slower.
-            lines.find { line =>
-              val isDone = try {
-                totalNumEvents += 1
-                val event = JsonProtocol.sparkEventFromJson(parse(line))
-                processEvent(event)
-              }
-              catch {
-                case e: ClassNotFoundException =>
-                  // swallow any messages about this class since likely using spark version
-                  // before 3.1
-                  if (!e.getMessage.contains("SparkListenerResourceProfileAdded")) {
-                    logWarning(s"ClassNotFoundException: ${e.getMessage}")
-                  }
-                  false
-              }
-              isDone
+          val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
+          // Using find as foreach with conditional to exit early if we are done.
+          // Do NOT use a while loop as it is much much slower.
+          lines.find { line =>
+            val isDone = try {
+              totalNumEvents += 1
+              val event = JsonProtocol.sparkEventFromJson(parse(line))
+              processEvent(event)
             }
-          } catch {
-            case o: OutOfMemoryError =>
-              logError(s"OOM error while processing large file ${eventlog.toString}. " +
-                  s"Increase heap size.", o)
-              throw o
-            case e: Exception =>
-              logError(s"Unexpected exception processing log ${eventlog.toString}, skipping!", e)
+            catch {
+              case e: ClassNotFoundException =>
+                // swallow any messages about this class since likely using spark version
+                // before 3.1
+                if (!e.getMessage.contains("SparkListenerResourceProfileAdded")) {
+                  logWarning(s"ClassNotFoundException: ${e.getMessage}")
+                }
+                false
+            }
+            isDone
           }
         }
       }

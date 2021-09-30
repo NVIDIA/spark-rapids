@@ -112,8 +112,15 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val appOpt = createApp(path, numOutputRows, index, hadoopConf)
-        appOpt.foreach(app => allApps.add(app))
+        try {
+          val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+          appOpt.foreach(app => allApps.add(app))
+        } catch {
+          case o: OutOfMemoryError =>
+            logError(s"OOM error while processing large file ${path.eventLog.toString}." +
+                s"Increase heap size.", o)
+            System.exit(1)
+        }
       }
     }
 
@@ -145,18 +152,24 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
-        val appOpt = createApp(path, numOutputRows, index, hadoopConf)
-        appOpt.foreach { app =>
-          val sum = try {
-            val (s, _) = processApps(Seq(app), false, profileOutputWriter)
-            Some(s)
-          } catch {
-            case e: Exception =>
-              logWarning(s"Unexpected exception thrown ${path.eventLog.toString}, skipping! ", e)
-              None
-
+        try {
+          val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+          appOpt.foreach { app =>
+            val sum = try {
+              val (s, _) = processApps(Seq(app), false, profileOutputWriter)
+              Some(s)
+            } catch {
+              case e: Exception =>
+                logWarning(s"Unexpected exception thrown ${path.eventLog.toString}, skipping! ", e)
+                None
+            }
+            sum.foreach(allApps.add(_))
           }
-          sum.foreach(allApps.add(_))
+        } catch {
+          case o: OutOfMemoryError =>
+            logError(s"OOM error while processing large file ${path.eventLog.toString}." +
+                s"Increase heap size.", o)
+            System.exit(1)
         }
       }
     }
@@ -186,7 +199,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     class ProfileProcessThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
         try {
-          // we just skip apps that don't process cleanly
+          // we just skip apps that don't process cleanly and exit if heap is smaller
           val appOpt = createApp(path, numOutputRows, index, hadoopConf)
           appOpt match {
             case Some(app) =>
@@ -204,6 +217,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
               logInfo("No application to process. Exiting")
           }
         } catch {
+          case o: OutOfMemoryError =>
+            logError(s"OOM error while processing large file ${path.eventLog.toString}." +
+                s"Increase heap size.", o)
+            System.exit(1)
           case e: Exception =>
             logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
         }
