@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
@@ -433,11 +434,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     // There are no GpuAttributeReference or GpuSortOrder
-    if (!exp.isInstanceOf[AttributeReference] &&
-        !exp.isInstanceOf[SortOrder] &&
-        !exp.isInstanceOf[GpuExpression] &&
-      !conf.testingAllowedNonGpu.contains(PlanUtils.getBaseNameFromClass(exp.getClass.toString))) {
-      throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
+    exp match {
+      case _: AttributeReference | _: SortOrder | _: Partitioning | _: GpuExpression =>
+      case _ =>
+        val classBaseName = PlanUtils.getBaseNameFromClass(exp.getClass.toString)
+        if (!conf.testingAllowedNonGpu.contains(classBaseName)) {
+          throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
+        }
     }
     exp.children.foreach(subExp => assertIsOnTheGpu(subExp, conf))
   }

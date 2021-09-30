@@ -145,7 +145,7 @@ sealed abstract class CoalesceGoal extends GpuUnevaluable with ShimExpression {
 
   override def dataType: DataType = NullType
 
-  override def children: Seq[Expression] = Seq.empty
+  override def children: Seq[Expression] = Nil
 }
 
 sealed abstract class CoalesceSizeGoal extends CoalesceGoal {
@@ -191,7 +191,7 @@ case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGo
  * @param cpuOrder the CPU keys that should be used for batching.
  */
 case class BatchedByKey(gpuOrder: Seq[SortOrder], cpuOrder: Seq[SortOrder]) extends CoalesceGoal {
-  override def children: Seq[Expression] = gpuOrder
+  override def children: Seq[Expression] = gpuOrder ++ cpuOrder
 }
 
 abstract class AbstractGpuCoalesceIterator(
