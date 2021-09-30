@@ -37,9 +37,9 @@ SPARK_SHIM_VERSIONS="
   320
 "
 
-BUILD_PARALLELISM=${BUILD_PARALLELISM:-4}
+BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 time (
-echo -n "$SPARK_SHIM_VERSIONS" | xargs -t -I% -P "$BUILD_PARALLELISM" -n 1 \
+echo -n "$SPARK_SHIM_VERSIONS" | xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
   bash -c "
   mvn -U clean install \
     -Dbuildver=% \

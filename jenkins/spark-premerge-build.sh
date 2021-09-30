@@ -38,6 +38,7 @@ mvn_verify() {
     # build all the versions but only run unit tests on one 3.0.X version (base version covers this), one 3.1.X version, and one 3.2.X version.
     # All others shims test should be covered in nightly pipelines
     BUILD_PARALLEL=${BUILD_PARALLEL:-4}
+time (
     echo -n "
     302
     303
@@ -47,7 +48,7 @@ mvn_verify() {
     312
     313
     320
-    " | xargs -n 1 -P $BUILD_PARALLEL -I% bash -c \
+    " | xargs -n 1 -P "$BUILD_PARALLEL" -I% bash -c \
       "env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR clean install \
         -Dbuildver=% \
         -Drat.skip=true \
@@ -58,6 +59,7 @@ mvn_verify() {
         -Dcuda.version=$CUDA_CLASSIFIER \
         -Dpytest.TEST_TAGS='' \
         -pl aggregator -am || exit 255"
+)
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
