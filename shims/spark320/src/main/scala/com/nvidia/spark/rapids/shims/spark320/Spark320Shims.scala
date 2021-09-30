@@ -1004,4 +1004,9 @@ class Spark320Shims extends Spark32XShims {
     kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
   }
+
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
+    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
+    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
+  }
 }

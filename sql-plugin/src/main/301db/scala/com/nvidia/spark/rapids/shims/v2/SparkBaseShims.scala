@@ -313,7 +313,7 @@ abstract class SparkBaseShims extends Spark30XShims {
             GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
           }
 
-          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = 
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
             GpuAverage(childExprs.head)
 
           // Average is not supported in ANSI mode right now, no matter the type
@@ -688,4 +688,6 @@ abstract class SparkBaseShims extends Spark30XShims {
     kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
   }
+
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = GpuLiteral(Double.NaN)
 }

@@ -183,6 +183,17 @@ _init_list_with_nans_and_no_nans = [
     _grpkey_strings_with_nulls,
     _grpkey_floats_with_nulls_and_nans]
 
+# grouping decimals with nulls
+_decimals_with_nulls = [('a', DecimalGen()), ('b', DecimalGen()), ('c', DecimalGen())]
+
+# grouping decimals with no nulls
+_decimals_with_no_nulls = [
+    ('a', DecimalGen(nullable=False)),
+    ('b', DecimalGen(nullable=False)),
+    ('c', DecimalGen(nullable=False))]
+
+_init_list_with_nans_and_no_nans_with_decimals = _init_list_with_nans_and_no_nans + [
+    _decimals_with_nulls, _decimals_with_no_nulls]
 
 # Used to test ANSI-mode fallback
 _no_overflow_ansi_gens = [
@@ -222,6 +233,7 @@ _confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf
 _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
+    'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
     'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
     'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
@@ -424,7 +436,7 @@ _gen_data_for_collect_list_op = _gen_data_for_collect_op + [[
 
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op + _gen_data_for_collect_list_op, ids=idfn)
+@pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', [True, False], ids=idfn)
 def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1076,6 +1088,7 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long_repeated_keys():
     compare_percentile_approx(
@@ -1083,6 +1096,7 @@ def test_hash_groupby_approx_percentile_long_repeated_keys():
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long():
     compare_percentile_approx(
@@ -1090,6 +1104,7 @@ def test_hash_groupby_approx_percentile_long():
                                      ('v', LongRangeGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long_scalar():
     compare_percentile_approx(
@@ -1097,6 +1112,7 @@ def test_hash_groupby_approx_percentile_long_scalar():
                                      ('v', LongRangeGen())], length=100),
         0.5)
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double():
     compare_percentile_approx(
@@ -1104,6 +1120,7 @@ def test_hash_groupby_approx_percentile_double():
                                      ('v', DoubleGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double_scalar():
     compare_percentile_approx(
@@ -1276,3 +1293,90 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true'})
+
+
+# Tests for standard deviation and variance aggregations.
+@ignore_order(local=True)
+@approximate_float
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_groupby_std_variance(data_gen, conf):
+    local_conf = copy_and_update(conf, {
+        'spark.rapids.sql.decimalType.enabled': 'true',
+        'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=1000),
+        "data_table",
+        'select ' +
+        'stddev(b),' +
+        'stddev_pop(b),' +
+        'stddev_samp(b),' +
+        'variance(b),' +
+        'var_pop(b),' +
+        'var_samp(b)' +
+        ' from data_table group by a',
+        conf=local_conf)
+
+
+@ignore_order(local=True)
+@approximate_float
+@incompat
+@pytest.mark.parametrize('data_gen', [_grpkey_strings_with_extra_nulls], ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['true', 'false'])
+def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
+    local_conf = copy_and_update(conf, {'spark.sql.ansi.enabled': ansi_enabled})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen, length=1000),
+        "data_table",
+        'select ' +
+        'stddev(c),' +
+        'stddev_pop(c),' +
+        'stddev_samp(c),' +
+        'variance(c),' +
+        'var_pop(c),' +
+        'var_samp(c)' +
+        ' from data_table group by a',
+        conf=local_conf)
+
+
+@ignore_order(local=True)
+@approximate_float
+@allow_non_gpu('KnownFloatingPointNormalized', 'NormalizeNaNAndZero',
+               'HashAggregateExec', 'SortAggregateExec',
+               'Cast',
+               'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
+               'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
+               'SortArray', 'Alias', 'Literal', 'Count',
+               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
+               'AggregateExpression')
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+@pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_groupby_std_variance_partial_replace_fallback(data_gen,
+                                                       conf,
+                                                       replace_mode,
+                                                       aqe_enabled):
+    local_conf = copy_and_update(conf, {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
+                                        'spark.sql.adaptive.enabled': aqe_enabled})
+
+    exist_clz = ['StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
+                 'GpuStddevPop', 'GpuStddevSamp', 'GpuVariancePop', 'GpuVarianceSamp']
+    non_exist_clz = []
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: gen_df(spark, data_gen, length=1000)
+            .groupby('a')
+            .agg(
+                f.stddev('b'),
+                f.stddev_pop('b'),
+                f.stddev_samp('b'),
+                f.variance('b'),
+                f.var_pop('b'),
+                f.var_samp('b')
+            ),
+        exist_classes=','.join(exist_clz),
+        non_exist_classes=','.join(non_exist_clz),
+        conf=local_conf)
