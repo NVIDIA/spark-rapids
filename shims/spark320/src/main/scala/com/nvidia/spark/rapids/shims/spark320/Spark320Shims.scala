@@ -778,7 +778,7 @@ class Spark320Shims extends Spark32XShims {
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
       exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = Class.forName(serName)
+    val serClass = ShimLoader.loadClass(serName)
     if (serClass == classOf[ParquetCachedBatchSerializer]) {
       GpuColumnarToRowTransitionExec(plan)
     } else {
