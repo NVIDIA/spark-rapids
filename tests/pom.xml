@@ -131,6 +131,10 @@
                     <version>${spark311cdh.version}</version>
                     <exclusions>
                         <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
                             <groupId>org.apache.arrow</groupId>
                             <artifactId>*</artifactId>
                         </exclusion>
