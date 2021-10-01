@@ -216,8 +216,8 @@ object GpuFileFormatWriter extends Logging {
           orderingExpr,
           global = false,
           child = empty2NullPlan,
-          sortType = sortType,
-          orderingExpr).executeColumnar()
+          sortType = sortType
+        )(orderingExpr).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single

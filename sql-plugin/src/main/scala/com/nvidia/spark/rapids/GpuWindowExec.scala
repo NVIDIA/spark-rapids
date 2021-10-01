@@ -162,17 +162,13 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         fixedUpWindowOps,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-        input,
-        getPartitionSpecs,
-        getOrderSpecs)
+        input)(getPartitionSpecs, getOrderSpecs)
     } else {
       GpuWindowExec(
         fixedUpWindowOps,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-        input,
-        getPartitionSpecs,
-        getOrderSpecs)
+        input)(getPartitionSpecs, getOrderSpecs)
     }
 
     if (isPostNeeded) {
@@ -1348,10 +1344,11 @@ case class GpuRunningWindowExec(
     windowOps: Seq[NamedExpression],
     gpuPartitionSpec: Seq[Expression],
     gpuOrderSpec: Seq[SortOrder],
-    child: SparkPlan,
-    cpuPartitionSpec: Seq[Expression],
-    cpuOrderSpec: Seq[SortOrder]
-) extends GpuWindowBaseExec {
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression],
+    override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
@@ -1373,17 +1370,18 @@ case class GpuWindowExec(
     windowOps: Seq[NamedExpression],
     gpuPartitionSpec: Seq[Expression],
     gpuOrderSpec: Seq[SortOrder],
-    child: SparkPlan,
-    cpuPartitionSpec: Seq[Expression],
-    cpuOrderSpec: Seq[SortOrder]
-  ) extends GpuWindowBaseExec {
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression],
+    override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
 
   override def outputBatching: CoalesceGoal = if (gpuPartitionSpec.isEmpty) {
     RequireSingleBatch
   } else {
-    BatchedByKey(gpuPartitionOrdering, cpuPartitionOrdering)
+    BatchedByKey(gpuPartitionOrdering)(cpuPartitionOrdering)
   }
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {

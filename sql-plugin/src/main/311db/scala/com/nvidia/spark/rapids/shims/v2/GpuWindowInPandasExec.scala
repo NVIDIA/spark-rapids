@@ -40,8 +40,10 @@ case class GpuWindowInPandasExec(
     projectList: Seq[Expression],  // parameter name is different
     gpuPartitionSpec: Seq[Expression],
     cpuOrderSpec: Seq[SortOrder],
-    child: SparkPlan,
-    cpuPartitionSpec: Seq[Expression]) extends GpuWindowInPandasExecBase {
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression]) extends GpuWindowInPandasExecBase {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: Nil
 
   override final def pythonModuleKey: String = "databricks"
 

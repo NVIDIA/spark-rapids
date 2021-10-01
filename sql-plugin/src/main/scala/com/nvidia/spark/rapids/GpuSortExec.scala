@@ -61,8 +61,8 @@ class GpuSortMeta(
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans.head.convertIfNeeded(),
-      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort,
-      sort.sortOrder)
+      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort
+    )(sort.sortOrder)
   }
 }
 
@@ -70,9 +70,10 @@ case class GpuSortExec(
     gpuSortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan,
-    sortType: SortExecType,
-    cpuSortOrder: Seq[SortOrder])
+    sortType: SortExecType)(cpuSortOrder: Seq[SortOrder])
   extends ShimUnaryExecNode with GpuExec {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
     case FullSortSingleBatch => Seq(RequireSingleBatch)

@@ -86,7 +86,7 @@ class GpuSortMergeJoinMeta(
       None,
       left,
       right,
-      join.isSkewJoin,
+      join.isSkewJoin)(
       join.leftKeys,
       join.rightKeys)
     // The GPU does not yet support conditional joins, so conditions are implemented

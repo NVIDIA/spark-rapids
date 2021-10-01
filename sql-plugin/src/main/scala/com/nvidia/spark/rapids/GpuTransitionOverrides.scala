@@ -404,10 +404,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       plan match {
         case _: GpuHashJoin =>
           val gpuSortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch, gpuSortOrder)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
         case _: GpuHashAggregateExec =>
           val gpuSortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch, gpuSortOrder)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
@@ -435,7 +435,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     // There are no GpuAttributeReference or GpuSortOrder
     exp match {
-      case _: AttributeReference | _: SortOrder | _: Partitioning | _: GpuExpression =>
+      case _: AttributeReference | _: SortOrder | _: GpuExpression =>
       case _ =>
         val classBaseName = PlanUtils.getBaseNameFromClass(exp.getClass.toString)
         if (!conf.testingAllowedNonGpu.contains(classBaseName)) {

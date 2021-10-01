@@ -101,7 +101,7 @@ object CoalesceGoal {
         a // They are equal so it does not matter
       } else {
         // Nothing is the same so there is no guarantee
-        BatchedByKey(Seq.empty, Seq.empty)
+        BatchedByKey(Seq.empty)(Seq.empty)
       }
     case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
     case _ => b
@@ -127,7 +127,7 @@ object CoalesceGoal {
     case (_, RequireSingleBatch) => false
     case (_: BatchedByKey, _: TargetSize) => true
     case (_: TargetSize, _: BatchedByKey) => false
-    case (BatchedByKey(aOrder, _), BatchedByKey(bOrder, _)) =>
+    case (BatchedByKey(aOrder), BatchedByKey(bOrder)) =>
       aOrder.length == bOrder.length &&
           aOrder.zip(bOrder).forall {
             case (a, b) => a.satisfies(b)
@@ -145,7 +145,7 @@ sealed abstract class CoalesceGoal extends GpuUnevaluable with ShimExpression {
 
   override def dataType: DataType = NullType
 
-  override def children: Seq[Expression] = Nil
+  override def children: Seq[Expression] = Seq.empty
 }
 
 sealed abstract class CoalesceSizeGoal extends CoalesceGoal {
@@ -190,16 +190,13 @@ case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGo
  * @param gpuOrder the GPU keys that should be used for batching.
  * @param cpuOrder the CPU keys that should be used for batching.
  */
-case class BatchedByKey(gpuOrder: Seq[SortOrder], cpuOrder: Seq[SortOrder]) extends CoalesceGoal {
+case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
+    extends CoalesceGoal {
   require(gpuOrder.size == cpuOrder.size)
 
-  override def children: Seq[Expression] = gpuOrder ++ cpuOrder
+  override def otherCopyArgs: Seq[AnyRef] = cpuOrder :: Nil
 
-  override def shimWithNewChildren(newChildren: Seq[Expression]): Expression = {
-    copy(
-      gpuOrder = newChildren.take(gpuOrder.size).asInstanceOf[Seq[SortOrder]],
-      cpuOrder = newChildren.drop(gpuOrder.size).asInstanceOf[Seq[SortOrder]])
-  }
+  override def children: Seq[Expression] = gpuOrder
 }
 
 abstract class AbstractGpuCoalesceIterator(

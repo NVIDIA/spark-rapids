@@ -30,9 +30,11 @@ import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin,
+    shuffleOrigin: ShuffleOrigin)(
     cpuOutputPartitioning: Partitioning)
   extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child) with ShuffleExchangeLike {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
 
   override val outputPartitioning: Partitioning = cpuOutputPartitioning
 

@@ -20,35 +20,23 @@ import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, 
 import org.apache.spark.sql.catalyst.plans.logical.Command
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
 
-trait ShimExpression extends Expression {
-  override final def withNewChildren(newChildren: Seq[Expression]): Expression =
-    shimWithNewChildren(newChildren)
+trait ShimExpression extends Expression
 
-  def shimWithNewChildren(newChildren: Seq[Expression]): Expression =
-    super.withNewChildren(newChildren)
-}
+trait ShimUnaryExpression extends UnaryExpression
 
-trait ShimUnaryExpression extends UnaryExpression with ShimExpression
+trait ShimBinaryExpression extends BinaryExpression
 
-trait ShimBinaryExpression extends BinaryExpression with ShimExpression
-
-trait ShimTernaryExpression extends TernaryExpression with ShimExpression {
+trait ShimTernaryExpression extends TernaryExpression {
   def first: Expression
   def second: Expression
   def third: Expression
   final def children: Seq[Expression] = IndexedSeq(first, second, third)
 }
 
-trait ShimSparkPlan extends SparkPlan {
-  override final def withNewChildren(newChildren: Seq[SparkPlan]): SparkPlan =
-    shimWithNewChildren(newChildren)
+trait ShimSparkPlan extends SparkPlan
 
-  def shimWithNewChildren(newChildren: Seq[SparkPlan]): SparkPlan =
-    super.withNewChildren(newChildren)
-}
+trait ShimUnaryExecNode extends UnaryExecNode
 
-trait ShimUnaryExecNode extends UnaryExecNode with ShimSparkPlan
-
-trait ShimBinaryExecNode extends BinaryExecNode with ShimSparkPlan
+trait ShimBinaryExecNode extends BinaryExecNode
 
 trait ShimUnaryCommand extends Command

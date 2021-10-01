@@ -66,7 +66,7 @@ class GpuShuffledHashJoinMeta(
       None,
       left,
       right,
-      isSkewJoin = false,
+      isSkewJoin = false)(
       join.leftKeys,
       join.rightKeys)
     // The GPU does not yet support conditional joins, so conditions are implemented
@@ -83,7 +83,7 @@ case class GpuShuffledHashJoinExec(
     override val condition: Option[Expression],
     left: SparkPlan,
     right: SparkPlan,
-    override val isSkewJoin: Boolean,
+    override val isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
     cpuRightKeys: Seq[Expression])
   extends GpuShuffledHashJoinBase(
@@ -91,4 +91,7 @@ case class GpuShuffledHashJoinExec(
     condition,
     isSkewJoin = isSkewJoin,
     cpuLeftKeys,
-    cpuRightKeys)
+    cpuRightKeys) {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuLeftKeys :: cpuRightKeys :: Nil
+}

@@ -264,8 +264,10 @@ case class GpuTopN(
     limit: Int,
     gpuSortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan,
+    child: SparkPlan)(
     cpuSortOrder: Seq[SortOrder]) extends GpuExec with ShimUnaryExecNode {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
 
   override def output: Seq[Attribute] = {
     projectList.map(_.toAttribute)

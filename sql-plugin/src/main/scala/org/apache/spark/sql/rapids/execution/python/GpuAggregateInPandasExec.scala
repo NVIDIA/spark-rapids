@@ -62,9 +62,8 @@ class GpuAggregateInPandasExecMeta(
       groupingNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
       udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
       resultNamedExprs.map(_.convertToGpu()).asInstanceOf[Seq[NamedExpression]],
-      childPlans.head.convertIfNeeded(),
-      aggPandas.groupingExpressions
-    )
+      childPlans.head.convertIfNeeded()
+    )(aggPandas.groupingExpressions)
 }
 
 /**
@@ -82,9 +81,11 @@ case class GpuAggregateInPandasExec(
     gpuGroupingExpressions: Seq[NamedExpression],
     udfExpressions: Seq[GpuPythonUDF],
     resultExpressions: Seq[NamedExpression],
-    child: SparkPlan,
+    child: SparkPlan)(
     cpuGroupingExpressions: Seq[NamedExpression])
   extends ShimUnaryExecNode with GpuPythonExecBase {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuGroupingExpressions :: Nil
 
   override val output: Seq[Attribute] = resultExpressions.map(_.toAttribute)
 
