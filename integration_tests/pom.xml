@@ -248,7 +248,8 @@
                         <goals>
                             <goal>copy</goal>
                         </goals>
-                        <configuration>
+			<configuration>
+			    <useBaseVersion>true</useBaseVersion>
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>ai.rapids</groupId>
