@@ -193,7 +193,7 @@
     </profiles>
 
     <build>
-        <directory>target</directory>
+        <directory>${project.version}/target</directory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

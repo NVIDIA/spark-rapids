@@ -832,7 +832,7 @@
     </dependencyManagement>
 
     <build>
-        <directory>target/${spark.version.classifier}</directory>
+        <directory>${project.basedir}/target/${spark.version.classifier}</directory>
         <pluginManagement>
             <plugins>
                 <plugin>
