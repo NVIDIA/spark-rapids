@@ -34,7 +34,7 @@ import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -157,13 +157,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // don't need to recurse down and optimize them again
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       e.plan match {
-        case ReusedExchangeExec(_, b: GpuBroadcastExchangeExecBase) =>
+        case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) =>
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
           // hash join but Spark will sometimes try and do this (see
           // https://issues.apache.org/jira/browse/SPARK-35093 for more information) so we
           // need to convert the output to rows in the driver before broadcasting the data
           // to the executors
-          GpuBroadcastToCpuExec(b.mode, b.child)
+          val newChild = ReusedExchangeExec(output, GpuBroadcastToCpuExec(b.mode, b.child))
+          ShimLoader.getSparkShims.newBroadcastQueryStageExec(e, newChild)
         case _ => getColumnarToRowExec(e)
       }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
@@ -171,7 +172,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
-        case e: GpuBroadcastExchangeExecBase => e
+        case e: GpuBroadcastExchangeExec => e
         case e: GpuShuffleExchangeExecBase => e
         case other => getColumnarToRowExec(other)
       }
