@@ -731,10 +731,11 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
             conf=ansi_conf)
 
 @allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Add', 'PromotePrecision', 'Cast')
-@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow[12:])
+@pytest.mark.parametrize('data,tp,expr', [([Decimal('9999.99')], DecimalType(37,2), 'a + a')])
 @pytest.mark.parametrize('ansi_enabled', ['false','true'])
 def test_add_overflow_fallback_for_decimal(data, tp, expr, ansi_enabled):
-    # Spark will try to promote the precision (to 19) which GPU does not supported now.
+    # The GPU falls back to the CPU for any output precision of 38, because it cannot tell what the
+    # real input types were to know if it can do it without overflow issues.
     assert_gpu_fallback_collect(
         lambda spark: _get_overflow_df(spark, data, tp, expr),
         'ProjectExec',
