@@ -41,7 +41,7 @@ def _get_overflow_df(spark, data, data_type, expr):
 decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
         decimal_gen_same_scale_precision, decimal_gen_64bit]
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5], ids=idfn)
 def test_addition(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(

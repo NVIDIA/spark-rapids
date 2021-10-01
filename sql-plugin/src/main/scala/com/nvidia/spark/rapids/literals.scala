@@ -17,8 +17,9 @@
 package com.nvidia.spark.rapids
 
 import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
-import java.util.{List => JList, Objects}
+import java.math.BigInteger
 import java.util
+import java.util.{List => JList, Objects}
 import javax.xml.bind.DatatypeConverter
 
 import scala.collection.JavaConverters._

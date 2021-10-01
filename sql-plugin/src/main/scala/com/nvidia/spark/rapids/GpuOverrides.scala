@@ -901,14 +901,14 @@ object GpuOverrides extends Logging {
       }),
     expr[PromotePrecision](
       "PromotePrecision before arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_64,
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128_FULL,
         TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
       }),
     expr[CheckOverflow](
       "CheckOverflow after arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_64,
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128_FULL,
         TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[CheckOverflow](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -1701,11 +1701,27 @@ object GpuOverrides extends Logging {
       "Addition",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
+        // TODO add in a ps for DECIMAL in that we don't really support everything
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval),
+        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagExprForGpu(): Unit = {
+          // In a binary op like this the LHS and RHS types are the same. In the case of Add the
+          // output type is also the same as the LHS, because Spark has already cast the values
+          // to the same type. For Decimal this means the complicated formula tio determine the
+          // new precision and scale. Because we cannot do overflow detection in the same way as
+          // Spark we fall back to the CPU any time it look like there might be an overflow
+          // possible
+          a.dataType match {
+            case dt: DecimalType if dt.precision >= DecimalType.MAX_PRECISION =>
+              willNotWorkOnGpu(s"Because of limitations in overflow checking the " +
+                  s"precision ${dt.precision} too large to be sure that no overflow will happen.")
+            case _ => //NOOP
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {

@@ -182,7 +182,7 @@ class Spark320Shims extends Spark32XShims {
             TypeSig.psNote(TypeEnum.TIMESTAMP, fourDigitYearMsg)
 
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = gpuNumeric + STRING
+        override val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128_FULL + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same

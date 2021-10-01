@@ -21,20 +21,30 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
 
 /**
- * A GPU substitution of CheckOverflow, does not actually check for overflow because
- * the precision checks for 64-bit support prevent the need for that.
+ * A GPU substitution of CheckOverflow. This cannot match the Spark CheckOverflow 100% because
+ * Spark will calculate values in BigDecimal and then see if there was an overflow. This assumes
+ * that we will fall back to the CPU in any case where a real overflow could happen, although
+ * there are some corner cases where it would be good for us to still check.
  */
 case class GpuCheckOverflow(child: Expression,
     dataType: DecimalType,
     nullOnOverflow: Boolean) extends GpuUnaryExpression {
+  private[this] val expectedCudfScale = -dataType.scale
+  private[this] lazy val resultDType = if (dataType.precision > DType.DECIMAL64_MAX_PRECISION) {
+    DType.create(DType.DTypeEnum.DECIMAL128, expectedCudfScale)
+  } else if (dataType.precision > DType.DECIMAL32_MAX_PRECISION) {
+    DType.create(DType.DTypeEnum.DECIMAL64, expectedCudfScale)
+  } else {
+    DType.create(DType.DTypeEnum.DECIMAL32, expectedCudfScale)
+  }
+
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val base = input.getBase
     val foundCudfScale = base.getType.getScale
-    val expectedCudfScale = -dataType.scale
     if (foundCudfScale == expectedCudfScale) {
       base.incRefCount()
     } else if (-foundCudfScale < -expectedCudfScale) {
-      base.castTo(DType.create(DType.DTypeEnum.DECIMAL64, expectedCudfScale))
+      base.castTo(resultDType)
     } else {
       // need to round off
       base.round(-expectedCudfScale, ai.rapids.cudf.RoundMode.HALF_UP)
