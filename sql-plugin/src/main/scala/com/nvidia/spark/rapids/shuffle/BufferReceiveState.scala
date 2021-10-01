@@ -20,7 +20,7 @@ import java.util
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange, Rmm}
 import com.nvidia.spark.rapids.Arm
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -183,8 +183,8 @@ class BufferReceiveState(
           var contigBuffer: DeviceMemoryBuffer = null
 
           // Receive buffers are always in the device, and so it is safe to assume
-          // that they are `DeviceMemoryBuffer`s here.
-          val deviceBounceBuffer = bounceBuffer.buffer.asInstanceOf[DeviceMemoryBuffer]
+          // that they are `BaseDeviceMemoryBuffer`s here.
+          val deviceBounceBuffer = bounceBuffer.buffer.asInstanceOf[BaseDeviceMemoryBuffer]
 
           if (fullSize == b.rangeSize()) {
             // we have the full buffer!
