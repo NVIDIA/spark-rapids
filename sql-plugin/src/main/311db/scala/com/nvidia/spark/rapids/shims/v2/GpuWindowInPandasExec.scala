@@ -39,7 +39,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuWindowInPandasExec(
     projectList: Seq[Expression],  // parameter name is different
     gpuPartitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
+    cpuOrderSpec: Seq[SortOrder],
     child: SparkPlan,
     cpuPartitionSpec: Seq[Expression]) extends GpuWindowInPandasExecBase {
 

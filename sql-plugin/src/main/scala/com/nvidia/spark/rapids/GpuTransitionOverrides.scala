@@ -396,11 +396,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (rapidsConf.enableHashOptimizeSort) {
       // Insert a sort after the last hash-based op before the query result if there are no
       // intermediate nodes that have a specified sort order. This helps with the size of
-      // Parquet and Orc files
-      // FIXME: This is passing a GPU sort order as a CPU sort order since there is not an easy
-      //        way to "undo" a GPU expression into a CPU expression. This could theoretically
-      //        cause problems with validating sort orders later in the plan if the expressions
-      //        are complex expressions with operators rather than simple attributes.
+      // Parquet and ORC files.
+      // Note that this is using a GPU SortOrder expression as the CPU SortOrder which should
+      // normally be avoided. However since we have checked that no node later in the plan
+      // needs a particular sort order, it should not be a problem in practice that would
+      // trigger a redundant sort in the plan.
       plan match {
         case _: GpuHashJoin =>
           val gpuSortOrder = getOptimizedSortOrder(plan)
