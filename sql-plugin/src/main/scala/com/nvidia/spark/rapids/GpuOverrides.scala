@@ -3565,7 +3565,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   // gets called once for each query stage (where a query stage is an `Exchange`).
   override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled) {
+    if (conf.isSqlEnabled || conf.isSqlExplainOnlyEnabled) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
         val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
@@ -3582,9 +3582,40 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
-  private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+  private def wrapAndTagPlan(plan: SparkPlan, conf: RapidsConf): SparkPlanMeta[SparkPlan] = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
     wrap.tagForGpu()
+    wrap
+  }
+
+  private def doConvertPlan(wrap: SparkPlanMeta[SparkPlan], conf: RapidsConf,
+      optimizations: Seq[Optimization]): SparkPlan = {
+    val convertedPlan = wrap.convertIfNeeded()
+    val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
+    GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
+    sparkPlan
+  }
+
+  private def getOptimizations(wrap: SparkPlanMeta[SparkPlan],
+      conf: RapidsConf): Seq[Optimization] = {
+    if (conf.optimizerEnabled) {
+      // we need to run these rules both before and after CBO because the cost
+      // is impacted by forcing operators onto CPU due to other rules that we have
+      wrap.runAfterTagRules()
+      val optimizer = try {
+        Class.forName(conf.optimizerClassName).newInstance().asInstanceOf[Optimizer]
+      } catch {
+        case e: Exception =>
+          throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
+      }
+      optimizer.optimize(conf, wrap)
+    } else {
+      Seq.empty
+    }
+  }
+
+  private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    val wrap = wrapAndTagPlan(plan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
       if (conf.shouldExplain) {
@@ -3593,20 +3624,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       }
       plan
     } else {
-      val optimizations = if (conf.optimizerEnabled) {
-        // we need to run these rules both before and after CBO because the cost
-        // is impacted by forcing operators onto CPU due to other rules that we have
-        wrap.runAfterTagRules()
-        val optimizer = try {
-          Class.forName(conf.optimizerClassName).newInstance().asInstanceOf[Optimizer]
-        } catch {
-          case e: Exception =>
-            throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
-        }
-        optimizer.optimize(conf, wrap)
-      } else {
-        Seq.empty
-      }
+      val optimizations = getOptimizations(wrap)
       wrap.runAfterTagRules()
       logWarning("after tag rules")
       if (conf.shouldExplain) {
@@ -3621,11 +3639,13 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
       }
 
-      // val convertedPlan = wrap.convertIfNeeded()
-      // val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
-      // GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
-      // sparkPlan
-      plan
+      if (conf.isSqlExplainOnlyEnabled) {
+        // only run the plugin enough to explain what it would have replaced but don't actually
+        // convert and run on GPU
+        plan
+      } else {
+        doConvertPlan(wrap, conf, optimizations)
+      }
     }
   }
 
