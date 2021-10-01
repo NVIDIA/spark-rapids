@@ -95,7 +95,7 @@ object GpuScalar extends Arm with Logging {
    * 'validateLiteralValue' in Spark.
    */
   /** Converts a decimal, `dec` should not be null. */
-  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
+  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Option[Any] = {
     if (dec.scale > dt.scale) {
       throw new IllegalArgumentException(s"Unexpected decimals rounding.")
     }
@@ -103,9 +103,11 @@ object GpuScalar extends Arm with Logging {
       throw new IllegalArgumentException(s"Cannot change precision to $dt for decimal: $dec")
     }
     if (DecimalType.is32BitDecimalType(dt)) {
-      Left(dec.toUnscaledLong.toInt)
+      Some(dec.toUnscaledLong.toInt)
+    } else if (DecimalType.is64BitDecimalType(dt)) {
+      Some(dec.toUnscaledLong)
     } else {
-      Right(dec.toUnscaledLong)
+      Some(dec.toBigDecimal.bigDecimal.unscaledValue())
     }
   }
 
@@ -123,8 +125,9 @@ object GpuScalar extends Arm with Logging {
     case _ if element == null => null
     case StringType => element.asInstanceOf[UTF8String].getBytes
     case dt: DecimalType => convertDecimalTo(element.asInstanceOf[Decimal], dt) match {
-      case Left(i) => i
-      case Right(l) => l
+      case Some(element: Int) => element
+      case Some(element: Long) => element
+      case Some(element: BigInteger) => element
     }
     case ArrayType(eType, _) =>
       val data = getArrayData(element.asInstanceOf[ArrayData], eType)
@@ -179,15 +182,22 @@ object GpuScalar extends Arm with Logging {
         if (DecimalType.is32BitDecimalType(dt)) {
           val rows = decs.map {
             case null => null
-            case d => convertDecimalTo(d, dt).left.get
+            case d => convertDecimalTo(d, dt).get
           }
-          ColumnVector.decimalFromBoxedInts(-dt.scale, rows: _*)
-        } else {
+          ColumnVector.decimalFromBoxedInts(-dt.scale,
+            rows.asInstanceOf[Seq[java.lang.Integer]]: _*)
+        } else if (DecimalType.is64BitDecimalType(dt)){
           val rows = decs.map {
             case null => null
-            case d => convertDecimalTo(d, dt).right.get
+            case d => convertDecimalTo(d, dt).get
           }
-          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows: _*)
+          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows.asInstanceOf[Seq[java.lang.Long]]: _*)
+        }  else {
+          val rows = decs.map {
+            case null => null
+            case d => convertDecimalTo(d, dt).get
+          }
+          ColumnVector.decimalFromBigInt(-dt.scale, rows.asInstanceOf[Seq[BigInteger]]: _*)
         }
       case ArrayType(_, _) =>
         val colType = resolveElementType(elementType)
@@ -245,8 +255,10 @@ object GpuScalar extends Arm with Logging {
           s" for DecimalType, expecting Decimal, Int, Long, Double, String, or BigDecimal.")
       }
       convertDecimalTo(dec, decType) match {
-        case Left(i) => Scalar.fromDecimal(-decType.scale, i)
-        case Right(l) => Scalar.fromDecimal(-decType.scale, l)
+        case Some(element: Int) => Scalar.fromDecimal(-decType.scale, element)
+        case Some(element: Long) => Scalar.fromDecimal(-decType.scale, element)
+        case Some(element: BigInteger) => Scalar.fromDecimal(-decType.scale, element)
+        case _ => throw new IllegalArgumentException(s"Expecting Long, Int or BigInteger")
       }
     case LongType => v match {
       case l: Long => Scalar.fromLong(l)

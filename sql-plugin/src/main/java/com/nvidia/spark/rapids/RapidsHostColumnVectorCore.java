@@ -33,7 +33,6 @@ import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.

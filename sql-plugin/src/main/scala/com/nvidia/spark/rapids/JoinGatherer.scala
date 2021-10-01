@@ -478,7 +478,7 @@ object JoinGathererImpl {
   private def calcRowSizeBits(dt: DataType, nullValueCalc: Boolean): Option[Int] = dt match {
     case StructType(fields) =>
       sumRowSizesBits(fields.map(_.dataType), nullValueCalc).map(_ + 1)
-    case dt: DecimalType if dt.precision > DType.DECIMAL128_MAX_PRECISION =>
+    case dt: DecimalType if dt.precision > DType.DECIMAL64_MAX_PRECISION =>
       if (nullValueCalc) {
         throw new IllegalArgumentException(s"Found an unsupported type $dt")
       } else {
