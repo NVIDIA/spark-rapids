@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import java.math.RoundingMode
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
 import scala.collection.mutable.ArrayBuffer
+import scala.math.BigDecimal.RoundingMode
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import ai.rapids.cudf
@@ -1242,8 +1242,8 @@ object GpuCast extends Arm {
         // precision/scale as the to type.
 
         val boundStr = ("9" * to.precision) + "e" + (-to.scale)
-        val toUpperBound = new java.math.BigDecimal(boundStr)
-        val toLowerBound = new java.math.BigDecimal("-" + boundStr)
+        val toUpperBound = BigDecimal(boundStr)
+        val toLowerBound = BigDecimal("-" + boundStr)
 
         // Now we have to move these into the same precision/scale as from
         // We round down (towards 0) so we can do a check for input > upperBound and
@@ -1254,9 +1254,9 @@ object GpuCast extends Arm {
         val upperBound = toUpperBound.setScale(from.scale, RoundingMode.DOWN)
         val lowerBound = toLowerBound.setScale(from.scale, RoundingMode.DOWN)
 
-        val outOfBounds = withResource(Scalar.fromDecimal(upperBound)) { ubScale =>
+        val outOfBounds = withResource(GpuScalar.from(upperBound, from)) { ubScale =>
           withResource(input.greaterThan(ubScale)) { over =>
-            withResource(Scalar.fromDecimal(lowerBound)) { lbScale =>
+            withResource(GpuScalar.from(lowerBound, from)) { lbScale =>
               withResource(input.lessThan(lbScale)) { under =>
                 over.or(under)
               }

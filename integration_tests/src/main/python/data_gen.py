@@ -741,6 +741,11 @@ def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
 
+def meta_idfn(meta):
+    def tmp(something):
+        return meta + idfn(something)
+    return tmp
+
 def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
