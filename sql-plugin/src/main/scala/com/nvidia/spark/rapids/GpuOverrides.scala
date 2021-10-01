@@ -724,6 +724,8 @@ object GpuOverrides extends Logging {
   private val nanAggPsNote = "Input must not contain NaNs and" +
       s" ${RapidsConf.HAS_NANS} must be false."
 
+  private val cannotAddPsNote = "DECIMAL precision of 38 not supported due to overflow checks"
+
   /**
    * Helper function specific to ANSI mode for the aggregate functions that should
    * fallback, since we don't have the same overflow checks that Spark provides in
@@ -1701,10 +1703,13 @@ object GpuOverrides extends Logging {
       "Addition",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        // TODO add in a ps for DECIMAL in that we don't really support everything
         TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval)),
+        ("lhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddPsNote),
+            TypeSig.numericAndInterval),
+        ("rhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddPsNote),
+            TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
 
