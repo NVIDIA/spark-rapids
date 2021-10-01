@@ -21,51 +21,68 @@ import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
 
 trait ShimExpression extends Expression {
-  override def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression = {
-    legacyWithNewChildren(newChildren)
+  override final def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression = {
+    shimWithNewChildren(newChildren)
   }
+
+  def shimWithNewChildren(newChildren: Seq[Expression]): Expression =
+    legacyWithNewChildren(newChildren)
 }
 
 trait ShimUnaryExpression extends UnaryExpression {
-  override def withNewChildInternal(newChild: Expression): Expression =
-    legacyWithNewChildren(Seq(newChild))
+  override final def withNewChildInternal(newChild: Expression): Expression =
+    shimWithNewChildren(Seq(newChild))
+
+  def shimWithNewChildren(newChildren: Seq[Expression]): Expression =
+    legacyWithNewChildren(newChildren)
 }
 
 trait ShimBinaryExpression extends BinaryExpression {
-  override def withNewChildrenInternal(newLeft: Expression, newRight: Expression): Expression =
-    legacyWithNewChildren(Seq(newLeft, newRight))
+  override final def withNewChildrenInternal(
+      newLeft: Expression,
+      newRight: Expression): Expression = shimWithNewChildren(Seq(newLeft, newRight))
+
+  def shimWithNewChildren(newChildren: Seq[Expression]): Expression =
+    legacyWithNewChildren(newChildren)
 }
 
 trait ShimTernaryExpression extends TernaryExpression {
-  override def withNewChildrenInternal(
+  override final def withNewChildrenInternal(
       newFirst: Expression,
       newSecond: Expression,
       newThird: Expression
-  ): Expression = {
-    legacyWithNewChildren(Seq(newFirst, newSecond, newThird))
-  }
+  ): Expression = shimWithNewChildren(Seq(newFirst, newSecond, newThird))
+
+  def shimWithNewChildren(newChildren: Seq[Expression]): Expression =
+    legacyWithNewChildren(newChildren)
 }
 
 trait ShimSparkPlan extends SparkPlan {
-  override def withNewChildrenInternal(newChildren: IndexedSeq[SparkPlan]): SparkPlan = {
+  override final def withNewChildrenInternal(newChildren: IndexedSeq[SparkPlan]): SparkPlan =
+    shimWithNewChildren(newChildren)
+
+  def shimWithNewChildren(newChildren: Seq[SparkPlan]): SparkPlan =
     legacyWithNewChildren(newChildren)
-  }
 }
 
 trait ShimUnaryExecNode extends UnaryExecNode {
-  override def withNewChildInternal(newChild: SparkPlan): SparkPlan = {
-    legacyWithNewChildren(Seq(newChild))
-  }
+  override final def withNewChildInternal(newChild: SparkPlan): SparkPlan =
+    shimWithNewChildren(Seq(newChild))
+
+  def shimWithNewChildren(newChildren: Seq[SparkPlan]): SparkPlan =
+    legacyWithNewChildren(newChildren)
 }
 
 trait ShimBinaryExecNode extends BinaryExecNode {
-  override def withNewChildrenInternal(newLeft: SparkPlan, newRight: SparkPlan): SparkPlan = {
-    legacyWithNewChildren(Seq(newLeft, newRight))
-  }
+  override final def withNewChildrenInternal(newLeft: SparkPlan, newRight: SparkPlan): SparkPlan =
+    shimWithNewChildren(Seq(newLeft, newRight))
+
+  def shimWithNewChildren(newChildren: Seq[SparkPlan]): SparkPlan =
+    legacyWithNewChildren(newChildren)
 }
 
 trait ShimUnaryCommand extends UnaryCommand {
-  override def withNewChildInternal(newChild: LogicalPlan): LogicalPlan = {
+  override final def withNewChildInternal(newChild: LogicalPlan): LogicalPlan = {
     legacyWithNewChildren(Seq(newChild))
   }
 }

@@ -191,7 +191,15 @@ case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGo
  * @param cpuOrder the CPU keys that should be used for batching.
  */
 case class BatchedByKey(gpuOrder: Seq[SortOrder], cpuOrder: Seq[SortOrder]) extends CoalesceGoal {
+  require(gpuOrder.size == cpuOrder.size)
+
   override def children: Seq[Expression] = gpuOrder ++ cpuOrder
+
+  override def shimWithNewChildren(newChildren: Seq[Expression]): Expression = {
+    copy(
+      gpuOrder = newChildren.take(gpuOrder.size).asInstanceOf[Seq[SortOrder]],
+      cpuOrder = newChildren.drop(gpuOrder.size).asInstanceOf[Seq[SortOrder]])
+  }
 }
 
 abstract class AbstractGpuCoalesceIterator(
