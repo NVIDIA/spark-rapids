@@ -13,35 +13,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.shims.v2
 
-import java.util.UUID
+import scala.concurrent.Promise
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
-import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeLike
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 
-case class GpuBroadcastExchangeExec(
-    override val mode: BroadcastMode,
-    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) with BroadcastExchangeLike {
-
-  override def runId: UUID = _runId
+/**
+ * This shim handles the completion future differences between
+ * Apache Spark and Databricks.
+ */
+trait ShimBroadcastExchangeLike extends BroadcastExchangeLike {
+  @transient
+  protected lazy val promise = Promise[Broadcast[Any]]()
 
   /**
    * For registering callbacks on `relationFuture`.
    * Note that calling this field will not start the execution of broadcast job.
    */
-  override def doCompletionFuture: concurrent.Future[Broadcast[Any]] = promise.future
-
-  override def runtimeStatistics: Statistics = {
-    val dataSize = metrics("dataSize").value
-    Statistics(dataSize)
-  }
-
-  override def doCanonicalize(): SparkPlan = {
-    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
-  }
+  @transient
+  lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
 }

@@ -101,12 +101,6 @@ abstract class SparkBaseShims extends Spark30XShims {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
   }
 
-  override def getGpuBroadcastExchangeExec(
-      mode: BroadcastMode,
-      child: SparkPlan): GpuBroadcastExchangeExecBase = {
-    GpuBroadcastExchangeExec(mode, child)
-  }
-
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
@@ -215,7 +209,7 @@ abstract class SparkBaseShims extends Spark30XShims {
           GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
         }
 
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = 
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuAverage(childExprs.head)
 
         // Average is not supported in ANSI mode right now, no matter the type
@@ -872,4 +866,9 @@ abstract class SparkBaseShims extends Spark30XShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
+
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
+    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
+    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
+  }
 }

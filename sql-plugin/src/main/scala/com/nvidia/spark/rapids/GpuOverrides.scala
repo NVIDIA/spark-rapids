@@ -3104,6 +3104,42 @@ object GpuOverrides extends Logging {
         // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
+    expr[StddevPop](
+      "Aggregation computing population standard deviation",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[StddevPop](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuStddevPop(childExprs.head)
+      }),
+    expr[StddevSamp](
+      "Aggregation computing sample standard deviation",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuStddevSamp(childExprs.head)
+      }),
+    expr[VariancePop](
+      "Aggregation computing population variance",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[VariancePop](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuVariancePop(childExprs.head)
+      }),
+    expr[VarianceSamp](
+      "Aggregation computing sample variance",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[VarianceSamp](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuVarianceSamp(childExprs.head)
+      }),
     expr[ApproximatePercentile](
       "Approximate percentile",
       ExprChecks.groupByOnly(
