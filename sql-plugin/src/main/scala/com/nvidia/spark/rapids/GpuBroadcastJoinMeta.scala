@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
+import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExecBase
 
 abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
@@ -28,24 +28,24 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {
     buildSide.wrapped match {
-      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
+      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] ||
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
           bqse.plan.asInstanceOf[ReusedExchangeExec]
-              .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
-      case _: GpuBroadcastExchangeExec => true
+              .child.isInstanceOf[GpuBroadcastExchangeExecBase]
+      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
+      case _: GpuBroadcastExchangeExecBase => true
       case _ => buildSide.canThisBeReplaced
     }
   }
 
   def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
     val buildSideOnGpu = buildSide match {
-      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
+      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] ||
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
               bqse.plan.asInstanceOf[ReusedExchangeExec]
-                  .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
-      case _: GpuBroadcastExchangeExec => true
+                  .child.isInstanceOf[GpuBroadcastExchangeExecBase]
+      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExecBase]
+      case _: GpuBroadcastExchangeExecBase => true
       case _ => false
     }
     if (!buildSideOnGpu) {

@@ -20,7 +20,7 @@ import java.io._
 import java.util.UUID
 import java.util.concurrent._
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Promise}
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, JCudfSerialization, NvtxColor, NvtxRange}
@@ -28,7 +28,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.v2.{ShimBroadcastExchangeLike, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -36,10 +36,9 @@ import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, Exchange}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.execution.metric.SQLMetrics
@@ -257,13 +256,30 @@ class GpuBroadcastMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    GpuBroadcastExchangeExec(exchange.mode, childPlans.head.convertIfNeeded())
+    ShimLoader.getSparkShims.getGpuBroadcastExchangeExec(
+      exchange.mode, childPlans.head.convertIfNeeded())
   }
+
 }
 
-abstract class GpuBroadcastExchangeExecBase(
+abstract class GpuBroadcastExchangeExecBaseWithFuture(
     mode: BroadcastMode,
-    child: SparkPlan) extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec {
+    child: SparkPlan) extends GpuBroadcastExchangeExecBase(mode, child) {
+
+  /**
+   * For registering callbacks on `relationFuture`.
+   * Note that calling this field will not start the execution of broadcast job.
+   */
+  @transient
+  lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
+}
+
+/**
+ * In some versions of databricks we need to return the completionFuture in a different way.
+ */
+abstract class GpuBroadcastExchangeExecBase(
+    val mode: BroadcastMode,
+    child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
@@ -279,11 +295,12 @@ abstract class GpuBroadcastExchangeExecBase(
   override def outputBatching: CoalesceGoal = RequireSingleBatch
 
   @transient
+  protected lazy val promise = Promise[Broadcast[Any]]()
+
+  @transient
   protected val timeout: Long = SQLConf.get.broadcastTimeout
 
   val _runId: UUID = UUID.randomUUID()
-
-  override def runId: UUID = _runId
 
   @transient
   lazy val relationFuture: Future[Broadcast[Any]] = {
@@ -431,13 +448,8 @@ abstract class GpuBroadcastExchangeExecBase(
           ex)
     }
   }
-
-  override def runtimeStatistics: Statistics = {
-    Statistics(
-      sizeInBytes = metrics("dataSize").value,
-      rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
-  }
 }
+
 
 object GpuBroadcastExchangeExecBase {
   /**
@@ -468,11 +480,4 @@ object GpuBroadcastExchangeExecBase {
   val executionContext = ExecutionContext.fromExecutorService(
     newDaemonCachedThreadPool("gpu-broadcast-exchange",
       SQLConf.get.getConf(StaticSQLConf.BROADCAST_EXCHANGE_MAX_THREAD_THRESHOLD)))
-}
-
-case class GpuBroadcastExchangeExec(mode: BroadcastMode, child: SparkPlan)
-    extends GpuBroadcastExchangeExecBase(mode, child) {
-  override def doCanonicalize(): SparkPlan = {
-    GpuBroadcastExchangeExec(mode.canonicalized, child.canonicalized)
-  }
 }
