@@ -236,7 +236,8 @@ class Spark320Shims extends Spark32XShims {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+        TypeSig.numeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
 

@@ -236,7 +236,7 @@ def test_unary_positive(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_36_neg5, decimal_gen_38_0], ids=idfn)
 def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'),
