@@ -790,7 +790,7 @@ class Spark320Shims extends Spark32XShims {
   }
 
   override def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: Partitioning,
+      gpuOutputPartitioning: GpuPartitioning,
       child: SparkPlan,
       cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {

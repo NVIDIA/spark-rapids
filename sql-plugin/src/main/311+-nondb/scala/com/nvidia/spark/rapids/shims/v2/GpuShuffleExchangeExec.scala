@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
+import com.nvidia.spark.rapids.GpuPartitioning
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -24,7 +26,7 @@ import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrig
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBaseWithMetrics
 
 case class GpuShuffleExchangeExec(
-    gpuOutputPartitioning: Partitioning,
+    gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin,
     cpuOutputPartitioning: Partitioning)

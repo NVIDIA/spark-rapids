@@ -47,7 +47,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -137,7 +137,7 @@ trait SparkShims {
     targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase
 
   def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: Partitioning,
+      gpuOutputPartitioning: GpuPartitioning,
       child: SparkPlan,
       cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec] = None): GpuShuffleExchangeExecBase

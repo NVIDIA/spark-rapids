@@ -675,7 +675,7 @@ abstract class SparkBaseShims extends Spark30XShims {
   }
 
   override def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: Partitioning,
+      gpuOutputPartitioning: GpuPartitioning,
       child: SparkPlan,
       cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
