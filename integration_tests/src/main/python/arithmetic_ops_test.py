@@ -39,9 +39,10 @@ def _get_overflow_df(spark, data, data_type, expr):
     ).selectExpr(expr)
 
 decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision, decimal_gen_64bit]
+        decimal_gen_same_scale_precision, decimal_gen_64bit, decimal_gen_20_2,
+        decimal_gen_30_2, decimal_gen_36_5]
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5], ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
 def test_addition(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -730,12 +731,14 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
             func=lambda spark: _get_overflow_df(spark, data, tp, expr),
             conf=ansi_conf)
 
-@allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Add', 'PromotePrecision', 'Cast')
-@pytest.mark.parametrize('data,tp,expr', [([Decimal('9999.99')], DecimalType(37,2), 'a + a')])
-@pytest.mark.parametrize('ansi_enabled', ['false','true'])
-def test_add_overflow_fallback_for_decimal(data, tp, expr, ansi_enabled):
-    # The GPU falls back to the CPU for any output precision of 38, because it cannot tell what the
+@allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Add', 'Subtract', 'PromotePrecision', 'Cast', 'Literal')
+@pytest.mark.parametrize('data,tp,expr', [
+    # The GPU falls back to the CPU for Add/Subtract output precision of 38, because it cannot tell what the
     # real input types were to know if it can do it without overflow issues.
+    ([Decimal('9999.99')], DecimalType(37,2), 'a + a'),
+    ([Decimal('9999.99')], DecimalType(37,2), 'a - 1')])
+@pytest.mark.parametrize('ansi_enabled', ['false','true'])
+def test_overflow_fallback_for_decimal(data, tp, expr, ansi_enabled):
     assert_gpu_fallback_collect(
         lambda spark: _get_overflow_df(spark, data, tp, expr),
         'ProjectExec',

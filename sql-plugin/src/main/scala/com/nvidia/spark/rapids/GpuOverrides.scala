@@ -724,7 +724,7 @@ object GpuOverrides extends Logging {
   private val nanAggPsNote = "Input must not contain NaNs and" +
       s" ${RapidsConf.HAS_NANS} must be false."
 
-  private val cannotAddPsNote = "DECIMAL precision of 38 not supported due to overflow checks"
+  private val cannotAddOrSubPsNote = "DECIMAL precision of 38 not supported due to overflow checks"
 
   /**
    * Helper function specific to ANSI mode for the aggregate functions that should
@@ -1705,10 +1705,10 @@ object GpuOverrides extends Logging {
         TypeSig.implicitCastsAstTypes,
         TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval,
         ("lhs", TypeSig.gpuNumeric +
-            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddPsNote),
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
             TypeSig.numericAndInterval),
         ("rhs", TypeSig.gpuNumeric +
-            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddPsNote),
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
             TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1716,7 +1716,7 @@ object GpuOverrides extends Logging {
         override def tagExprForGpu(): Unit = {
           // In a binary op like this the LHS and RHS types are the same. In the case of Add the
           // output type is also the same as the LHS, because Spark has already cast the values
-          // to the same type. For Decimal this means the complicated formula tio determine the
+          // to the same type. For Decimal this means the complicated formula to determine the
           // new precision and scale. Because we cannot do overflow detection in the same way as
           // Spark we fall back to the CPU any time it look like there might be an overflow
           // possible
@@ -1741,11 +1741,30 @@ object GpuOverrides extends Logging {
       "Subtraction",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
+            TypeSig.numericAndInterval),
+        ("rhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
+            TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagExprForGpu(): Unit = {
+          // In a binary op like this the LHS and RHS types are the same. In the case of Subtract
+          // the output type is also the same as the LHS, because Spark has already cast the values
+          // to the same type. For Decimal this means the complicated formula to determine the
+          // new precision and scale. Because we cannot do overflow detection in the same way as
+          // Spark we fall back to the CPU any time it look like there might be an overflow
+          // possible
+          a.dataType match {
+            case dt: DecimalType if dt.precision >= DecimalType.MAX_PRECISION =>
+              willNotWorkOnGpu(s"Because of limitations in overflow checking the " +
+                  s"precision ${dt.precision} too large to be sure that no overflow will happen.")
+            case _ => //NOOP
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
