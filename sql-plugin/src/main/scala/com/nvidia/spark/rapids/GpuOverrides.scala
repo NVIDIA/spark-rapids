@@ -3624,7 +3624,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       }
       plan
     } else {
-      val optimizations = getOptimizations(wrap)
+      val optimizations = getOptimizations(wrap, conf)
       wrap.runAfterTagRules()
       logWarning("after tag rules")
       if (conf.shouldExplain) {
