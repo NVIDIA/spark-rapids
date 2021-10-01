@@ -153,11 +153,11 @@ object GpuCast extends Arm {
    * Regex to match timestamps with or without trailing zeros.
    */
   private val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
-      "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
+    "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
+    "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
 
   val INVALID_INPUT_MESSAGE: String = "Column contains at least one value that is not in the " +
-      "required range"
+    "required range"
 
   val INVALID_FLOAT_CAST_MSG: String = "At least one value is either null or is an invalid number"
 
@@ -167,36 +167,36 @@ object GpuCast extends Arm {
     // just strict enough to filter out known edge cases that would result in incorrect
     // values. We further filter out invalid values using the cuDF isFloat method.
     val VALID_FLOAT_REGEX =
-    "^" + // start of line
-        "[+\\-]?" + // optional + or - at start of string
+      "^" +                         // start of line
+      "[+\\-]?" +                   // optional + or - at start of string
+      "(" +
         "(" +
-        "(" +
-        "(" +
-        "([0-9]+)|" + // digits, OR
-        "([0-9]*\\.[0-9]+)|" + // decimal with optional leading and mandatory trailing, OR
-        "([0-9]+\\.[0-9]*)" + // decimal with mandatory leading and optional trailing
+          "(" +
+            "([0-9]+)|" +           // digits, OR
+            "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
+            "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
+          ")" +
+          "([eE][+\\-]?[0-9]+)?" +  // exponent
+          "[fFdD]?" +               // floating-point designator
         ")" +
-        "([eE][+\\-]?[0-9]+)?" + // exponent
-        "[fFdD]?" + // floating-point designator
-        ")" +
-        "|Inf" + // Infinity
-        "|[nN][aA][nN]" + // NaN
-        ")" +
-        "$" // end of line
+        "|Inf" +                    // Infinity
+        "|[nN][aA][nN]" +           // NaN
+      ")" +
+      "$"                           // end of line
 
     withResource(input.lstrip()) { stripped =>
       withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
         // filter out strings containing breaking whitespace
         val withoutWhitespace = withResource(ColumnVector.fromStrings("\r", "\n")) {
-          verticalWhitespace =>
-            withResource(stripped.contains(verticalWhitespace)) {
-              _.ifElse(nullString, stripped)
-            }
+            verticalWhitespace =>
+          withResource(stripped.contains(verticalWhitespace)) {
+            _.ifElse(nullString, stripped)
+          }
         }
         // replace all possible versions of "Inf" and "Infinity" with "Inf"
         val inf = withResource(withoutWhitespace) { _ =>
-          withoutWhitespace.stringReplaceWithBackrefs(
-            "(?:[iI][nN][fF])" + "(?:[iI][nN][iI][tT][yY])?", "Inf")
+            withoutWhitespace.stringReplaceWithBackrefs(
+          "(?:[iI][nN][fF])" + "(?:[iI][nN][iI][tT][yY])?", "Inf")
         }
         // replace "+Inf" with "Inf" because cuDF only supports "Inf" and "-Inf"
         val infWithoutPlus = withResource(inf) { _ =>
@@ -668,7 +668,7 @@ object GpuCast extends Arm {
             columns += sepColumn.incRefCount()
             val nonFirstColumn = doCast(nonFirstColumnView,
               inputSchema(nonFirstIndex).dataType, StringType, ansiMode, legacyCastToString,
-              stringToDateAnsiModeEnabled)
+                stringToDateAnsiModeEnabled)
             if (legacyCastToString) {
               // " " if non-null
               columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
@@ -844,7 +844,7 @@ object GpuCast extends Arm {
     }
   }
 
-  /** This method does not close the `input` ColumnVector. */
+    /** This method does not close the `input` ColumnVector. */
   def convertDateOr(
       input: ColumnVector,
       regex: String,
