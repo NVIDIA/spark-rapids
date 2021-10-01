@@ -3708,7 +3708,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
         val optimizer = try {
-          Class.forName(conf.optimizerClassName).newInstance().asInstanceOf[Optimizer]
+          ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
         } catch {
           case e: Exception =>
             throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
