@@ -1779,12 +1779,12 @@ object GpuOverrides extends Logging {
       "Multiplication",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL,
           "Because of Spark's inner workings the full range of decimal precision " +
-              "(even for 64-bit values) is not supported."),
+              "(even for 128-bit values) is not supported."),
         TypeSig.numeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.numeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.numeric)),
+        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric),
+        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric)),
       (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // Multiplication of Decimal types is a little odd. Spark will cast the inputs
@@ -1805,10 +1805,10 @@ object GpuOverrides extends Logging {
           val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
-              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+              val intermediatePrecision = GpuMultiplyUtil.decimalPrecision(l, r)
+              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the multiply is too large" +
-                    s" to fit on the GPU $intermediateResult")
+                    s" to fit on the GPU $intermediatePrecision")
               }
             case _ => // NOOP
           }

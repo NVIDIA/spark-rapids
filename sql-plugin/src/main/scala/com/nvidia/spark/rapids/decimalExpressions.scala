@@ -15,6 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -40,14 +41,22 @@ case class GpuCheckOverflow(child: Expression,
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val base = input.getBase
-    val foundCudfScale = base.getType.getScale
-    if (foundCudfScale == expectedCudfScale) {
+    if (resultDType.equals(base.getType)) {
       base.incRefCount()
-    } else if (-foundCudfScale < -expectedCudfScale) {
-      base.castTo(resultDType)
     } else {
-      // need to round off
-      base.round(-expectedCudfScale, ai.rapids.cudf.RoundMode.HALF_UP)
+      val foundScale = -base.getType.getScale
+      val rounded = if (foundScale > dataType.scale) {
+        base.round(dataType.scale, cudf.RoundMode.HALF_UP)
+      } else {
+        base.incRefCount()
+      }
+      withResource(rounded) { rounded =>
+        if (resultDType.getTypeId != base.getType.getTypeId) {
+          rounded.castTo(resultDType)
+        } else {
+          rounded.incRefCount()
+        }
+      }
     }
   }
 }

@@ -92,8 +92,9 @@ def test_subtraction_ansi_no_overflow(data_gen):
                 f.col('a') - f.col('b')),
             conf={'spark.sql.ansi.enabled': 'true'})
 
-@pytest.mark.parametrize('data_gen', numeric_gens +
-        [decimal_gen_neg_scale, decimal_gen_scale_precision, decimal_gen_same_scale_precision, DecimalGen(8, 8)], ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + [decimal_gen_neg_scale, 
+    decimal_gen_scale_precision, decimal_gen_same_scale_precision,
+    DecimalGen(8, 8), decimal_gen_12_2, decimal_gen_18_3], ids=idfn)
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -125,7 +126,7 @@ def test_multiplication_ansi_enabled(data_gen):
             conf={'spark.sql.ansi.enabled': 'true'})
 
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(6, 3)], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3)], ids=idfn)
 def test_multiplication_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
