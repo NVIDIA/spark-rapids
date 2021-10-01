@@ -41,7 +41,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   }
 
   private def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
-    writer.write(QualOutputWriter.headerCSV + "\n")
+    writer.write(QualOutputWriter.headerCSV(reportReadSchema) + "\n")
   }
 
   def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
