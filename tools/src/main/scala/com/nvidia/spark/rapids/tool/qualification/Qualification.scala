@@ -109,12 +109,15 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
         }
       }
     } catch {
-      case o: OutOfMemoryError =>
-        logError(s"OOM error while processing large file ${path.eventLog.toString}." +
-            s"Increase heap size.", o)
+      case oom: OutOfMemoryError =>
+        logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
+            s"Increase heap size.", oom)
+        System.exit(1)
+      case o: Error =>
+        logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
         System.exit(1)
       case e: Exception =>
-        logError(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
+        logWarning(s"Unexpected exception processing log ${path.eventLog.toString}, skipping!", e)
     }
   }
 }

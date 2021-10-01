@@ -116,10 +116,15 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           val appOpt = createApp(path, numOutputRows, index, hadoopConf)
           appOpt.foreach(app => allApps.add(app))
         } catch {
-          case o: OutOfMemoryError =>
-            logError(s"OOM error while processing large file ${path.eventLog.toString}." +
-                s"Increase heap size.", o)
+          case oom: OutOfMemoryError =>
+            logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
+                s"Increase heap size.", oom)
             System.exit(1)
+          case o: Error =>
+            logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
+            System.exit(1)
+          case e: Exception =>
+            logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
         }
       }
     }
@@ -166,10 +171,15 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
             sum.foreach(allApps.add(_))
           }
         } catch {
-          case o: OutOfMemoryError =>
-            logError(s"OOM error while processing large file ${path.eventLog.toString}." +
-                s"Increase heap size.", o)
+          case oom: OutOfMemoryError =>
+            logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
+                s"Increase heap size.", oom)
             System.exit(1)
+          case o: Error =>
+            logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
+            System.exit(1)
+          case e: Exception =>
+            logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
         }
       }
     }
@@ -217,9 +227,12 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
               logInfo("No application to process. Exiting")
           }
         } catch {
-          case o: OutOfMemoryError =>
-            logError(s"OOM error while processing large file ${path.eventLog.toString}." +
-                s"Increase heap size.", o)
+          case oom: OutOfMemoryError =>
+            logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
+                s"Increase heap size.", oom)
+            System.exit(1)
+          case o: Error =>
+            logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
             System.exit(1)
           case e: Exception =>
             logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
