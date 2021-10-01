@@ -1284,7 +1284,8 @@ object GpuCast extends Arm {
 
       val rounded = withResource(checked) { checked =>
         if (!isScaleUpcast) {
-          // We have to round the data down to the desired scale
+          // We have to round the data to the desired scale. Spark uses HALF_UP rounding in
+          // this case so we need to also.
           checked.round(to.scale, cudf.RoundMode.HALF_UP)
         } else {
           checked.incRefCount()
