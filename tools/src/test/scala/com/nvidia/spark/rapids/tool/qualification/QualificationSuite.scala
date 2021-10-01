@@ -569,10 +569,18 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
         // do inside application to simulate similar calling
         val qualInfo = qualApp.aggregateStats()
-        logWarning("values is: " + qualInfo)
         assert(qualInfo.nonEmpty)
-        assert(qualInfo.get.appName.equals("streaming"))
+        qualInfo match {
+          case Some(info) =>
 
+            val header = QualOutputWriter.headerCSV(false)
+            val data = QualOutputWriter.toCSV(info, false)
+            val textHeaderStr = QualOutputWriter.constructHeaderTextString(info.appId.size)
+            val textAppStr = QualOutputWriter.constructAppInfoTextString(info, info.appId.size)
+          case _ =>
+            logWarning("no qualification info")
+        }
+        assert(qualInfo.get.appName.equals("streaming"))
         df
       }
     }
