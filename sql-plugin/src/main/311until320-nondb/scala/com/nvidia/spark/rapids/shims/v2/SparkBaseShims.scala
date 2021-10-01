@@ -438,6 +438,11 @@ abstract class SparkBaseShims extends Spark31XShims {
             if (!scan.relation.cacheBuilder.serializer
                 .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+              if (SQLConf.get.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+                  .equals("com.nvidia.spark.ParquetCachedBatchSerializer")) {
+                throw new IllegalStateException("Cache serializer failed to load! " +
+                    "Something went wrong while loading ParquetCachedBatchSerializer class")
+              }
             }
           }
 
