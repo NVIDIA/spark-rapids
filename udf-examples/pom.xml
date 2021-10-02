@@ -65,6 +65,7 @@
   </dependencies>
 
   <build>
+    <directory>${project.basedir}/target</directory>
     <resources>
       <resource>
         <!-- Include the properties file to provide the build information. -->
