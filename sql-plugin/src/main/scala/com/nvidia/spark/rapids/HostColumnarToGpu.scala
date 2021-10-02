@@ -40,7 +40,7 @@ object HostColumnarToGpu extends Logging {
 
   // use reflection to get access to a private field in a class
   private def getClassFieldAccessible(className: String, fieldName: String) = {
-    val classObj = Class.forName(className)
+    val classObj = ShimLoader.loadClass(className)
     val fields = classObj.getDeclaredFields.toList
     val field = fields.filter( x => {
       x.getName.contains(fieldName)
