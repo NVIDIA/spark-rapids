@@ -115,7 +115,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         sys.exit(1)
       case NonFatal(e) =>
         logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
-      case o =>
+      case o: Throwable =>
         logError(s"Error occurred while processing file: ${path.eventLog.toString}. Exiting ...", o)
         sys.exit(1)
     }
