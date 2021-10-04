@@ -1145,7 +1145,6 @@ def test_hash_groupby_approx_percentile_long_scalar():
                                      ('v', LongRangeGen())], length=100),
         0.5)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3706")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double():
     compare_percentile_approx(
@@ -1153,7 +1152,6 @@ def test_hash_groupby_approx_percentile_double():
                                      ('v', DoubleGen())], length=100),
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3706")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double_scalar():
     compare_percentile_approx(
