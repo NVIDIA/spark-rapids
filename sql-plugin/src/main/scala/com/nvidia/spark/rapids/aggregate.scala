@@ -1454,6 +1454,10 @@ case class GpuHashAggregateExec(
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
   ) ++ spillMetrics
 
+  // requiredChildDistributions are CPU expressions, so remove it from the GPU expressions list
+  override def gpuExpressions: Seq[Expression] =
+    groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
+
   override def verboseStringWithOperatorId(): String = {
     s"""
        |$formattedNodeName

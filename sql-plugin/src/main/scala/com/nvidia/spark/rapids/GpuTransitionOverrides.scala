@@ -481,15 +481,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n$plan")
         }
-        // filter out the output expressions since those are not GPU expressions
-        val planOutput = plan.output.toSet
-        // avoid checking expressions of GpuFileSourceScanExec since all expressions are
-        // processed by driver and not run on GPU.
-        if (!plan.isInstanceOf[GpuFileSourceScanExec]) {
-          plan.expressions.filter(_ match {
-            case a: Attribute => !planOutput.contains(a)
-            case _ => true
-          }).foreach(assertIsOnTheGpu(_, conf))
+        // Check child expressions if this is a GPU node
+        plan match {
+          case gpuExec: GpuExec =>
+            // filter out the output expressions since those are not GPU expressions
+            val planOutput = gpuExec.output.toSet
+            gpuExec.gpuExpressions.filter(_ match {
+                case a: Attribute => !planOutput.contains(a)
+                case _ => true
+            }).foreach(assertIsOnTheGpu(_, conf))
+          case _ =>
         }
     }
     plan.children.foreach(assertIsOnTheGpu(_, conf))

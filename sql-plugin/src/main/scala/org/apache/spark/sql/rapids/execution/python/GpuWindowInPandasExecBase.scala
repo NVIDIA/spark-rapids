@@ -188,6 +188,8 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
   // project the output from joined batch, you should close the joined batch if no longer needed.
   def projectResult(joinedBatch: ColumnarBatch): ColumnarBatch
 
+  override def gpuExpressions: Seq[Expression] = windowExpression ++ gpuPartitionSpec
+
   override def requiredChildDistribution: Seq[Distribution] = {
     if (cpuPartitionSpec.isEmpty) {
       // Only show warning when the number of bytes is larger than 100 MiB?
