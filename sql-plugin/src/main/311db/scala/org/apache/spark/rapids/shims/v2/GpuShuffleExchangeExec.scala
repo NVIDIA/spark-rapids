@@ -17,6 +17,8 @@ package org.apache.spark.sql.rapids.shims.v2
 
 import scala.concurrent.Future
 
+import com.nvidia.spark.rapids.GpuPartitioning
+
 import org.apache.spark.MapOutputStatistics
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
@@ -26,10 +28,15 @@ import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrig
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
 
 case class GpuShuffleExchangeExec(
-    override val outputPartitioning: Partitioning,
+    gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)
-  extends GpuShuffleExchangeExecBase(outputPartitioning, child) with ShuffleExchangeLike {
+    shuffleOrigin: ShuffleOrigin)(
+    cpuOutputPartitioning: Partitioning)
+  extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child) with ShuffleExchangeLike {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
+
+  override val outputPartitioning: Partitioning = cpuOutputPartitioning
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
   override def doMapOutputStatisticsFuture: Future[MapOutputStatistics] = {

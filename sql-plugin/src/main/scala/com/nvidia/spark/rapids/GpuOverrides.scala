@@ -3420,16 +3420,20 @@ object GpuOverrides extends Logging {
             if (takeExec.child.outputPartitioning.numPartitions == 1) {
               GpuTopN(takeExec.limit, so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                childPlans.head.convertIfNeeded())
+                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
             } else {
-              GpuTopN(takeExec.limit,
+              GpuTopN(
+                takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-                  GpuTopN(takeExec.limit,
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+                  GpuSinglePartitioning,
+                  GpuTopN(
+                    takeExec.limit,
                     so,
                     takeExec.child.output,
-                    childPlans.head.convertIfNeeded())))
+                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+                  SinglePartition))(takeExec.sortOrder)
             }
           }
         }),
