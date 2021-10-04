@@ -1987,13 +1987,15 @@ object GpuOverrides extends Logging {
     expr[Divide](
       "Division",
       ExprChecks.binaryProject(
-        TypeSig.DOUBLE +
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL +
             TypeSig.psNote(TypeEnum.DECIMAL,
               "Because of Spark's inner workings the full range of decimal precision " +
-                  "(even for 64-bit values) is not supported."),
+                  "(even for 128-bit values) is not supported."),
         TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_64, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL),
-        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_64, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL)),
+        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+            TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL),
+        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+            TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL)),
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // Division of Decimal types is a little odd. Spark will cast the inputs
@@ -2016,40 +2018,18 @@ object GpuOverrides extends Logging {
           val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val outputType = GpuDivideUtil.decimalDataType(l, r)
-              // Case 1: OutputType.precision doesn't get truncated
-              //   We will never hit a case where outputType.precision < outputType.scale + r.scale.
-              //   So there is no need to protect against that.
-              //   The only two cases in which there is a possibility of the intermediary scale
-              //   exceeding the intermediary precision is when l.precision < l.scale or l
-              //   .precision < 0, both of which aren't possible.
-              //   Proof:
-              //   case 1:
-              //   outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
-              //   outputType.scale = p1 + s2 + p2 + 1 + 1
-              //   To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
-              //   which is never possible
-              //
-              //   case 2:
-              //   outputType.precision = p1 - s1 + s2 + 6 + 1
-              //   outputType.scale = 6 + 1
-              //   To find out if outputType.precision < outputType.scale simplifies to p1 < 0
-              //   which is never possible
-              // Case 2: OutputType.precision gets truncated to 38
-              //   In this case we have to make sure the r.precision + l.scale + r.scale + 1 <= 38
-              //   Otherwise the intermediate result will overflow
-              // TODO We should revisit the proof one more time after we support 128-bit decimals
-              if (l.precision + l.scale + r.scale + 1 > 38) {
+              val outputScale = GpuDivideUtil.outputDecimalScale(l, r)
+              val outputPrecision = GpuDivideUtil.outputDecimalPrecision(l, r, outputScale)
+              if (outputPrecision > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu("The final output precision of the divide is too " +
+                    s"large to be supported on the GPU $outputPrecision")
+              }
+              val intermediatePrecision =
+                GpuDivideUtil.intermediateDecimalPrecision(l, r, outputScale)
+
+              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu("The intermediate output precision of the divide is too " +
-                  s"large to be supported on the GPU i.e. Decimal(${outputType.precision}, " +
-                  s"${outputType.scale + r.scale})")
-              } else {
-                val intermediateResult =
-                  DecimalType(outputType.precision, outputType.scale + r.scale)
-                if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
-                  willNotWorkOnGpu("The actual output precision of the divide is too large" +
-                    s" to fit on the GPU $intermediateResult")
-                }
+                  s"large to be supported on the GPU $intermediatePrecision")
               }
             case _ => // NOOP
           }

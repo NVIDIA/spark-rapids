@@ -134,9 +134,7 @@ def test_multiplication_mixed(lhs, rhs):
             conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_neg_scale, DecimalGen(6, 3),
- DecimalGen(5, 5), DecimalGen(6, 0),
-pytest.param(DecimalGen(38, 21), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU", raises=IllegalArgumentException)),
-pytest.param(DecimalGen(21, 17), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU", raises=IllegalArgumentException))], ids=idfn)
+ DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4)], ids=idfn)
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -147,6 +145,14 @@ def test_division(data_gen):
                 f.col('b') / f.lit(None).cast(data_type),
                 f.col('a') / f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
+
+@allow_non_gpu('ProjectExec', 'Alias', 'Divide', 'Cast', 'PromotePrecision', 'CheckOverflow')
+@pytest.mark.parametrize('data_gen', [DecimalGen(38, 21), DecimalGen(21, 17)], ids=idfn)
+def test_division_fallback_on_decimal(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a') / f.col('b')),
+            'Divide')
 
 @pytest.mark.parametrize('lhs', [DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2)], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(4, 1)], ids=idfn)
