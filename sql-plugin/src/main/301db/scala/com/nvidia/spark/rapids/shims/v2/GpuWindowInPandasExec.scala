@@ -29,9 +29,12 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  */
 case class GpuWindowInPandasExec(
     projectList: Seq[Expression],
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan) extends GpuWindowInPandasExecBase {
+    gpuPartitionSpec: Seq[Expression],
+    cpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression]) extends GpuWindowInPandasExecBase {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: Nil
 
   override final def pythonModuleKey: String = "databricks"
 
