@@ -134,7 +134,8 @@ def test_multiplication_mixed(lhs, rhs):
             conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_neg_scale, DecimalGen(6, 3),
- DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4)], ids=idfn)
+ DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4), DecimalGen(15, 0), DecimalGen(18, 0), 
+ DecimalGen(17, 2), DecimalGen(16, 4)], ids=idfn)
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(

@@ -171,7 +171,7 @@ class StringGen(DataGen):
     def start(self, rand):
         strs = self.base_strs
         try:
-            length = int(len(strs))
+            length = int(strs.length)
         except OverflowError:
             length = _MAX_CHOICES
         self._start(rand, lambda : strs[rand.randrange(0, length)])
@@ -235,7 +235,7 @@ class DecimalGen(DataGen):
     def start(self, rand):
         strs = self.base_strs
         try:
-            length = int(len(strs))
+            length = int(strs.length)
         except OverflowError:
             length = _MAX_CHOICES
         self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
