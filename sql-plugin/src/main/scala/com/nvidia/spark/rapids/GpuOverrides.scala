@@ -2042,8 +2042,8 @@ object GpuOverrides extends Logging {
       "Division with a integer result",
       ExprChecks.binaryProject(
         TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_64, TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
-        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_64, TypeSig.LONG + TypeSig.DECIMAL_128_FULL)),
+        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128_FULL, TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
+        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128_FULL, TypeSig.LONG + TypeSig.DECIMAL_128_FULL)),
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)

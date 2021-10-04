@@ -163,7 +163,8 @@ def test_division_mixed(lhs, rhs):
             conf=allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', integral_gens +  [decimal_gen_default, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision, decimal_gen_64bit], ids=idfn)
+        decimal_gen_same_scale_precision, decimal_gen_64bit, decimal_gen_18_3, decimal_gen_30_2,
+        decimal_gen_36_5, decimal_gen_38_0], ids=idfn)
 def test_int_division(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -174,8 +175,8 @@ def test_int_division(data_gen):
                 'b DIV cast(null as {})'.format(string_type),
                 'a DIV b'))
 
-@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3)], ids=idfn)
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2), decimal_gen_30_2], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3), decimal_gen_38_0, decimal_gen_36_neg5], ids=idfn)
 def test_int_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).selectExpr(
