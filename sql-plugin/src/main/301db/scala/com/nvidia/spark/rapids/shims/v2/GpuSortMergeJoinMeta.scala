@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,7 +86,9 @@ class GpuSortMergeJoinMeta(
       None,
       left,
       right,
-      join.isSkewJoin)
+      join.isSkewJoin)(
+      join.leftKeys,
+      join.rightKeys)
     // The GPU does not yet support conditional joins, so conditions are implemented
     // as a filter after the join when possible.
     condition.map {

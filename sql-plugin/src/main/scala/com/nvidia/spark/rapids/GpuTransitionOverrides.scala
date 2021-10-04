@@ -24,7 +24,8 @@ import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, NamedExpression, Projection, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
@@ -395,14 +396,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (rapidsConf.enableHashOptimizeSort) {
       // Insert a sort after the last hash-based op before the query result if there are no
       // intermediate nodes that have a specified sort order. This helps with the size of
-      // Parquet and Orc files
+      // Parquet and ORC files.
+      // Note that this is using a GPU SortOrder expression as the CPU SortOrder which should
+      // normally be avoided. However since we have checked that no node later in the plan
+      // needs a particular sort order, it should not be a problem in practice that would
+      // trigger a redundant sort in the plan.
       plan match {
         case _: GpuHashJoin =>
-          val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          val gpuSortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
         case _: GpuHashAggregateExec =>
-          val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          val gpuSortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
@@ -429,11 +434,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     // There are no GpuAttributeReference or GpuSortOrder
-    if (!exp.isInstanceOf[AttributeReference] &&
-        !exp.isInstanceOf[SortOrder] &&
-        !exp.isInstanceOf[GpuExpression] &&
-      !conf.testingAllowedNonGpu.contains(PlanUtils.getBaseNameFromClass(exp.getClass.toString))) {
-      throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
+    exp match {
+      case _: AttributeReference | _: SortOrder | _: GpuExpression =>
+      case _ =>
+        val classBaseName = PlanUtils.getBaseNameFromClass(exp.getClass.toString)
+        if (!conf.testingAllowedNonGpu.contains(classBaseName)) {
+          throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
+        }
     }
     exp.children.foreach(subExp => assertIsOnTheGpu(subExp, conf))
   }
@@ -474,15 +481,16 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n$plan")
         }
-        // filter out the output expressions since those are not GPU expressions
-        val planOutput = plan.output.toSet
-        // avoid checking expressions of GpuFileSourceScanExec since all expressions are
-        // processed by driver and not run on GPU.
-        if (!plan.isInstanceOf[GpuFileSourceScanExec]) {
-          plan.expressions.filter(_ match {
-            case a: Attribute => !planOutput.contains(a)
-            case _ => true
-          }).foreach(assertIsOnTheGpu(_, conf))
+        // Check child expressions if this is a GPU node
+        plan match {
+          case gpuExec: GpuExec =>
+            // filter out the output expressions since those are not GPU expressions
+            val planOutput = gpuExec.output.toSet
+            gpuExec.gpuExpressions.filter(_ match {
+                case a: Attribute => !planOutput.contains(a)
+                case _ => true
+            }).foreach(assertIsOnTheGpu(_, conf))
+          case _ =>
         }
     }
     plan.children.foreach(assertIsOnTheGpu(_, conf))
