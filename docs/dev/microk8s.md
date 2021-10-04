@@ -1,3 +1,10 @@
+---
+layout: page
+title: Setting up a Microk8s Environment
+nav_order: 5
+parent: Developer Overview
+---
+
 # Setting up a Microk8s environment
 
 [Microk8s](https://microk8s.io/) is a lightweight Kubernetes distribution that is suitable for setting up a local
