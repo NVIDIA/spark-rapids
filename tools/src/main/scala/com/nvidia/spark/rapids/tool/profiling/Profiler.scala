@@ -20,6 +20,7 @@ import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecuto
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap}
+import scala.util.control.NonFatal
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
@@ -106,6 +107,20 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
   }
 
+  private def errorHandler(error: Throwable, path: EventLogInfo) = {
+    error match {
+      case oom: OutOfMemoryError =>
+        logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
+            s" Increase heap size. Exiting ...", oom)
+        sys.exit(1)
+      case NonFatal(e) =>
+        logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
+      case o =>
+        logError(s"Error occurred while processing file: ${path.eventLog.toString}. Exiting ...", o)
+        sys.exit(1)
+    }
+  }
+
   private def createApps(allPaths: Seq[EventLogInfo]): Seq[ApplicationInfo] = {
     var errorCodes = ArrayBuffer[Int]()
     val allApps = new ConcurrentLinkedQueue[ApplicationInfo]()
@@ -116,15 +131,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           val appOpt = createApp(path, numOutputRows, index, hadoopConf)
           appOpt.foreach(app => allApps.add(app))
         } catch {
-          case oom: OutOfMemoryError =>
-            logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
-                s"Increase heap size.", oom)
-            System.exit(1)
-          case o: Error =>
-            logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
-            System.exit(1)
-          case e: Exception =>
-            logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
+          case t: Throwable => errorHandler(t, path)
         }
       }
     }
@@ -171,15 +178,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
             sum.foreach(allApps.add(_))
           }
         } catch {
-          case oom: OutOfMemoryError =>
-            logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
-                s"Increase heap size.", oom)
-            System.exit(1)
-          case o: Error =>
-            logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
-            System.exit(1)
-          case e: Exception =>
-            logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
+          case t: Throwable => errorHandler(t, path)
         }
       }
     }
@@ -227,15 +226,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
               logInfo("No application to process. Exiting")
           }
         } catch {
-          case oom: OutOfMemoryError =>
-            logError(s"OOM error while processing large file: ${path.eventLog.toString}." +
-                s"Increase heap size.", oom)
-            System.exit(1)
-          case o: Error =>
-            logError(s"Error occured while processing file: ${path.eventLog.toString}", o)
-            System.exit(1)
-          case e: Exception =>
-            logWarning(s"Exception occurred processing file: ${path.eventLog.getName}", e)
+          case t: Throwable => errorHandler(t, path)
         }
       }
     }
