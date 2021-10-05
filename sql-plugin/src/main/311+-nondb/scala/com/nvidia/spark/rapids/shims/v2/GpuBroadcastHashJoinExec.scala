@@ -85,9 +85,7 @@ class GpuBroadcastHashJoinMeta(
       left, right)
     // The GPU does not yet support conditional joins, so conditions are implemented
     // as a filter after the join when possible.
-    condition.map {
-      c => GpuFilterExec(c.convertToGpu(), joinExec, coalesceAfter = false)
-    }.getOrElse(joinExec)
+    condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
   }
 }
 

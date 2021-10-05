@@ -122,6 +122,12 @@ class GpuBroadcastNestedLoopJoinMeta(
     } else {
       // condition cannot be implemented via AST so fallback to a post-filter if necessary
       condition.map {
+        // TODO: Restore batch coalescing logic here.
+        // Avoid requesting a post-filter-coalesce here, as we've seen poor performance with
+        // the cross join microbenchmark. This is a short-term hack for the benchmark, and
+        // ultimately this should be solved with the resolution of one or more of the following:
+        // https://github.com/NVIDIA/spark-rapids/issues/3749
+        // https://github.com/NVIDIA/spark-rapids/issues/3750
         c => GpuFilterExec(c, joinExec, coalesceAfter = false)
       }.getOrElse(joinExec)
     }
