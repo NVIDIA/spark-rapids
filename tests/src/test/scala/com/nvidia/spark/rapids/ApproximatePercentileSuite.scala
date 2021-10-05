@@ -226,7 +226,7 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   private def salariesWithNull(spark: SparkSession): DataFrame = {
     import spark.implicits._
-    Seq(("a", null), ("b", "123456.78")).toDF("dept", "x")
+    Seq(("a", null), ("b", null),  ("b", "123456.78")).toDF("dept", "x")
       .withColumn("salary", expr("CAST(x AS double)"))
       .drop("x")
       .repartition(2)
