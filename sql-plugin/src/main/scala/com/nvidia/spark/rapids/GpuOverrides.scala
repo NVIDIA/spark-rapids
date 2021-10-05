@@ -1211,7 +1211,7 @@ object GpuOverrides extends Logging {
       "Checks if a value is not null",
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+            TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
@@ -1240,7 +1240,7 @@ object GpuOverrides extends Logging {
       "Checks if number of non null/Nan values is greater than a given value",
       ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP +
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[AtLeastNNonNulls](a, conf, p, r) {
@@ -3479,7 +3479,7 @@ object GpuOverrides extends Logging {
     exec[FilterExec](
       "The backend for most filter statements",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
