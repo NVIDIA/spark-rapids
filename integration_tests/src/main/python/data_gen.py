@@ -171,7 +171,7 @@ class StringGen(DataGen):
     def start(self, rand):
         strs = self.base_strs
         try:
-            length = int(len(strs))
+            length = int(strs.length)
         except OverflowError:
             length = _MAX_CHOICES
         self._start(rand, lambda : strs[rand.randrange(0, length)])
@@ -235,7 +235,7 @@ class DecimalGen(DataGen):
     def start(self, rand):
         strs = self.base_strs
         try:
-            length = int(len(strs))
+            length = int(strs.length)
         except OverflowError:
             length = _MAX_CHOICES
         self._start(rand, lambda : Decimal(strs[rand.randrange(0, length)]))
@@ -741,6 +741,11 @@ def idfn(val):
     """Provide an API to provide display names for data type generators."""
     return str(val)
 
+def meta_idfn(meta):
+    def tmp(something):
+        return meta + idfn(something)
+    return tmp
+
 def three_col_df(spark, a_gen, b_gen, c_gen, length=2048, seed=0, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen),('c', c_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
@@ -845,7 +850,16 @@ decimal_gen_neg_scale = DecimalGen(precision=7, scale=-3)
 decimal_gen_scale_precision = DecimalGen(precision=7, scale=3)
 decimal_gen_same_scale_precision = DecimalGen(precision=7, scale=7)
 decimal_gen_64bit = DecimalGen(precision=12, scale=2)
+decimal_gen_12_2 = DecimalGen(precision=12, scale=2)
+decimal_gen_18_3 = DecimalGen(precision=18, scale=3)
 decimal_gen_128bit = DecimalGen(precision=20, scale=2)
+decimal_gen_20_2 = DecimalGen(precision=20, scale=2)
+decimal_gen_30_2 = DecimalGen(precision=30, scale=2)
+decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
+decimal_gen_36_neg5 = DecimalGen(precision=36, scale=-5)
+decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
+decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
+decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
 null_gen = NullGen()
 
@@ -861,6 +875,9 @@ decimal_gens_no_neg = [decimal_gen_default, decimal_gen_scale_precision,
         decimal_gen_same_scale_precision, decimal_gen_64bit]
 
 decimal_gens = [decimal_gen_neg_scale] + decimal_gens_no_neg
+
+decimal_128_gens = [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_36_neg5,
+        decimal_gen_38_0, decimal_gen_38_10, decimal_gen_38_neg10]
 
 # all of the basic gens
 all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
