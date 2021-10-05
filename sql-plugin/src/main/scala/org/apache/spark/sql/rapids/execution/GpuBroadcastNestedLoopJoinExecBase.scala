@@ -93,7 +93,13 @@ class GpuBroadcastNestedLoopJoinMeta(
     verifyBuildSideWasReplaced(buildSide)
 
     val condition = conditionMeta.map(_.convertToGpu())
-    val isAstCondition = conditionMeta.forall(_.canThisBeAst)
+    val isAstCondition = join.joinType match {
+      case _: InnerLike =>
+        // It appears to be faster to manifest the full cross join and post-filter than
+        // evaluate the AST during the join.
+        false
+      case _ => conditionMeta.forall(_.canThisBeAst)
+    }
     join.joinType match {
       case _: InnerLike =>
       case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
@@ -115,7 +121,15 @@ class GpuBroadcastNestedLoopJoinMeta(
       joinExec
     } else {
       // condition cannot be implemented via AST so fallback to a post-filter if necessary
-      condition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
+      condition.map {
+        // TODO: Restore batch coalescing logic here.
+        // Avoid requesting a post-filter-coalesce here, as we've seen poor performance with
+        // the cross join microbenchmark. This is a short-term hack for the benchmark, and
+        // ultimately this should be solved with the resolution of one or more of the following:
+        // https://github.com/NVIDIA/spark-rapids/issues/3749
+        // https://github.com/NVIDIA/spark-rapids/issues/3750
+        c => GpuFilterExec(c, joinExec, coalesceAfter = false)
+      }.getOrElse(joinExec)
     }
   }
 }
