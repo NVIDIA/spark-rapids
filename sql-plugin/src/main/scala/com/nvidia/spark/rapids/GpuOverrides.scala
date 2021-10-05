@@ -3560,6 +3560,12 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   }
 }
 
+object GpuExplainPlan {
+  def apply(df: DataFrame, disableAQE: Boolean = false) :SparkPlan = {
+    ShimLoader.newGpuOverrides().asInstanceOf[GpuOverrides].explainPotentialGPUPlan(df, disableAQE)
+  }
+}
+
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // only run the explain and don't actually convert or run on GPU
