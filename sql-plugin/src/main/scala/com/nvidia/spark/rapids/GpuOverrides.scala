@@ -3560,7 +3560,7 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   }
 }
 
-object GpuExplainPlan {
+object ExplainPlan {
   def apply(df: DataFrame, disableAQE: Boolean = false): String = {
     ShimLoader.newGpuOverrides().asInstanceOf[GpuOverrides].explainPotentialGPUPlan(df, disableAQE)
   }

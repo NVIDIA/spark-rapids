@@ -7,7 +7,7 @@ com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
-com/nvidia/spark/rapids/GpuExplainPlan*
+com/nvidia/spark/rapids/ExplainPlan*
 com/nvidia/spark/rapids/GpuKryoRegistrator*
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
