@@ -20,9 +20,10 @@ import java.time.ZoneId
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.RapidsConf.TEST_CONF
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
@@ -3439,16 +3440,20 @@ object GpuOverrides extends Logging {
             if (takeExec.child.outputPartitioning.numPartitions == 1) {
               GpuTopN(takeExec.limit, so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                childPlans.head.convertIfNeeded())
+                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
             } else {
-              GpuTopN(takeExec.limit,
+              GpuTopN(
+                takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-                  GpuTopN(takeExec.limit,
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+                  GpuSinglePartitioning,
+                  GpuTopN(
+                    takeExec.limit,
                     so,
                     takeExec.child.output,
-                    childPlans.head.convertIfNeeded())))
+                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+                  SinglePartition))(takeExec.sortOrder)
             }
           }
         }),
@@ -3655,22 +3660,40 @@ object GpuOverrides extends Logging {
     "rapids.gpu.postColToRowProcessing")
 }
 
+// work around any GpuOverride failures
+object GpuOverrideUtil extends Logging {
+  def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
+    val planOriginal = plan.clone()
+    val failOnError = TEST_CONF.get(plan.conf)
+    try {
+      fn(plan)
+    } catch {
+      case NonFatal(t) if !failOnError =>
+        logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
+        planOriginal
+      case fatal =>
+        logError("Encountered an exception applying GPU overrides " + fatal, fatal)
+        throw fatal
+    }
+  }
+}
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
     GpuOverrides().apply(plan)
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
-  }
+  }(sparkPlan)
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(plan: SparkPlan): SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       GpuOverrides.logDuration(conf.shouldExplain,
@@ -3687,7 +3710,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else {
       plan
     }
-  }
+  }(sparkPlan)
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
