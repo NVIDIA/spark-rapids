@@ -19,11 +19,10 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
-import com.nvidia.spark.rapids.shims.v2.ShimSparkPlan
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, ExprId}
+import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -198,6 +197,14 @@ trait GpuExec extends SparkPlan with Arm {
   def sparkSession: SparkSession = {
     ShimLoader.getSparkShims.sessionFromPlan(this)
   }
+
+  /**
+   * Return the expressions for this plan node that should be GPU expressions.
+   * For most nodes this will be the same as the list of expressions, but some
+   * nodes use CPU expressions directly in some cases and will need to override this.
+   */
+  def gpuExpressions: Seq[Expression] = expressions
+
   /**
    * If true is returned batches after this will be coalesced.  This should
    * really be used in cases where it is known that the size of a batch may

@@ -928,8 +928,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 
   val agg: BaseAggregateExec
 
-  val requiredChildDistributionExpressions: Option[Seq[BaseExprMeta[_]]] =
-    aggRequiredChildDistributionExpressions.map(_.map(GpuOverrides.wrapExpr(_, conf, Some(this))))
   val groupingExpressions: Seq[BaseExprMeta[_]] =
     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val aggregateExpressions: Seq[BaseExprMeta[_]] =
@@ -940,11 +938,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     agg.resultExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] =
-    requiredChildDistributionExpressions.getOrElse(Seq.empty) ++
-        groupingExpressions ++
-        aggregateExpressions ++
-        aggregateAttributes ++
-        resultExpressions
+    groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 
   override def tagPlanForGpu(): Unit = {
     if (agg.resultExpressions.isEmpty) {
@@ -1036,7 +1030,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 
   override def convertToGpu(): GpuExec = {
     GpuHashAggregateExec(
-      requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
+      aggRequiredChildDistributionExpressions,
       groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
       aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
       aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
@@ -1117,7 +1111,7 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         case meta => meta
       }
       GpuHashAggregateExec(
-        requiredChildDistributionExpressions.map(_.map(_.convertToGpu())),
+        aggRequiredChildDistributionExpressions,
         groupingExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
         aggregateExpressions.map(_.convertToGpu().asInstanceOf[GpuAggregateExpression]),
         aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
@@ -1460,6 +1454,10 @@ case class GpuHashAggregateExec(
     SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
   ) ++ spillMetrics
 
+  // requiredChildDistributions are CPU expressions, so remove it from the GPU expressions list
+  override def gpuExpressions: Seq[Expression] =
+    groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
+
   override def verboseStringWithOperatorId(): String = {
     s"""
        |$formattedNodeName
@@ -1517,7 +1515,6 @@ case class GpuHashAggregateExec(
   final override def outputPartitioning: Partitioning = {
     if (hasAlias) {
       child.outputPartitioning match {
-        case h: GpuHashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
         case h: HashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
         case other => other
       }

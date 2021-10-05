@@ -28,7 +28,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute}
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RoundRobinPartitioning}
+import org.apache.spark.sql.catalyst.plans.physical.RoundRobinPartitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
@@ -113,6 +113,7 @@ class GpuShuffleMeta(
     ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
       childParts.head.convertToGpu(),
       childPlans.head.convertIfNeeded(),
+      shuffle.outputPartitioning,
       Some(shuffle))
 }
 
@@ -129,8 +130,8 @@ object GpuShuffleMeta {
  * Performs a shuffle that will result in the desired partitioning.
  */
 abstract class GpuShuffleExchangeExecBaseWithMetrics(
-    outputPartitioning: Partitioning,
-    child: SparkPlan) extends GpuShuffleExchangeExecBase(outputPartitioning, child) {
+    gpuOutputPartitioning: GpuPartitioning,
+    child: SparkPlan) extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child) {
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
   @transient lazy val mapOutputStatisticsFuture: Future[MapOutputStatistics] = {
@@ -146,12 +147,12 @@ abstract class GpuShuffleExchangeExecBaseWithMetrics(
  * Performs a shuffle that will result in the desired partitioning.
  */
 abstract class GpuShuffleExchangeExecBase(
-    override val outputPartitioning: Partitioning,
+    gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
   private lazy val useRapidsShuffle = {
-    outputPartitioning match {
+    gpuOutputPartitioning match {
       case gpuPartitioning: GpuPartitioning => gpuPartitioning.usesRapidsShuffle
       case _ => false
     }
@@ -203,7 +204,7 @@ abstract class GpuShuffleExchangeExecBase(
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,
-      outputPartitioning,
+      gpuOutputPartitioning,
       sparkTypes,
       serializer,
       useRapidsShuffle,
@@ -234,7 +235,7 @@ object GpuShuffleExchangeExecBase {
   def prepareBatchShuffleDependency(
       rdd: RDD[ColumnarBatch],
       outputAttributes: Seq[Attribute],
-      newPartitioning: Partitioning,
+      newPartitioning: GpuPartitioning,
       sparkTypes: Array[DataType],
       serializer: Serializer,
       useRapidsShuffle: Boolean,
@@ -346,7 +347,7 @@ object GpuShuffleExchangeExecBase {
   private def getPartitioner(
     rdd: RDD[ColumnarBatch],
     outputAttributes: Seq[Attribute],
-    newPartitioning: Partitioning): GpuExpression with GpuPartitioning = {
+    newPartitioning: GpuPartitioning): GpuExpression with GpuPartitioning = {
     newPartitioning match {
       case h: GpuHashPartitioning =>
         GpuBindReferences.bindReference(h, outputAttributes)
