@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.GpuOverrides.exec
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
@@ -3247,7 +3247,8 @@ object GpuOverrides extends Logging {
       parent: Option[RapidsMeta[_, _, _]]): SparkPlanMeta[INPUT]  =
     execs.get(plan.getClass)
       .map(r => r.wrap(plan, conf, parent, r).asInstanceOf[SparkPlanMeta[INPUT]])
-      .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
+      .getOrElse{
+        new RuleNotFoundSparkPlanMeta(plan, conf, parent)}
 
   val commonExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     exec[GenerateExec] (
@@ -3561,22 +3562,46 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
+  // only run the explain and don't actually convert or run on GPU
+  def explainPotentialGPUPlan(df: DataFrame, disableAQE: Boolean = false): Unit = {
+    val plan = df.queryExecution.executedPlan
+    val initConf = new RapidsConf(plan.conf)
+    val conf = if (!initConf.shouldExplain) {
+      // turn on explain to ALL mode if user hasn't set to what they want
+      plan.conf.setConfString(RapidsConf.EXPLAIN.key, "ALL")
+      // TODO - should we turn off AQE just for explain?
+      if (disableAQE) {
+        plan.conf.setConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED, false)
+      }
+      new RapidsConf(plan.conf)
+    } else {
+      initConf
+    }
+    
+    val updatedPlan = prepareExplainOnly(plan, conf)
+    logAndApply(updatedPlan, conf, true)
+  }
+
+  private def logAndApply(plan: SparkPlan, conf: RapidsConf, explainOnly: Boolean = false): SparkPlan = {
+    GpuOverrides.logDuration(conf.shouldExplain,
+      t => f"Plan conversion to the GPU took $t%.2f ms") {
+      val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
+        // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
+        // distribution expressions are not semantically equal.
+        GpuOverrides.removeExtraneousShuffles(plan, conf)
+      } else {
+        plan
+      }
+      applyOverrides(updatedPlan, conf, explainOnly)
+    }
+  }
+
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
   override def apply(plan: SparkPlan): SparkPlan = {
     val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled || conf.isSqlExplainOnlyEnabled) {
-      GpuOverrides.logDuration(conf.shouldExplain,
-        t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
-          // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
-          // distribution expressions are not semantically equal.
-          GpuOverrides.removeExtraneousShuffles(plan, conf)
-        } else {
-          plan
-        }
-        applyOverrides(updatedPlan, conf)
-      }
+    if (conf.isSqlEnabled) {
+      logAndApply(plan, conf)
     } else {
       plan
     }
@@ -3614,7 +3639,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
-  private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+  private def applyOverrides(inputPlan: SparkPlan, conf: RapidsConf, explainOnly: Boolean = false): SparkPlan = {
+    val plan = if (explainOnly) {
+      prepareExplainOnly(inputPlan, conf)
+    } else {
+      inputPlan
+    }
     val wrap = wrapAndTagPlan(plan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
@@ -3626,9 +3656,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else {
       val optimizations = getOptimizations(wrap, conf)
       wrap.runAfterTagRules()
-      logWarning("after tag rules")
       if (conf.shouldExplain) {
-        logWarning("in explain")
         wrap.tagForExplain()
         val explain = wrap.explain(conf.shouldExplainAll)
         if (explain.nonEmpty) {
@@ -3639,7 +3667,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
       }
 
-      if (conf.isSqlExplainOnlyEnabled) {
+      if (explainOnly) {
         // only run the plugin enough to explain what it would have replaced but don't actually
         // convert and run on GPU
         plan
@@ -3689,5 +3717,14 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       case operator: SparkPlan =>
         ensureOrdering(operator, conf)
     }
+  }
+
+  def prepareExplainOnly(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    // strip out InputAdapter/WholeStageCodegenExec
+    val planAfter = plan.transformUp {
+      case ia: InputAdapter => ia.child
+      case ws: WholeStageCodegenExec => ws.child
+    }
+    planAfter
   }
 }
