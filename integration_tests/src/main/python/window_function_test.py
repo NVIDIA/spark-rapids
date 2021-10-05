@@ -23,11 +23,6 @@ from pyspark.sql.window import Window
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_320
 
-def meta_idfn(meta):
-    def tmp(something):
-        return meta + idfn(something)
-    return tmp
-
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', IntegerGen()),

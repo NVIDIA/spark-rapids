@@ -20,14 +20,15 @@ import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
 import scala.collection.mutable.ArrayBuffer
+import scala.math.BigDecimal.RoundingMode
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.YearParseUtil
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.types._
 
@@ -1111,7 +1112,7 @@ object GpuCast extends Arm {
       // Rounding is essential when scale is negative,
       // so we apply HALF_UP rounding manually to keep align with CpuCast.
       withResource(input.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
-        scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+        scaleZero => scaleZero.round(dt.scale, cudf.RoundMode.HALF_UP)
       }
     } else if (dt.scale > 0) {
       // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
@@ -1161,7 +1162,7 @@ object GpuCast extends Arm {
     // step 2. cast FLOAT64 to container DECIMAL (who keeps one more digit for rounding)
     // step 3. perform HALF_UP rounding on container DECIMAL
     val checkedInput = withResource(input.castTo(DType.FLOAT64)) { double =>
-      val roundedDouble = double.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+      val roundedDouble = double.round(dt.scale, cudf.RoundMode.HALF_UP)
       withResource(roundedDouble) { rounded =>
         // We rely on containerDecimal to perform preciser rounding. So, we have to take extra
         // space cost of container into consideration when we run bound check.
@@ -1194,7 +1195,7 @@ object GpuCast extends Arm {
       } else {
         val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
-          container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+          container.round(dt.scale, cudf.RoundMode.HALF_UP)
         }
       }
       // Cast NaN values to nulls
@@ -1214,120 +1215,87 @@ object GpuCast extends Arm {
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {
 
-    val isFrom32Bit = DecimalType.is32BitDecimalType(from)
-    val isTo32Bit = DecimalType.is32BitDecimalType(to)
-    val cudfDecimal = DecimalUtil.createCudfDecimal(to.precision, to.scale)
+    val toDType = DecimalUtil.createCudfDecimal(to.precision, to.scale)
+    val fromDType = DecimalUtil.createCudfDecimal(from.precision, from.scale)
 
-    def castCheckedDecimal(checkedInput: ColumnView): ColumnVector = {
-      if (to.scale == from.scale) {
-        if (isFrom32Bit == isTo32Bit) {
-          // If the input is a ColumnVector already this will just inc the reference count
-          checkedInput.copyToColumnVector()
-        } else {
-          // the input is already checked, just cast it
-          checkedInput.castTo(cudfDecimal)
-        }
-      } else if (to.scale > from.scale) {
-        checkedInput.castTo(cudfDecimal)
-      } else {
-        withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
-          rounded => rounded.castTo(cudfDecimal)
-        }
-      }
-    }
-
-    if (to.scale <= from.scale) {
-      if (!isFrom32Bit && isTo32Bit) {
-        // check for overflow when 64bit => 32bit
-        withResource(checkForOverflow(input, to, isFrom32Bit, ansiMode)) { checkedInput =>
-          castCheckedDecimal(checkedInput)
-        }
-      } else {
-        if (to.scale < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
-          throw new IllegalStateException(s"Negative scale is not allowed: ${to.scale}. " +
-              s"You can use spark.sql.legacy.allowNegativeScaleOfDecimal=true " +
-              s"to enable legacy mode to allow it.")
-        }
-        castCheckedDecimal(input)
-      }
-    } else {
-      //  from.scale > to.scale
-      withResource(checkForOverflow(input, to, isFrom32Bit, ansiMode)) { checkedInput =>
-        castCheckedDecimal(checkedInput)
-      }
-    }
-  }
-
-  def checkForOverflow(
-      input: ColumnView,
-      to: DecimalType,
-      isFrom32Bit: Boolean,
-      ansiMode: Boolean): ColumnVector = {
-
+    val fromWholeNumPrecision = from.precision - from.scale
+    val toWholeNumPrecision = to.precision - to.scale
     // Decimal numbers in general terms have two parts, a part before decimal (whole number)
     // and a part after decimal (fractional number)
-    // When moving from a smaller scale to a bigger scale (or 32-bit to 64-bit), the target type is
-    // able to hold much more values on the fractional side which leaves less room for the whole
-    // number. In the following examples we have kept the precision constant to keep it simple.
-    //
-    // Ex:
-    //  999999.999 => from.scale = 3
-    //  9999.99999 => to.scale = 5
-    //
-    // In the above example the source can have a maximum of 4 digits for the whole number and
-    // 3 digits for fractional side. We are not worried about the fractional side as the target can
-    // hold more digits than the source can. What we need to make sure is the source
-    // doesn't have values that are bigger than the destination whole number side can hold.
-    // So we calculate the max number that should be in the input column before we can safely cast
-    // the values without overflowing. If we find values bigger, we handle it depending on if we
-    // are in ANSI mode or not.
-    //
-    // When moving from a bigger scale to a smaller scale (or 64-bit to 32-bit), the target type
-    // is able to have more digits on the whole number side but less on the fractional
-    // side. In this case all we need to do is round the value to the new scale. Only, in case we
-    // are moving from 64-bit to a 32-bit do we need to check for overflow
-    //
-    // Ex:
-    // 9999.99999 => from.scale = 5
-    // 999999.999 => to.scale = 3
-    //
-    // Here you can see the "to.scale" can hold less fractional values but more on the whole
-    // number side so overflow check is unnecessary when the bases are the same i.e. 32-bit to
-    // 32-bit and 64-bit to 64-bit. Only when we go from a 64-bit number to a 32-bit number in this
-    // case we need to check for overflow.
-    //
-    // Therefore the values of absMax and absMin will be calculated based on the absBoundPrecision
-    // value to make sure the source has values that don't exceed the upper and lower bounds
-    val absBoundPrecision = to.precision - to.scale
+    // If we are upcasting the whole number part there is no need to check for out of bound
+    // values.
+    val isWholeNumUpcast = fromWholeNumPrecision <= toWholeNumPrecision
+    // When upcasting the scale (fractional number) part there is no need for rounding.
+    val isScaleUpcast = from.scale <= to.scale
 
-    // When we support 128 bit Decimals we should add a check for that
-    // if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
-    // !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS)
-    if (isFrom32Bit && absBoundPrecision > Decimal.MAX_INT_DIGITS) {
-      return input.copyToColumnVector()
-    }
-    val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
-      val absBound = math.pow(10, absBoundPrecision).toLong
-      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
-    } else {
-      val absBound = math.pow(10, absBoundPrecision).toInt
-      (Scalar.fromDecimal(0, -absBound), Scalar.fromDecimal(0, absBound))
-    }
-    val checkedInput = if (ansiMode) {
-      assertValuesInRange(input,
-        minValue = minValueScalar,
-        maxValue = maxValueScalar,
-        inclusiveMin = false, inclusiveMax = false)
+    if (toDType == fromDType) {
+      // This can happen in some cases when the scale does not change but the precision does. To
+      // Spark they are different types, but CUDF sees them as the same, so no need to change
+      // anything.
+      // If the input is a ColumnVector already this will just inc the reference count
       input.copyToColumnVector()
     } else {
-      replaceOutOfRangeValues(input,
-        minValue = minValueScalar,
-        maxValue = maxValueScalar,
-        replaceValue = Scalar.fromNull(input.getType),
-        inclusiveMin = false, inclusiveMax = false)
-    }
+      val checked = if (!isWholeNumUpcast) {
+        // We need to check for out of bound values. We have to be careful because cudf can have
+        // problems when comparing values that have different precision/scale. So we start off by
+        // creating the maximum and minimum value that the toType can hold in the same
+        // precision/scale as the to type.
 
-    checkedInput
+        val boundStr = ("9" * to.precision) + "e" + (-to.scale)
+        val toUpperBound = BigDecimal(boundStr)
+        val toLowerBound = BigDecimal("-" + boundStr)
+
+        // Now we have to move these into the same precision/scale as from
+        // We round down (towards 0) so we can do a check for input > upperBound and
+        // input < lowerBound. Using an "or equal to" operator like <= would require us
+        // to do extra checks so we need to avoid them.
+        // This also lets us not worry about increasing the precision on accident when rounding
+        // up.
+        val upperBound = toUpperBound.setScale(from.scale, RoundingMode.DOWN)
+        val lowerBound = toLowerBound.setScale(from.scale, RoundingMode.DOWN)
+
+        val outOfBounds = withResource(GpuScalar.from(upperBound, from)) { ubScale =>
+          withResource(input.greaterThan(ubScale)) { over =>
+            withResource(GpuScalar.from(lowerBound, from)) { lbScale =>
+              withResource(input.lessThan(lbScale)) { under =>
+                over.or(under)
+              }
+            }
+          }
+        }
+        withResource(outOfBounds) { outOfBounds =>
+          if (ansiMode) {
+            withResource(outOfBounds.any()) { isAny =>
+              if (isAny.isValid && isAny.getBoolean) {
+                throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+              }
+            }
+            input.copyToColumnVector()
+          } else {
+            withResource(Scalar.fromNull(fromDType)) { nullVal =>
+              outOfBounds.ifElse(nullVal, input)
+            }
+          }
+        }
+      } else {
+        // This is just inc ref count for a ColumnVector
+        input.copyToColumnVector()
+      }
+
+      val rounded = withResource(checked) { checked =>
+        if (!isScaleUpcast) {
+          // We have to round the data to the desired scale. Spark uses HALF_UP rounding in
+          // this case so we need to also.
+          checked.round(to.scale, cudf.RoundMode.HALF_UP)
+        } else {
+          checked.incRefCount()
+        }
+      }
+
+      withResource(rounded) { rounded =>
+        rounded.castTo(toDType)
+      }
+    }
   }
 }
 
