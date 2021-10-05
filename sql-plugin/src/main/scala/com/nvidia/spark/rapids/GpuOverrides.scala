@@ -3248,6 +3248,7 @@ object GpuOverrides extends Logging {
     execs.get(plan.getClass)
       .map(r => r.wrap(plan, conf, parent, r).asInstanceOf[SparkPlanMeta[INPUT]])
       .getOrElse{
+        logWarning("wrapping plan get or else: " + plan)
         new RuleNotFoundSparkPlanMeta(plan, conf, parent)}
 
   val commonExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
@@ -3561,7 +3562,7 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
 }
 
 object ExplainPlan {
-  def apply(df: DataFrame, disableAQE: Boolean = false): String = {
+  def explainPotentialGPUPlan(df: DataFrame, disableAQE: Boolean = false): String = {
     ShimLoader.newGpuOverrides().asInstanceOf[GpuOverrides].explainPotentialGPUPlan(df, disableAQE)
   }
 }
@@ -3571,8 +3572,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   // only run the explain and don't actually convert or run on GPU
   def explainPotentialGPUPlan(df: DataFrame, disableAQE: Boolean = false): String = {
     val plan = df.queryExecution.executedPlan
+    logWarning("start plan is: " +  plan)
     val initConf = new RapidsConf(plan.conf)
-    // TODO - should we turn off AQE just for explain?
+    // if requested disable AQE to see what plan looks like
     val conf = if (disableAQE) {
       plan.conf.setConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED, false)
       new RapidsConf(plan.conf)
@@ -3580,7 +3582,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       initConf
     }
     val updatedPlan = prepareExplainOnly(plan, conf)
+    logWarning("updated plan is: " +  updatedPlan)
     val wrap = wrapAndTagPlan(updatedPlan, conf)
+    logWarning("after tag is: " +  wrap)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
         "Can't replace any part of this plan due to: " +
