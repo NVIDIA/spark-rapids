@@ -156,7 +156,7 @@ def test_coalesce_df(num_parts, length):
             lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts))
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
     pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
     pytest.param([('a', ArrayGen(string_gen))]),
     pytest.param([('m', simple_string_to_string_map_gen)]),
