@@ -3476,8 +3476,8 @@ object GpuOverrides extends Logging {
       }),
     exec[ShuffleExchangeExec](
       "The backend for most data being exchanged between processes",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-        TypeSig.STRUCT + TypeSig.MAP).nested()
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(TypeEnum.ARRAY, "Round-robin partitioning is not supported if " +
