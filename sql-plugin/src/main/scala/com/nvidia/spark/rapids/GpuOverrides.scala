@@ -1338,10 +1338,10 @@ object GpuOverrides extends Logging {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
-        (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+          (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1932,14 +1932,17 @@ object GpuOverrides extends Logging {
     expr[If](
       "IF expression",
       ExprChecks.projectOnly(
-        (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+        (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT +
+            TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
-            (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT +
+                TypeSig.MAP).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
-            (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT +
+                TypeSig.MAP).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
