@@ -3561,7 +3561,7 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
 }
 
 object GpuExplainPlan {
-  def apply(df: DataFrame, disableAQE: Boolean = false) :SparkPlan = {
+  def apply(df: DataFrame, disableAQE: Boolean = false): String = {
     ShimLoader.newGpuOverrides().asInstanceOf[GpuOverrides].explainPotentialGPUPlan(df, disableAQE)
   }
 }
