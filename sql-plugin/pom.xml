@@ -108,6 +108,13 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
+                        <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                    </exclusions>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>

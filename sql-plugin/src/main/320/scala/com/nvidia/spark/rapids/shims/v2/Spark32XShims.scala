@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AQEShuffleReadExec, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AQEShuffleReadExec, BroadcastQueryStageExec, QueryStageExec}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -96,6 +96,11 @@ trait Spark32XShims extends SparkShims {
 
   override final def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
+
+  override final def newBroadcastQueryStageExec(
+      old: BroadcastQueryStageExec,
+      newPlan: SparkPlan): BroadcastQueryStageExec =
+    BroadcastQueryStageExec(old.id, newPlan, old._canonicalized)
 
   override final def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the

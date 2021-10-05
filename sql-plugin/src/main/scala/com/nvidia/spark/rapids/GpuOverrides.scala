@@ -20,9 +20,10 @@ import java.time.ZoneId
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.RapidsConf.TEST_CONF
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
@@ -2683,13 +2684,14 @@ object GpuOverrides extends Logging {
       "Returns an array with the given elements",
       ExprChecks.projectOnly(
         TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
-            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
+            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("arg",
           TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
-              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP +
+              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
               TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
-                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
+                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
+                  TypeSig.ARRAY),
           TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
 
@@ -3079,10 +3081,11 @@ object GpuOverrides extends Logging {
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
-          TypeSig.all))),
+        Seq(ParamCheck("input", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          TypeSig.STRUCT).nested(), TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
@@ -3420,16 +3423,20 @@ object GpuOverrides extends Logging {
             if (takeExec.child.outputPartitioning.numPartitions == 1) {
               GpuTopN(takeExec.limit, so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                childPlans.head.convertIfNeeded())
+                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
             } else {
-              GpuTopN(takeExec.limit,
+              GpuTopN(
+                takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-                  GpuTopN(takeExec.limit,
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+                  GpuSinglePartitioning,
+                  GpuTopN(
+                    takeExec.limit,
                     so,
                     takeExec.child.output,
-                    childPlans.head.convertIfNeeded())))
+                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+                  SinglePartition))(takeExec.sortOrder)
             }
           }
         }),
@@ -3638,22 +3645,40 @@ object GpuOverrides extends Logging {
     "rapids.gpu.postColToRowProcessing")
 }
 
+// work around any GpuOverride failures
+object GpuOverrideUtil extends Logging {
+  def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
+    val planOriginal = plan.clone()
+    val failOnError = TEST_CONF.get(plan.conf)
+    try {
+      fn(plan)
+    } catch {
+      case NonFatal(t) if !failOnError =>
+        logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
+        planOriginal
+      case fatal =>
+        logError("Encountered an exception applying GPU overrides " + fatal, fatal)
+        throw fatal
+    }
+  }
+}
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
     GpuOverrides().apply(plan)
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
-  }
+  }(sparkPlan)
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(plan: SparkPlan): SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       GpuOverrides.logDuration(conf.shouldExplain,
@@ -3670,7 +3695,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else {
       plan
     }
-  }
+  }(sparkPlan)
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
@@ -3688,7 +3713,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
         val optimizer = try {
-          Class.forName(conf.optimizerClassName).newInstance().asInstanceOf[Optimizer]
+          ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
         } catch {
           case e: Exception =>
             throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)

@@ -54,7 +54,7 @@ import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.rapids._
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
 import org.apache.spark.sql.rapids.shims.v2.{GpuColumnarToRowTransitionExec, GpuInMemoryTableScanExec, GpuSchemaUtils, HadoopFSUtilsShim}
@@ -98,12 +98,6 @@ abstract class SparkBaseShims extends Spark31XShims {
       condition: Option[Expression],
       targetSizeBytes: Long): GpuBroadcastNestedLoopJoinExecBase = {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
-  }
-
-  override def getGpuBroadcastExchangeExec(
-      mode: BroadcastMode,
-      child: SparkPlan): GpuBroadcastExchangeExecBase = {
-    GpuBroadcastExchangeExec(mode, child)
   }
 
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
@@ -391,9 +385,10 @@ abstract class SparkBaseShims extends Spark31XShims {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),
               partitionSpec.map(_.convertToGpu()),
-              orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
+              // leave ordering expression on the CPU, it's not used for GPU computation
+              winPy.orderSpec,
               childPlans.head.convertIfNeeded()
-            )
+            )(winPy.partitionSpec)
           }
         }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[FileSourceScanExec](
@@ -444,6 +439,11 @@ abstract class SparkBaseShims extends Spark31XShims {
             if (!scan.relation.cacheBuilder.serializer
                 .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+              if (SQLConf.get.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+                  .equals("com.nvidia.spark.ParquetCachedBatchSerializer")) {
+                throw new IllegalStateException("Cache serializer failed to load! " +
+                    "Something went wrong while loading ParquetCachedBatchSerializer class")
+              }
             }
           }
 
@@ -636,7 +636,7 @@ abstract class SparkBaseShims extends Spark31XShims {
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = Class.forName(serName)
+    val serClass = ShimLoader.loadClass(serName)
     if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
       GpuColumnarToRowTransitionExec(plan)
     } else {
@@ -652,11 +652,12 @@ abstract class SparkBaseShims extends Spark31XShims {
   }
 
   override def getGpuShuffleExchangeExec(
-      outputPartitioning: Partitioning,
+      gpuOutputPartitioning: GpuPartitioning,
       child: SparkPlan,
+      cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
     val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
-    GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
+    GpuShuffleExchangeExec(gpuOutputPartitioning, child, shuffleOrigin)(cpuOutputPartitioning)
   }
 
   override def getGpuShuffleExchangeExec(
