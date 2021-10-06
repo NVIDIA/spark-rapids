@@ -877,7 +877,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("cast string to decimal") {
     List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale,
+      testCastToDecimal(DataTypes.StringType, scale, precision = 18,
         customRandGenerator = Some(new scala.util.Random(1234L)))
     }
   }
@@ -888,8 +888,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val df2 = doublesAsStrings(ss).select(col("c0").as("col"))
       df1.unionAll(df2)
     }
-    List(-10, -1, 0, 1, 10).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale = scale,
+    List(-1, 0).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 18,
         customDataGenerator = Some(doubleStrings))
     }
   }
@@ -899,15 +899,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
       import ss.sqlContext.implicits._
       column.toDF("col")
     }
-    testCastToDecimal(DataTypes.StringType, scale = 7,
+    testCastToDecimal(DataTypes.StringType, scale = 7, precision = 18,
       customDataGenerator = Some(specialGenerator(Seq("9999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = 2,
+    testCastToDecimal(DataTypes.StringType, scale = 2, precision = 18,
       customDataGenerator = Some(specialGenerator(Seq("999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = 0,
+    testCastToDecimal(DataTypes.StringType, scale = 0, precision = 18,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -1,
+    testCastToDecimal(DataTypes.StringType, scale = -1, precision = 18,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -10,
+    testCastToDecimal(DataTypes.StringType, scale = -10, precision = 18,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
   }
 
@@ -916,7 +916,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       exponentsAsStringsDf(ss).select(col("c0").as("col"))
     }
     List(-10, -1, 0, 1, 10).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale = scale,
+      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 18,
         customDataGenerator = Some(exponentsAsStrings),
         ansiEnabled = true)
     }
@@ -969,7 +969,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
   protected def testCastToDecimal(
     dataType: DataType,
     scale: Int,
-    precision: Int = ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION,
+    precision: Int = ai.rapids.cudf.DType.DECIMAL128_MAX_PRECISION,
     maxFloatDiff: Double = 1e-9,
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
@@ -985,6 +985,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+        .set(RapidsConf.EXPLAIN.key, "ALL")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)
@@ -994,10 +995,18 @@ class CastOpSuite extends GpuExpressionTestSuite {
         generateCastToDecimalDataFrame(dataType, precision - scale, rnd, 500)
       }
       val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
-      withCpuSparkSession(spark => generator(spark).write.parquet(path), conf)
+      withCpuSparkSession(spark => {
+        val frame = generator(spark)
+        println("KUHU right before collect")
+        System.err.println("KUHU right before collect")
+        frame.show()
+        frame.write.parquet(path)
+      }, conf)
 
       val createDF = (ss: SparkSession) => ss.read.parquet(path)
       val decType = DataTypes.createDecimalType(precision, scale)
+      println(s"KUHU decType=${decType}")
+      println(s"KUHU data_type=${dataType}")
       val execFun = (df: DataFrame) => {
         df.withColumn("col2", col("col").cast(decType))
       }

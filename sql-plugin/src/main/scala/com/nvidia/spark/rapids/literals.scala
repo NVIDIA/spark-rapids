@@ -248,6 +248,7 @@ object GpuScalar extends Arm with Logging {
     case decType: DecimalType =>
       val dec = v match {
         case de: Decimal => de
+        case vs: Short => Decimal(vs)
         case vi: Int => Decimal(vi)
         case vl: Long => Decimal(vl)
         case vd: Double => Decimal(vd)

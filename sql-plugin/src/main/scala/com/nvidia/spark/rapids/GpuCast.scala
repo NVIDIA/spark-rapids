@@ -96,17 +96,24 @@ class CastExprMeta[INPUT <: CastBase](
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
-      case (_: StringType, _: DecimalType) if !conf.isCastStringToDecimalEnabled =>
-        // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
-        willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
+      case (_: StringType, dt: DecimalType) => {
+        println("KUHU STRING TO DECIMAL")
+        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+          willNotWorkOnGpu("String to Decimal with precision > 18 is unsupported")
+        }
+        if (!conf.isCastStringToDecimalEnabled) {
+          // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
+          willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
             "results which slightly differed from the correct results when the string represents " +
             "any number exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For " +
-            "instance, the GPU returns 99999999999999987 when given the input string " +
+            "instance, the GPU returns 99999999999999987 given input string " +
             "\"99999999999999999\". The cause of divergence is that we can not cast strings " +
             "containing scientific notation to decimal directly. So, we have to cast strings " +
             "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
             "precision loss. To enable this operation on the GPU, set " +
             s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
+        }
+      }
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
           recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
@@ -1108,13 +1115,17 @@ object GpuCast extends Arm {
   }
 
   private def castIntegralsToDecimalAfterCheck(input: ColumnView, dt: DecimalType): ColumnVector = {
+    println("KUHU scale in castIntegralsToDecimalAfterCheck" + dt.scale +  " precision =" + dt.precision)
+    println("KUHU input scale in castIntegralsToDecimalAfterCheck" + input.getType.getScale)
     if (dt.scale < 0) {
       // Rounding is essential when scale is negative,
       // so we apply HALF_UP rounding manually to keep align with CpuCast.
       withResource(input.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
+            println("KUHU CAST HALF UP!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         scaleZero => scaleZero.round(dt.scale, cudf.RoundMode.HALF_UP)
       }
     } else if (dt.scale > 0) {
+      //TODO fix me
       // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
       // before casting it to decimal in case of overflow.
       withResource(input.castTo(DType.INT64)) { long =>
@@ -1125,27 +1136,61 @@ object GpuCast extends Arm {
     }
   }
 
+  private def getPrecisionScaleForIntegralInput(input: ColumnView): Tuple2[Int, Int] = {
+    input.getType match {
+      case DType.INT16 => (5, 0)
+      case DType.INT32 => (10, 0)
+      case DType.INT64 => (20, 0)
+    }
+  }
+
+  private def getBounds(input: ColumnView, dt: DecimalType): Tuple2[Any, Any] = {
+    val value = math.pow(10, dt.precision - dt.scale)
+    input.getType match {
+      case DType.INT16 => value match {
+          case bound if bound > Short.MaxValue => (Short.MinValue, Short.MaxValue)
+          case bound => (-bound.toLong + 1, bound.toLong - 1)
+      }
+      case DType.INT32 => value match {
+        case bound if bound > Int.MaxValue => (Int.MinValue, Int.MaxValue)
+        case bound => (-bound.toLong + 1, bound.toLong - 1)
+      }
+      case DType.INT64 => value match {
+          case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
+          case bound => (-bound.toLong + 1, bound.toLong - 1)
+      }
+    }
+  }
+
   private def castIntegralsToDecimal(
       input: ColumnView,
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
-    val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
-      case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
-      case bound => (-bound.toLong + 1, bound.toLong - 1)
-    }
+//    BigInt("-99999999999999999999999999999999999999"),
+//    BigInt("99999999999999999999999999999999999999"))
+    val (prec, scale) = getPrecisionScaleForIntegralInput(input)
+    val (lowBound, upBound) = getBounds(input, dt)
+    println(s"KUHU cast to dt=(${dt.precision}, ${dt.scale})")
+    println(s"KUHU lowBound=${lowBound} upperBound=${upBound}")
+    println(s"KUHU column type=${input.getType}")
     // At first, we conduct overflow check onto input column.
     // Then, we cast checked input into target decimal type.
+    val inputDecimalType = new DecimalType(prec, scale)
+    println(s"KUHU inputDecimalType=${inputDecimalType}")
     if (ansiMode) {
-      assertValuesInRange(input,
-        minValue = Scalar.fromLong(lowBound),
-        maxValue = Scalar.fromLong(upBound))
+      assertValuesInRange(castIntegralsToDecimalAfterCheck(
+        input, inputDecimalType),
+        minValue = GpuScalar.from(lowBound, inputDecimalType),
+        maxValue = GpuScalar.from(upBound, inputDecimalType),
+       )
       castIntegralsToDecimalAfterCheck(input, dt)
     } else {
-      val checkedInput = replaceOutOfRangeValues(input,
-        minValue = Scalar.fromLong(lowBound),
-        maxValue = Scalar.fromLong(upBound),
-        replaceValue = Scalar.fromNull(input.getType))
+      val checkedInput = replaceOutOfRangeValues(castIntegralsToDecimalAfterCheck(
+        input, inputDecimalType),
+        minValue = GpuScalar.from(lowBound, inputDecimalType),
+        maxValue = GpuScalar.from(upBound, inputDecimalType),
+        replaceValue = Scalar.fromNull(DecimalUtil.createCudfDecimal(inputDecimalType)))
       withResource(checkedInput) { checked =>
         castIntegralsToDecimalAfterCheck(checked, dt)
       }
@@ -1157,16 +1202,18 @@ object GpuCast extends Arm {
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
 
+    println("KUHU castFloatsToDecimal")
     // Approach to minimize difference between CPUCast and GPUCast:
     // step 1. cast input to FLOAT64 (if necessary)
     // step 2. cast FLOAT64 to container DECIMAL (who keeps one more digit for rounding)
     // step 3. perform HALF_UP rounding on container DECIMAL
     val checkedInput = withResource(input.castTo(DType.FLOAT64)) { double =>
       val roundedDouble = double.round(dt.scale, cudf.RoundMode.HALF_UP)
+      println("KUHU HALF_UP in double")
       withResource(roundedDouble) { rounded =>
         // We rely on containerDecimal to perform preciser rounding. So, we have to take extra
         // space cost of container into consideration when we run bound check.
-        val containerScaleBound = DType.DECIMAL64_MAX_PRECISION - (dt.scale + 1)
+        val containerScaleBound = DType.DECIMAL128_MAX_PRECISION - (dt.scale + 1)
         val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
         if (ansiMode) {
           assertValuesInRange(rounded,
@@ -1188,9 +1235,9 @@ object GpuCast extends Arm {
 
     withResource(checkedInput) { checked =>
       val targetType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
-      // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
+      // If target scale reaches DECIMAL128_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+      val casted = if (DType.DECIMAL128_MAX_PRECISION == dt.scale) {
         checked.castTo(targetType)
       } else {
         val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)
@@ -1218,6 +1265,7 @@ object GpuCast extends Arm {
     val toDType = DecimalUtil.createCudfDecimal(to.precision, to.scale)
     val fromDType = DecimalUtil.createCudfDecimal(from.precision, from.scale)
 
+    println("KUHU ansiMode=" + ansiMode)
     val fromWholeNumPrecision = from.precision - from.scale
     val toWholeNumPrecision = to.precision - to.scale
     // Decimal numbers in general terms have two parts, a part before decimal (whole number)
