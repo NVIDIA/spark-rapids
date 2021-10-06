@@ -37,7 +37,8 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       numThreads = 1,
       maxNumFileProcessed = 1,
       filters = Array.empty,
-      execMetrics = Map(GpuMetric.PEAK_DEVICE_MEMORY -> NoopMetric)) {
+      execMetrics = Map(GpuMetric.PEAK_DEVICE_MEMORY -> NoopMetric,
+        GpuMetric.SEMAPHORE_WAIT_TIME -> NoopMetric)) {
 
       // Setup some empty host buffers at the start
       currentFileHostBuffers = Some(new HostMemoryBuffersWithMetaDataBase {

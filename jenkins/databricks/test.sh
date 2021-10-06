@@ -25,7 +25,7 @@ BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.1'}
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
 sudo /databricks/conda/envs/databricks-ml-gpu/bin/pip install pytest sre_yield requests pandas \
-	pyarrow findspark pytest-xdist
+	pyarrow findspark pytest-xdist pytest-ordering
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
@@ -61,6 +61,8 @@ IS_SPARK_311_OR_LATER=0
 
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
+## limit parallelism to avoid OOM kill
+export TEST_PARALLEL=4
 if [ -d "$LOCAL_JAR_PATH" ]; then
     ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the denpedency repo
     LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE

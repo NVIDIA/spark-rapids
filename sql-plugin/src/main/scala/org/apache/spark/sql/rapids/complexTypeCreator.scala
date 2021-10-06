@@ -71,10 +71,7 @@ case class GpuCreateArray(children: Seq[Expression], useStringTypeWhenEmpty: Boo
           GpuExpressionsUtils.columnarEvalToColumn(children(index), batch).getBase
       }
 
-      val elementDType = dataType.elementType match {
-        case _: ArrayType => DType.LIST
-        case _ => GpuColumnVector.getNonNestedRapidsType(dataType.elementType)
-      }
+      val elementDType =  GpuColumnVector.getRapidsType(dataType.elementType)
       // calling makeList with a nested DType and no columns is an error, but we will never
       // hit this case, because in Spark the type of `array()` is either `ArrayType(NullType)`
       // or `ArrayType(StringType)`.
