@@ -42,7 +42,7 @@ object PlanUtils {
     val execNameWithoutPackage = getBaseNameFromClass(planClass.getName)
     execNameWithoutPackage == fallbackCpuClass ||
       plan.getClass.getName == fallbackCpuClass ||
-      Try(java.lang.Class.forName(fallbackCpuClass))
+      Try(ShimLoader.loadClass(fallbackCpuClass))
         .map(_.isAssignableFrom(planClass))
         .getOrElse(false)
   }

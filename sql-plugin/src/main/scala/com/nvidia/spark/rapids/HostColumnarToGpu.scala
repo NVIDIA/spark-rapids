@@ -40,7 +40,7 @@ object HostColumnarToGpu extends Logging {
 
   // use reflection to get access to a private field in a class
   private def getClassFieldAccessible(className: String, fieldName: String) = {
-    val classObj = Class.forName(className)
+    val classObj = ShimLoader.loadClass(className)
     val fields = classObj.getDeclaredFields.toList
     val field = fields.filter( x => {
       x.getName.contains(fieldName)
@@ -254,9 +254,10 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    collectTime: GpuMetric,
+    streamTime: GpuMetric,
     concatTime: GpuMetric,
-    totalTime: GpuMetric,
+    semTime: GpuMetric,
+    opTime: GpuMetric,
     peakDevMemory: GpuMetric,
     opName: String,
     useArrowCopyOpt: Boolean)
@@ -266,9 +267,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numInputBatches,
     numOutputRows,
     numOutputBatches,
-    collectTime,
+    streamTime,
     concatTime,
-    totalTime,
+    opTime,
     opName) {
 
   // RequireSingleBatch goal is intentionally not supported in this iterator
@@ -337,7 +338,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
     // About to place data back on the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semTime)
 
     val ret = batchBuilder.build(totalRows)
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
@@ -385,11 +386,11 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
-    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
     PEAK_DEVICE_MEMORY -> createMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
-  )
+  ) ++ semaphoreMetrics
 
   override def output: Seq[Attribute] = child.output
 
@@ -416,9 +417,10 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val collectTime = gpuLongMetric(COLLECT_TIME)
+    val streamTime = gpuLongMetric(STREAM_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
     // cache in a local to avoid serializing the plan
@@ -429,8 +431,8 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
     val confUseArrow = new RapidsConf(child.conf).useArrowCopyOptimization
     batches.mapPartitions { iter =>
       new HostToGpuCoalesceIterator(iter, goal, outputSchema,
-        numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime, concatTime,
-        totalTime, peakDevMemory, "HostColumnarToGpu", confUseArrow)
+        numInputRows, numInputBatches, numOutputRows, numOutputBatches, streamTime, concatTime,
+        semTime, opTime, peakDevMemory, "HostColumnarToGpu", confUseArrow)
     }
   }
 }

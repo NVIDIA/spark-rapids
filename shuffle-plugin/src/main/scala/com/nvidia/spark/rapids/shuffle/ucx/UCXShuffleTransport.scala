@@ -22,7 +22,7 @@ import java.util.concurrent._
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, CudaMemoryBuffer, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.{GpuDeviceManager, HashedPriorityQueue, RapidsConf}
 import com.nvidia.spark.rapids.shuffle._
@@ -60,9 +60,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
   private[this] val deviceNumBuffers = rapidsConf.shuffleUcxDeviceBounceBuffersCount
   private[this] val hostNumBuffers = rapidsConf.shuffleUcxHostBounceBuffersCount
 
-  private[this] var deviceSendBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = null
+  private[this] var deviceSendBuffMgr: BounceBufferManager[BaseDeviceMemoryBuffer] = null
   private[this] var hostSendBuffMgr: BounceBufferManager[HostMemoryBuffer] = null
-  private[this] var deviceReceiveBuffMgr: BounceBufferManager[DeviceMemoryBuffer] = null
+  private[this] var deviceReceiveBuffMgr: BounceBufferManager[BaseDeviceMemoryBuffer] = null
 
   private[this] val clients = new ConcurrentHashMap[Long, RapidsShuffleClient]()
 
@@ -129,19 +129,28 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       deviceNumBuffers: Int,
       hostNumBuffers: Int): Unit = {
 
+    val deviceAllocator: Long => BaseDeviceMemoryBuffer = (size: Long) => {
+      // CUDA async allocator is not compatible with GPUDirectRDMA, so need to use `cudaMalloc`.
+      if (rapidsConf.rmmPool.equalsIgnoreCase("ASYNC")) {
+        CudaMemoryBuffer.allocate(size)
+      } else {
+        DeviceMemoryBuffer.allocate(size)
+      }
+    }
+
     deviceSendBuffMgr =
-      new BounceBufferManager[DeviceMemoryBuffer](
+      new BounceBufferManager[BaseDeviceMemoryBuffer](
         "device-send",
         bounceBufferSize,
         deviceNumBuffers,
-        (size: Long) => DeviceMemoryBuffer.allocate(size))
+        deviceAllocator)
 
     deviceReceiveBuffMgr =
-      new BounceBufferManager[DeviceMemoryBuffer](
+      new BounceBufferManager[BaseDeviceMemoryBuffer](
         "device-receive",
         bounceBufferSize,
         deviceNumBuffers,
-        (size: Long) => DeviceMemoryBuffer.allocate(size))
+        deviceAllocator)
 
     hostSendBuffMgr =
       new BounceBufferManager[HostMemoryBuffer](

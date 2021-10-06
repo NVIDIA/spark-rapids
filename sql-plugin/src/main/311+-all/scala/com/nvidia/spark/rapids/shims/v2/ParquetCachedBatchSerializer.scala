@@ -284,8 +284,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
 
   def isSupportedByCudf(dataType: DataType): Boolean = {
     dataType match {
-      // TODO: when arrays are supported for cudf writes add it here.
-      // https://github.com/NVIDIA/spark-rapids/issues/2054
+      case a: ArrayType => isSupportedByCudf(a.elementType)
       case s: StructType => s.forall(field => isSupportedByCudf(field.dataType))
       case _ => GpuColumnVector.isNonNestedSupportedType(dataType)
     }

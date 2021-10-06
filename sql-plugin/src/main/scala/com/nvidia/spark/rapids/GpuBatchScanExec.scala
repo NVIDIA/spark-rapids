@@ -59,10 +59,11 @@ case class GpuBatchScanExec(
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
-  override lazy val additionalMetrics = Map(
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY))
+    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)) ++
+      semaphoreMetrics
 
   scan match {
     case s: ScanWithMetrics => s.metrics = allMetrics ++ additionalMetrics
@@ -512,7 +513,7 @@ class CSVPartitionReader(
         val cudfSchema = GpuColumnVector.from(dataSchema)
         val csvOpts = buildCsvOptions(parsedOptions, newReadDataSchema, hasHeader)
         // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
         // The buffer that is sent down
         val table = withResource(new NvtxWithMetrics("CSV decode", NvtxColor.DARK_GREEN,
@@ -545,7 +546,7 @@ class CSVPartitionReader(
       if (batch.isEmpty) {
         // This is odd, but some operators return data even when there is no input so we need to
         // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
       }
       isFirstBatch = false
     }

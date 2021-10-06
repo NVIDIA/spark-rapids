@@ -117,7 +117,7 @@ class RapidsHostMemoryStore(
       spillPriority: Long,
       buffer: HostMemoryBuffer,
       isInternalPoolAllocated: Boolean,
-      spillCallback: RapidsBuffer.SpillCallback,
+      spillCallback: SpillCallback,
       deviceStorage: RapidsDeviceMemoryStore)
       extends RapidsBufferBase(
         id, size, meta, spillPriority, spillCallback, deviceStorage = deviceStorage) {
