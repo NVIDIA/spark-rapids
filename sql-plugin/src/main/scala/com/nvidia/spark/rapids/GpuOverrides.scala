@@ -3582,7 +3582,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     val updatedPlan = prepareExplainOnly(plan)
     val subPlans = getSubQueryPlans(plan)
     logWarning("sub query plans are: " + subPlans)
+    val subPlanExplains = subPlans.map(explainSinglePlan(_, conf))
+    val topPlanExplain = explainSinglePlan(updatedPlan, conf)
+    subPlanExplains + "\n" + topPlanExplain
+  }
 
+  def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf): String = {
     val wrap = wrapAndTagPlan(updatedPlan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
@@ -3716,7 +3721,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
-  def findSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
+  private def findSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
     val childExprs = e.children.flatMap(findSubqueryExpressions(_))
     val res = e match {
       case sq: ExecSubqueryExpression => Seq(sq)
@@ -3725,7 +3730,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     childExprs ++ res
   }
 
-  def getSubQueryPlans(plan: SparkPlan): Seq[Expression] = {
+  private def getSubQueryPlans(plan: SparkPlan): Seq[Expression] = {
     // strip out things that would have been added after our GPU plugin would have
     // processed the plan
     val childPlans = plan.children.flatMap(getSubQueryPlans(_))
@@ -3735,7 +3740,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     childPlans ++ pSubs
   }
 
-  def prepareExplainOnly(plan: SparkPlan): SparkPlan = {
+  private def prepareExplainOnly(plan: SparkPlan): SparkPlan = {
     // strip out things that would have been added after our GPU plugin would have
     // processed the plan
     val planAfter = plan.transformUp {
