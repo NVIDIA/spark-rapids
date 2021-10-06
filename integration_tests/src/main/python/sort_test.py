@@ -87,7 +87,7 @@ def test_single_nested_orderby_fallback_for_nullorder(data_gen, order):
             })
 
 # SPARK CPU itself has issue with negative scale for take ordered and project
-orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
+orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen + decimal_128_gens) if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_orderby_with_limit(data_gen, order):
@@ -166,7 +166,7 @@ def test_multi_orderby(data_gen):
             conf = allow_negative_scale_of_decimal_conf)
 
 # SPARK CPU itself has issue with negative scale for take ordered and project
-orderable_gens_sort_without_neg_decimal = [n for n in orderable_gens_sort if not (isinstance(n, DecimalGen) and n.scale < 0)]
+orderable_gens_sort_without_neg_decimal = [n for n in orderable_gens_sort + decimal_128_gens if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_gens_sort_without_neg_decimal, ids=idfn)
 def test_multi_orderby_with_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -278,7 +278,7 @@ def test_large_orderby_nested_ridealong(data_gen):
     decimal_gen_default,
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
-    ArrayGen(byte_gen, max_length=5)], ids=idfn)
+    ArrayGen(byte_gen, max_length=5)] + decimal_128_gens_no_neg, ids=idfn)
 @pytest.mark.order(2)
 def test_orderby_nested_ridealong_limit(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort

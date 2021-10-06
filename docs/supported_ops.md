@@ -146,13 +146,13 @@ Accelerator supports are described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -410,13 +410,13 @@ Accelerator supports are described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -434,13 +434,13 @@ Accelerator supports are described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>unionByName will not optionally impute nulls for missing struct fields when the column is a struct and there are non-overlapping fields;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>unionByName will not optionally impute nulls for missing struct fields when the column is a struct and there are non-overlapping fields;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -458,13 +458,13 @@ Accelerator supports are described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -650,13 +650,13 @@ Accelerator supports are described below.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
-<td><em>PS<br/>Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
-<td><em>PS<br/>Round-robin partitioning is not supported for nested structs if spark.sql.execution.sortBeforeRepartition is true;<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>Round-robin partitioning is not supported if spark.sql.execution.sortBeforeRepartition is true;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
+<td><em>PS<br/>Round-robin partitioning is not supported for nested structs if spark.sql.execution.sortBeforeRepartition is true;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -1528,7 +1528,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td><em>PS<br/>DECIMAL precision of 38 not supported due to overflow checks</em></td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -1549,7 +1549,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td><em>PS<br/>DECIMAL precision of 38 not supported due to overflow checks</em></td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -1570,7 +1570,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -3456,7 +3456,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -3477,7 +3477,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -4776,7 +4776,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -4797,7 +4797,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -4818,7 +4818,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Because of Spark's inner workings the full range of decimal precision (even for 64-bit values) is not supported.;<br/>max DECIMAL precision of 18</em></td>
+<td><em>PS<br/>Because of Spark's inner workings the full range of decimal precision (even for 128-bit values) is not supported.</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -6658,7 +6658,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -6679,7 +6679,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -8516,7 +8516,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -8537,7 +8537,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -8558,7 +8558,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Because of Spark's inner workings the full range of decimal precision (even for 64-bit values) is not supported.;<br/>max DECIMAL precision of 18</em></td>
+<td><em>PS<br/>Because of Spark's inner workings the full range of decimal precision (even for 128-bit values) is not supported.</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -9357,7 +9357,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -9378,7 +9378,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -10780,13 +10780,13 @@ are limited.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -10801,13 +10801,13 @@ are limited.
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td>S</td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -12078,7 +12078,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td><em>PS<br/>DECIMAL precision of 38 not supported due to overflow checks</em></td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -12099,7 +12099,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td><em>PS<br/>DECIMAL precision of 38 not supported due to overflow checks</em></td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
@@ -12120,7 +12120,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>max DECIMAL precision of 18</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td><b>NS</b></td>
