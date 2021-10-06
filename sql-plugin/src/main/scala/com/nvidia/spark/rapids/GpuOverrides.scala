@@ -3580,6 +3580,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       initConf
     }
     val updatedPlan = prepareExplainOnly(plan, conf)
+    val subPlans = getSubQueryPlans(plan, conf)
+    logWarning("sub query plans are: " + subPlans)
+
     val wrap = wrapAndTagPlan(updatedPlan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
@@ -3713,21 +3716,28 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
-  def prepareExplainOnly(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+  def getSubQueryPlans(plan: SparkPlan): Seq[SparkPlan] = {
+    // strip out things that would have been added after our GPU plugin would have
+    // processed the plan
+    val childPlans = plan.children.flatMap(getSubQueryPlans(_))
+    val pSubs = plan.expressions.map { e =>
+          e match {
+            case sq: ScalarSubquery =>
+              sq.plan.child
+          }
+        }
+    childPlans ++ pSubs
+  }
+
+  def prepareExplainOnly(plan: SparkPlan): SparkPlan = {
     // strip out things that would have been added after our GPU plugin would have
     // processed the plan
     val planAfter = plan.transformUp {
-      case ia: InputAdapter => prepareExplainOnly(ia.child, conf)
-      case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child, conf)
-      case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child, conf)
-      case re: ReusedExchangeExec => prepareExplainOnly(re.child, conf)
-      case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan, conf)
-      case o =>
-        o.expressions.foreach { expr =>
-          expr match {
-            case sub: ScalarSubquery => prepareExplainOnly(sub.plan)
-          }
-        }
+      case ia: InputAdapter => prepareExplainOnly(ia.child)
+      case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child)
+      case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
+      case re: ReusedExchangeExec => prepareExplainOnly(re.child)
+      case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan)
     }
     planAfter
   }
