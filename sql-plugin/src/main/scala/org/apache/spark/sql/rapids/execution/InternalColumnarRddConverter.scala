@@ -427,7 +427,7 @@ private class ExternalRowToColumnarIterator(
       }
 
       // About to place data back on the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), NoopMetric)
 
       val ret = builders.build(rowCount)
 
