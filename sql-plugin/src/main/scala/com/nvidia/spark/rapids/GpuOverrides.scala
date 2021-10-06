@@ -3716,19 +3716,22 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
+  def findSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
+    val childExprs = e.children.flatMap(findSubqueryExpressions(_))
+    val res = e match {
+      case sq: ExecSubqueryExpression => Seq(sq)
+      case _ => Seq.empty
+    }
+    childExprs ++ res
+  }
+
   def getSubQueryPlans(plan: SparkPlan): Seq[Expression] = {
     // strip out things that would have been added after our GPU plugin would have
     // processed the plan
     val childPlans = plan.children.flatMap(getSubQueryPlans(_))
-    val pSubs = plan.expressions.collect {
-            case sq: ExecSubqueryExpression => sq
-            case c =>
-              val r = c.children.find(_.isInstanceOf[ExecSubqueryExpression])
-              r match {
-                case Some(exp) => exp
-              }
-
-        }
+    val pSubs = plan.expressions.flatMap {
+      findSubqueryExpressions(_)
+    }
     childPlans ++ pSubs
   }
 
