@@ -175,6 +175,12 @@ object ShimLoader extends Logging {
         // fast path
         logInfo(s"findURLClassLoader found a URLClassLoader $urlCl")
         Option(urlCl)
+      case replCl if replCl.getClass.getName == "org.apache.spark.repl.ExecutorClassLoader" =>
+        // https://issues.apache.org/jira/browse/SPARK-18646
+        val parentLoader = MethodUtils.invokeMethod(replCl, true, "parentLoader")
+          .asInstanceOf[ClassLoader]
+        logInfo(s"findURLClassLoader found $replCl, trying parentLoader=$parentLoader")
+        findURLClassLoader(parentLoader)
       case urlAddable: ClassLoader if null != MethodUtils.getMatchingMethod(
           urlAddable.getClass, "addURL", classOf[java.net.URL]) =>
         // slow defensive path
@@ -363,8 +369,8 @@ object ShimLoader extends Logging {
   private def instantiateClass[T](cls: Class[T]): T = {
     logDebug(s"Instantiate ${cls.getName} using classloader " + cls.getClassLoader)
     cls.getClassLoader match {
-      case m: MutableURLClassLoader =>
-        logDebug("urls " + m.getURLs.mkString("\n"))
+      case urcCl: java.net.URLClassLoader =>
+        logDebug("urls " + urcCl.getURLs.mkString("\n"))
       case _ =>
     }
     val constructor = cls.getConstructor()
