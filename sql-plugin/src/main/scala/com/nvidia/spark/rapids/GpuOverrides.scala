@@ -3140,7 +3140,6 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuVarianceSamp(childExprs.head)
       }),
-    /* Disabled because does not compile on DEC 128 CUDF branch yet
     expr[ApproximatePercentile](
       "Approximate percentile",
       ExprChecks.groupByOnly(
@@ -3192,7 +3191,6 @@ object GpuOverrides extends Logging {
         }
       }).disabledByDefault("The GPU implementation of approx_percentile is not bit-for-bit " +
           "compatible with Apache Spark. See the compatibility guide for more information."),
-     */
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
