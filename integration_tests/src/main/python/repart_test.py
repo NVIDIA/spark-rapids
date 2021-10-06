@@ -86,7 +86,7 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -97,7 +97,7 @@ def test_union(data_gen):
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -108,7 +108,7 @@ def test_unionAll(data_gen):
             lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
                                       pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]]), marks=nested_scalar_mark),
@@ -125,7 +125,7 @@ def test_union_by_missing_col_name(data_gen):
                                 .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True),
         conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -137,7 +137,7 @@ def test_union_by_name(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
     pytest.param([('struct' + str(i), gen) for i, gen in enumerate(struct_gens_sample)]),
     pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample)]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
