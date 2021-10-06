@@ -1586,6 +1586,10 @@
                                                 dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
                                         >
                                         </unzip>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1684,6 +1688,10 @@
                                                 dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
                                         >
                                         </unzip>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
