@@ -135,7 +135,7 @@ object ShimLoader extends Logging {
     // org/apache/spark/serializer/KryoSerializer.scala#L134
 
     Option(SparkEnv.get)
-      .collect { case env if env.conf.get("spark.rapids.force.caller.classloader",
+      .collect { case env if !env.conf.get("spark.rapids.force.caller.classloader",
         true.toString).toBoolean
         => env.serializer
       }
