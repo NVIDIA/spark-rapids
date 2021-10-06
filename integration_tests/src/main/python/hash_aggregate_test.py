@@ -446,6 +446,24 @@ _gen_data_for_collect_set_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op]
 
+# very simple test for just a count on decimals 128 values until we can support more with them
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_count_reduction(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('count(a)'),
+            conf = allow_negative_scale_of_decimal_conf)
+
+# very simple test for just a count on decimals 128 values until we can support more with them
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_count_group_by(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, byte_gen, data_gen)
+            .groupby('a')
+            .agg(f.count('b')),
+            conf = allow_negative_scale_of_decimal_conf)
+
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
