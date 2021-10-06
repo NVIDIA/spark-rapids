@@ -43,8 +43,23 @@ def test_row_conversions():
 
 def test_row_conversions_fixed_width():
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
-            ["e", float_gen], ["f", double_gen], ["g", string_gen], ["h", boolean_gen],
+            ["e", float_gen], ["f", double_gen], ["h", boolean_gen],
             ["i", timestamp_gen], ["j", date_gen], ["k", decimal_gen_64bit],
             ["l", decimal_gen_scale_precision]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
+
+def test_row_conversions_fixed_width_200():
+    gens = [["a{}".format(i), byte_gen] for i in range(10)] + \
+           [["b{}".format(i), short_gen] for i in range(10)] + \
+           [["c{}".format(i), int_gen] for i in range(10)] + \
+           [["d{}".format(i), long_gen] for i in range(10)] + \
+           [["e{}".format(i), float_gen] for i in range(10)] + \
+           [["f{}".format(i), double_gen] for i in range(10)] + \
+           [["h{}".format(i), boolean_gen] for i in range(10)] + \
+           [["i{}".format(i), timestamp_gen] for i in range(10)] + \
+           [["j{}".format(i), date_gen] for i in range(10)] + \
+           [["k{}".format(i), decimal_gen_64bit] for i in range(10)] + \
+           [["l{}".format(i), decimal_gen_scale_precision] for i in range(10)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gens).selectExpr("*", "a0 as a_again"))
