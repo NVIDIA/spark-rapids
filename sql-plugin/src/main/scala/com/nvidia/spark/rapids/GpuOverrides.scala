@@ -1180,17 +1180,35 @@ object GpuOverrides extends Logging {
     expr[Floor](
       "Floor of a number",
       ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_64,
+        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[Floor](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType match {
+            case dt: DecimalType
+              if (dt.precision + 1 - dt.scale) > DType.DECIMAL128_MAX_PRECISION =>
+              willNotWorkOnGpu("Range checks are not currently supported")
+            case _ => // NOOP
+          }
+        }
+
         override def convertToGpu(child: Expression): GpuExpression = GpuFloor(child)
       }),
     expr[Ceil](
       "Ceiling of a number",
       ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_64,
+        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[Ceil](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType match {
+            case dt: DecimalType
+              if (dt.precision + 1 - dt.scale) > DType.DECIMAL128_MAX_PRECISION =>
+              willNotWorkOnGpu("Range checks are not currently supported")
+            case _ => // NOOP
+          }
+        }
+
         override def convertToGpu(child: Expression): GpuExpression = GpuCeil(child)
       }),
     expr[Not](
@@ -2328,8 +2346,8 @@ object GpuOverrides extends Logging {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric +
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric,
+        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -2349,8 +2367,8 @@ object GpuOverrides extends Logging {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric +
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric,
+        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
