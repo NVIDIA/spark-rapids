@@ -1289,7 +1289,7 @@ class CastChecks extends ExprChecks {
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
-  val decimalChecks: TypeSig = gpuNumeric + STRING
+  val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128_FULL + STRING
   val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none

@@ -159,7 +159,7 @@ abstract class SparkBaseShims extends Spark31XShims {
 
         // stringChecks are the same
         // binaryChecks are the same
-        override val decimalChecks: TypeSig = gpuNumeric + STRING
+        override val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128_FULL + STRING
         override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
 
         // calendarChecks are the same
@@ -216,7 +216,8 @@ abstract class SparkBaseShims extends Spark31XShims {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+        TypeSig.numeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)

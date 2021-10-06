@@ -67,7 +67,7 @@ ast_gen = [boolean_gen, byte_gen, short_gen, int_gen, long_gen, timestamp_gen]
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
                         'spark.sql.join.preferSortMergeJoin': 'True',
                         'spark.sql.shuffle.partitions': '2',
-                        'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+                        'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'
                         }
 
 # For spark to insert a shuffled hash join it has to be enabled with

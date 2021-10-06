@@ -464,9 +464,6 @@ object GpuOverrides extends Logging {
 
   private[this] val _gpuCommonTypes = TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64
 
-  private[this] val _notNullCudfTypes = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
-    TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
-
   val pluginSupportedOrderableSig: TypeSig =
     _gpuCommonTypes + TypeSig.STRUCT.nested(_gpuCommonTypes)
 
@@ -861,9 +858,9 @@ object GpuOverrides extends Logging {
       "Holds a static value from the query",
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.CALENDAR
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.CALENDAR
             + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
                 TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
@@ -878,7 +875,7 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
-            + TypeSig.DECIMAL_64).nested(),
+            + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -889,7 +886,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+            TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
         // This is the only NOOP operator.  It goes away when things are bound
@@ -1503,7 +1500,8 @@ object GpuOverrides extends Logging {
     expr[KnownNotNull](
       "Tag an expression as known to not be null",
       ExprChecks.unaryProjectInputMatchesOutput(
-        _notNullCudfTypes, TypeSig.all),
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.BINARY + TypeSig.CALENDAR +
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(), TypeSig.all),
       (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownNotNull(child)
@@ -3142,6 +3140,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuVarianceSamp(childExprs.head)
       }),
+    /* Disabled because does not compile on DEC 128 CUDF branch yet
     expr[ApproximatePercentile](
       "Approximate percentile",
       ExprChecks.groupByOnly(
@@ -3193,6 +3192,7 @@ object GpuOverrides extends Logging {
         }
       }).disabledByDefault("The GPU implementation of approx_percentile is not bit-for-bit " +
           "compatible with Apache Spark. See the compatibility guide for more information."),
+     */
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
@@ -3352,7 +3352,7 @@ object GpuOverrides extends Logging {
       "The backend for most select, withColumn and dropColumn statements",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (proj, conf, p, r) => new GpuProjectExecMeta(proj, conf, p, r)),
     exec[RangeExec](
