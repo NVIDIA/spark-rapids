@@ -135,9 +135,14 @@ object ShimLoader extends Logging {
     // org/apache/spark/serializer/KryoSerializer.scala#L134
 
     Option(SparkEnv.get)
-      .collect { case env if !env.conf.get("spark.rapids.force.caller.classloader",
-        true.toString).toBoolean
-        => env.serializer
+      .flatMap {
+        case env if !env.conf.get("spark.rapids.force.caller.classloader",
+          true.toString).toBoolean => Option(env.serializer)
+        case _ =>
+          logInfo("Forcing shim caller classloader update (default behavior). " +
+            "If it causes issues with userClassPathFirst, set " +
+            "spark.rapids.force.caller.classloader to false!")
+          None
       }
       .flatMap { serializer =>
         logInfo("Looking for a mutable classloader (defaultClassLoader) in SparkEnv.serializer " +
