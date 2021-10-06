@@ -1069,7 +1069,7 @@ object GpuOverrides extends Logging {
       "Negate a numeric value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1087,7 +1087,7 @@ object GpuOverrides extends Logging {
       "A numeric value with a + in front of it",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
-        TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
