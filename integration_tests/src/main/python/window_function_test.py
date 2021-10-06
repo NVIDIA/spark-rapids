@@ -133,6 +133,32 @@ all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_count_window(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' count(c) over '
+        '   (partition by a order by b asc '
+        '      rows between 2 preceding and 10 following) as sum_c_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_count_window_no_part(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' count(b) over '
+        '   (order by a asc '
+        '      rows between 2 preceding and 10 following) as sum_b_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
 @ignore_order
