@@ -135,7 +135,9 @@ object ShimLoader extends Logging {
     // org/apache/spark/serializer/KryoSerializer.scala#L134
 
     Option(SparkEnv.get)
-      .map(_.serializer)
+      .collect { case env if new RapidsConf(env.conf).get(RapidsConf.FORCE_SHIMCALLER_CLASSLOADER)
+        => env.serializer
+      }
       .flatMap { serializer =>
         logInfo("Looking for a mutable classloader (defaultClassLoader) in SparkEnv.serializer " +
           serializer)
