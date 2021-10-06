@@ -28,7 +28,7 @@ import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskCon
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression, NullIntolerant, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuPredicateHelper
@@ -310,7 +310,10 @@ object GpuFilter extends Arm {
   }
 }
 
-case class GpuFilterExec(condition: Expression, child: SparkPlan)
+case class GpuFilterExec(
+    condition: Expression,
+    child: SparkPlan,
+    override val coalesceAfter: Boolean = true)
     extends ShimUnaryExecNode with GpuPredicateHelper with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -321,11 +324,6 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
     case GpuIsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
     case _ => false
   }
-
-  /**
-   * Potentially a lot is removed.
-   */
-  override def coalesceAfter: Boolean = true
 
   // If one expression and its children are null intolerant, it is null intolerant.
   private def isNullIntolerant(expr: Expression): Boolean = expr match {
@@ -371,28 +369,44 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
 /**
  * Physical plan for range (generating a range of 64 bit numbers).
  */
-case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range,
+case class GpuRangeExec(
+    start: Long,
+    end: Long,
+    step: Long,
+    numSlices: Int,
+    output: Seq[Attribute],
     targetSizeBytes: Long)
     extends LeafExecNode with GpuExec {
 
-  val start: Long = range.start
-  val end: Long = range.end
-  val step: Long = range.step
-  val numSlices: Int = range.numSlices.getOrElse(ShimLoader.getSparkShims
-    .leafNodeDefaultParallelism(sparkSession))
-  val numElements: BigInt = range.numElements
-  val isEmptyRange: Boolean = start == end || (start < end ^ 0 < step)
+  val numElements: BigInt = {
+    val safeStart = BigInt(start)
+    val safeEnd = BigInt(end)
+    if ((safeEnd - safeStart) % step == 0 || (safeEnd > safeStart) != (step > 0)) {
+      (safeEnd - safeStart) / step
+    } else {
+      // the remainder has the same sign with range, could add 1 more
+      (safeEnd - safeStart) / step + 1
+    }
+  }
 
-  override val output: Seq[Attribute] = range.output
+  val isEmptyRange: Boolean = start == end || (start < end ^ 0 < step)
 
   override protected val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override protected val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
-  )
+  ) ++ semaphoreMetrics
 
-  override def outputOrdering: Seq[SortOrder] = range.outputOrdering
+  override def outputOrdering: Seq[SortOrder] = {
+    val shim = ShimLoader.getSparkShims
+    val order = if (step > 0) {
+      Ascending
+    } else {
+      Descending
+    }
+    output.map(a => shim.sortOrder(a, order))
+  }
 
   override def outputPartitioning: Partitioning = {
     if (numElements > 0) {
@@ -408,15 +422,10 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
 
   override def outputBatching: CoalesceGoal = TargetSize(targetSizeBytes)
 
-  override def doCanonicalize(): SparkPlan = {
-    GpuRangeExec(
-      range.canonicalized.asInstanceOf[org.apache.spark.sql.catalyst.plans.logical.Range],
-      targetSizeBytes)
-  }
-
   protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
     val maxRowCountPerBatch = Math.min(targetSizeBytes/8, Int.MaxValue)
 
@@ -457,10 +466,10 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                   }
                 } else false
 
-              override def next(): ColumnarBatch =
-                withResource(new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) {
-                  _ =>
-                    GpuSemaphore.acquireIfNecessary(taskContext)
+              override def next(): ColumnarBatch = {
+                GpuSemaphore.acquireIfNecessary(taskContext, semTime)
+                withResource(
+                  new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
                     val start = number
                     val remainingSteps = (safePartitionEnd - start) / step
                     // Start is inclusive so we need to produce at least one row
@@ -477,7 +486,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                     val ret = withResource(Scalar.fromLong(start)) { startScalar =>
                       withResource(Scalar.fromLong(step)) { stepScalar =>
                         withResource(
-                          ai.rapids.cudf.ColumnVector.sequence(
+                          cudf.ColumnVector.sequence(
                             startScalar, stepScalar, rowsThisBatch.toInt)) { vec =>
                           withResource(new Table(vec)) { tab =>
                             GpuColumnVector.from(tab, Array[DataType](LongType))
@@ -492,6 +501,7 @@ case class GpuRangeExec(range: org.apache.spark.sql.catalyst.plans.logical.Range
                     numOutputBatches += 1
                     ret
                 }
+              }
             }
             new InterruptibleIterator(taskContext, iter)
           }

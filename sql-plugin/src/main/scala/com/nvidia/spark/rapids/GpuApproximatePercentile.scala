@@ -54,7 +54,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *                           yields better accuracy, the default value is
  *                           DEFAULT_PERCENTILE_ACCURACY.
  */
-/* DISABLED BECAUSE DOES NOT COMPILE ON DEC 128 BRANCH
 case class GpuApproximatePercentile (
     child: Expression,
     percentageExpression: GpuLiteral,
@@ -220,4 +219,3 @@ object CudfTDigest {
     StructField("max", DataTypes.DoubleType, nullable = false)
   ))
 }
-*/

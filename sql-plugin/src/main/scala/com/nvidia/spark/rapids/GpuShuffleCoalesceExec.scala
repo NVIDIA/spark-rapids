@@ -43,15 +43,12 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
 
   import GpuMetric._
 
-  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
-  protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
-    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME)
-  )
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
+  ) ++ semaphoreMetrics
 
   override def output: Seq[Attribute] = child.output
 
@@ -84,37 +81,30 @@ class GpuShuffleCoalesceIterator(
     sparkSchema: Array[DataType],
     metricsMap: Map[String, GpuMetric])
     extends Iterator[ColumnarBatch] with Arm with AutoCloseable {
-  private[this] val totalTimeMetric = metricsMap(GpuMetric.TOTAL_TIME)
+  private[this] val opTimeMetric = metricsMap(GpuMetric.OP_TIME)
   private[this] val inputBatchesMetric = metricsMap(GpuMetric.NUM_INPUT_BATCHES)
   private[this] val inputRowsMetric = metricsMap(GpuMetric.NUM_INPUT_ROWS)
   private[this] val outputBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
   private[this] val outputRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
-  private[this] val collectTimeMetric = metricsMap(GpuMetric.COLLECT_TIME)
   private[this] val concatTimeMetric = metricsMap(GpuMetric.CONCAT_TIME)
+  private[this] val semWaitTime = metricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
   private[this] val serializedTables = new util.ArrayDeque[SerializedTableColumn]
   private[this] var numTablesInBatch: Int = 0
   private[this] var numRowsInBatch: Int = 0
   private[this] var batchByteSize: Long = 0L
 
-  private val batchIter = new CollectTimeIterator(
-    "ShuffleCoalesce: collect", iter, collectTimeMetric)
-
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 
   override def hasNext: Boolean = {
-    withResource(new MetricRange(totalTimeMetric)) { _ =>
-      bufferNextBatch()
-      numTablesInBatch > 0
-    }
+    bufferNextBatch()
+    numTablesInBatch > 0
   }
 
   override def next(): ColumnarBatch = {
-    withResource(new MetricRange(totalTimeMetric)) { _ =>
-      if (!hasNext) {
-        throw new NoSuchElementException("No more columnar batches")
-      }
-      concatenateBatch()
+    if (!hasNext) {
+      throw new NoSuchElementException("No more columnar batches")
     }
+    concatenateBatch()
   }
 
   override def close(): Unit = {
@@ -125,23 +115,25 @@ class GpuShuffleCoalesceIterator(
   private def bufferNextBatch(): Unit = {
     if (numTablesInBatch == serializedTables.size()) {
       var batchCanGrow = batchByteSize < targetBatchByteSize
-      while (batchCanGrow && batchIter.hasNext) {
-        closeOnExcept(batchIter.next()) { batch =>
-          inputBatchesMetric += 1
-          // don't bother tracking empty tables
-          if (batch.numRows > 0) {
-            inputRowsMetric += batch.numRows
-            val tableColumn = batch.column(0).asInstanceOf[SerializedTableColumn]
-            batchCanGrow = canAddToBatch(tableColumn.header)
-            serializedTables.addLast(tableColumn)
-            // always add the first table to the batch even if its beyond the target limits
-            if (batchCanGrow || numTablesInBatch == 0) {
-              numTablesInBatch += 1
-              numRowsInBatch += tableColumn.header.getNumRows
-              batchByteSize += tableColumn.header.getDataLen
+      while (batchCanGrow && iter.hasNext) {
+        closeOnExcept(iter.next()) { batch =>
+          withResource(new MetricRange(opTimeMetric)) { _ =>
+            inputBatchesMetric += 1
+            // don't bother tracking empty tables
+            if (batch.numRows > 0) {
+              inputRowsMetric += batch.numRows
+              val tableColumn = batch.column(0).asInstanceOf[SerializedTableColumn]
+              batchCanGrow = canAddToBatch(tableColumn.header)
+              serializedTables.addLast(tableColumn)
+              // always add the first table to the batch even if its beyond the target limits
+              if (batchCanGrow || numTablesInBatch == 0) {
+                numTablesInBatch += 1
+                numRowsInBatch += tableColumn.header.getNumRows
+                batchByteSize += tableColumn.header.getDataLen
+              }
+            } else {
+              batch.close()
             }
-          } else {
-            batch.close()
           }
         }
       }
@@ -160,33 +152,36 @@ class GpuShuffleCoalesceIterator(
 
   private def concatenateBatch(): ColumnarBatch = {
     // about to start using the GPU in this task
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
 
-    val firstHeader = serializedTables.peekFirst().header
-    val batch = withResource(new MetricRange(concatTimeMetric)) { _ =>
-      if (firstHeader.getNumColumns == 0) {
-        (0 until numTablesInBatch).foreach(_ => serializedTables.removeFirst())
-        new ColumnarBatch(Array.empty, numRowsInBatch)
-      } else {
-        concatenateTablesBatch()
+    withResource(new MetricRange(opTimeMetric)) { _ =>
+      val firstHeader = serializedTables.peekFirst().header
+      val batch = withResource(new MetricRange(concatTimeMetric)) { _ =>
+        if (firstHeader.getNumColumns == 0) {
+          (0 until numTablesInBatch).foreach(_ => serializedTables.removeFirst())
+          new ColumnarBatch(Array.empty, numRowsInBatch)
+        } else {
+          concatenateTablesBatch()
+        }
       }
+
+      outputBatchesMetric += 1
+      outputRowsMetric += batch.numRows
+
+      // update the stats for the next batch in progress
+      numTablesInBatch = serializedTables.size
+      batchByteSize = 0
+      numRowsInBatch = 0
+      if (numTablesInBatch > 0) {
+        require(numTablesInBatch == 1,
+          "should only track at most one buffer that is not in a batch")
+        val header = serializedTables.peekFirst().header
+        batchByteSize = header.getDataLen
+        numRowsInBatch = header.getNumRows
+      }
+
+      batch
     }
-
-    outputBatchesMetric += 1
-    outputRowsMetric += batch.numRows
-
-    // update the stats for the next batch in progress
-    numTablesInBatch = serializedTables.size
-    batchByteSize = 0
-    numRowsInBatch = 0
-    if (numTablesInBatch > 0) {
-      require(numTablesInBatch == 1, "should only track at most one buffer that is not in a batch")
-      val header = serializedTables.peekFirst().header
-      batchByteSize = header.getDataLen
-      numRowsInBatch = header.getNumRows
-    }
-
-    batch
   }
 
   private def concatenateTablesBatch(): ColumnarBatch = {

@@ -433,13 +433,18 @@ abstract class SparkBaseShims extends Spark31XShims {
         }),
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested(),
-          TypeSig.all),
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
+            + TypeSig.ARRAY).nested(), TypeSig.all),
         (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
           override def tagPlanForGpu(): Unit = {
             if (!scan.relation.cacheBuilder.serializer
-              .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+                .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
               willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+              if (SQLConf.get.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+                  .equals("com.nvidia.spark.ParquetCachedBatchSerializer")) {
+                throw new IllegalStateException("Cache serializer failed to load! " +
+                    "Something went wrong while loading ParquetCachedBatchSerializer class")
+              }
             }
           }
 
@@ -632,7 +637,7 @@ abstract class SparkBaseShims extends Spark31XShims {
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
     val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-    val serClass = Class.forName(serName)
+    val serClass = ShimLoader.loadClass(serName)
     if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
       GpuColumnarToRowTransitionExec(plan)
     } else {

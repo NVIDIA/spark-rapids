@@ -194,10 +194,11 @@ case class GpuHashAggregateMetrics(
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
     numTasksFallBacked: GpuMetric,
+    opTime: GpuMetric,
     computeAggTime: GpuMetric,
     concatTime: GpuMetric,
     sortTime: GpuMetric,
-    spillCallback: RapidsBuffer.SpillCallback)
+    spillCallback: SpillCallback)
 
 /** Utility class to convey information on the aggregation modes being used */
 case class AggregateModeInfo(
@@ -373,7 +374,9 @@ class GpuHashAggregateIterator(
   private def tryMergeAggregatedBatches(): Unit = {
     while (aggregatedBatches.size() > 1) {
       val concatTime = metrics.concatTime
-      withResource(new NvtxWithMetrics("agg merge pass", NvtxColor.BLUE, concatTime)) { _ =>
+      val opTime = metrics.opTime
+      withResource(new NvtxWithMetrics("agg merge pass", NvtxColor.BLUE, concatTime,
+        opTime)) { _ =>
         // continue merging as long as some batches are able to be combined
         if (!mergePass()) {
           if (aggregatedBatches.size() > 1 && isReductionOnly) {
@@ -505,7 +508,7 @@ class GpuHashAggregateIterator(
       sorter,
       LazilyGeneratedOrdering.forSchema(TrampolineUtil.fromAttributes(groupingAttributes)),
       configuredTargetBatchSize,
-      totalTime = NoopMetric,
+      opTime = metrics.opTime,
       sortTime = metrics.sortTime,
       outputBatches = NoopMetric,
       outputRows = NoopMetric,
@@ -525,9 +528,8 @@ class GpuHashAggregateIterator(
       numInputBatches = NoopMetric,
       numOutputRows = NoopMetric,
       numOutputBatches = NoopMetric,
-      collectTime = NoopMetric,
       concatTime = metrics.concatTime,
-      totalTime = NoopMetric,
+      opTime = metrics.opTime,
       peakDevMemory = NoopMetric,
       spillCallback = metrics.spillCallback)
 
@@ -568,7 +570,9 @@ class GpuHashAggregateIterator(
    */
   private def finalProjectBatch(batch: ColumnarBatch): ColumnarBatch = {
     val aggTime = metrics.computeAggTime
-    withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime)) { _ =>
+    val opTime = metrics.opTime
+    withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
+      opTime)) { _ =>
       val finalBatch = if (boundExpressions.boundFinalProjections.isDefined) {
         withResource(batch) { _ =>
           val finalCvs = boundExpressions.boundFinalProjections.get.map { ref =>
@@ -604,7 +608,9 @@ class GpuHashAggregateIterator(
   /** Perform the initial projection on the input batch and extract the result columns */
   private def processIncomingBatch(batch: ColumnarBatch): ColumnarBatch = {
     val aggTime = metrics.computeAggTime
-    withResource(new NvtxWithMetrics("prep agg batch", NvtxColor.CYAN, aggTime)) { _ =>
+    val opTime = metrics.opTime
+    withResource(new NvtxWithMetrics("prep agg batch", NvtxColor.CYAN, aggTime,
+      opTime)) { _ =>
       val cols = boundExpressions.boundInputReferences.safeMap { ref =>
         val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
         if (childCv.dataType == ref.dataType) {
@@ -629,7 +635,9 @@ class GpuHashAggregateIterator(
   private def concatenateBatches(
       spillableBatchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch]): ColumnarBatch = {
     val concatTime = metrics.concatTime
-    withResource(new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime)) { _ =>
+    val opTime = metrics.opTime
+    withResource(new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime,
+      opTime)) { _ =>
       val batchesToConcat = spillableBatchesToConcat.map(_.getBatch)
       val numCols = batchesToConcat.head.numCols()
       val dataTypes = (0 until numCols).map {
@@ -814,7 +822,9 @@ class GpuHashAggregateIterator(
 
     val boundCudfAggregates = boundExpressions.boundCudfAggregates
     val computeAggTime = metrics.computeAggTime
-    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
+    val opTime = metrics.opTime
+    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
+      opTime)) { _ =>
       if (groupingExpressions.nonEmpty) {
         // Perform group by aggregation
         // Create a cudf Table, which we use as the base of aggregations.
@@ -1449,9 +1459,10 @@ case class GpuHashAggregateExec(
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_TASKS_FALL_BACKED -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_TASKS_FALL_BACKED),
-    AGG_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_AGG_TIME),
-    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
-    SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME)
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    AGG_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_AGG_TIME),
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
+    SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SORT_TIME)
   ) ++ spillMetrics
 
   // requiredChildDistributions are CPU expressions, so remove it from the GPU expressions list
@@ -1474,6 +1485,7 @@ case class GpuHashAggregateExec(
       numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS),
       numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES),
       numTasksFallBacked = gpuLongMetric(NUM_TASKS_FALL_BACKED),
+      opTime = gpuLongMetric(OP_TIME),
       computeAggTime = gpuLongMetric(AGG_TIME),
       concatTime = gpuLongMetric(CONCAT_TIME),
       sortTime = gpuLongMetric(SORT_TIME),
