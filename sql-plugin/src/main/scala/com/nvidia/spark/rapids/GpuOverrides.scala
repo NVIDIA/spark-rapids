@@ -47,7 +47,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -3119,6 +3119,7 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         Nil, None),
       (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
+        logWarning("Scalar subquery plan is; " + a.plan)
         override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
       }
     ),
@@ -3247,9 +3248,7 @@ object GpuOverrides extends Logging {
       parent: Option[RapidsMeta[_, _, _]]): SparkPlanMeta[INPUT]  =
     execs.get(plan.getClass)
       .map(r => r.wrap(plan, conf, parent, r).asInstanceOf[SparkPlanMeta[INPUT]])
-      .getOrElse{
-        logWarning("wrapping plan get or else: " + plan)
-        new RuleNotFoundSparkPlanMeta(plan, conf, parent)}
+      .getOrElse(new RuleNotFoundSparkPlanMeta(plan, conf, parent))
 
   val commonExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     exec[GenerateExec] (
@@ -3572,7 +3571,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   // only run the explain and don't actually convert or run on GPU
   def explainPotentialGPUPlan(df: DataFrame, disableAQE: Boolean = false): String = {
     val plan = df.queryExecution.executedPlan
-    logWarning("start plan is: " +  plan)
     val initConf = new RapidsConf(plan.conf)
     // if requested disable AQE to see what plan looks like
     val conf = if (disableAQE) {
@@ -3582,9 +3580,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       initConf
     }
     val updatedPlan = prepareExplainOnly(plan, conf)
-    logWarning("updated plan is: " +  updatedPlan)
     val wrap = wrapAndTagPlan(updatedPlan, conf)
-    logWarning("after tag is: " +  wrap)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
         "Can't replace any part of this plan due to: " +
@@ -3718,10 +3714,14 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   }
 
   def prepareExplainOnly(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    // strip out InputAdapter/WholeStageCodegenExec
+    // strip out things that would have been added after our GPU plugin would have
+    // processed the plan
     val planAfter = plan.transformUp {
-      case ia: InputAdapter => ia.child
-      case ws: WholeStageCodegenExec => ws.child
+      case ia: InputAdapter => prepareExplainOnly(ia.child, conf)
+      case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child, conf)
+      case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child, conf)
+      case re: ReusedExchangeExec => prepareExplainOnly(re.child, conf)
+      case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan, conf)
     }
     planAfter
   }
