@@ -125,7 +125,7 @@ object ShimLoader extends Logging {
     s"org.apache.spark.sql.rapids.shims.$shimId.RapidsShuffleInternalManager"
   }
 
-  private def serializerClassloader() = {
+  private def serializerClassloader(): Option[ClassLoader] = {
     // Hypothesis: serializer is the most universal way to intercept classloaders
 
     // https://github.com/apache/spark/blob/master/core/src/main/scala/
@@ -204,7 +204,7 @@ object ShimLoader extends Logging {
       logInfo(s"Updating spark classloader $urlAddable with the URLs: " +
         urlsForSparkClassLoader.mkString(", "))
       urlsForSparkClassLoader.foreach { url =>
-        MethodUtils.invokeMethod(urlAddable, true,"addURL", url)
+        MethodUtils.invokeMethod(urlAddable, true, "addURL", url)
       }
       logInfo(s"Spark classLoader $urlAddable updated successfully")
       urlAddable match {
