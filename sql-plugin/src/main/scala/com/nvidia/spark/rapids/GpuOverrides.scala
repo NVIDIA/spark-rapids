@@ -3579,8 +3579,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else {
       initConf
     }
-    val updatedPlan = prepareExplainOnly(plan, conf)
-    val subPlans = getSubQueryPlans(plan, conf)
+    val updatedPlan = prepareExplainOnly(plan)
+    val subPlans = getSubQueryPlans(plan)
     logWarning("sub query plans are: " + subPlans)
 
     val wrap = wrapAndTagPlan(updatedPlan, conf)
@@ -3720,12 +3720,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     // strip out things that would have been added after our GPU plugin would have
     // processed the plan
     val childPlans = plan.children.flatMap(getSubQueryPlans(_))
-    val pSubs = plan.expressions.map { e =>
+    val pSubs = plan.expressions.filter { e =>
           e match {
-            case sq: ScalarSubquery =>
-              sq.plan.child
+            case sq: ScalarSubquery => true
+            case _ => false
           }
-        }
+        }.map(_.asInstanceOf[ScalarSubquery].plan.child)
     childPlans ++ pSubs
   }
 
