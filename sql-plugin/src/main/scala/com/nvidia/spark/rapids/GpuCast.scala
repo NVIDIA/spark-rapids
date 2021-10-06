@@ -390,21 +390,21 @@ object GpuCast extends Arm {
         }
 
       // ansi cast from larger-than-integer integral-like types, to integer
-      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
-          Scalar.fromInt(Int.MaxValue))
+      case (t @(LongType | _: DecimalType), IntegerType) if ansiMode =>
+        assertValuesInRange(input, GpuScalar.from(Int.MinValue, t),
+          GpuScalar.from(Int.MaxValue, t))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral-like types, to short
-      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
-          Scalar.fromShort(Short.MaxValue))
+      case (t @(LongType | IntegerType | _: DecimalType), ShortType) if ansiMode =>
+        assertValuesInRange(input, GpuScalar.from(Short.MinValue, t),
+          GpuScalar.from(Short.MaxValue, t))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral-like types, to byte
-      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
-          Scalar.fromByte(Byte.MaxValue))
+      case (t @ (LongType | IntegerType | ShortType | _: DecimalType), ByteType) if ansiMode =>
+        assertValuesInRange(input, GpuScalar.from(Byte.MinValue, t),
+          GpuScalar.from(Byte.MaxValue, t))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to byte
