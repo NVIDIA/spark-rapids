@@ -2077,11 +2077,11 @@ object GpuOverrides extends Logging {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        pluginSupportedOrderableSig + TypeSig.STRUCT.nested(),
+        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT).nested(),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          pluginSupportedOrderableSig + TypeSig.STRUCT.nested(),
+          (pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT).nested(),
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -3404,8 +3404,8 @@ object GpuOverrides extends Logging {
       "Take the first limit elements as defined by the sortOrder, and do projection if needed",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
-          TypeSig.MAP).nested(), TypeSig.all),
+      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (takeExec, conf, p, r) =>
         new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
           val sortOrder: Seq[BaseExprMeta[SortOrder]] =

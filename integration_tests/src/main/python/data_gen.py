@@ -876,8 +876,10 @@ decimal_gens_no_neg = [decimal_gen_default, decimal_gen_scale_precision,
 
 decimal_gens = [decimal_gen_neg_scale] + decimal_gens_no_neg
 
-decimal_128_gens = [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_36_neg5,
-        decimal_gen_38_0, decimal_gen_38_10, decimal_gen_38_neg10]
+decimal_128_gens_no_neg = [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5,
+        decimal_gen_38_0, decimal_gen_38_10]
+
+decimal_128_gens = decimal_128_gens_no_neg + [decimal_gen_36_neg5, decimal_gen_38_neg10]
 
 # all of the basic gens
 all_basic_gens_no_null = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
