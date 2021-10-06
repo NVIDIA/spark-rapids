@@ -486,7 +486,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       // So, we don't have to handle decimal-supportable problem at here.
       DecimalType dt = (DecimalType) type;
       return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
-      }
+    }
     return null;
   }
 
