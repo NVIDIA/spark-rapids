@@ -227,6 +227,7 @@ case class GpuWindowInPandasExec(
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
+          spillCallback.semaphoreWaitTime,
           () => queue.finish(),
           pythonOutputSchema)
 

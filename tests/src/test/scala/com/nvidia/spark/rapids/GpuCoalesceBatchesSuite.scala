@@ -30,6 +30,7 @@ import org.apache.arrow.vector.complex.MapVector
 import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types._
@@ -60,7 +61,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // assert metrics are correct
       assert(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_ROWS).value == 14)
       assert(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_BATCHES).value == 1)
-    })
+    }, new SparkConf().set(RapidsConf.METRICS_LEVEL.key, "DEBUG"))
   }
 
   test("test multiple output batches") {
@@ -90,7 +91,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // assert metrics are correct
       assertResult(14)(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_ROWS).value)
       assertResult(totalBatches)(gpuCoalesceBatches.metrics(GpuMetric.NUM_OUTPUT_BATCHES).value)
-    })
+    }, new SparkConf().set(RapidsConf.METRICS_LEVEL.key, "DEBUG"))
   }
 
   test("require single batch") {
@@ -246,6 +247,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
+      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -269,6 +271,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
+      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -307,6 +310,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
+      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = true)
 
@@ -341,6 +345,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       WrappedGpuMetric(new SQLMetric("t6", 0)),
       WrappedGpuMetric(new SQLMetric("t7", 0)),
       WrappedGpuMetric(new SQLMetric("t8", 0)),
+      WrappedGpuMetric(new SQLMetric("t9", 0)),
       "testcoalesce",
       useArrowCopyOpt = false)
 

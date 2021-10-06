@@ -882,8 +882,9 @@ decimal_128_gens_no_neg = [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5,
 decimal_128_gens = decimal_128_gens_no_neg + [decimal_gen_36_neg5, decimal_gen_38_neg10]
 
 # all of the basic gens
-all_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+all_basic_gens_no_null = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                          string_gen, boolean_gen, date_gen, timestamp_gen]
+all_basic_gens = all_basic_gens_no_null + [null_gen]
 
 all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
@@ -910,6 +911,8 @@ date_n_time_gens = [date_gen, timestamp_gen]
 boolean_gens = [boolean_gen]
 
 single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens]
+
+single_level_array_gens_no_null = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_null + decimal_gens_no_neg]
 
 single_level_array_gens_no_nan = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_nan + decimal_gens]
 

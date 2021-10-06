@@ -486,8 +486,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       // So, we don't have to handle decimal-supportable problem at here.
       DecimalType dt = (DecimalType) type;
       return DecimalUtil.createCudfDecimal(dt.precision(), dt.scale());
-      }
+    }
     return null;
+  }
+
+  public static DType getRapidsType(DataType type) {
+    if (type instanceof ArrayType) {
+      return DType.LIST;
+    } else if (type instanceof StructType) {
+      return DType.STRUCT;
+    } else {
+      return getNonNestedRapidsType(type);
+    }
   }
 
   public static boolean isNonNestedSupportedType(DataType type) {

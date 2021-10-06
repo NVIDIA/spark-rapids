@@ -61,7 +61,6 @@ case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
     val collectTime = gpuLongMetric(COLLECT_TIME)
     val buildTime = gpuLongMetric(BUILD_TIME)
     val broadcastTime = gpuLongMetric("broadcastTime")
-    val totalTime = gpuLongMetric(TOTAL_TIME)
     val dataTypes = child.output.map(_.dataType).toArray
 
     val task = new Callable[Broadcast[Any]]() {
@@ -69,7 +68,6 @@ case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
         // This will run in another thread. Set the execution id so that we can connect these jobs
         // with the correct execution.
         SQLExecution.withExecutionId(sparkSession, executionId) {
-          val totalRange = new MetricRange(totalTime)
           try {
             // Setup a job group here so later it may get cancelled by groupId if necessary.
             sparkContext.setJobGroup(_runId.toString, s"broadcast exchange (runId ${_runId})",
@@ -157,8 +155,6 @@ case class GpuBroadcastToCpuExec(mode: BroadcastMode, child: SparkPlan)
             case e: Throwable =>
               promise.failure(e)
               throw e
-          } finally {
-            totalRange.close()
           }
         }
       }
