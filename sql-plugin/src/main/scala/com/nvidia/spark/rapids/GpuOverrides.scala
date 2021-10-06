@@ -3722,6 +3722,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child, conf)
       case re: ReusedExchangeExec => prepareExplainOnly(re.child, conf)
       case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan, conf)
+      case o =>
+        o.expressions.foreach { expr =>
+          expr match {
+            case sub: ScalarSubquery => prepareExplainOnly(sub.plan)
+          }
+        }
     }
     planAfter
   }
