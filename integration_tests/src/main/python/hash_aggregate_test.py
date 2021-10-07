@@ -874,7 +874,7 @@ non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
 
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
-@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=idfn)
 def test_first_last_reductions_extra_types(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             # Coalesce and sort are to make sure that first and last, which are non-deterministic
@@ -954,7 +954,7 @@ def test_arithmetic_reductions(data_gen):
             conf = _no_nans_float_conf)
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', all_gen + _nested_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + _nested_gens + decimal_128_gens, ids=idfn)
 def test_groupby_first_last(data_gen):
     gen_fn = [('a', RepeatSeqGen(LongGen(), length=20)), ('b', data_gen)]
     agg_fn = lambda df: df.groupBy('a').agg(
