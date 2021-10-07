@@ -985,35 +985,24 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
-        .set(RapidsConf.EXPLAIN.key, "ALL")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)
 
       val defaultRandomGenerator: SparkSession => DataFrame = {
         val rnd = customRandGenerator.getOrElse(new scala.util.Random(1234L))
-        generateCastToDecimalDataFrame(dataType, precision - scale, rnd, 20)
+        generateCastToDecimalDataFrame(dataType, precision - scale, rnd, 500)
       }
       val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
-      withCpuSparkSession(spark => {
-        val frame = generator(spark)
-        println("KUHU right before collect")
-        System.err.println("KUHU right before collect")
-        frame.show()
-        frame.write.parquet(path)
-      }, conf)
+      withCpuSparkSession(spark => generator(spark).write.parquet(path), conf)
 
       val createDF = (ss: SparkSession) => ss.read.parquet(path)
       val decType = DataTypes.createDecimalType(precision, scale)
-      println(s"KUHU decType=${decType}")
-      println(s"KUHU data_type=${dataType}")
       val execFun = (df: DataFrame) => {
         df.withColumn("col2", col("col").cast(decType))
       }
       if (!gpuOnly) {
         val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
-        println("from GPU " + fromGpu.mkString(","))
-        println("from CPU " + fromCpu.mkString(","))
         val (cpuResult, gpuResult) = dataType match {
           case ShortType | IntegerType | LongType | _: DecimalType =>
             fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
@@ -1065,8 +1054,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
         case dt: DecimalType =>
           val unscaledValue = (enhancedRnd.nextLong() * math.pow(10, dt.precision - 18)).toLong
           val ret = Decimal.createUnsafe(unscaledValue, dt.precision, dt.scale)
-          println("KUHU generated decimal unscaledValue= " + unscaledValue + " dt= " + dt)
-          println("KUHU generated decimal ret =" + ret)
           ret
         case _ =>
           throw new IllegalArgumentException(s"unsupported dataType: $dataType")

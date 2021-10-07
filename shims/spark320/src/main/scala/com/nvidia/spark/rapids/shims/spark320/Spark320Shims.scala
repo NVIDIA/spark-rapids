@@ -152,13 +152,13 @@ class Spark320Shims extends Spark32XShims {
         import TypeSig._
         // nullChecks are the same
 
-        override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
+        override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING + DECIMAL_128_FULL
         override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
+        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + DECIMAL_128_FULL
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
+        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING + DECIMAL_128_FULL)
             .withPsNote(TypeEnum.STRING, fpToStringPsNote)
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
@@ -171,7 +171,7 @@ class Spark320Shims extends Spark32XShims {
         // stringChecks are the same, but adding in PS note
         private val fourDigitYearMsg: String = "Only 4 digit year parsing is available. To " +
             s"enable parsing anyways set ${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false."
-        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY +
+        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY
             TypeSig.psNote(TypeEnum.DATE, fourDigitYearMsg) +
             TypeSig.psNote(TypeEnum.TIMESTAMP, fourDigitYearMsg)
 
