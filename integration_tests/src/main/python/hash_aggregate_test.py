@@ -1132,6 +1132,20 @@ def test_hash_groupby_approx_percentile_long_repeated_keys():
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
 @ignore_order(local=True)
+def test_hash_groupby_approx_percentile_byte():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', ByteGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_byte_scalar():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', ByteGen())], length=100),
+        0.5)
+
+@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
