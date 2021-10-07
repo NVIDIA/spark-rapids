@@ -171,7 +171,7 @@ class Spark320Shims extends Spark32XShims {
         // stringChecks are the same, but adding in PS note
         private val fourDigitYearMsg: String = "Only 4 digit year parsing is available. To " +
             s"enable parsing anyways set ${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false."
-        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY
+        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY +
             TypeSig.psNote(TypeEnum.DATE, fourDigitYearMsg) +
             TypeSig.psNote(TypeEnum.TIMESTAMP, fourDigitYearMsg)
 

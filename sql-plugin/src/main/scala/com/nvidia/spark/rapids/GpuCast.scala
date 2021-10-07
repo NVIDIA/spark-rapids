@@ -105,7 +105,7 @@ class CastExprMeta[INPUT <: CastBase](
           willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
             "results which slightly differed from the correct results when the string represents " +
             "any number exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For " +
-            "instance, the GPU returns 99999999999999987 given input string " +
+            "instance, the GPU returns 99999999999999987 when given the input string " +
             "\"99999999999999999\". The cause of divergence is that we can not cast strings " +
             "containing scientific notation to decimal directly. So, we have to cast strings " +
             "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
@@ -1131,30 +1131,12 @@ object GpuCast extends Arm {
     }
   }
 
-  private def getPrecisionScaleForIntegralInput(input: ColumnView): Tuple2[Int, Int] = {
+  private def getPrecisionScaleForIntegralInput(input: ColumnView): (Int, Int) = {
     input.getType match {
       case DType.INT8 =>  (3, 0)
       case DType.INT16 => (5, 0)
       case DType.INT32 => (10, 0)
       case DType.INT64 => (20, 0)
-    }
-  }
-
-  private def getBounds(input: ColumnView, dt: DecimalType): Tuple2[Any, Any] = {
-    val value = math.pow(10, dt.precision - dt.scale)
-    input.getType match {
-      case DType.INT16 => value match {
-          case bound if bound > Short.MaxValue => (Short.MinValue, Short.MaxValue)
-          case bound => (-bound.toLong + 1, bound.toLong - 1)
-      }
-      case DType.INT32 => value match {
-        case bound if bound > Int.MaxValue => (Int.MinValue, Int.MaxValue)
-        case bound => (-bound.toLong + 1, bound.toLong - 1)
-      }
-      case DType.INT64 => value match {
-          case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
-          case bound => (-bound.toLong + 1, bound.toLong - 1)
-      }
     }
   }
 

@@ -153,7 +153,7 @@ abstract class SparkBaseShims extends Spark30XShims {
             .withPsNote(TypeEnum.STRING, fpToStringPsNote)
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING + DECIMAL_128_FULL
+        override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
         override val sparkDateSig: TypeSig = TIMESTAMP + DATE + STRING
 
         override val timestampChecks: TypeSig = TIMESTAMP + DATE + STRING
