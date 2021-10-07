@@ -415,10 +415,6 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
   }
 
-  def newGpuOverrides(): Any = {
-    newInstanceOf("com.nvidia.spark.rapids.GpuOverrides")
-  }
-
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
@@ -429,5 +425,9 @@ object ShimLoader extends Logging {
 
   def loadColumnarRDD(): Class[_] = {
     loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
+  }
+
+  def loadGpuOverrides(): Class[_] = {
+    ShimLoader.loadClass("com.nvidia.spark.rapids.GpuOverrides")
   }
 }

@@ -3717,6 +3717,65 @@ object GpuOverrides extends Logging {
 
     override def getChecks: Option[TypeChecks[_]] = None
   }
+
+  // only run the explain and don't actually convert or run on GPU
+  def explainPotentialGPUPlan(df: DataFrame): String = {
+    val plan = df.queryExecution.executedPlan
+    val conf = new RapidsConf(plan.conf)
+    val updatedPlan = prepareExplainOnly(plan)
+    val subQueryExprs = getSubQueryPlans(plan)
+    val preparedSubPlans = subQueryExprs.map(_.plan).map(prepareExplainOnly(_))
+    val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf))
+    val topPlanExplain = explainSinglePlan(updatedPlan, conf)
+    (subPlanExplains :+ topPlanExplain).mkString("\n")
+  }
+
+  private def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf): String = {
+    val wrap = wrapAndTagPlan(updatedPlan, conf)
+    val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
+    if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
+      "Can't replace any part of this plan due to: " +
+        s"${reasonsToNotReplaceEntirePlan.mkString(",")}"
+    } else {
+      wrap.runAfterTagRules()
+      wrap.tagForExplain()
+      wrap.explain(all = true)
+    }
+  }
+
+  private def findSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
+    val childExprs = e.children.flatMap(findSubqueryExpressions(_))
+    val res = e match {
+      case sq: ExecSubqueryExpression => Seq(sq)
+      case _ => Seq.empty
+    }
+    childExprs ++ res
+  }
+
+  private def getSubQueryPlans(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
+    // strip out things that would have been added after our GPU plugin would have
+    // processed the plan
+    val childPlans = plan.children.flatMap(getSubQueryPlans(_))
+    val pSubs = plan.expressions.flatMap {
+      findSubqueryExpressions(_)
+    }
+    childPlans ++ pSubs
+  }
+
+  private def prepareExplainOnly(plan: SparkPlan): SparkPlan = {
+    // Strip out things that would have been added after our GPU plugin would have
+    // processed the plan.
+    // AQE we look at the input plan so pretty much just like if AQE wasn't enabled.
+    val planAfter = plan.transformUp {
+      case ia: InputAdapter => prepareExplainOnly(ia.child)
+      case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child)
+      case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
+      case re: ReusedExchangeExec => prepareExplainOnly(re.child)
+      case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan)
+      case sub: SubqueryExec => prepareExplainOnly(sub.child)
+    }
+    planAfter
+  }
 }
 
 // work around any GpuOverride failures
