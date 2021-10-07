@@ -385,6 +385,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/301until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/31xdb/scala</source>
                                         <source>${project.basedir}/src/main/311db/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-apache/scala</source>
@@ -437,6 +438,7 @@
                                 <phase>generate-sources</phase>
                                 <configuration>
                                     <sources>
+                                        <source>${project.basedir}/src/main/31xdb/scala</source>
                                         <source>${project.basedir}/src/main/312db/scala</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
