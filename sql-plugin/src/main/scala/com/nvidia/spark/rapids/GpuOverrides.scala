@@ -1185,9 +1185,12 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[Floor](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.dataType match {
-            case dt: DecimalType
-              if (dt.precision + 1 - dt.scale) > DType.DECIMAL128_MAX_PRECISION =>
-              willNotWorkOnGpu("Range checks are not currently supported")
+            case dt: DecimalType =>
+              val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
+              if (precision > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu(s"output precision $precision would require overflow " +
+                    s"checks, which are not supported yet")
+              }
             case _ => // NOOP
           }
         }
@@ -1202,9 +1205,12 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[Ceil](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.dataType match {
-            case dt: DecimalType
-              if (dt.precision + 1 - dt.scale) > DType.DECIMAL128_MAX_PRECISION =>
-              willNotWorkOnGpu("Range checks are not currently supported")
+            case dt: DecimalType =>
+              val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
+              if (precision > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu(s"output precision $precision would require overflow " +
+                    s"checks, which are not supported yet")
+              }
             case _ => // NOOP
           }
         }
