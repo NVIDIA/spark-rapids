@@ -141,8 +141,10 @@ class GpuCollectLimitMeta(
 
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
-      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded())))
+      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+        GpuSinglePartitioning,
+        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
+        SinglePartition))
 
 }
 
@@ -194,14 +196,14 @@ object GpuTopN extends Arm {
   def apply(limit: Int,
       sorter: GpuSorter,
       iter: Iterator[ColumnarBatch],
-      totalTime: GpuMetric,
+      opTime: GpuMetric,
       sortTime: GpuMetric,
       concatTime: GpuMetric,
       inputBatches: GpuMetric,
       inputRows: GpuMetric,
       outputBatches: GpuMetric,
       outputRows: GpuMetric,
-      spillCallback: RapidsBuffer.SpillCallback): Iterator[ColumnarBatch] =
+      spillCallback: SpillCallback): Iterator[ColumnarBatch] =
     new Iterator[ColumnarBatch]() {
       override def hasNext: Boolean = iter.hasNext
 
@@ -210,7 +212,7 @@ object GpuTopN extends Arm {
       override def next(): ColumnarBatch = {
         while (iter.hasNext) {
           val input = iter.next()
-          withResource(new NvtxWithMetrics("TOP N", NvtxColor.ORANGE, totalTime)) { _ =>
+          withResource(new NvtxWithMetrics("TOP N", NvtxColor.ORANGE, opTime)) { _ =>
             inputBatches += 1
             inputRows += input.numRows()
             lazy val totalSize = GpuColumnVector.getTotalDeviceMemoryUsed(input) +
@@ -260,9 +262,12 @@ object GpuTopN extends Arm {
  */
 case class GpuTopN(
     limit: Int,
-    sortOrder: Seq[SortOrder],
+    gpuSortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan) extends GpuExec with ShimUnaryExecNode {
+    child: SparkPlan)(
+    cpuSortOrder: Seq[SortOrder]) extends GpuExec with ShimUnaryExecNode {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
 
   override def output: Seq[Attribute] = {
     projectList.map(_.toAttribute)
@@ -273,15 +278,15 @@ case class GpuTopN(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
-    SORT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_SORT_TIME),
-    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME)
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SORT_TIME),
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
   ) ++ spillMetrics
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sorter = new GpuSorter(sortOrder, child.output)
+    val sorter = new GpuSorter(gpuSortOrder, child.output)
     val boundProjectExprs = GpuBindReferences.bindGpuReferences(projectList, child.output)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
     val inputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val inputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val outputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
@@ -290,11 +295,11 @@ case class GpuTopN(
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val callback = GpuMetric.makeSpillCallback(allMetrics)
     child.executeColumnar().mapPartitions { iter =>
-      val topN = GpuTopN(limit, sorter, iter, totalTime, sortTime, concatTime,
+      val topN = GpuTopN(limit, sorter, iter, opTime, sortTime, concatTime,
         inputBatches, inputRows, outputBatches, outputRows, callback)
       if (projectList != child.output) {
         topN.map { batch =>
-          GpuProjectExec.projectAndClose(batch, boundProjectExprs, totalTime)
+          GpuProjectExec.projectAndClose(batch, boundProjectExprs, opTime)
         }
       } else {
         topN
@@ -305,12 +310,12 @@ case class GpuTopN(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def outputOrdering: Seq[SortOrder] = sortOrder
+  override def outputOrdering: Seq[SortOrder] = cpuSortOrder
 
   override def outputPartitioning: Partitioning = SinglePartition
 
   override def simpleString(maxFields: Int): String = {
-    val orderByString = truncatedString(sortOrder, "[", ",", "]", maxFields)
+    val orderByString = truncatedString(gpuSortOrder, "[", ",", "]", maxFields)
     val outputString = truncatedString(output, "[", ",", "]", maxFields)
 
     s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString)"

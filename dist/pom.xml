@@ -314,7 +314,9 @@
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                                         <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"/>
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -570,7 +572,9 @@
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                                         <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"/>
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -791,7 +795,9 @@
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                                         <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"/>
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1109,7 +1115,9 @@
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                                         <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"/>
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1469,7 +1477,9 @@
                                         />
                                         <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
                                         <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"/>
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1576,6 +1586,10 @@
                                                 dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
                                         >
                                         </unzip>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1674,6 +1688,10 @@
                                                 dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
                                         >
                                         </unzip>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"

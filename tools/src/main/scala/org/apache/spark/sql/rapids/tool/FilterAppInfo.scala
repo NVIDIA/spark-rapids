@@ -58,10 +58,12 @@ class FilterAppInfo(
   override def processEvent(event: SparkListenerEvent): Boolean = {
     if (event.isInstanceOf[SparkListenerApplicationStart]) {
       doSparkListenerApplicationStart(event.asInstanceOf[SparkListenerApplicationStart])
-      (eventsToProcess -= 1) == 0
+      eventsToProcess -= 1
+      eventsToProcess == 0
     } else if (event.isInstanceOf[SparkListenerEnvironmentUpdate]) {
       doSparkListenerEnvironmentUpdate(event.asInstanceOf[SparkListenerEnvironmentUpdate])
-      (eventsToProcess -= 1) == 0
+      eventsToProcess -= 1
+      eventsToProcess == 0
     } else {
       false
     }

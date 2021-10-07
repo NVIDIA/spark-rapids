@@ -85,6 +85,10 @@
             <id>release301</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
+                <property>
+                    <name>buildver</name>
+                    <value>301</value>
+                </property>
             </activation>
             <properties>
                 <spark.version>${spark301.version}</spark.version>
@@ -671,6 +675,7 @@
         <hive.storage.api.version>2.6.0</hive.storage.api.version>
         <protobuf.java.version>2.5.0</protobuf.java.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
+        <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
     </properties>
 
     <dependencyManagement>
@@ -901,6 +906,11 @@
                             <goals>
                                 <goal>doc-jar</goal>
                             </goals>
+                            <configuration>
+                                <args>
+                                    <arg>-doc-external-doc:${settings.localRepository}/${scala.local-lib.path}#https://scala-lang.org/api/${scala.version}/</arg>
+                                </args>
+                            </configuration>
                         </execution>
                     </executions>
                     <configuration>

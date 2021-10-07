@@ -78,6 +78,9 @@ case class GpuFileSourceScanExec(
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 
+  // All expressions are filter expressions used on the CPU.
+  override def gpuExpressions: Seq[Expression] = Nil
+
   override val nodeName: String = {
     s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
@@ -372,7 +375,7 @@ case class GpuFileSourceScanExec(
     } else {
       Map.empty[String, GpuMetric]
     }
-  } ++ staticMetrics
+  } ++ staticMetrics ++ semaphoreMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
