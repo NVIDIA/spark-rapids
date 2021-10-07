@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.DataFrame
 
 object ExplainGPUPlan {
-  def explainPotentialGPUPlanInit(df: DataFrame): String = {
+  def explainPotentialGPUPlan(df: DataFrame): String = {
     val gpuOverrideClass = ShimLoader.loadGpuOverrides()
     val explainMethod = gpuOverrideClass
       .getDeclaredMethod("explainPotentialGPUPlan", classOf[DataFrame])

@@ -3771,7 +3771,8 @@ object GpuOverrides extends Logging {
       case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child)
       case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
       case re: ReusedExchangeExec => prepareExplainOnly(re.child)
-      case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan)
+      case aqe: AdaptiveSparkPlanExec =>
+        prepareExplainOnly(ShimLoader.getSparkShims.getAdaptiveInputPlan(aqe))
       case sub: SubqueryExec => prepareExplainOnly(sub.child)
     }
     planAfter
