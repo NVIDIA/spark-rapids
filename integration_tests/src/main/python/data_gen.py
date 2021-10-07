@@ -902,9 +902,6 @@ eq_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
 # Include decimal type while testing equalTo and notEqualTo
 eq_gens_with_decimal_gen =  eq_gens + decimal_gens
 
-#gen for testing round operator
-round_gens = numeric_gens + decimal_gens
-
 date_gens = [date_gen]
 date_n_time_gens = [date_gen, timestamp_gen]
 

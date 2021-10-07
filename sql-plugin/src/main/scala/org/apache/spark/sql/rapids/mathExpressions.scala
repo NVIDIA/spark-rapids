@@ -154,11 +154,20 @@ case class GpuAtanh(child: Expression) extends CudfUnaryMathExpression("ATANH") 
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
+object GpuFloorCeil {
+  def unboundedOutputPrecision(dt: DecimalType): Int = {
+    if (dt.scale == 0) {
+      dt.precision
+    } else {
+      dt.precision - dt.scale + 1
+    }
+  }
+}
+
 case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
   override def dataType: DataType = child.dataType match {
-    case dt @ DecimalType.Fixed(_, 0) => dt
-    case DecimalType.Fixed(precision, scale) =>
-      DecimalType.bounded(precision - scale + 1, 0)
+    case dt: DecimalType =>
+      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
     case _ => LongType
   }
 
@@ -220,9 +229,8 @@ case class GpuExpm1(child: Expression) extends CudfUnaryMathExpression("EXPM1") 
 
 case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") {
   override def dataType: DataType = child.dataType match {
-    case dt @ DecimalType.Fixed(_, 0) => dt
-    case DecimalType.Fixed(precision, scale) =>
-      DecimalType.bounded(precision - scale + 1, 0)
+    case dt: DecimalType =>
+      DecimalType.bounded(GpuFloorCeil.unboundedOutputPrecision(dt), 0)
     case _ => LongType
   }
 
