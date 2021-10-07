@@ -888,7 +888,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val df2 = doublesAsStrings(ss).select(col("c0").as("col"))
       df1.unionAll(df2)
     }
-    List(-1, 0).foreach { scale =>
+    List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.StringType, scale = scale, precision = 18,
         customDataGenerator = Some(doubleStrings))
     }

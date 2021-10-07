@@ -95,8 +95,7 @@ class CastExprMeta[INPUT <: CastBase](
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
-      case (_: StringType, dt: DecimalType) => {
-        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+      case (_: StringType, dt: DecimalType) => if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
           willNotWorkOnGpu("String to Decimal with precision > 18 is unsupported")
         }
         if (!conf.isCastStringToDecimalEnabled) {
@@ -111,7 +110,7 @@ class CastExprMeta[INPUT <: CastBase](
             "precision loss. To enable this operation on the GPU, set " +
             s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
         }
-      }
+
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
           recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
