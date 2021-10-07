@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DeviceMemoryBuffer, DType, GatherMap, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 
-import org.apache.spark.sql.types.{ArrayType, BinaryType, BooleanType, DataType, DateType, DecimalType, IntegerType, LongType, MapType, NullType, NumericType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -477,12 +477,6 @@ object JoinGathererImpl {
   private def calcRowSizeBits(dt: DataType, nullValueCalc: Boolean): Option[Int] = dt match {
     case StructType(fields) =>
       sumRowSizesBits(fields.map(_.dataType), nullValueCalc).map(_ + 1)
-    case dt: DecimalType if dt.precision > DType.DECIMAL64_MAX_PRECISION =>
-      if (nullValueCalc) {
-        throw new IllegalArgumentException(s"Found an unsupported type $dt")
-      } else {
-        None
-      }
     case _: NumericType | DateType | TimestampType | BooleanType | NullType =>
       Some(GpuColumnVector.getNonNestedRapidsType(dt).getSizeInBytes * 8 + 1)
     case StringType | BinaryType | ArrayType(_, _) | MapType(_, _, _) if nullValueCalc =>
