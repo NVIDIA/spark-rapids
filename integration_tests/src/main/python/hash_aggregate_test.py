@@ -464,6 +464,24 @@ def test_decimal128_count_group_by(data_gen):
             .agg(f.count('b')),
             conf = allow_negative_scale_of_decimal_conf)
 
+# very simple test for just a min/max on decimals 128 values until we can support more with them
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_min_max_reduction(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('min(a)', 'max(a)'),
+            conf = allow_negative_scale_of_decimal_conf)
+
+# very simple test for just a min/max on decimals 128 values until we can support more with them
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_min_max_group_by(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, byte_gen, data_gen)
+            .groupby('a')
+            .agg(f.min('b'), f.max('b')),
+            conf = allow_negative_scale_of_decimal_conf)
+
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)

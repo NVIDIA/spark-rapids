@@ -2186,24 +2186,13 @@ object GpuOverrides extends Logging {
       }),
     expr[Max](
       "Max aggregate operator",
-      ExprChecksImpl(
-        ExprChecks.fullAgg(
-          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
-          Seq(ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.NULL)
-                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
-                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-            TypeSig.orderable))
-        ).asInstanceOf[ExprChecksImpl].contexts
-          ++
-          ExprChecks.windowOnly(
-            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL, TypeSig.orderable,
-            Seq(ParamCheck("input",
-              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
-                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
-                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-              TypeSig.orderable))
-          ).asInstanceOf[ExprChecksImpl].contexts
+      ExprChecks.fullAgg(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL, TypeSig.orderable,
+        Seq(ParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+              .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+              .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+          TypeSig.orderable))
       ),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
         override def tagAggForGpu(): Unit = {
@@ -2219,24 +2208,13 @@ object GpuOverrides extends Logging {
       }),
     expr[Min](
       "Min aggregate operator",
-      ExprChecksImpl(
-        ExprChecks.fullAgg(
-          TypeSig.commonCudfTypes + TypeSig.NULL, TypeSig.orderable,
-          Seq(ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.NULL)
-                .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
-                .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-            TypeSig.orderable))
-        ).asInstanceOf[ExprChecksImpl].contexts
-          ++
-          ExprChecks.windowOnly(
-            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL, TypeSig.orderable,
-            Seq(ParamCheck("input",
-              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
-                  .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
-                  .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
-              TypeSig.orderable))
-          ).asInstanceOf[ExprChecksImpl].contexts
+      ExprChecks.fullAgg(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL, TypeSig.orderable,
+        Seq(ParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
+              .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
+              .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
+          TypeSig.orderable))
       ),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
