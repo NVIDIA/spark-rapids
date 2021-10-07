@@ -31,10 +31,22 @@ def test_project_alias(data_gen):
 
 @pytest.mark.parametrize('data_gen', [double_gen], ids=idfn)
 def test_project_float(data_gen):
-    data_type = data_gen.data_type
-    dec = float(123123123123123123123123123.456)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : debug_df(binary_op_df(spark, data_gen, length=2).select(
-            f.col('a').cast(DecimalGen(precision=20, scale=3).data_type))))
+        lambda spark : binary_op_df(spark, data_gen).select(
+            f.col('a').cast(DecimalGen(precision=20, scale=3).data_type)))
+
+
+@pytest.mark.parametrize('data_gen', [byte_gen], ids=idfn)
+def test_cast_byte_to_decimal(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, data_gen).select(
+            f.col('a').cast(DecimalGen(precision=2, scale=0).data_type)))
+
+@pytest.mark.parametrize('data_gen', [byte_gen], ids=idfn)
+def test_cast_byte_to_decimal_neg_scale(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : binary_op_df(spark, data_gen).select(
+            f.col('a').cast(DecimalGen(precision=1, scale=-1).data_type)),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
 

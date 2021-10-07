@@ -514,7 +514,7 @@ object GpuCast extends Arm {
             castFloatsToDecimal(fp, dt, ansiMode)
           }
         }
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
+      case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
@@ -1133,9 +1133,10 @@ object GpuCast extends Arm {
 
   private def getPrecisionScaleForIntegralInput(input: ColumnView): Tuple2[Int, Int] = {
     input.getType match {
-      case DType.INT16 => (5, 0)
-      case DType.INT32 => (10, 0)
-      case DType.INT64 => (20, 0)
+      case DType.INT8 =>  (2, 0)
+      case DType.INT16 => (4, 0)
+      case DType.INT32 => (9, 0)
+      case DType.INT64 => (18, 0)
     }
   }
 
@@ -1162,27 +1163,10 @@ object GpuCast extends Arm {
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     val (prec, scale) = getPrecisionScaleForIntegralInput(input)
-    val (lowBound, upBound) = getBounds(input, dt)
-    // At first, we conduct overflow check onto input column.
-    // Then, we cast checked input into target decimal type.
+    // Cast input to decimal
     val inputDecimalType = new DecimalType(prec, scale)
-    if (ansiMode) {
-      assertValuesInRange(castIntegralsToDecimalAfterCheck(
-        input, inputDecimalType),
-        minValue = GpuScalar.from(lowBound, inputDecimalType),
-        maxValue = GpuScalar.from(upBound, inputDecimalType),
-       )
-      castIntegralsToDecimalAfterCheck(input, dt)
-    } else {
-      val checkedInput = replaceOutOfRangeValues(castIntegralsToDecimalAfterCheck(
-        input, inputDecimalType),
-        minValue = GpuScalar.from(lowBound, inputDecimalType),
-        maxValue = GpuScalar.from(upBound, inputDecimalType),
-        replaceValue = Scalar.fromNull(DecimalUtil.createCudfDecimal(inputDecimalType)))
-      withResource(checkedInput) { checked =>
-        castIntegralsToDecimalAfterCheck(checked, dt)
-      }
-    }
+    val castedInput = castIntegralsToDecimalAfterCheck(input, inputDecimalType)
+    castDecimalToDecimal(castedInput, inputDecimalType, dt, ansiMode)
   }
 
   private def castFloatsToDecimal(
