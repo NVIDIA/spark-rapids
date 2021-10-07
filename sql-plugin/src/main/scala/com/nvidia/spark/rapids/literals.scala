@@ -288,8 +288,8 @@ object GpuScalar extends Arm with Logging {
     }
     case IntegerType => v match {
       case i: Int =>  Scalar.fromInt(i)
-      case s: Short =>  Scalar.fromInt(s)
-      case b: Byte =>  Scalar.fromInt(b)
+      case s: Short =>  Scalar.fromInt(s.toInt)
+      case b: Byte =>  Scalar.fromInt(b.toInt)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for IntegerType, expecting Int.")
     }
@@ -308,7 +308,7 @@ object GpuScalar extends Arm with Logging {
     }
     case ShortType => v match {
       case s: Short => Scalar.fromShort(s)
-      case b: Byte => Scalar.fromShort(b)
+      case b: Byte => Scalar.fromShort(b.toShort)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for ShortType, expecting Short.")
     }
