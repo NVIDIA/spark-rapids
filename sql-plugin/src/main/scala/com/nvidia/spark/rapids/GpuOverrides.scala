@@ -933,11 +933,11 @@ object GpuOverrides extends Logging {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
             TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
           TypeSig.all),
           ParamCheck("windowSpec",
@@ -1526,7 +1526,7 @@ object GpuOverrides extends Logging {
     expr[KnownNotNull](
       "Tag an expression as known to not be null",
       ExprChecks.unaryProjectInputMatchesOutput(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.BINARY + TypeSig.CALENDAR +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.BINARY + TypeSig.CALENDAR +
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(), TypeSig.all),
       (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -2101,12 +2101,12 @@ object GpuOverrides extends Logging {
     expr[AggregateExpression](
       "Aggregate expression",
       ExprChecks.fullAgg(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck(
           "aggFunc",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
               TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all)),
         Some(RepeatingParamCheck("filter", TypeSig.BOOLEAN, TypeSig.BOOLEAN))),
@@ -2196,7 +2196,9 @@ object GpuOverrides extends Logging {
       ExprChecks.fullAgg(
         TypeSig.LONG, TypeSig.LONG,
         repeatingParamCheck = Some(RepeatingParamCheck(
-          "input", _gpuCommonTypes + TypeSig.STRUCT.nested(_gpuCommonTypes), TypeSig.all))),
+          "input", _gpuCommonTypes + TypeSig.DECIMAL_128_FULL +
+              TypeSig.STRUCT.nested(_gpuCommonTypes + TypeSig.DECIMAL_128_FULL),
+          TypeSig.all))),
       (count, conf, p, r) => new AggExprMeta[Count](count, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           if (count.children.size > 1) {
@@ -2298,19 +2300,19 @@ object GpuOverrides extends Logging {
     expr[First](
       "first aggregate operator", {
         val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
         ).asInstanceOf[ExprChecksImpl]
         // TODO: support GpuFirst on nested types for reduction
         //  https://github.com/NVIDIA/spark-rapids/issues/3221
         val nestedChecks = ContextChecks(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
           Seq(ParamCheck("input",
             (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
@@ -2325,19 +2327,19 @@ object GpuOverrides extends Logging {
     expr[Last](
       "last aggregate operator", {
         val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
         ).asInstanceOf[ExprChecksImpl]
         // TODO: support GpuLast on nested types for reduction
         // https://github.com/NVIDIA/spark-rapids/issues/3221
         val nestedChecks = ContextChecks(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
           Seq(ParamCheck("input",
             (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
@@ -3560,9 +3562,10 @@ object GpuOverrides extends Logging {
       }),
     exec[BroadcastExchangeExec](
       "The backend for broadcast exchange of data",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-        TypeSig.DECIMAL_64 + TypeSig.STRUCT), TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(TypeSig.commonCudfTypes +
+          TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT),
+        TypeSig.all),
       (exchange, conf, p, r) => new GpuBroadcastMeta(exchange, conf, p, r)),
     exec[BroadcastNestedLoopJoinExec](
       "Implementation of join using brute force. Full outer joins and joins where the " +
@@ -3572,9 +3575,9 @@ object GpuOverrides extends Logging {
       (join, conf, p, r) => new GpuBroadcastNestedLoopJoinMeta(join, conf, p, r)),
     exec[CartesianProductExec](
       "Implementation of join using brute force",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
               TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (join, conf, p, r) => new SparkPlanMeta[CartesianProductExec](join, conf, p, r) {
@@ -3598,7 +3601,7 @@ object GpuOverrides extends Logging {
     exec[HashAggregateExec](
       "The backend for hash based aggregations",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
@@ -3647,7 +3650,7 @@ object GpuOverrides extends Logging {
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
       "Window-operator backend",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all,
         Map("partitionSpec" ->
