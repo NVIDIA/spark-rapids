@@ -3699,7 +3699,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     val preparedSubPlans = subPlans.map(prepareExplainOnly(_))
     val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf))
     val topPlanExplain = explainSinglePlan(updatedPlan, conf)
-    subPlanExplains + "\n" + topPlanExplain
+    (subPlanExplains :+ topPlanExplain).mkString("\n")
   }
 
   def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf): String = {
@@ -3856,8 +3856,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   }
 
   private def prepareExplainOnly(plan: SparkPlan): SparkPlan = {
-    // strip out things that would have been added after our GPU plugin would have
-    // processed the plan
+    // Strip out things that would have been added after our GPU plugin would have
+    // processed the plan.
+    // AQE we look at the input plan so pretty much just like if AQE wasn't enabled.
     val planAfter = plan.transformUp {
       case ia: InputAdapter => prepareExplainOnly(ia.child)
       case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child)
