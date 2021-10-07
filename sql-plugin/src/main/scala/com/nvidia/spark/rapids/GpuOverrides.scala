@@ -3644,32 +3644,7 @@ object GpuOverrides extends Logging {
   val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.postColToRowProcessing")
 
-  // only run the explain and don't actually convert or run on GPU
-  def explainPotentialGPUPlan(df: DataFrame): String = {
-    val plan = df.queryExecution.executedPlan
-    val conf = new RapidsConf(plan.conf)
-    val updatedPlan = prepareExplainOnly(plan)
-    val subQueryExprs = getSubQueryPlans(plan)
-    val preparedSubPlans = subQueryExprs.map(_.plan).map(prepareExplainOnly(_))
-    val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf))
-    val topPlanExplain = explainSinglePlan(updatedPlan, conf)
-    (subPlanExplains :+ topPlanExplain).mkString("\n")
-  }
-
-  private def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf): String = {
-    val wrap = wrapAndTagPlan(updatedPlan, conf)
-    val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
-    if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
-      "Can't replace any part of this plan due to: " +
-        s"${reasonsToNotReplaceEntirePlan.mkString(",")}"
-    } else {
-      wrap.runAfterTagRules()
-      wrap.tagForExplain()
-      wrap.explain(all = true)
-    }
-  }
-
-  private def wrapAndTagPlan(plan: SparkPlan, conf: RapidsConf): SparkPlanMeta[SparkPlan] = {
+  def wrapAndTagPlan(plan: SparkPlan, conf: RapidsConf): SparkPlanMeta[SparkPlan] = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
     wrap.tagForGpu()
     wrap
@@ -3700,45 +3675,12 @@ object GpuOverrides extends Logging {
       Seq.empty
     }
   }
-  def addSortsIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+
+  private def addSortsIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     plan.transformUp {
       case operator: SparkPlan =>
         ensureOrdering(operator, conf)
     }
-  }
-
-  private def findSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
-    val childExprs = e.children.flatMap(findSubqueryExpressions(_))
-    val res = e match {
-      case sq: ExecSubqueryExpression => Seq(sq)
-      case _ => Seq.empty
-    }
-    childExprs ++ res
-  }
-
-  private def getSubQueryPlans(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
-    // strip out things that would have been added after our GPU plugin would have
-    // processed the plan
-    val childPlans = plan.children.flatMap(getSubQueryPlans(_))
-    val pSubs = plan.expressions.flatMap {
-      findSubqueryExpressions(_)
-    }
-    childPlans ++ pSubs
-  }
-
-  private def prepareExplainOnly(plan: SparkPlan): SparkPlan = {
-    // Strip out things that would have been added after our GPU plugin would have
-    // processed the plan.
-    // AQE we look at the input plan so pretty much just like if AQE wasn't enabled.
-    val planAfter = plan.transformUp {
-      case ia: InputAdapter => prepareExplainOnly(ia.child)
-      case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child)
-      case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
-      case re: ReusedExchangeExec => prepareExplainOnly(re.child)
-      case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan)
-      case sub: SubqueryExec => prepareExplainOnly(sub.child)
-    }
-    planAfter
   }
 
   // copied from Spark EnsureRequirements but only does the ordering checks and
@@ -3804,15 +3746,6 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
   }(sparkPlan)
-}
-
-object ExplainGPUPlan {
-  def explainPotentialGPUPlan(df: DataFrame): String = {
-    val gpuOverrideClass = ShimLoader.loadClass("com.nvidia.spark.rapids.GpuOverrides")
-    val explainMethod = gpuOverrideClass
-      .getDeclaredMethod("explainPotentialGPUPlan", classOf[DataFrame])
-    explainMethod.invoke(null, df).asInstanceOf[String]
-  }
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
