@@ -1260,6 +1260,7 @@ object GpuCast extends Arm {
     val isWholeNumUpcast = fromWholeNumPrecision <= toWholeNumPrecision
     // When upcasting the scale (fractional number) part there is no need for rounding.
     val isScaleUpcast = from.scale <= to.scale
+
     if (toDType == fromDType) {
       // This can happen in some cases when the scale does not change but the precision does. To
       // Spark they are different types, but CUDF sees them as the same, so no need to change

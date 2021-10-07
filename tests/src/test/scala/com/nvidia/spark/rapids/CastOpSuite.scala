@@ -1053,8 +1053,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
           enhancedRnd.nextLong() / math.pow(10, scale + 2)
         case dt: DecimalType =>
           val unscaledValue = (enhancedRnd.nextLong() * math.pow(10, dt.precision - 18)).toLong
-          val ret = Decimal.createUnsafe(unscaledValue, dt.precision, dt.scale)
-          ret
+          Decimal.createUnsafe(unscaledValue, dt.precision, dt.scale)
         case _ =>
           throw new IllegalArgumentException(s"unsupported dataType: $dataType")
       }
