@@ -725,6 +725,8 @@ object GpuOverrides extends Logging {
   private val nanAggPsNote = "Input must not contain NaNs and" +
       s" ${RapidsConf.HAS_NANS} must be false."
 
+  private val cannotAddOrSubPsNote = "DECIMAL precision of 38 not supported due to overflow checks"
+
   /**
    * Helper function specific to ANSI mode for the aggregate functions that should
    * fallback, since we don't have the same overflow checks that Spark provides in
@@ -902,14 +904,14 @@ object GpuOverrides extends Logging {
       }),
     expr[PromotePrecision](
       "PromotePrecision before arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_64,
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128_FULL,
         TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
       }),
     expr[CheckOverflow](
       "CheckOverflow after arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_64,
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128_FULL,
         TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[CheckOverflow](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -1202,7 +1204,7 @@ object GpuOverrides extends Logging {
       "Checks if a value is null",
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+            TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[IsNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
@@ -1211,7 +1213,7 @@ object GpuOverrides extends Logging {
       "Checks if a value is not null",
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+            TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[IsNotNull](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
@@ -1240,7 +1242,7 @@ object GpuOverrides extends Logging {
       "Checks if number of non null/Nan values is greater than a given value",
       ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         repeatingParamCheck = Some(RepeatingParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP +
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP +
               TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[AtLeastNNonNulls](a, conf, p, r) {
@@ -1338,10 +1340,10 @@ object GpuOverrides extends Logging {
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
-        (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
-          (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+          (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -1702,11 +1704,30 @@ object GpuOverrides extends Logging {
       "Addition",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
+            TypeSig.numericAndInterval),
+        ("rhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
+            TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Add](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagExprForGpu(): Unit = {
+          // In a binary op like this the LHS and RHS types are the same. In the case of Add the
+          // output type is also the same as the LHS, because Spark has already cast the values
+          // to the same type. For Decimal this means the complicated formula to determine the
+          // new precision and scale. Because we cannot do overflow detection in the same way as
+          // Spark we fall back to the CPU any time it look like there might be an overflow
+          // possible
+          a.dataType match {
+            case dt: DecimalType if dt.precision >= DecimalType.MAX_PRECISION =>
+              willNotWorkOnGpu(s"Because of limitations in overflow checking the " +
+                  s"precision ${dt.precision} too large to be sure that no overflow will happen.")
+            case _ => //NOOP
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
@@ -1721,11 +1742,30 @@ object GpuOverrides extends Logging {
       "Subtraction",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric, TypeSig.numericAndInterval,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.numericAndInterval)),
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numericAndInterval,
+        ("lhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
+            TypeSig.numericAndInterval),
+        ("rhs", TypeSig.gpuNumeric +
+            TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL, cannotAddOrSubPsNote),
+            TypeSig.numericAndInterval)),
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
+
+        override def tagExprForGpu(): Unit = {
+          // In a binary op like this the LHS and RHS types are the same. In the case of Subtract
+          // the output type is also the same as the LHS, because Spark has already cast the values
+          // to the same type. For Decimal this means the complicated formula to determine the
+          // new precision and scale. Because we cannot do overflow detection in the same way as
+          // Spark we fall back to the CPU any time it look like there might be an overflow
+          // possible
+          a.dataType match {
+            case dt: DecimalType if dt.precision >= DecimalType.MAX_PRECISION =>
+              willNotWorkOnGpu(s"Because of limitations in overflow checking the " +
+                  s"precision ${dt.precision} too large to be sure that no overflow will happen.")
+            case _ => //NOOP
+          }
+        }
 
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
@@ -1740,12 +1780,12 @@ object GpuOverrides extends Logging {
       "Multiplication",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL + TypeSig.psNote(TypeEnum.DECIMAL,
           "Because of Spark's inner workings the full range of decimal precision " +
-              "(even for 64-bit values) is not supported."),
+              "(even for 128-bit values) is not supported."),
         TypeSig.numeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.numeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.numeric)),
+        ("lhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric),
+        ("rhs", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric)),
       (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // Multiplication of Decimal types is a little odd. Spark will cast the inputs
@@ -1766,10 +1806,10 @@ object GpuOverrides extends Logging {
           val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val intermediateResult = GpuMultiplyUtil.decimalDataType(l, r)
-              if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
+              val intermediatePrecision = GpuMultiplyUtil.decimalPrecision(l, r)
+              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu("The actual output precision of the multiply is too large" +
-                    s" to fit on the GPU $intermediateResult")
+                    s" to fit on the GPU $intermediatePrecision")
               }
             case _ => // NOOP
           }
@@ -1804,8 +1844,10 @@ object GpuOverrides extends Logging {
       "Check if the values are equal including nulls <=>",
       ExprChecks.binaryProject(
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable)),
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.comparable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.comparable)),
       (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualNullSafe(lhs, rhs)
@@ -1815,8 +1857,10 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProjectAndAst(
         TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable)),
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.comparable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.comparable)),
       (a, conf, p, r) => new BinaryAstExprMeta[EqualTo](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuEqualTo(lhs, rhs)
@@ -1826,8 +1870,10 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProjectAndAst(
         TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[GreaterThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThan(lhs, rhs)
@@ -1837,8 +1883,10 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProjectAndAst(
         TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[GreaterThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGreaterThanOrEqual(lhs, rhs)
@@ -1883,8 +1931,10 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProjectAndAst(
         TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[LessThan](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThan(lhs, rhs)
@@ -1894,8 +1944,10 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProjectAndAst(
         TypeSig.comparisonAstTypes,
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.orderable)),
+        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable),
+        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
+            TypeSig.orderable)),
       (a, conf, p, r) => new BinaryAstExprMeta[LessThanOrEqual](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLessThanOrEqual(lhs, rhs)
@@ -1920,14 +1972,17 @@ object GpuOverrides extends Logging {
     expr[If](
       "IF expression",
       ExprChecks.projectOnly(
-        (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+        (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT +
+            TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("predicate", TypeSig.BOOLEAN, TypeSig.BOOLEAN),
           ParamCheck("trueValue",
-            (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT +
+                TypeSig.MAP).nested(),
             TypeSig.all),
           ParamCheck("falseValue",
-            (_gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            (_gpuCommonTypes + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT +
+                TypeSig.MAP).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = {
@@ -1948,13 +2003,15 @@ object GpuOverrides extends Logging {
     expr[Divide](
       "Division",
       ExprChecks.binaryProject(
-        TypeSig.DOUBLE +
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL +
             TypeSig.psNote(TypeEnum.DECIMAL,
               "Because of Spark's inner workings the full range of decimal precision " +
-                  "(even for 64-bit values) is not supported."),
+                  "(even for 128-bit values) is not supported."),
         TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_64, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL),
-        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_64, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL)),
+        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+            TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL),
+        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+            TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL)),
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // Division of Decimal types is a little odd. Spark will cast the inputs
@@ -1977,40 +2034,18 @@ object GpuOverrides extends Logging {
           val Seq(leftDataType, rightDataType) = childExprs.flatMap(_.typeMeta.dataType)
           (leftDataType, rightDataType) match {
             case (l: DecimalType, r: DecimalType) =>
-              val outputType = GpuDivideUtil.decimalDataType(l, r)
-              // Case 1: OutputType.precision doesn't get truncated
-              //   We will never hit a case where outputType.precision < outputType.scale + r.scale.
-              //   So there is no need to protect against that.
-              //   The only two cases in which there is a possibility of the intermediary scale
-              //   exceeding the intermediary precision is when l.precision < l.scale or l
-              //   .precision < 0, both of which aren't possible.
-              //   Proof:
-              //   case 1:
-              //   outputType.precision = p1 - s1 + s2 + s1 + p2 + 1 + 1
-              //   outputType.scale = p1 + s2 + p2 + 1 + 1
-              //   To find out if outputType.precision < outputType.scale simplifies to p1 < s1,
-              //   which is never possible
-              //
-              //   case 2:
-              //   outputType.precision = p1 - s1 + s2 + 6 + 1
-              //   outputType.scale = 6 + 1
-              //   To find out if outputType.precision < outputType.scale simplifies to p1 < 0
-              //   which is never possible
-              // Case 2: OutputType.precision gets truncated to 38
-              //   In this case we have to make sure the r.precision + l.scale + r.scale + 1 <= 38
-              //   Otherwise the intermediate result will overflow
-              // TODO We should revisit the proof one more time after we support 128-bit decimals
-              if (l.precision + l.scale + r.scale + 1 > 38) {
+              val outputScale = GpuDivideUtil.outputDecimalScale(l, r)
+              val outputPrecision = GpuDivideUtil.outputDecimalPrecision(l, r, outputScale)
+              if (outputPrecision > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu("The final output precision of the divide is too " +
+                    s"large to be supported on the GPU $outputPrecision")
+              }
+              val intermediatePrecision =
+                GpuDivideUtil.intermediateDecimalPrecision(l, r, outputScale)
+
+              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
                 willNotWorkOnGpu("The intermediate output precision of the divide is too " +
-                  s"large to be supported on the GPU i.e. Decimal(${outputType.precision}, " +
-                  s"${outputType.scale + r.scale})")
-              } else {
-                val intermediateResult =
-                  DecimalType(outputType.precision, outputType.scale + r.scale)
-                if (intermediateResult.precision > DType.DECIMAL64_MAX_PRECISION) {
-                  willNotWorkOnGpu("The actual output precision of the divide is too large" +
-                    s" to fit on the GPU $intermediateResult")
-                }
+                  s"large to be supported on the GPU $intermediatePrecision")
               }
             case _ => // NOOP
           }
@@ -2023,8 +2058,8 @@ object GpuOverrides extends Logging {
       "Division with a integer result",
       ExprChecks.binaryProject(
         TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_64, TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
-        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_64, TypeSig.LONG + TypeSig.DECIMAL_128_FULL)),
+        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128_FULL, TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
+        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128_FULL, TypeSig.LONG + TypeSig.DECIMAL_128_FULL)),
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)
@@ -3441,7 +3476,7 @@ object GpuOverrides extends Logging {
         }),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (localLimitExec, conf, p, r) =>
@@ -3451,7 +3486,7 @@ object GpuOverrides extends Logging {
         }),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (globalLimitExec, conf, p, r) =>
@@ -3461,15 +3496,17 @@ object GpuOverrides extends Logging {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks(pluginSupportedOrderableSig, TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
-          "of rows in a batch it could help by limiting the number of rows transferred from " +
-          "GPU to CPU"),
+            "of rows in a batch it could help by limiting the number of rows transferred from " +
+            "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
       (filter, conf, p, r) => new SparkPlanMeta[FilterExec](filter, conf, p, r) {
         override def convertToGpu(): GpuExec =
           GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
