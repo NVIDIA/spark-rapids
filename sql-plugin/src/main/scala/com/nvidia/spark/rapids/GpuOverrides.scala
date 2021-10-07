@@ -1069,7 +1069,7 @@ object GpuOverrides extends Logging {
       "Negate a numeric value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryMinus](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
@@ -1087,7 +1087,7 @@ object GpuOverrides extends Logging {
       "A numeric value with a + in front of it",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
         TypeSig.astTypes,
-        TypeSig.gpuNumeric,
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
         TypeSig.numericAndInterval),
       (a, conf, p, r) => new UnaryAstExprMeta[UnaryPositive](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
@@ -1180,17 +1180,41 @@ object GpuOverrides extends Logging {
     expr[Floor](
       "Floor of a number",
       ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_64,
+        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[Floor](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType match {
+            case dt: DecimalType =>
+              val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
+              if (precision > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu(s"output precision $precision would require overflow " +
+                    s"checks, which are not supported yet")
+              }
+            case _ => // NOOP
+          }
+        }
+
         override def convertToGpu(child: Expression): GpuExpression = GpuFloor(child)
       }),
     expr[Ceil](
       "Ceiling of a number",
       ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_64,
+        TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL,
         TypeSig.DOUBLE + TypeSig.LONG + TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[Ceil](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType match {
+            case dt: DecimalType =>
+              val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
+              if (precision > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu(s"output precision $precision would require overflow " +
+                    s"checks, which are not supported yet")
+              }
+            case _ => // NOOP
+          }
+        }
+
         override def convertToGpu(child: Expression): GpuExpression = GpuCeil(child)
       }),
     expr[Not](
@@ -2328,8 +2352,8 @@ object GpuOverrides extends Logging {
     expr[BRound](
       "Round an expression to d decimal places using HALF_EVEN rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric +
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric,
+        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -2349,8 +2373,8 @@ object GpuOverrides extends Logging {
     expr[Round](
       "Round an expression to d decimal places using HALF_UP rounding mode",
       ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.numeric,
-        ("value", TypeSig.gpuNumeric +
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric,
+        ("value", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL +
             TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
             TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
             TypeSig.numeric),
@@ -3316,7 +3340,7 @@ object GpuOverrides extends Logging {
     part[RangePartitioning](
       "Range partitioning",
       PartChecks(RepeatingParamCheck("order_key",
-        pluginSupportedOrderableSig + TypeSig.STRUCT.nested(),
+        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL + TypeSig.STRUCT).nested(),
         TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
@@ -3476,7 +3500,7 @@ object GpuOverrides extends Logging {
         }),
     exec[LocalLimitExec](
       "Per-partition limiting of results",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (localLimitExec, conf, p, r) =>
@@ -3486,7 +3510,7 @@ object GpuOverrides extends Logging {
         }),
     exec[GlobalLimitExec](
       "Limiting of results across partitions",
-      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (globalLimitExec, conf, p, r) =>
@@ -3496,11 +3520,13 @@ object GpuOverrides extends Logging {
         }),
     exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
-      ExecChecks(pluginSupportedOrderableSig, TypeSig.all),
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+        TypeSig.all),
       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
         .disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
-          "of rows in a batch it could help by limiting the number of rows transferred from " +
-          "GPU to CPU"),
+            "of rows in a batch it could help by limiting the number of rows transferred from " +
+            "GPU to CPU"),
     exec[FilterExec](
       "The backend for most filter statements",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
@@ -3609,8 +3635,8 @@ object GpuOverrides extends Logging {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
-          TypeSig.MAP).nested(), TypeSig.all),
+      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
+          TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",

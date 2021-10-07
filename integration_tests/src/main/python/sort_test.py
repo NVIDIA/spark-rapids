@@ -27,7 +27,7 @@ orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), Int
         DecimalGen(precision=7, scale=-3, nullable=False), DecimalGen(precision=7, scale=3, nullable=False),
         DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2, nullable=False)]
 
-@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen + decimal_128_gens, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
@@ -41,6 +41,7 @@ def test_single_orderby(data_gen, order):
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', decimal_gen_38_10]])),
     pytest.param(StructGen([['child0', all_basic_struct_gen]])),
     pytest.param(ArrayGen(string_gen),
         marks=pytest.mark.xfail(reason="arrays are not supported")),
@@ -124,7 +125,7 @@ def test_single_nested_orderby_with_limit_fallback(data_gen, order):
             'spark.rapids.allowCpuRangePartitioning': False
         })
 
-@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen + decimal_128_gens, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_sort_in_part(data_gen, order):
     # We set `num_slices` to handle https://github.com/NVIDIA/spark-rapids/issues/2477
@@ -158,7 +159,7 @@ orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen,
             reason='Spark has -0.0 < 0.0 before Spark 3.1')),
         pytest.param(double_gen, marks=pytest.mark.xfail(condition=is_before_spark_311(),
             reason='Spark has -0.0 < 0.0 before Spark 3.1')),
-        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])] + decimal_gens
+        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])] + decimal_gens + decimal_128_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
 def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -258,6 +259,7 @@ def test_large_orderby(data_gen, stable_sort):
     date_gen,
     timestamp_gen,
     decimal_gen_default,
+    decimal_gen_38_10,
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
@@ -276,6 +278,7 @@ def test_large_orderby_nested_ridealong(data_gen):
     date_gen,
     timestamp_gen,
     decimal_gen_default,
+    decimal_gen_38_10,
     StructGen([('child1', byte_gen)]),
     simple_string_to_string_map_gen,
     ArrayGen(byte_gen, max_length=5)] + decimal_128_gens_no_neg, ids=idfn)

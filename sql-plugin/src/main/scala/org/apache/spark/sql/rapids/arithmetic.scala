@@ -78,8 +78,12 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
           withResource(Scalar.fromDecimal(-scale, 0)) { scalar =>
             scalar.sub(input.getBase)
           }
-        } else {
+        } else if (DecimalType.is64BitDecimalType(dt)) {
           withResource(Scalar.fromDecimal(-scale, 0L)) { scalar =>
+            scalar.sub(input.getBase)
+          }
+        } else { // Decimal-128
+          withResource(Scalar.fromDecimal(-scale, BigInteger.ZERO)) { scalar =>
             scalar.sub(input.getBase)
           }
         }
