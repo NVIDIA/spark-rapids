@@ -211,13 +211,13 @@ def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('signum(a)'))
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_unary_minus(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens + decimal_128_gens, ids=idfn)
 def test_unary_minus_ansi_no_overflow(data_gen):
     conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.sql.ansi.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
@@ -239,20 +239,20 @@ def test_unary_minus_ansi_overflow(data_type, value):
 # This just ends up being a pass through.  There is no good way to force
 # a unary positive into a plan, because it gets optimized out, but this
 # verifies that we can handle it.
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_unary_positive(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_36_neg5, decimal_gen_38_0], ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'),
             conf=allow_negative_scale_of_decimal_conf)
 
 # ANSI is ignored for abs prior to 3.2.0, but still okay to test it a little more.
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens + decimal_128_gens, ids=idfn)
 def test_abs_ansi_no_overflow(data_gen):
     conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.sql.ansi.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
@@ -285,13 +285,13 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_38_0, decimal_gen_38_10], ids=idfn)
 def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_38_0, decimal_gen_38_10], ids=idfn)
 def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'),
@@ -337,6 +337,9 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(cast(null as {}), b)'.format(string_type),
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
+
+#gen for testing round operator
+round_gens = numeric_gens + decimal_gens + decimal_128_gens
 
 @incompat
 @approximate_float
