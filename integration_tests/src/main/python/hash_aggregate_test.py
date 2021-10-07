@@ -254,8 +254,19 @@ _grpkey_small_decimals = [
     ('b', DecimalGen(precision=5, scale=2)),
     ('c', DecimalGen(precision=8, scale=3))]
 
+
+_grpkey_short_mid_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', decimal_gen_18_3),
+    ('c', decimal_gen_18_3)]
+
+_grpkey_short_big_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', decimal_gen_20_2),
+    ('c', decimal_gen_20_2)]
+
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
-    _grpkey_small_decimals]
+    _grpkey_small_decimals, _grpkey_short_mid_decimals, _grpkey_short_big_decimals]
 
 @shuffle_test
 @approximate_float

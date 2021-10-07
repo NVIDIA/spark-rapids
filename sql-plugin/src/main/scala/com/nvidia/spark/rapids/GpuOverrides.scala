@@ -2256,20 +2256,29 @@ object GpuOverrides extends Logging {
       "Sum aggregate operator",
       ExprChecksImpl(
         ExprChecks.fullAgg(
-          TypeSig.LONG + TypeSig.DOUBLE, TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))
+          TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          Seq(ParamCheck("input", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric))
         ).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
-            TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_64,
             TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-            Seq(ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric))
+            TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+            Seq(ParamCheck("input", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+              TypeSig.numeric))
           ).asInstanceOf[ExprChecksImpl].contexts
       ),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
-          val dataType = a.child.dataType
-          checkAndTagFloatAgg(dataType, conf, this)
+          val inputDataType = a.child.dataType
+          checkAndTagFloatAgg(inputDataType, conf, this)
+
+          a.dataType match {
+            case dt: DecimalType if dt.precision >= DType.DECIMAL128_MAX_PRECISION =>
+              willNotWorkOnGpu("Because of a lack of full overflow checking on aggregations " +
+                  s"a precision of ${DType.DECIMAL128_MAX_PRECISION} is not supported.")
+            case _ => // NOOP
+          }
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =

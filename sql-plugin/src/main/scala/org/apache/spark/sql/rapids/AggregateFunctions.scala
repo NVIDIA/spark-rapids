@@ -589,18 +589,47 @@ case class GpuSum(child: Expression, resultType: DataType)
       with GpuRunningWindowFunction {
 
   private lazy val cudfSum = AttributeReference("sum", resultType)()
+  private lazy val isEmpty = AttributeReference("isEmpty", BooleanType, nullable = false)()
+  private lazy val zeroDec = {
+    val dt = resultType.asInstanceOf[DecimalType]
+    GpuLiteral(Decimal(0, dt.precision, dt.scale), dt)
+  }
 
-  override lazy val inputProjection: Seq[Expression] = Seq(child)
-  override lazy val updateExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum))
+  override lazy val inputProjection: Seq[Expression] = resultType match {
+    case _: DecimalType => Seq(child, GpuIsNull(child))
+    case _ => Seq(child)
+  }
+  override lazy val updateExpressions: Seq[Expression] = resultType match {
+    case _: DecimalType => Seq(new CudfSum(cudfSum), new CudfMin(isEmpty))
+    case _ => Seq(new CudfSum(cudfSum))
+  }
   // we need to cast to `resultType` here, since Spark is not widening types
   // as done before Spark 3.2.0. See CudfSum for more info.
-  override lazy val preUpdate: Seq[Expression] = Seq(GpuCast(cudfSum, resultType))
-  override lazy val mergeExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum))
+  override lazy val preUpdate: Seq[Expression] = resultType match {
+    // TODO For some reason Spark generates code that says this can never be null, but
+    //  it feels like I am missing something because the code indicates that null should
+    //  work.
+    case _: DecimalType => Seq(GpuIf(isEmpty, zeroDec, GpuCast(cudfSum, resultType)), isEmpty)
+    case _ => Seq(GpuCast(cudfSum, resultType))
+  }
+
+  override lazy val mergeExpressions: Seq[Expression] = resultType match {
+    case _: DecimalType => Seq(new CudfSum(cudfSum), new CudfMin(isEmpty))
+    case _ => Seq(new CudfSum(cudfSum))
+  }
+  // TODO at some point we need to use isEmpty for Decimal and figure out a story for overflow
+  //  checking
   override lazy val evaluateExpression: Expression = cudfSum
 
-  override lazy val aggBufferAttributes: Seq[AttributeReference] = cudfSum :: Nil
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = resultType match {
+    case _: DecimalType => cudfSum :: isEmpty :: Nil
+    case _ => cudfSum :: Nil
+  }
 
-  override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, resultType))
+  override lazy val initialValues: Seq[GpuLiteral] = resultType match {
+    case _: DecimalType => Seq(zeroDec, GpuLiteral(true, BooleanType))
+    case _ => Seq(GpuLiteral(null, resultType))
+  }
 
   // Copied from Sum
   override def nullable: Boolean = true
