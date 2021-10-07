@@ -161,8 +161,9 @@ object ShimLoader extends Logging {
         logInfo("Extracted Spark classloader from SparkEnv.serializer " + serdeClassLoader)
         findURLClassLoader(serdeClassLoader)
       }.orElse {
-        logInfo("Spark-less use case: RapidsConf.help?")
-        Option(getClass.getClassLoader)
+        val shimLoaderCallerCl = getClass.getClassLoader
+        logInfo("Falling back on ShimLoader caller's classloader " + shimLoaderCallerCl)
+        Option(shimLoaderCallerCl)
       }
   }
 
