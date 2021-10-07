@@ -956,19 +956,19 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     }
     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
     // we need to run recursive type check on the structs.
-    val allTypesAreSupported = agg.groupingExpressions.forall(e =>
-      !TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+    val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
+      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
         dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
-    if (!allTypesAreSupported) {
-      willNotWorkOnGpu("ArrayTypes or MayTypes in grouping expressions are not supported")
+    if (arrayOrMapGroupings) {
+      willNotWorkOnGpu("ArrayTypes or MapTypes in grouping expressions are not supported")
     }
 
-    val noDec128Grouping = agg.groupingExpressions.forall(e =>
-      !TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+    val dec128Grouping = agg.groupingExpressions.exists(e =>
+      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
         dt => dt.isInstanceOf[DecimalType] &&
             dt.asInstanceOf[DecimalType].precision > DType.DECIMAL64_MAX_PRECISION))
-    if (!noDec128Grouping) {
-      willNotWorkOnGpu("Grouping by a 128-bit decimal value is not currently supported")
+    if (dec128Grouping) {
+      willNotWorkOnGpu("grouping by a 128-bit decimal value is not currently supported")
     }
 
     tagForReplaceMode()
