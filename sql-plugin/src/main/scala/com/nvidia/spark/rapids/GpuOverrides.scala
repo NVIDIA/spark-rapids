@@ -3674,35 +3674,26 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   }(sparkPlan)
 }
 
-object ExplainPlan {
-  def explainPotentialGPUPlan(df: DataFrame, disableAQE: Boolean = false): String = {
-    ShimLoader.newGpuOverrides().asInstanceOf[GpuOverrides].explainPotentialGPUPlan(df, disableAQE)
+object ExplainGPUPlan {
+  def explainPotentialGPUPlan(df: DataFrame): String = {
+    ShimLoader.newGpuOverrides().asInstanceOf[GpuOverrides].explainPotentialGPUPlan(df)
   }
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // only run the explain and don't actually convert or run on GPU
-  def explainPotentialGPUPlan(df: DataFrame, disableAQE: Boolean = false): String = {
+  def explainPotentialGPUPlan(df: DataFrame): String = {
     val plan = df.queryExecution.executedPlan
-    val initConf = new RapidsConf(plan.conf)
-    // if requested disable AQE to see what plan looks like
-    val conf = if (disableAQE) {
-      plan.conf.setConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED, false)
-      new RapidsConf(plan.conf)
-    } else {
-      initConf
-    }
     val updatedPlan = prepareExplainOnly(plan)
     val subQueryExprs = getSubQueryPlans(plan)
-    val subPlans = subQueryExprs.map(_.plan)
-    val preparedSubPlans = subPlans.map(prepareExplainOnly(_))
+    val preparedSubPlans = subQueryExprs.map(_.plan).map(prepareExplainOnly(_))
     val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf))
     val topPlanExplain = explainSinglePlan(updatedPlan, conf)
     (subPlanExplains :+ topPlanExplain).mkString("\n")
   }
 
-  def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf): String = {
+  private def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf): String = {
     val wrap = wrapAndTagPlan(updatedPlan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
