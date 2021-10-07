@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
+import com.nvidia.spark.rapids.GpuPartitioning
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -24,11 +26,16 @@ import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrig
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBaseWithMetrics
 
 case class GpuShuffleExchangeExec(
-    override val outputPartitioning: Partitioning,
+    gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)
-    extends GpuShuffleExchangeExecBaseWithMetrics(outputPartitioning, child)
+    shuffleOrigin: ShuffleOrigin)(
+    cpuOutputPartitioning: Partitioning)
+    extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
         with ShuffleExchangeLike {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
+
+  override val outputPartitioning: Partitioning = cpuOutputPartitioning
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 

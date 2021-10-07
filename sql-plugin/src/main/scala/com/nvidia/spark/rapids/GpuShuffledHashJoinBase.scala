@@ -27,11 +27,11 @@ import org.apache.spark.sql.rapids.execution.GpuHashJoin
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuShuffledHashJoinBase(
-    leftKeys: Seq[Expression],
-    rightKeys: Seq[Expression],
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    val isSkewJoin: Boolean) extends ShimBinaryExecNode with GpuHashJoin {
+    val isSkewJoin: Boolean,
+    cpuLeftKeys: Seq[Expression],
+    cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
@@ -45,7 +45,7 @@ abstract class GpuShuffledHashJoinBase(
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   override def requiredChildDistribution: Seq[Distribution] =
-    HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
+    HashClusteredDistribution(cpuLeftKeys) :: HashClusteredDistribution(cpuRightKeys) :: Nil
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new UnsupportedOperationException(
