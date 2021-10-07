@@ -3119,7 +3119,6 @@ object GpuOverrides extends Logging {
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         Nil, None),
       (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
-        logWarning("Scalar subquery plan is; " + a.plan)
         override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
       }
     ),
@@ -3580,9 +3579,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       initConf
     }
     val updatedPlan = prepareExplainOnly(plan)
-    val subPlans = getSubQueryPlans(plan).map(_.plan)
-    logWarning("sub query plans are: " + subPlans)
-    val subPlanExplains = subPlans.map(explainSinglePlan(_, conf))
+    val subQueryExprs = getSubQueryPlans(plan)
+    val subPlans = subQueryExprs.map(_.plan)
+    val preparedSubPlans = subPlans.map(prepareExplainOnly(_))
+    val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf))
     val topPlanExplain = explainSinglePlan(updatedPlan, conf)
     subPlanExplains + "\n" + topPlanExplain
   }
@@ -3749,6 +3749,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
       case re: ReusedExchangeExec => prepareExplainOnly(re.child)
       case aqe: AdaptiveSparkPlanExec => prepareExplainOnly(aqe.inputPlan)
+      case sub: SubqueryExec => prepareExplainOnly(sub.child)
     }
     planAfter
   }
