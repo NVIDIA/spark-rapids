@@ -1133,10 +1133,10 @@ object GpuCast extends Arm {
 
   private def getPrecisionScaleForIntegralInput(input: ColumnView): Tuple2[Int, Int] = {
     input.getType match {
-      case DType.INT8 =>  (2, 0)
-      case DType.INT16 => (4, 0)
-      case DType.INT32 => (9, 0)
-      case DType.INT64 => (18, 0)
+      case DType.INT8 =>  (3, 0)
+      case DType.INT16 => (5, 0)
+      case DType.INT32 => (10, 0)
+      case DType.INT64 => (20, 0)
     }
   }
 
@@ -1165,8 +1165,9 @@ object GpuCast extends Arm {
     val (prec, scale) = getPrecisionScaleForIntegralInput(input)
     // Cast input to decimal
     val inputDecimalType = new DecimalType(prec, scale)
-    val castedInput = castIntegralsToDecimalAfterCheck(input, inputDecimalType)
-    castDecimalToDecimal(castedInput, inputDecimalType, dt, ansiMode)
+    withResource(castIntegralsToDecimalAfterCheck(input, inputDecimalType)) { castedInput =>
+      castDecimalToDecimal(castedInput, inputDecimalType, dt, ansiMode)
+    }
   }
 
   private def castFloatsToDecimal(
@@ -1244,8 +1245,7 @@ object GpuCast extends Arm {
     val isWholeNumUpcast = fromWholeNumPrecision <= toWholeNumPrecision
     // When upcasting the scale (fractional number) part there is no need for rounding.
     val isScaleUpcast = from.scale <= to.scale
-
-    if (toDType == fromDType) {
+    if (toDType == fromDType && to.precision > from.precision) {
       // This can happen in some cases when the scale does not change but the precision does. To
       // Spark they are different types, but CUDF sees them as the same, so no need to change
       // anything.
