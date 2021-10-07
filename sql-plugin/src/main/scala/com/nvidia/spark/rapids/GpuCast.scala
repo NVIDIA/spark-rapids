@@ -20,7 +20,6 @@ import java.text.SimpleDateFormat
 import java.time.DateTimeException
 
 import scala.collection.mutable.ArrayBuffer
-import scala.math.BigDecimal.RoundingMode
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import ai.rapids.cudf
@@ -1220,79 +1219,84 @@ object GpuCast extends Arm {
 
     val fromWholeNumPrecision = from.precision - from.scale
     val toWholeNumPrecision = to.precision - to.scale
+
     // Decimal numbers in general terms have two parts, a part before decimal (whole number)
     // and a part after decimal (fractional number)
     // If we are upcasting the whole number part there is no need to check for out of bound
     // values.
     val isWholeNumUpcast = fromWholeNumPrecision <= toWholeNumPrecision
+
     // When upcasting the scale (fractional number) part there is no need for rounding.
     val isScaleUpcast = from.scale <= to.scale
-    if (toDType == fromDType && to.precision > from.precision) {
+
+    if (toDType.equals(fromDType) && to.precision >= from.precision) {
       // This can happen in some cases when the scale does not change but the precision does. To
       // Spark they are different types, but CUDF sees them as the same, so no need to change
       // anything.
       // If the input is a ColumnVector already this will just inc the reference count
       input.copyToColumnVector()
     } else {
-      val checked = if (!isWholeNumUpcast) {
-        // We need to check for out of bound values. We have to be careful because cudf can have
-        // problems when comparing values that have different precision/scale. So we start off by
-        // creating the maximum and minimum value that the toType can hold in the same
-        // precision/scale as the to type.
-
-        val boundStr = ("9" * to.precision) + "e" + (-to.scale)
-        val toUpperBound = BigDecimal(boundStr)
-        val toLowerBound = BigDecimal("-" + boundStr)
-
-        // Now we have to move these into the same precision/scale as from
-        // We round down (towards 0) so we can do a check for input > upperBound and
-        // input < lowerBound. Using an "or equal to" operator like <= would require us
-        // to do extra checks so we need to avoid them.
-        // This also lets us not worry about increasing the precision on accident when rounding
-        // up.
-        val upperBound = toUpperBound.setScale(from.scale, RoundingMode.DOWN)
-        val lowerBound = toLowerBound.setScale(from.scale, RoundingMode.DOWN)
-
-        val outOfBounds = withResource(GpuScalar.from(upperBound, from)) { ubScale =>
-          withResource(input.greaterThan(ubScale)) { over =>
-            withResource(GpuScalar.from(lowerBound, from)) { lbScale =>
-              withResource(input.lessThan(lbScale)) { under =>
-                over.or(under)
-              }
-            }
-          }
-        }
-        withResource(outOfBounds) { outOfBounds =>
-          if (ansiMode) {
-            withResource(outOfBounds.any()) { isAny =>
-              if (isAny.isValid && isAny.getBoolean) {
-                throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-              }
-            }
-            input.copyToColumnVector()
-          } else {
-            withResource(Scalar.fromNull(fromDType)) { nullVal =>
-              outOfBounds.ifElse(nullVal, input)
-            }
-          }
-        }
+      // We have to round first to match what Spark is doing...
+      val rounded = if (!isScaleUpcast) {
+        // We have to round the data to the desired scale. Spark uses HALF_UP rounding in
+        // this case so we need to also.
+        input.round(to.scale, cudf.RoundMode.HALF_UP)
       } else {
-        // This is just inc ref count for a ColumnVector
         input.copyToColumnVector()
       }
 
-      val rounded = withResource(checked) { checked =>
-        if (!isScaleUpcast) {
-          // We have to round the data to the desired scale. Spark uses HALF_UP rounding in
-          // this case so we need to also.
-          checked.round(to.scale, cudf.RoundMode.HALF_UP)
+      val checked = withResource(rounded) { rounded =>
+        if (!isWholeNumUpcast) {
+          val roundedType = DecimalType(from.precision, -rounded.getType.getScale)
+
+          // We need to check for out of bound values. We have to be careful because cudf can have
+          // problems when comparing values that have different precision/scale. So we start off by
+          // creating the maximum and minimum value that the toType can hold in the same
+          // precision/scale as the to type.
+
+          val boundStr = ("9" * to.precision) + "e" + (-to.scale)
+          val toUpperBound = BigDecimal(boundStr)
+          val toLowerBound = BigDecimal("-" + boundStr)
+
+          // Now we have to move these into the same precision/scale as the rounded data
+          // We round down (towards 0) so we can do a check for rounded > upperBound and
+          // rounded < lowerBound. Using an "or equal to" operator like <= would require us
+          // to do extra checks so we need to avoid them.
+          // This also lets us not worry about increasing the precision on accident when rounding
+          // up.
+          val upperBound = toUpperBound.setScale(roundedType.scale, BigDecimal.RoundingMode.DOWN)
+          val lowerBound = toLowerBound.setScale(roundedType.scale, BigDecimal.RoundingMode.DOWN)
+
+          val outOfBounds = withResource(GpuScalar.from(upperBound, roundedType)) { ubScale =>
+            withResource(rounded.greaterThan(ubScale)) { over =>
+              withResource(GpuScalar.from(lowerBound, roundedType)) { lbScale =>
+                withResource(rounded.lessThan(lbScale)) { under =>
+                  over.or(under)
+                }
+              }
+            }
+          }
+          withResource(outOfBounds) { outOfBounds =>
+            if (ansiMode) {
+              withResource(outOfBounds.any()) { isAny =>
+                if (isAny.isValid && isAny.getBoolean) {
+                  throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+                }
+              }
+              rounded.incRefCount()
+            } else {
+              withResource(Scalar.fromNull(rounded.getType)) { nullVal =>
+                outOfBounds.ifElse(nullVal, rounded)
+              }
+            }
+          }
         } else {
-          checked.incRefCount()
+          rounded.incRefCount()
         }
       }
 
-      withResource(rounded) { rounded =>
-        rounded.castTo(toDType)
+      withResource(checked) { checked =>
+        checked.castTo(toDType)
       }
     }
   }
