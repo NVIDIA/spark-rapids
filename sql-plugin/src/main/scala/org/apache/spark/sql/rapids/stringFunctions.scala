@@ -65,9 +65,9 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
 
   override def dataType: DataType = IntegerType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
-  def first: Expression = substr
-  def second: Expression = col
-  def third: Expression = start
+  override def first: Expression = substr
+  override def second: Expression = col
+  override def third: Expression = start
 
   def this(substr: Expression, col: Expression) = {
     this(substr, col, GpuLiteral(1, IntegerType))
@@ -424,9 +424,9 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   override def inputTypes: Seq[AbstractDataType] =
     Seq(TypeCollection(StringType, BinaryType), IntegerType, IntegerType)
 
-  def first: Expression = str
-  def second: Expression = pos
-  def third: Expression = len
+  override def first: Expression = str
+  override def second: Expression = pos
+  override def third: Expression = len
 
   def this(str: Expression, pos: Expression) = {
     this(str, pos, GpuLiteral(Integer.MAX_VALUE, IntegerType))
@@ -582,9 +582,9 @@ case class GpuStringReplace(
 
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
-  def first: Expression = srcExpr
-  def second: Expression = searchExpr
-  def third: Expression = replaceExpr
+  override def first: Expression = srcExpr
+  override def second: Expression = searchExpr
+  override def third: Expression = replaceExpr
 
   def this(srcExpr: Expression, searchExpr: Expression) = {
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
@@ -814,9 +814,9 @@ case class GpuSubstringIndex(strExpr: Expression,
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
 
-  def first: Expression = strExpr
-  def second: Expression = ignoredDelimExpr
-  def third: Expression = ignoredCountExpr
+  override def first: Expression = strExpr
+  override def second: Expression = ignoredDelimExpr
+  override def third: Expression = ignoredCountExpr
 
   override def prettyName: String = "substring_index"
 
@@ -894,9 +894,9 @@ trait BasePad extends GpuTernaryExpression with ImplicitCastInputTypes with Null
   val pad: Expression
   val direction: PadSide
 
-  def first: Expression = str
-  def second: Expression = len
-  def third: Expression = pad
+  override def first: Expression = str
+  override def second: Expression = len
+  override def third: Expression = pad
 
   override def dataType: DataType = StringType
   override def inputTypes: Seq[DataType] = Seq(StringType, IntegerType, StringType)
@@ -1016,9 +1016,9 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression)
 
   override def dataType: DataType = ArrayType(StringType)
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, IntegerType)
-  def first: Expression = str
-  def second: Expression = regex
-  def third: Expression = limit
+  override def first: Expression = str
+  override def second: Expression = regex
+  override def third: Expression = limit
 
   def this(exp: Expression, regex: Expression) = this(exp, regex, GpuLiteral(-1, IntegerType))
 
