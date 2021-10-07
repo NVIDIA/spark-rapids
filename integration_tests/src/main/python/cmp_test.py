@@ -151,7 +151,7 @@ def test_filter_with_lit(expr):
 
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries under that value.
-@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + decimal_128_gens, ids=idfn)
 def test_in(data_gen):
     # nulls are not supported for in on the GPU yet
     num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) - 1
@@ -164,7 +164,7 @@ def test_in(data_gen):
 
 # Spark supports two different versions of 'IN', and it depends on the spark.sql.optimizer.inSetConversionThreshold conf
 # This is to test entries over that value.
-@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + decimal_128_gens, ids=idfn)
 def test_in_set(data_gen):
     # nulls are not supported for in on the GPU yet
     num_entries = int(with_cpu_session(lambda spark: spark.conf.get('spark.sql.optimizer.inSetConversionThreshold'))) + 1
