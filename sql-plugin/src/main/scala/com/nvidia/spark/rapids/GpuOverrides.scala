@@ -1526,7 +1526,7 @@ object GpuOverrides extends Logging {
     expr[KnownNotNull](
       "Tag an expression as known to not be null",
       ExprChecks.unaryProjectInputMatchesOutput(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.BINARY + TypeSig.CALENDAR +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.BINARY + TypeSig.CALENDAR +
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested(), TypeSig.all),
       (k, conf, p, r) => new UnaryExprMeta[KnownNotNull](k, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -2278,19 +2278,19 @@ object GpuOverrides extends Logging {
     expr[First](
       "first aggregate operator", {
         val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
         ).asInstanceOf[ExprChecksImpl]
         // TODO: support GpuFirst on nested types for reduction
         //  https://github.com/NVIDIA/spark-rapids/issues/3221
         val nestedChecks = ContextChecks(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
           Seq(ParamCheck("input",
             (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
@@ -2305,19 +2305,19 @@ object GpuOverrides extends Logging {
     expr[Last](
       "last aggregate operator", {
         val checks = ExprChecks.aggNotWindow(
-          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all,
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all,
           Seq(ParamCheck("input",
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.all))
         ).asInstanceOf[ExprChecksImpl]
         // TODO: support GpuLast on nested types for reduction
         // https://github.com/NVIDIA/spark-rapids/issues/3221
         val nestedChecks = ContextChecks(
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all,
           Seq(ParamCheck("input",
             (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64).nested(),
+                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL).nested(),
             TypeSig.all))
         )
         ExprChecksImpl(checks.contexts ++ Map(GroupByAggExprContext -> nestedChecks))
