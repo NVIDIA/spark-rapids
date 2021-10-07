@@ -1125,7 +1125,6 @@ object GpuCast extends Arm {
         scaleZero => scaleZero.round(dt.scale, cudf.RoundMode.HALF_UP)
       }
     } else if (dt.scale > 0) {
-      //TODO fix me
       // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
       // before casting it to decimal in case of overflow.
       withResource(input.castTo(DType.INT64)) { long =>
@@ -1266,6 +1265,7 @@ object GpuCast extends Arm {
     val fromDType = DecimalUtil.createCudfDecimal(from.precision, from.scale)
 
     println("KUHU ansiMode=" + ansiMode)
+    println("KUHU from = " + from + " to=" + to)
     val fromWholeNumPrecision = from.precision - from.scale
     val toWholeNumPrecision = to.precision - to.scale
     // Decimal numbers in general terms have two parts, a part before decimal (whole number)
@@ -1275,7 +1275,7 @@ object GpuCast extends Arm {
     val isWholeNumUpcast = fromWholeNumPrecision <= toWholeNumPrecision
     // When upcasting the scale (fractional number) part there is no need for rounding.
     val isScaleUpcast = from.scale <= to.scale
-
+    println("KUHU isWholeNumUpcast=" + isWholeNumUpcast + " isScaleUpCast=" + isScaleUpcast)
     if (toDType == fromDType) {
       // This can happen in some cases when the scale does not change but the precision does. To
       // Spark they are different types, but CUDF sees them as the same, so no need to change
@@ -1320,6 +1320,7 @@ object GpuCast extends Arm {
             }
             input.copyToColumnVector()
           } else {
+            println("KUHU REPLACING NULL FOR OUT OF BOUNDS")
             withResource(Scalar.fromNull(fromDType)) { nullVal =>
               outOfBounds.ifElse(nullVal, input)
             }

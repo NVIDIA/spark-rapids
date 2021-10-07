@@ -717,10 +717,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
   test("cast decimal to decimal") {
     // fromScale == toScale
     testCastToDecimal(DataTypes.createDecimalType(18, 0),
-      scale = 0,
+      scale = 0, precision = 18,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 2),
-      scale = 2,
+      scale = 2, precision = 18,
       ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 2),
@@ -739,7 +739,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       scale = -1,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 10),
-      scale = 2,
+      scale = 2, precision = 18,
       ansiEnabled = true,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(18, 10),
@@ -749,7 +749,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       precision = 18, scale = 15,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(8, 1),
-      scale = -1,
+      scale = -1, precision = 18,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(8, 7),
       precision = 5, scale = 2,
@@ -760,7 +760,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
     // fromScale < toScale
     testCastToDecimal(DataTypes.createDecimalType(18, 0),
-      scale = 3,
+      scale = 3, precision = 18,
       customRandGenerator = Some(new scala.util.Random(1234L)))
     testCastToDecimal(DataTypes.createDecimalType(9, 5),
       precision = 18, scale = 10,
@@ -992,7 +992,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
       val defaultRandomGenerator: SparkSession => DataFrame = {
         val rnd = customRandGenerator.getOrElse(new scala.util.Random(1234L))
-        generateCastToDecimalDataFrame(dataType, precision - scale, rnd, 500)
+        generateCastToDecimalDataFrame(dataType, precision - scale, rnd, 20)
       }
       val generator = customDataGenerator.getOrElse(defaultRandomGenerator)
       withCpuSparkSession(spark => {
@@ -1012,6 +1012,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       }
       if (!gpuOnly) {
         val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
+        println("from GPU " + fromGpu.mkString(","))
+        println("from CPU " + fromCpu.mkString(","))
         val (cpuResult, gpuResult) = dataType match {
           case ShortType | IntegerType | LongType | _: DecimalType =>
             fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
@@ -1062,7 +1064,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
           enhancedRnd.nextLong() / math.pow(10, scale + 2)
         case dt: DecimalType =>
           val unscaledValue = (enhancedRnd.nextLong() * math.pow(10, dt.precision - 18)).toLong
-          Decimal.createUnsafe(unscaledValue, dt.precision, dt.scale)
+          val ret = Decimal.createUnsafe(unscaledValue, dt.precision, dt.scale)
+          println("KUHU generated decimal unscaledValue= " + unscaledValue + " dt= " + dt)
+          println("KUHU generated decimal ret =" + ret)
+          ret
         case _ =>
           throw new IllegalArgumentException(s"unsupported dataType: $dataType")
       }
