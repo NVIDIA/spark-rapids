@@ -39,10 +39,10 @@ object ExplainGPUPlan {
    * @param explainAll If true returns all the data, otherwise just returns what does not
    *                   work on the GPU. Default is true.
    */
-  def explainPotentialGPUPlan(df: DataFrame, explainAll: Boolean = true): String = {
+  def explainPotentialGPUPlan(df: DataFrame, explain: String = "ALL"): String = {
     val gpuOverrideClass = ShimLoader.loadGpuOverrides()
     val explainMethod = gpuOverrideClass
-      .getDeclaredMethod("explainPotentialGPUPlan", classOf[DataFrame], classOf[Boolean])
-    explainMethod.invoke(null, df, explainAll).asInstanceOf[String]
+      .getDeclaredMethod("explainPotentialGPUPlan", classOf[DataFrame], classOf[String])
+    explainMethod.invoke(null, df, explain).asInstanceOf[String]
   }
 }
