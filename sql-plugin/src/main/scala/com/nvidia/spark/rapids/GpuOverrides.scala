@@ -3719,19 +3719,20 @@ object GpuOverrides extends Logging {
   }
 
   // Only run the explain and don't actually convert or run on GPU.
-  def explainPotentialGPUPlan(df: DataFrame): String = {
+  def explainPotentialGPUPlan(df: DataFrame, explainAll: Boolean): String = {
     val plan = df.queryExecution.executedPlan
     val conf = new RapidsConf(plan.conf)
     val updatedPlan = prepareExplainOnly(plan)
     // Here we look for subqueries to pull out and do the explain separately on them.
     val subQueryExprs = getSubQueryPlans(plan)
     val preparedSubPlans = subQueryExprs.map(_.plan).map(prepareExplainOnly(_))
-    val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf))
-    val topPlanExplain = explainSinglePlan(updatedPlan, conf)
+    val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf, explainAll))
+    val topPlanExplain = explainSinglePlan(updatedPlan, conf, explainAll)
     (subPlanExplains :+ topPlanExplain).mkString("\n")
   }
 
-  private def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf): String = {
+  private def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf,
+      explainAll: Boolean): String = {
     val wrap = wrapAndTagPlan(updatedPlan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
@@ -3740,7 +3741,7 @@ object GpuOverrides extends Logging {
     } else {
       wrap.runAfterTagRules()
       wrap.tagForExplain()
-      wrap.explain(all = true)
+      wrap.explain(all = explainAll)
     }
   }
 
