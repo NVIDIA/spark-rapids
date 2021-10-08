@@ -26,7 +26,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
 import org.apache.spark.sql.rapids.tool.{EventProcessorBase, ToolUtils}
 
-class QualEventProcessor() extends EventProcessorBase {
+class QualEventProcessor(app: QualAppInfo) extends EventProcessorBase[QualAppInfo](app) {
 
   type T = QualAppInfo
 
@@ -43,7 +43,7 @@ class QualEventProcessor() extends EventProcessorBase {
   override def doSparkListenerApplicationStart(
       app: QualAppInfo,
       event: SparkListenerApplicationStart): Unit = {
-    logDebug("Processing event: " + event.getClass)
+    logWarning("Processing event: " + event.getClass)
     val thisAppInfo = QualApplicationInfo(
       event.appName,
       event.appId,

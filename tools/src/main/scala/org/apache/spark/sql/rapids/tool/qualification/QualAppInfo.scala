@@ -24,18 +24,17 @@ import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.SparkListenerEvent
+import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualAppInfo(
-    numOutputRows: Int,
-    eventLogInfo: EventLogInfo,
+    eventLogInfo: Option[EventLogInfo],
     hadoopConf: Configuration,
     pluginTypeChecker: Option[PluginTypeChecker],
     readScorePercent: Int)
-  extends AppBase(numOutputRows, eventLogInfo, hadoopConf) with Logging {
+  extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
   var isPluginEnabled = false
@@ -63,34 +62,41 @@ class QualAppInfo(
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
 
-  private lazy val eventProcessor =  new QualEventProcessor()
+  private lazy val eventProcessor =  new QualEventProcessor(this)
 
+  def getEventListener: SparkListener = {
+    eventProcessor
+  }
   processEvents()
 
   override def processEvent(event: SparkListenerEvent): Boolean = {
-    eventProcessor.processAnyEvent(this, event)
+    eventProcessor.processAnyEvent(event)
     false
   }
 
   // time in ms
   private def calculateAppDuration(startTime: Long): Option[Long] = {
-    val estimatedResult =
-      this.appEndTime match {
-        case Some(t) => this.appEndTime
-        case None =>
-          if (lastSQLEndTime.isEmpty && lastJobEndTime.isEmpty) {
-            None
-          } else {
-            logWarning(s"Application End Time is unknown for $appId, estimating based on" +
-              " job and sql end times!")
-            // estimate the app end with job or sql end times
-            val sqlEndTime = if (this.lastSQLEndTime.isEmpty) 0L else this.lastSQLEndTime.get
-            val jobEndTime = if (this.lastJobEndTime.isEmpty) 0L else lastJobEndTime.get
-            val maxEndTime = math.max(sqlEndTime, jobEndTime)
-            if (maxEndTime == 0) None else Some(maxEndTime)
-          }
-      }
-    ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
+    if (startTime > 0) {
+      val estimatedResult =
+        this.appEndTime match {
+          case Some(t) => this.appEndTime
+          case None =>
+            if (lastSQLEndTime.isEmpty && lastJobEndTime.isEmpty) {
+              None
+            } else {
+              logWarning(s"Application End Time is unknown for $appId, estimating based on" +
+                " job and sql end times!")
+              // estimate the app end with job or sql end times
+              val sqlEndTime = if (this.lastSQLEndTime.isEmpty) 0L else this.lastSQLEndTime.get
+              val jobEndTime = if (this.lastJobEndTime.isEmpty) 0L else lastJobEndTime.get
+              val maxEndTime = math.max(sqlEndTime, jobEndTime)
+              if (maxEndTime == 0) None else Some(maxEndTime)
+            }
+        }
+      ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
+    } else {
+      None
+    }
   }
 
   /**
@@ -327,12 +333,12 @@ case class QualificationSummaryInfo(
 object QualAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
-      numRows: Int,
       hadoopConf: Configuration,
       pluginTypeChecker: Option[PluginTypeChecker],
       readScorePercent: Int): Option[QualAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(numRows, path, hadoopConf, pluginTypeChecker, readScorePercent)
+        val app = new QualAppInfo(Some(path), hadoopConf, pluginTypeChecker,
+          readScorePercent)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {
