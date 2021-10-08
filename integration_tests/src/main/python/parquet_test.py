@@ -70,6 +70,7 @@ coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.typ
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf]
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -133,6 +134,7 @@ parquet_pred_push_gens = [
         # timestamp_gen
         TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('parquet_gen', parquet_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -174,6 +176,7 @@ def test_ts_read_round_trip_nested(gen, spark_tmp_path, ts_write, ts_rebase, v1_
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
 # timestamp_gen
 @pytest.mark.parametrize('gen', [TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))], ids=idfn)
@@ -198,6 +201,7 @@ def readParquetCatchException(spark, data_path):
         df = spark.read.parquet(data_path).collect()
     assert e_info.match(r".*SparkUpgradeException.*")
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 # Once https://github.com/NVIDIA/spark-rapids/issues/1126 is fixed nested timestamps and dates should be added in
 # Once https://github.com/NVIDIA/spark-rapids/issues/132 is fixed replace this with
 # timestamp_gen
@@ -240,6 +244,7 @@ parquet_gens_legacy_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, 
                             pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133')),
                             pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/133'))]
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -254,6 +259,7 @@ def test_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled_list, r
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -326,6 +332,7 @@ def test_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs)
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -350,6 +357,7 @@ def test_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             conf=all_confs)
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -480,6 +488,7 @@ _nested_pruning_schemas = [
             [["ar", ArrayGen(StructGen([["str_2", StringGen()]]))]])
         ]
 
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('data_gen,read_schema', _nested_pruning_schemas, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
