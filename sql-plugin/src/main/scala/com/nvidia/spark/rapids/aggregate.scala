@@ -607,7 +607,7 @@ class GpuHashAggregateIterator(
     withResource(new NvtxWithMetrics("prep agg batch", NvtxColor.CYAN, aggTime)) { _ =>
       val cols = boundExpressions.boundInputReferences.safeMap { ref =>
         val childCv = GpuExpressionsUtils.columnarEvalToColumn(ref, batch)
-        if (childCv.dataType == ref.dataType) {
+        if (DataType.equalsStructurally(childCv.dataType, ref.dataType, ignoreNullability = true)) {
           childCv
         } else {
           withResource(childCv) { childCv =>
