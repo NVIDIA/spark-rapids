@@ -692,7 +692,6 @@ def test_struct_self_join(spark_tmp_table_factory):
                   .add("salary", IntegerType()))
         df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
         df_name = spark_tmp_table_factory.get()
-        print("df_name: ", df_name)
         df.createOrReplaceTempView(df_name)
         resultdf = spark.sql(
             "select struct(name, struct(name.firstname, name.lastname) as newname)" +
@@ -700,7 +699,6 @@ def test_struct_self_join(spark_tmp_table_factory):
             " select struct(name, struct(name.firstname, name.lastname) as newname) as col,name" +
             " from " + df_name)
         resultdf_name = spark_tmp_table_factory.get()
-        print("resultdf_name: ", resultdf_name)
         resultdf.createOrReplaceTempView(resultdf_name)
         return spark.sql("select a.* from {} a, {} b where a.name=b.name".format(
             resultdf_name, resultdf_name))
