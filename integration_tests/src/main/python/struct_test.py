@@ -42,7 +42,8 @@ def test_struct_get_item(data_gen):
                 'a.third'), conf=allow_negative_scale_of_decimal_conf)
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + [null_gen, decimal_gen_default, decimal_gen_scale_precision] + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + [null_gen, decimal_gen_default,
+                                                       decimal_gen_scale_precision] + decimal_128_gens + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_make_struct(data_gen):
     # Spark has no good way to create a map literal without the map function
     # so we are inserting one.

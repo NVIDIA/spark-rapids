@@ -1209,7 +1209,7 @@ object CreateMapCheck extends ExprChecks {
 object CreateNamedStructCheck extends ExprChecks {
   val nameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
   val sparkNameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
-  val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+  val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
       TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
   val sparkValueSig: TypeSig = TypeSig.all
   val resultSig: TypeSig = TypeSig.STRUCT.nested(valueSig)
