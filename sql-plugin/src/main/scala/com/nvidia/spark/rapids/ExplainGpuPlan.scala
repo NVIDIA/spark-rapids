@@ -17,6 +17,23 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.DataFrame
 
+/**
+ * Looks at the CPU plan associated with the dataframe and outputs information
+ * about which parts of the query the RAPIDS Accelerator for Apache Spark
+ * could place on the GPU. This only applies to the initial plan, so if running
+ * with adaptive query execution enable, it will not be able to show any changes
+ * in the plan due to that.
+ *
+ * This is very similar output you would get by running the query with the
+ * Rapids Accelerator enabled and with the config `spark.rapids.sql.enabled=ALL`.
+ *
+ * Requires the RAPIDS Accelerator for Apache Spark jar and RAPIDS cudf jar be included
+ * in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
+ *
+ * {{{
+ *   com.nvidia.spark.rapids.ExplainGPUPlan.explainPotentialGPUPlan(df)
+ * }}}
+ */
 object ExplainGPUPlan {
   def explainPotentialGPUPlan(df: DataFrame): String = {
     val gpuOverrideClass = ShimLoader.loadGpuOverrides()
