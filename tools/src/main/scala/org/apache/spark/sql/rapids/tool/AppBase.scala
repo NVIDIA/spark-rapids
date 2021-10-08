@@ -36,7 +36,8 @@ import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
 import org.apache.spark.util.{JsonProtocol, Utils}
 
 abstract class AppBase(
-    val eventLogInfo: Option[EventLogInfo],
+    val numOutputRows: Int,
+    val eventLogInfo: EventLogInfo,
     val hadoopConf: Configuration) extends Logging {
 
   var sparkVersion: String = ""
@@ -65,53 +66,50 @@ abstract class AppBase(
    * Functions to process all the events
    */
   protected def processEvents(): Unit = {
-    eventLogInfo match {
-      case Some(eventLog) =>
-        val eventLogPath = eventLog.eventLog
-        logInfo("Parsing Event Log: " + eventLogPath.toString)
+    val eventlog = eventLogInfo.eventLog
 
-        // at this point all paths should be valid event logs or event log dirs
-        val fs = eventLogPath.getFileSystem(hadoopConf)
-        var totalNumEvents = 0
-        val readerOpt = eventLogInfo match {
-          case dblog: DatabricksEventLog =>
-            Some(new DatabricksRollingEventLogFilesFileReader(fs, eventLogPath))
-          case apachelog => EventLogFileReader(fs, eventLogPath)
-        }
+    logInfo("Parsing Event Log: " + eventlog.toString)
 
-        if (readerOpt.isDefined) {
-          val reader = readerOpt.get
-          val logFiles = reader.listEventLogFiles
-          logFiles.foreach { file =>
-            Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
-              val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
-              // Using find as foreach with conditional to exit early if we are done.
-              // Do NOT use a while loop as it is much much slower.
-              lines.find { line =>
-                val isDone = try {
-                  totalNumEvents += 1
-                  val event = JsonProtocol.sparkEventFromJson(parse(line))
-                  processEvent(event)
-                }
-                catch {
-                  case e: ClassNotFoundException =>
-                    // swallow any messages about this class since likely using spark version
-                    // before 3.1
-                    if (!e.getMessage.contains("SparkListenerResourceProfileAdded")) {
-                      logWarning(s"ClassNotFoundException: ${e.getMessage}")
-                    }
-                    false
-                }
-                isDone
-              }
-            }
-          }
-        } else {
-          logError(s"Error getting reader for ${eventLogPath.getName}")
-        }
-        logInfo(s"Total number of events parsed: $totalNumEvents for ${eventLogPath.toString}")
-      case None => logInfo("Streaming events to application")
+    // at this point all paths should be valid event logs or event log dirs
+    val fs = eventlog.getFileSystem(hadoopConf)
+    var totalNumEvents = 0
+    val readerOpt = eventLogInfo match {
+      case dblog: DatabricksEventLog =>
+        Some(new DatabricksRollingEventLogFilesFileReader(fs, eventlog))
+      case apachelog => EventLogFileReader(fs, eventlog)
     }
+
+    if (readerOpt.isDefined) {
+      val reader = readerOpt.get
+      val logFiles = reader.listEventLogFiles
+      logFiles.foreach { file =>
+        Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
+          val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
+          // Using find as foreach with conditional to exit early if we are done.
+          // Do NOT use a while loop as it is much much slower.
+          lines.find { line =>
+            val isDone = try {
+              totalNumEvents += 1
+              val event = JsonProtocol.sparkEventFromJson(parse(line))
+              processEvent(event)
+            }
+            catch {
+              case e: ClassNotFoundException =>
+                // swallow any messages about this class since likely using spark version
+                // before 3.1
+                if (!e.getMessage.contains("SparkListenerResourceProfileAdded")) {
+                  logWarning(s"ClassNotFoundException: ${e.getMessage}")
+                }
+                false
+            }
+            isDone
+          }
+        }
+      }
+    } else {
+      logError(s"Error getting reader for ${eventlog.getName}")
+    }
+    logInfo(s"Total number of events parsed: $totalNumEvents for ${eventlog.toString}")
   }
 
   protected def isDataSetPlan(desc: String): Boolean = {

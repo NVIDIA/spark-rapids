@@ -48,7 +48,7 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(hadoopConf,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
@@ -91,7 +91,7 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(hadoopConf,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
@@ -126,7 +126,7 @@ class HealthCheckSuite extends FunSuite {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(hadoopConf,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1

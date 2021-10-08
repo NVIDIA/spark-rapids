@@ -185,10 +185,11 @@ object SparkPlanInfoWithStage {
  * Used only for Profiling.
  */
 class ApplicationInfo(
+    numRows: Int,
     hadoopConf: Configuration,
     eLogInfo: EventLogInfo,
     val index: Int)
-  extends AppBase(Some(eLogInfo), hadoopConf) with Logging {
+  extends AppBase(numRows, eLogInfo, hadoopConf) with Logging {
 
   // executorId to executor info
   val executorIdToInfo = new HashMap[String, ExecutorInfoClass]()
@@ -233,7 +234,7 @@ class ApplicationInfo(
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
 
-  private lazy val eventProcessor =  new EventsProcessor(this)
+  private lazy val eventProcessor =  new EventsProcessor()
 
   // Process all events
   processEvents()
@@ -242,7 +243,7 @@ class ApplicationInfo(
   aggregateAppInfo
 
   override def processEvent(event: SparkListenerEvent) = {
-    eventProcessor.processAnyEvent(event)
+    eventProcessor.processAnyEvent(this, event)
     false
   }
 

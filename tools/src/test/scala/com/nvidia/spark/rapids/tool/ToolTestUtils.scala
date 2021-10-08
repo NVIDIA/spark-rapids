@@ -37,30 +37,6 @@ object ToolTestUtils extends Logging {
     getTestResourceFile(file).getCanonicalPath
   }
 
-  def runAndCollect(appName: String)
-    (fun: SparkSession => DataFrame): String = {
-
-    // we need to close any existing sessions to ensure that we can
-    // create a session with a new event log dir
-    TrampolineUtil.cleanupAnyExistingSession()
-
-    lazy val spark = SparkSession
-      .builder()
-      .master("local[*]")
-      .appName(appName)
-      .getOrCreate()
-
-    // execute the query and generate events
-    val df = fun(spark)
-    df.collect()
-
-    val appId = spark.sparkContext.applicationId
-
-    // close the event log
-    spark.close()
-    appId
-  }
-
   def generateEventLog(eventLogDir: File, appName: String)
       (fun: SparkSession => DataFrame): (String, String) = {
 
@@ -129,7 +105,8 @@ object ToolTestUtils extends Logging {
       val eventLogInfo = EventLogPathProcessor
         .getEventLogInfo(path, sparkSession.sparkContext.hadoopConfiguration)
       assert(eventLogInfo.size >= 1, s"event log not parsed as expected $path")
-      apps += new ApplicationInfo(sparkSession.sparkContext.hadoopConfiguration,
+      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000),
+        sparkSession.sparkContext.hadoopConfiguration,
         eventLogInfo.head._1, index)
       index += 1
     }

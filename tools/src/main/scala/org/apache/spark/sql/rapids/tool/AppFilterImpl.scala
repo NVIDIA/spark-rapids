@@ -47,7 +47,7 @@ class AppFilterImpl(
       .asInstanceOf[ThreadPoolExecutor]
 
   private class FilterThread(path: EventLogInfo) extends Runnable {
-    def run: Unit = filterEventLog(path, hadoopConf)
+    def run: Unit = filterEventLog(path, numRows, hadoopConf)
   }
 
   def filterEventLogs(
@@ -239,9 +239,10 @@ class AppFilterImpl(
 
   private def filterEventLog(
       path: EventLogInfo,
+      numRows: Int,
       hadoopConf: Configuration): Unit = {
 
-    val startAppInfo = new FilterAppInfo(path, hadoopConf)
+    val startAppInfo = new FilterAppInfo(numRows, path, hadoopConf)
     val appInfo = AppFilterReturnParameters(startAppInfo, path)
     appsForFiltering.add(appInfo)
   }
