@@ -173,7 +173,14 @@ object GpuDeviceManager extends Logging {
 
     val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
     val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
-    val reserveAmount = conf.rmmAllocReserve
+    val reserveAmount = if (GpuShuffleEnv.shouldUseRapidsShuffle(conf)
+        && conf.rmmPool.equalsIgnoreCase("ASYNC")) {
+      // When using the async allocator, UCX calls `cudaMalloc` directly to allocate the
+      // bounce buffers.
+      conf.rmmAllocReserve + conf.shuffleUcxBounceBuffersSize * 2
+    } else {
+      conf.rmmAllocReserve
+    }
     var initialAllocation = truncateToAlignment(
       (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
     if (initialAllocation < minAllocation) {
@@ -217,6 +224,11 @@ object GpuDeviceManager extends Logging {
     if (!Rmm.isInitialized) {
       val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
       val info = Cuda.memGetInfo()
+
+      // We need to reserve more memory when RAPIDS shuffle is enabled and we are using the CUDA
+      // async allocator, so initialize the shuffle environment first.
+      GpuShuffleEnv.init(conf)
+
       val (initialAllocation, maxAllocation) = computeRmmInitSizes(conf, info)
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
@@ -292,7 +304,6 @@ object GpuDeviceManager extends Logging {
         Rmm.initialize(
           init, logConf, initialAllocation, maxAllocation, allocationAlignment, alignmentThreshold)
         RapidsBufferCatalog.init(conf)
-        GpuShuffleEnv.init(conf)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
       }

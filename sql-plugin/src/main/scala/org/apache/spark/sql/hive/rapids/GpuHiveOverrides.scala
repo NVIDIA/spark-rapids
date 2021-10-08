@@ -17,7 +17,7 @@
 package org.apache.spark.sql.hive.rapids
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, RepeatingParamCheck, ShimLoader, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -25,11 +25,9 @@ import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 
 object GpuHiveOverrides {
   def isSparkHiveAvailable: Boolean = {
-    // Using the same approach as SparkSession.hiveClassesArePresent
-    val loader = Thread.currentThread().getContextClassLoader
     try {
-      Class.forName("org.apache.spark.sql.hive.HiveSessionStateBuilder", true, loader)
-      Class.forName("org.apache.hadoop.hive.conf.HiveConf", true, loader)
+      ShimLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
+      ShimLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
       true
     } catch {
       case _: ClassNotFoundException | _: NoClassDefFoundError => false

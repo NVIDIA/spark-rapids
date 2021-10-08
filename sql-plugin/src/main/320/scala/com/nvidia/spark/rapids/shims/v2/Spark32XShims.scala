@@ -23,11 +23,12 @@ import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AQEShuffleReadExec, QueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AQEShuffleReadExec, BroadcastQueryStageExec, QueryStageExec}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -36,6 +37,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.rapids.shims.v2.Spark32XShimsUtils
+import org.apache.spark.sql.types.DoubleType
 
 /**
 * Shim base class that can be compiled with every supported 3.2.x
@@ -95,6 +97,11 @@ trait Spark32XShims extends SparkShims {
   override final def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
 
+  override final def newBroadcastQueryStageExec(
+      old: BroadcastQueryStageExec,
+      newPlan: SparkPlan): BroadcastQueryStageExec =
+    BroadcastQueryStageExec(old.id, newPlan, old._canonicalized)
+
   override final def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = {
     // if the child query stage already executed on GPU then we need to keep the
     // next operator on GPU in these cases
@@ -147,4 +154,9 @@ trait Spark32XShims extends SparkShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
+
+  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
+    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
+    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
+  }
 }

@@ -418,6 +418,61 @@ class CudfLastExcludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
   override val offset: Int = -1
 }
 
+/**
+ * This class is only used by the M2 class aggregates, do not confuse this with GpuAverage.
+ * In the future, this aggregate class should be removed and the mean values should be
+ * generated in the output of libcudf's M2 aggregate.
+ */
+class CudfMean(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMean is not supported in reduction")
+  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMean is not supported in reduction")
+
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mean().onColumn(getOrdinal(ref))
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mean().onColumn(getOrdinal(ref))
+
+  override def toString(): String = "CudfMeanForM2"
+}
+
+class CudfM2(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfM2 aggregation is not supported in reduction")
+  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfM2 aggregation is not supported in reduction")
+
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.M2().onColumn(getOrdinal(ref))
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mergeM2().onColumn(getOrdinal(ref))
+
+  override def toString(): String = "CudfM2"
+  override def dataType: DataType = DoubleType
+  override def nullable: Boolean = false
+}
+
+class CudfMergeM2(ref: Expression) extends CudfAggregate(ref) {
+  override lazy val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMergeM2 aggregation is not supported in reduction")
+  override lazy val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+    throw new UnsupportedOperationException("CudfMergeM2 aggregation is not supported in reduction")
+
+  override lazy val updateAggregate: GroupByAggregationOnColumn =
+    throw new UnsupportedOperationException("CudfMergeM2 only supports mergeAggregate")
+  override lazy val mergeAggregate: GroupByAggregationOnColumn =
+    GroupByAggregation.mergeM2().onColumn(getOrdinal(ref))
+
+  override def toString(): String = "CudfMergeM2"
+  override def dataType: DataType =
+    StructType(
+      StructField("n", IntegerType, nullable = false) ::
+        StructField("avg", DoubleType, nullable = true) ::
+        StructField("m2", DoubleType, nullable = true) :: Nil)
+  override def nullable: Boolean = false
+}
+
 case class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
@@ -1060,4 +1115,158 @@ case class GpuToCpuCollectBufferTransition(
     val arrayData = input.asInstanceOf[ArrayData]
     projection.apply(InternalRow.apply(arrayData)).getBytes
   }
+}
+
+/**
+ * Base class for overriding standard deviation and variance aggregations.
+ * This is also a GPU-based implementation of 'CentralMomentAgg' aggregation class in Spark with
+ * the fixed 'momentOrder' variable set to '2'.
+ */
+abstract class GpuM2(child: Expression)
+  extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
+
+  override def children: Seq[Expression] = Seq(child)
+  override def dataType: DataType = DoubleType
+  override def nullable: Boolean = true
+  override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
+
+  protected def divideByZeroEvalResult: Expression =
+    ShimLoader.getSparkShims.getCentralMomentDivideByZeroEvalResult
+
+  override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
+  override lazy val initialValues: Seq[GpuLiteral] =
+    Seq(GpuLiteral(0.0), GpuLiteral(0.0), GpuLiteral(0.0))
+
+  // Buffers for the update stage.
+  protected lazy val bufferN: AttributeReference =
+    AttributeReference("n", DoubleType, nullable = false)()
+  protected lazy val bufferAvg: AttributeReference =
+    AttributeReference("avg", DoubleType, nullable = false)()
+  protected lazy val bufferM2: AttributeReference =
+    AttributeReference("m2", DoubleType, nullable = false)()
+  override lazy val aggBufferAttributes: Seq[AttributeReference] =
+    bufferN :: bufferAvg :: bufferM2 :: Nil
+
+  // For local update, we need to compute all 3 aggregates: n, avg, m2.
+  override lazy val updateExpressions: Seq[Expression] =
+    new CudfCount(bufferN) :: new CudfMean(bufferAvg) :: new CudfM2(bufferM2) :: Nil
+
+  // We copy the `bufferN` attribute and stomp on the type as Integer here, because we only
+  // have its values are of Integer type. However,we want to output `DoubleType` to match
+  // with Spark so we need to cast it to `DoubleType`.
+  //
+  // In the future, when we make CudfM2 aggregate outputs all the buffers at once,
+  // we need to make sure that bufferN is a LongType.
+  //
+  // Note that avg and m2 output from libcudf's M2 aggregate are nullable while Spark's
+  // corresponding buffers require them to be non-nullable.
+  // As such, we need to convert those nulls into Double(0.0) in the postUpdate step.
+  // This will not affect the outcome of the merge step.
+  override lazy val postUpdate: Seq[Expression] = {
+    val bufferCountAsInt = bufferN.copy(dataType = IntegerType)(bufferN.exprId, bufferN.qualifier)
+    val bufferAvgNoNulls = GpuCoalesce(Seq(bufferAvg, GpuLiteral(0.0, DoubleType)))
+    val bufferM2NoNulls  = GpuCoalesce(Seq(bufferM2, GpuLiteral(0.0, DoubleType)))
+    GpuCast(bufferCountAsInt, DoubleType) :: bufferAvgNoNulls :: bufferM2NoNulls :: Nil
+  }
+
+  // Before merging we have 3 columns and we need to combine them into a structs column.
+  // This is because we are going to do the merging using libcudf's native MERGE_M2 aggregate,
+  // which only accepts one column in the input.
+  //
+  // We cast `n` to be an Integer, as that's what MERGE_M2 expects. Note that Spark keeps
+  // `n` as Double thus we also need to cast `n` back to Double after merging.
+  // In the future, we need to rewrite CudfMergeM2 such that it accepts `n` in Double type and
+  // also output `n` in Double type.
+  override lazy val preMerge: Seq[Expression] = {
+    val childrenWithNames =
+      GpuLiteral("n", StringType) :: GpuCast(bufferN, IntegerType) ::
+        GpuLiteral("avg", StringType) :: bufferAvg ::
+        GpuLiteral("m2", StringType) :: bufferM2 :: Nil
+    GpuCreateNamedStruct(childrenWithNames) :: Nil
+  }
+
+  def mergeM2DataType: DataType =
+    StructType(
+      StructField("n", IntegerType, nullable = false) ::
+        StructField("avg", DoubleType, nullable = false) ::
+        StructField("m2", DoubleType, nullable = false) :: Nil)
+
+  override def mergeBufferAttributes: Seq[AttributeReference] = postMergeAttr
+
+  private val m2Struct = AttributeReference("m2struct", mergeM2DataType, nullable = false)()
+  override lazy val mergeExpressions: Seq[Expression] = new CudfMergeM2(m2Struct) :: Nil
+
+  // The result of merging step is a structs column thus we create this attribute to bind it.
+  override lazy val postMergeAttr: Seq[AttributeReference] = Seq(m2Struct)
+
+  // The postMerge step needs to extract 3 columns (n, avg, m2) from the structs column
+  // output from the merge step. Note that the first one is casted to Double to match with Spark.
+  //
+  // In the future, when rewriting CudfMergeM2, we will need to ouput it in Double type.
+  //
+  override lazy val postMerge: Seq[Expression] = Seq(
+    GpuCast(GpuGetStructField(m2Struct, 0), DoubleType),
+    GpuCast(GpuGetStructField(m2Struct, 1), DoubleType),
+    GpuCast(GpuGetStructField(m2Struct, 2), DoubleType))
+}
+
+case class GpuStddevPop(child: Expression)
+  extends GpuM2(child) {
+
+  override lazy val evaluateExpression: Expression = {
+    // stddev_pop = sqrt(m2 / n).
+    val stddevPop = GpuSqrt(GpuDivide(bufferM2, bufferN, failOnErrorOverride = false))
+
+    // Set nulls for the rows where n == 0.
+    GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevPop)
+  }
+
+  override def prettyName: String = "stddev_pop"
+}
+
+case class GpuStddevSamp(child: Expression)
+  extends GpuM2(child) {
+
+  override lazy val evaluateExpression: Expression = {
+    // stddev_samp = sqrt(m2 / (n - 1.0)).
+    val stddevSamp =
+      GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
+        failOnErrorOverride = false))
+
+    // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
+    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
+      GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevSamp))
+  }
+
+  override def prettyName: String = "stddev_samp"
+}
+
+case class GpuVariancePop(child: Expression)
+  extends GpuM2(child) {
+
+  override lazy val evaluateExpression: Expression = {
+    // var_pop = m2 / n.
+    val varPop = GpuDivide(bufferM2, bufferN, failOnErrorOverride = false)
+
+    // Set nulls for the rows where n == 0.
+    GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), varPop)
+  }
+
+  override def prettyName: String = "var_pop"
+}
+
+case class GpuVarianceSamp(child: Expression)
+  extends GpuM2(child) {
+
+  override lazy val evaluateExpression: Expression = {
+    // var_samp = m2 / (n - 1.0).
+    val varSamp = GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
+      failOnErrorOverride = false)
+
+    // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
+    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
+      GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), varSamp))
+  }
+
+  override def prettyName: String = "var_samp"
 }

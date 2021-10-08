@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.udf
 
-import Repr.UnknownCapturedArg
 import java.lang.invoke.SerializedLambda
+
+import com.nvidia.spark.rapids.ShimLoader
 import javassist.{ClassClassPath, ClassPool, CtBehavior, CtClass, CtField, CtMethod}
-import javassist.bytecode.{AccessFlag, CodeIterator, ConstPool,
-                           Descriptor, MethodParametersAttribute}
+import javassist.bytecode.{CodeIterator, ConstPool, Descriptor}
 
 import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -152,9 +152,7 @@ object LambdaReflection {
   }
 
   def getClass(name: String): Class[_] = {
-    // scalastyle:off classforname
-    Class.forName(name, true, Thread.currentThread().getContextClassLoader)
-    // scalastyle:on classforname
+    ShimLoader.loadClass(name)
   }
 
   def parseTypeSig(sig: String): Option[DataType] = {

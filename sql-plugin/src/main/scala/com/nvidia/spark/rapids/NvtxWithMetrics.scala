@@ -31,21 +31,27 @@ object NvtxWithMetrics {
  *  NvtxRange with option to pass one or more nano timing metric(s) that are updated upon close
  *  by the amount of time spent in the range
  */
-class NvtxWithMetrics(name: String, color: NvtxColor, val metric: GpuMetric)
+class NvtxWithMetrics(name: String, color: NvtxColor, val metrics: GpuMetric*)
     extends NvtxRange(name, color) {
 
   private val start = System.nanoTime()
 
   override def close(): Unit = {
-    metric += (System.nanoTime() - start)
+    val time = System.nanoTime() - start
+    metrics.foreach { metric =>
+      metric += time
+    }
     super.close()
   }
 }
 
-class MetricRange(val metric: GpuMetric) extends AutoCloseable {
+class MetricRange(val metrics: GpuMetric*) extends AutoCloseable {
   private val start = System.nanoTime()
 
   override def close(): Unit = {
-    metric += (System.nanoTime() - start)
+    val time = System.nanoTime() - start
+    metrics.foreach { metric =>
+      metric += time
+    }
   }
 }

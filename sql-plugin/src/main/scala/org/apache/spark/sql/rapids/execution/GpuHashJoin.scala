@@ -17,7 +17,6 @@ package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{DType, GroupByAggregation, NullPolicy, NvtxColor, ReductionAggregation, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
@@ -220,9 +219,8 @@ class HashJoinIterator(
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
     private val spillCallback: SpillCallback,
-    private val streamTime: GpuMetric,
-    private val joinTime: GpuMetric,
-    private val totalTime: GpuMetric)
+    private val opTime: GpuMetric,
+    private val joinTime: GpuMetric)
     extends SplittableJoinIterator(
       s"hash $joinType gather",
       stream,
@@ -230,9 +228,8 @@ class HashJoinIterator(
       built,
       targetSize,
       spillCallback,
-      joinTime = joinTime,
-      streamTime = streamTime,
-      totalTime = totalTime) {
+      opTime = opTime,
+      joinTime = joinTime) {
   // We can cache this because the build side is not changing
   private lazy val streamMagnificationFactor = joinType match {
     case _: InnerLike | LeftOuter | RightOuter =>
@@ -488,9 +485,8 @@ trait GpuHashJoin extends GpuExec {
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
-      streamTime: GpuMetric,
-      joinTime: GpuMetric,
-      totalTime: GpuMetric): Iterator[ColumnarBatch] = {
+      opTime: GpuMetric,
+      joinTime: GpuMetric): Iterator[ColumnarBatch] = {
     // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
     val realTarget = Math.max(targetSize, 10 * 1024)
 
@@ -519,7 +515,7 @@ trait GpuHashJoin extends GpuExec {
     val joinIterator =
       new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
         streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
-        streamTime, joinTime, totalTime)
+        opTime, joinTime)
     if (boundCondition.isDefined) {
       throw new IllegalStateException("Conditional joins are not supported on the GPU")
     } else {

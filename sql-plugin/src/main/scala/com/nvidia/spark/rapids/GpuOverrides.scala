@@ -20,9 +20,10 @@ import java.time.ZoneId
 
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.GpuOverrides.exec
+import com.nvidia.spark.rapids.RapidsConf.TEST_CONF
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
@@ -34,6 +35,7 @@ import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
+import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.ScalarSubquery
@@ -2682,13 +2684,14 @@ object GpuOverrides extends Logging {
       "Returns an array with the given elements",
       ExprChecks.projectOnly(
         TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
-            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
+            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("arg",
           TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
-              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP +
+              TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
               TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
-                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY),
+                TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
+                  TypeSig.ARRAY),
           TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[CreateArray](in, conf, p, r) {
 
@@ -3078,10 +3081,11 @@ object GpuOverrides extends Logging {
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input", TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
-          TypeSig.all))),
+        Seq(ParamCheck("input", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          TypeSig.STRUCT).nested(), TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
@@ -3102,6 +3106,93 @@ object GpuOverrides extends Logging {
         // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
       }),
+    expr[StddevPop](
+      "Aggregation computing population standard deviation",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[StddevPop](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuStddevPop(childExprs.head)
+      }),
+    expr[StddevSamp](
+      "Aggregation computing sample standard deviation",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuStddevSamp(childExprs.head)
+      }),
+    expr[VariancePop](
+      "Aggregation computing population variance",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[VariancePop](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuVariancePop(childExprs.head)
+      }),
+    expr[VarianceSamp](
+      "Aggregation computing sample variance",
+      ExprChecks.groupByOnly(
+        TypeSig.DOUBLE, TypeSig.DOUBLE,
+        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
+      (a, conf, p, r) => new AggExprMeta[VarianceSamp](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuVarianceSamp(childExprs.head)
+      }),
+    expr[ApproximatePercentile](
+      "Approximate percentile",
+      ExprChecks.groupByOnly(
+        // note that output can be single number or array depending on whether percentiles param
+        // is a single number or an array
+        TypeSig.gpuNumeric + TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
+        TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
+          TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+        Seq(
+          ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric + TypeSig.DATE +
+            TypeSig.TIMESTAMP),
+          ParamCheck("percentage", TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
+          ParamCheck("accuracy", TypeSig.INT, TypeSig.INT))),
+      (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
+
+        override def tagAggForGpu(): Unit = {
+          // check if the percentile expression can be supported on GPU
+          childExprs(1).wrapped match {
+            case lit: Literal => lit.value match {
+              case null =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU only supports non-null literal percentiles")
+              case a: ArrayData if a.numElements == 0 =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU does not support empty percentiles arrays")
+              case a: ArrayData if (0 until a.numElements).exists(a.isNullAt) =>
+                willNotWorkOnGpu(
+                  "approx_percentile on GPU does not support percentiles arrays containing nulls")
+              case _ =>
+                // this is fine
+            }
+            case _ =>
+              willNotWorkOnGpu("approx_percentile on GPU only supports literal percentiles")
+          }
+        }
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuApproximatePercentile(childExprs.head,
+              childExprs(1).asInstanceOf[GpuLiteral],
+              childExprs(2).asInstanceOf[GpuLiteral])
+
+        override def aggBufferAttribute: AttributeReference = {
+          // Spark's ApproxPercentile has an aggregation buffer named "buf" with type "BinaryType"
+          // so we need to replace that here with the GPU aggregation buffer reference, which is
+          // a t-digest type
+          val aggBuffer = c.aggBufferAttributes.head
+          aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+        }
+      }).disabledByDefault("The GPU implementation of approx_percentile is not bit-for-bit " +
+          "compatible with Apache Spark. See the compatibility guide for more information."),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
@@ -3270,7 +3361,8 @@ object GpuOverrides extends Logging {
       (range, conf, p, r) => {
         new SparkPlanMeta[RangeExec](range, conf, p, r) {
           override def convertToGpu(): GpuExec =
-            GpuRangeExec(range.range, conf.gpuTargetBatchSizeBytes)
+            GpuRangeExec(range.start, range.end, range.step, range.numSlices, range.output,
+              conf.gpuTargetBatchSizeBytes)
         }
       }),
     exec[BatchScanExec](
@@ -3331,16 +3423,20 @@ object GpuOverrides extends Logging {
             if (takeExec.child.outputPartitioning.numPartitions == 1) {
               GpuTopN(takeExec.limit, so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                childPlans.head.convertIfNeeded())
+                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
             } else {
-              GpuTopN(takeExec.limit,
+              GpuTopN(
+                takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-                  GpuTopN(takeExec.limit,
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+                  GpuSinglePartitioning,
+                  GpuTopN(
+                    takeExec.limit,
                     so,
                     takeExec.child.output,
-                    childPlans.head.convertIfNeeded())))
+                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+                  SinglePartition))(takeExec.sortOrder)
             }
           }
         }),
@@ -3530,6 +3626,7 @@ object GpuOverrides extends Logging {
     neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
     neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
 
@@ -3548,22 +3645,40 @@ object GpuOverrides extends Logging {
     "rapids.gpu.postColToRowProcessing")
 }
 
+// work around any GpuOverride failures
+object GpuOverrideUtil extends Logging {
+  def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
+    val planOriginal = plan.clone()
+    val failOnError = TEST_CONF.get(plan.conf)
+    try {
+      fn(plan)
+    } catch {
+      case NonFatal(t) if !failOnError =>
+        logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
+        planOriginal
+      case fatal =>
+        logError("Encountered an exception applying GPU overrides " + fatal, fatal)
+        throw fatal
+    }
+  }
+}
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
-  override def apply(plan: SparkPlan) :SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
     GpuOverrides().apply(plan)
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
-  }
+  }(sparkPlan)
 }
 
 case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(plan: SparkPlan): SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled) {
       GpuOverrides.logDuration(conf.shouldExplain,
@@ -3580,7 +3695,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     } else {
       plan
     }
-  }
+  }(sparkPlan)
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapPlan(plan, conf, None)
@@ -3598,7 +3713,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         // is impacted by forcing operators onto CPU due to other rules that we have
         wrap.runAfterTagRules()
         val optimizer = try {
-          Class.forName(conf.optimizerClassName).newInstance().asInstanceOf[Optimizer]
+          ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
         } catch {
           case e: Exception =>
             throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)

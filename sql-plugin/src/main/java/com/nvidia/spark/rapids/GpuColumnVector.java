@@ -494,6 +494,16 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return null;
   }
 
+  public static DType getRapidsType(DataType type) {
+    if (type instanceof ArrayType) {
+      return DType.LIST;
+    } else if (type instanceof StructType) {
+      return DType.STRUCT;
+    } else {
+      return getNonNestedRapidsType(type);
+    }
+  }
+
   public static boolean isNonNestedSupportedType(DataType type) {
     return toRapidsOrNull(type) != null;
   }

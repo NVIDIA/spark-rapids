@@ -101,7 +101,7 @@ object CoalesceGoal {
         a // They are equal so it does not matter
       } else {
         // Nothing is the same so there is no guarantee
-        BatchedByKey(Seq.empty)
+        BatchedByKey(Seq.empty)(Seq.empty)
       }
     case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
     case _ => b
@@ -187,10 +187,16 @@ case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGo
  * for a key, the batch may still run into limits on set by Spark or cudf. It should be noted
  * that it is required that a node in the Spark plan that requires this should also require
  * an input ordering that satisfies this ordering as well.
- * @param order the keys that should be used for batching.
+ * @param gpuOrder the GPU keys that should be used for batching.
+ * @param cpuOrder the CPU keys that should be used for batching.
  */
-case class BatchedByKey(order: Seq[SortOrder]) extends CoalesceGoal {
-  override def children: Seq[Expression] = order
+case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
+    extends CoalesceGoal {
+  require(gpuOrder.size == cpuOrder.size)
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuOrder :: Nil
+
+  override def children: Seq[Expression] = gpuOrder
 }
 
 abstract class AbstractGpuCoalesceIterator(
@@ -200,12 +206,12 @@ abstract class AbstractGpuCoalesceIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    collectTime: GpuMetric,
+    streamTime: GpuMetric,
     concatTime: GpuMetric,
-    totalTime: GpuMetric,
+    opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Arm with Logging {
 
-  private val iter = new CollectTimeIterator(s"$opName: collect", batches, collectTime)
+  private val iter = new CollectTimeIterator(s"$opName: collect", batches, streamTime)
 
   private var batchInitialized: Boolean = false
 
@@ -237,16 +243,18 @@ abstract class AbstractGpuCoalesceIterator(
   Option(TaskContext.get())
       .foreach(_.addTaskCompletionListener[Unit](_ => clearOnDeck()))
 
-  override def hasNext: Boolean = withResource(new MetricRange(totalTime)) { _ =>
+  override def hasNext: Boolean = {
     while (!hasOnDeck && iter.hasNext) {
       closeOnExcept(iter.next()) { cb =>
-        val numRows = cb.numRows()
-        numInputBatches += 1
-        numInputRows += numRows
-        if (numRows > 0) {
-          saveOnDeck(cb)
-        } else {
-          cb.close()
+        withResource(new MetricRange(opTime)) { _ =>
+          val numRows = cb.numRows()
+          numInputBatches += 1
+          numInputRows += numRows
+          if (numRows > 0) {
+            saveOnDeck(cb)
+          } else {
+            cb.close()
+          }
         }
       }
     }
@@ -311,7 +319,7 @@ abstract class AbstractGpuCoalesceIterator(
    *
    * @return The coalesced batch
    */
-  override def next(): ColumnarBatch = withResource(new MetricRange(totalTime)) { _ =>
+  override def next(): ColumnarBatch = withResource(new MetricRange(opTime)) { _ =>
     // reset batch state
     batchInitialized = false
     batchRowLimit = 0
@@ -411,9 +419,9 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputBatches: GpuMetric,
     collectTime: GpuMetric,
     concatTime: GpuMetric,
-    totalTime: GpuMetric,
+    opTime: GpuMetric,
     peakDevMemory: GpuMetric,
-    spillCallback: RapidsBuffer.SpillCallback,
+    spillCallback: SpillCallback,
     opName: String)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
@@ -423,7 +431,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     numOutputBatches,
     collectTime,
     concatTime,
-    totalTime,
+    opTime,
     opName) with Arm {
 
   private val sparkTypes: Array[DataType] = GpuColumnVector.extractTypes(schema)
@@ -523,15 +531,13 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   private[this] val maxDecompressBatchMemory =
     new RapidsConf(child.conf).shuffleCompressionMaxBatchMemory
 
-  protected override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    COLLECT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_COLLECT_TIME),
-    CONCAT_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_CONCAT_TIME),
-    PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
+    PEAK_DEVICE_MEMORY -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
   ) ++ spillMetrics
 
   override protected def doExecute(): RDD[InternalRow] = {
@@ -546,14 +552,14 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] = goal match {
     case batchingGoal: BatchedByKey =>
-      Seq(batchingGoal.order)
+      Seq(batchingGoal.cpuOrder)
     case _ =>
       super.requiredChildOrdering
   }
 
   override def outputOrdering: Seq[SortOrder] = goal match {
     case batchingGoal: BatchedByKey =>
-      batchingGoal.order
+      batchingGoal.cpuOrder
     case _ =>
       child.outputOrdering
   }
@@ -563,9 +569,8 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val collectTime = gpuLongMetric(COLLECT_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
-    val totalTime = gpuLongMetric(TOTAL_TIME)
+    val opTime = gpuLongMetric(OP_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)
 
     // cache in local vars to avoid serializing the plan
@@ -584,15 +589,15 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
       goal match {
         case sizeGoal: CoalesceSizeGoal =>
           batches.mapPartitions { iter =>
-            new GpuCoalesceIterator (iter, outputSchema, sizeGoal, decompressMemoryTarget,
-              numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-              concatTime, totalTime, peakDevMemory, callback, "GpuCoalesceBatches")
+            new GpuCoalesceIterator(iter, outputSchema, sizeGoal, decompressMemoryTarget,
+              numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
+              concatTime, opTime, peakDevMemory, callback, "GpuCoalesceBatches")
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-          val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.order, output.toArray, targetSize,
-            numInputRows, numInputBatches, numOutputRows, numOutputBatches, collectTime,
-            concatTime, totalTime, peakDevMemory, callback)
+          val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
+            numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+            concatTime, opTime, peakDevMemory, callback)
           batches.mapPartitions { iter =>
             f(iter)
           }

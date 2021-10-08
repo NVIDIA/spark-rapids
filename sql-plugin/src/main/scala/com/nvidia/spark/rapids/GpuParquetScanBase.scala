@@ -1053,7 +1053,7 @@ class MultiFileParquetPartitionReader(
       .includeColumn(readDataSchema.fieldNames: _*).build()
 
     // About to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
     val table = withResource(new NvtxWithMetrics(s"$getFileFormatShortName decode",
       NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
@@ -1295,7 +1295,7 @@ class MultiFileCloudParquetPartitionReader(
     // not reading any data, but add in partition data if needed
     if (hostBuffer == null) {
       // Someone is going to process this data, even if it is just a row count
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
       val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
       return addPartitionValues(Some(emptyBatch), partValues, partitionSchema)
     }
@@ -1310,7 +1310,7 @@ class MultiFileCloudParquetPartitionReader(
         .includeColumn(readDataSchema.fieldNames: _*).build()
 
       // about to start using the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get())
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
       val table = withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
         metrics(GPU_DECODE_TIME))) { _ =>
@@ -1395,7 +1395,7 @@ class ParquetPartitionReader(
       if (batch.isEmpty) {
         // This is odd, but some operators return data even when there is no input so we need to
         // be sure that we grab the GPU if there were no batches.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
       }
       isFirstBatch = false
     }
@@ -1449,7 +1449,7 @@ class ParquetPartitionReader(
           .includeColumn(readDataSchema.fieldNames:_*).build()
 
         // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
         val table = withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
             metrics(GPU_DECODE_TIME))) { _ =>

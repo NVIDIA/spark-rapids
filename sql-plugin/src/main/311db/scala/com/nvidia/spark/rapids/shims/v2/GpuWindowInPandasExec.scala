@@ -38,9 +38,12 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 case class GpuWindowInPandasExec(
     projectList: Seq[Expression],  // parameter name is different
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan) extends GpuWindowInPandasExecBase {
+    gpuPartitionSpec: Seq[Expression],
+    cpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression]) extends GpuWindowInPandasExecBase {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: Nil
 
   override final def pythonModuleKey: String = "databricks"
 
@@ -194,7 +197,7 @@ case class GpuWindowInPandasExec(
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
         numInputRows, numInputBatches, spillCallback)
       val pyInputIterator = groupedIterator.map { batch =>
@@ -224,6 +227,7 @@ case class GpuWindowInPandasExec(
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
+          spillCallback.semaphoreWaitTime,
           () => queue.finish(),
           pythonOutputSchema)
 
