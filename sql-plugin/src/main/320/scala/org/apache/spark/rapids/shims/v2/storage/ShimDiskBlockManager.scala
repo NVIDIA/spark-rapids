@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,17 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
-
-import java.io.File
+package org.apache.spark.rapids.shims.v2.storage
 
 import org.apache.spark.SparkConf
-import org.apache.spark.rapids.shims.v2.storage.ShimDiskBlockManager
-import org.apache.spark.storage.BlockId
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.storage.DiskBlockManager
 
-/** Maps logical blocks to local disk locations. */
-class RapidsDiskBlockManager(conf: SparkConf) {
-  private[this] val blockManager = new ShimDiskBlockManager(conf, true)
 
-  def getFile(blockId: BlockId): File = blockManager.getFile(blockId)
-
-  def getFile(file: String): File = blockManager.getFile(file)
-}
+class ShimDiskBlockManager(
+  conf: SparkConf,
+  deleteFilesOnStop: Boolean) extends DiskBlockManager(
+    conf,
+    deleteFilesOnStop,
+    TrampolineUtil.isDriver(conf)
+  )

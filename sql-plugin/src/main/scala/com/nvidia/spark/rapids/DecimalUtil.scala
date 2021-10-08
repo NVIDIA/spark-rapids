@@ -27,14 +27,23 @@ object DecimalUtil {
   }
 
   def createCudfDecimal(precision: Int, scale: Int): DType = {
-    if (precision <= Decimal.MAX_INT_DIGITS) {
+    if (precision <= DType.DECIMAL32_MAX_PRECISION) {
       DType.create(DType.DTypeEnum.DECIMAL32, -scale)
-    } else if (precision <= Decimal.MAX_LONG_DIGITS) {
+    } else if (precision <= DType.DECIMAL64_MAX_PRECISION) {
       DType.create(DType.DTypeEnum.DECIMAL64, -scale)
-    } else {
+    } else if (precision <= DType.DECIMAL128_MAX_PRECISION) {
       DType.create(DType.DTypeEnum.DECIMAL128, -scale)
+    } else {
+      throw new IllegalArgumentException(s"precision overflow: $precision")
     }
   }
+
+    def getMaxPrecision(dt: DType): Int = dt.getTypeId match {
+      case DType.DTypeEnum.DECIMAL32 => DType.DECIMAL32_MAX_PRECISION
+      case DType.DTypeEnum.DECIMAL64 => DType.DECIMAL64_MAX_PRECISION
+      case _ if dt.isDecimalType => DType.DECIMAL128_MAX_PRECISION
+      case _ => throw new IllegalArgumentException(s"not a decimal type: $dt")
+    }
 
   /**
    * Return the size in bytes of the Fixed-width data types.
