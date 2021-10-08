@@ -34,7 +34,6 @@ multithreaded_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type':
 coalescing_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'COALESCING'}
 reader_opt_confs = [original_orc_file_reader_conf, multithreaded_orc_file_reader_conf, coalescing_orc_file_reader_conf]
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('name', ['timestamp-date-test.orc'])
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
@@ -121,7 +120,6 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
             conf={disable_conf: 'false',
                 "spark.sql.sources.useV1SourceList": "orc"})
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
@@ -147,7 +145,6 @@ orc_pred_push_gens = [
         # timestamp_gen 
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gen', orc_pred_push_gens, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
@@ -203,7 +200,6 @@ def test_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, rea
             lambda spark : spark.read.orc(data_path),
             conf=all_confs)
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -229,7 +225,6 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
             conf=all_confs)
 
 # In this we are reading the data, but only reading the key the data was partitioned by
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 def test_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -383,7 +378,6 @@ def test_missing_column_names_filter(spark_tmp_table_factory, reader_confs):
         reader_confs)
 
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('data_gen,read_schema', _nested_pruning_schemas, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
@@ -416,7 +410,6 @@ def test_read_struct_without_stream(spark_tmp_path):
             lambda spark : spark.read.orc(data_path))
 
 
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3742')
 @pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
