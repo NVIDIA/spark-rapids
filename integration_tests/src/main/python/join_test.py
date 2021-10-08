@@ -14,6 +14,7 @@
 
 import pytest
 from pyspark.sql.functions import broadcast
+from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
@@ -671,3 +672,34 @@ def test_sortmerge_join_struct_as_key_fallback(data_gen, join_type):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type)
     assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=_sortmerge_join_conf)
+
+# Regression test for https://github.com/NVIDIA/spark-rapids/issues/3775
+@ignore_order(local=True)
+def test_struct_self_join(spark_tmp_table_factory):
+    def do_join(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000),
+            (("Cathy ", "", "Green"), "3", "F", 3000)
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType()))
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+        df_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(df_name)
+        resultdf = spark.sql(
+            "select struct(name, struct(name.firstname, name.lastname) as newname)" +
+            " as col,name from " + df_name + " union" +
+            " select struct(name, struct(name.firstname, name.lastname) as newname) as col,name" +
+            " from " + df_name)
+        resultdf_name = spark_tmp_table_factory.get()
+        resultdf.createOrReplaceTempView(resultdf_name)
+        return spark.sql("select a.* from {} a, {} b where a.name=b.name".format(
+            resultdf_name, resultdf_name))
+    assert_gpu_and_cpu_are_equal_collect(do_join)
