@@ -24,7 +24,6 @@ import com.nvidia.spark.rapids.shims.v2.ShimExpression
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.catalyst.util.ArrayData
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -38,7 +37,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * This function supports partial aggregation.
  *
  * The GPU implementation uses t-digest to perform the initial aggregation (see
- * `updateExpressions` / `mergeExpressions`) and then applies the ApproxPercentileFromTDigestExpr`
+ * `updateExpressions` / `mergeExpressions`) and then applies the `ApproxPercentileFromTDigestExpr`
  * expression to compute percentiles from the final t-digest (see `evaluateExpression`).
  *
  * There are two different data types involved here. The t-digests are a map of centroids

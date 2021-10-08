@@ -163,3 +163,4 @@ def test_cast_long_to_decimal_overflow():
         lambda spark : unary_op_df(spark, long_gen).select(
             f.col('a').cast(DecimalType(18, -1))),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
