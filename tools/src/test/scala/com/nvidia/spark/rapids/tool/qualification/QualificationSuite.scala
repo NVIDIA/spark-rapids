@@ -31,7 +31,7 @@ import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, S
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.{QualAppInfo, QualificationSummaryInfo, RunningQualApp}
+import org.apache.spark.sql.rapids.tool.qualification.{QualAppInfo, QualificationSummaryInfo, RunningQualificationApp}
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -555,10 +555,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("streaming qualification app") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val appId = ToolTestUtils.runAndCollect("streaming") { spark =>
-        val typeChecker = new PluginTypeChecker()
-        val qualApp = new RunningQualApp(new Configuration(), Some(typeChecker), 20)
+        val qualApp = new RunningQualificationApp(new Configuration())
         val listener = qualApp.getEventListener
         spark.sparkContext.addSparkListener(listener)
+        val eventProcessor = qualApp.getEventProcessor
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
         testData.createOrReplaceTempView("t1")
@@ -568,19 +568,13 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "GROUP BY a ORDER BY a")
 
         // do inside application to simulate similar calling
-        val qualInfo = qualApp.aggregateStats()
-        assert(qualInfo.nonEmpty)
-        qualInfo match {
-          case Some(info) =>
+        val textOut = qualApp.getTextSummary
+        val csvOut = qualApp.getCSVSummary
+        assert(textOut.nonEmpty)
+        assert(csvOut.nonEmpty)
 
-            val header = QualOutputWriter.headerCSV(false)
-            val data = QualOutputWriter.toCSV(info, false)
-            val textHeaderStr = QualOutputWriter.constructHeaderTextString(info.appId.size)
-            val textAppStr = QualOutputWriter.constructAppInfoTextString(info, info.appId.size)
-          case _ =>
-            logWarning("no qualification info")
-        }
-        assert(qualInfo.get.appName.equals("streaming"))
+        println(textOut)
+        println(csvOut)
         df
       }
     }

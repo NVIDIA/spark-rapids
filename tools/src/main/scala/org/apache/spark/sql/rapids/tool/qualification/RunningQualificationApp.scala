@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
-import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
+import com.nvidia.spark.rapids.tool.qualification.{PluginTypeChecker, QualificationArgs, QualOutputWriter}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkEnv
@@ -25,13 +25,14 @@ import org.apache.spark.SparkEnv
  * A Qualification app that is processing events while the application is 
  * actively running.
  */
-class RunningQualApp(
+class RunningQualificationApp(
     hadoopConf: Configuration,
-    pluginTypeChecker: Option[PluginTypeChecker],
-    readScorePercent: Int)
+    pluginTypeChecker: Option[PluginTypeChecker] = Some(new PluginTypeChecker()),
+    readScorePercent: Int = QualificationArgs.DEFAULT_READ_SCORE_PERCENT)
   extends QualAppInfo(None, hadoopConf, pluginTypeChecker, readScorePercent) {
 
-  def initApp(): Unit = {
+  // since applciation is running, try to initialize current state
+  private def initApp(): Unit = {
     val appName = SparkEnv.get.conf.get("spark.app.name", "")
     val appIdConf = SparkEnv.get.conf.getOption("spark.app.id")
     val appStartTime = SparkEnv.get.conf.get("spark.app.startTime", "-1")
@@ -50,4 +51,30 @@ class RunningQualApp(
   }
 
   initApp()
+
+  def getTextSummary: String = {
+    val appInfo = super.aggregateStats()
+    appInfo match {
+      case Some(info) =>
+        val textHeaderStr = QualOutputWriter.constructHeaderTextString(this.appId.size)
+        val textAppStr = QualOutputWriter.constructAppInfoTextString(info, info.appId.size)
+        textHeaderStr + "\n" + textAppStr
+      case None =>
+        logWarning(s"Unable to get qualification information for this application")
+        ""
+    }
+  }
+
+  def getCSVSummary: String = {
+    val appInfo = super.aggregateStats()
+    appInfo match {
+      case Some(info) =>
+        val header = QualOutputWriter.headerCSV(false)
+        val data = QualOutputWriter.toCSV(info, false)
+        header + "\n" + data
+      case None =>
+        logWarning(s"Unable to get qualification information for this application")
+        ""
+    }
+  }
 }
