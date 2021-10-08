@@ -34,12 +34,6 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  private def getAppidSize(sums: Seq[QualificationSummaryInfo]): Int = {
-    val sizes = sums.map(_.appId.size)
-    val appIdMaxSize = if (sizes.size > 0) sizes.max else QualOutputWriter.appIdStr.size
-    appIdMaxSize
-  }
-
   private def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
     writer.write(QualOutputWriter.headerCSV(reportReadSchema) + "\n")
   }
@@ -101,6 +95,12 @@ object QualOutputWriter {
   val appDurStrSize = appDurStr.size
   val sqlDurStrSize = sqlDurStr.size
   val problemStrSize = problemDurStr.size
+
+  def getAppidSize(sums: Seq[QualificationSummaryInfo]): Int = {
+    val sizes = sums.map(_.appId.size)
+    val appIdMaxSize = if (sizes.size > 0) sizes.max else QualOutputWriter.appIdStr.size
+    appIdMaxSize
+  }
 
   def constructAppInfoTextString(sumInfo: QualificationSummaryInfo, appIdMaxSize: Int): String = {
     val appId = sumInfo.appId

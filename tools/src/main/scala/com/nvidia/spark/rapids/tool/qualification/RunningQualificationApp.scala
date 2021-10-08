@@ -56,8 +56,9 @@ class RunningQualificationApp(
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val textHeaderStr = QualOutputWriter.constructHeaderTextString(this.appId.size)
-        val textAppStr = QualOutputWriter.constructAppInfoTextString(info, info.appId.size)
+        val appIdMaxSize = QualOutputWriter.getAppidSize(Seq(info))
+        val textHeaderStr = QualOutputWriter.constructHeaderTextString(appIdMaxSize)
+        val textAppStr = QualOutputWriter.constructAppInfoTextString(info, appIdMaxSize)
         textHeaderStr + "\n" + textAppStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
