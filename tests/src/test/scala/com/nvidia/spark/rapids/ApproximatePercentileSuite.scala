@@ -28,7 +28,6 @@ class ApproximatePercentileSuite extends SparkQueryCompareTestSuite {
 
   val DEFAULT_PERCENTILES = Array(0.005, 0.05, 0.25, 0.45, 0.5, 0.55, 0.75, 0.95, 0.995)
 
-  // cudaErrorIllegalAddress: an illegal memory access was encountered
   test("null handling") {
     val func = spark => salariesWithNull(spark)
     doTest(func, delta = Some(100))
