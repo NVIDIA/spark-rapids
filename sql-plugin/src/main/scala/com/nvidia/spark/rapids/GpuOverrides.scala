@@ -1918,10 +1918,10 @@ object GpuOverrides extends Logging {
     expr[In](
       "IN operator",
       ExprChecks.projectOnly(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        Seq(ParamCheck("value", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+        Seq(ParamCheck("value", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
           TypeSig.comparable)),
         Some(RepeatingParamCheck("list",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64).withAllLit(),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL).withAllLit(),
           TypeSig.comparable))),
       (in, conf, p, r) => new ExprMeta[In](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -1940,7 +1940,7 @@ object GpuOverrides extends Logging {
     expr[InSet](
       "INSET operator",
       ExprChecks.unaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.comparable),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL, TypeSig.comparable),
       (in, conf, p, r) => new ExprMeta[InSet](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (in.hset.contains(null)) {
@@ -2514,10 +2514,10 @@ object GpuOverrides extends Logging {
       "Gets the named field of the struct",
       ExprChecks.unaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL +
-            TypeSig.DECIMAL_64).nested(),
+            TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all,
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL + TypeSig.DECIMAL_64),
+            TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL + TypeSig.DECIMAL_128_FULL),
         TypeSig.STRUCT.nested(TypeSig.all)),
       (expr, conf, p, r) => new UnaryExprMeta[GetStructField](expr, conf, p, r) {
         override def convertToGpu(arr: Expression): GpuExpression =
@@ -2545,9 +2545,9 @@ object GpuOverrides extends Logging {
         "Returns value for the given key in value if column is map",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-          TypeSig.DECIMAL_64 + TypeSig.MAP).nested(), TypeSig.all,
+          TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(), TypeSig.all,
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP) +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP) +
           TypeSig.MAP.nested(TypeSig.STRING)
             .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
@@ -2570,10 +2570,10 @@ object GpuOverrides extends Logging {
               // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProject(
                 (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                  TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
+                  TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
                 TypeSig.all,
                 ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP),
+                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
                   TypeSig.ARRAY.nested(TypeSig.all)),
                 ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")

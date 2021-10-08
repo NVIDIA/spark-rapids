@@ -143,13 +143,13 @@ abstract class SparkBaseShims extends Spark30XShims {
         import TypeSig._
         // nullChecks are the same
 
-        override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
+        override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING  + DECIMAL_128_FULL
         override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
+        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + DECIMAL_128_FULL
         override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
 
-        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
+        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING + DECIMAL_128_FULL)
             .withPsNote(TypeEnum.STRING, fpToStringPsNote)
         override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
 

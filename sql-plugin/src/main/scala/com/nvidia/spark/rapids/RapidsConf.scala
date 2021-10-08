@@ -1296,6 +1296,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val FORCE_SHIMCALLER_CLASSLOADER = conf("spark.rapids.force.caller.classloader")
+    .doc("Option to statically add shim's parallel world classloader URLs to " +
+      "the classloader of the ShimLoader class, typically Bootstrap classloader. This option" +
+      " uses reflection with setAccessible true on a classloader that is not created by Spark.")
+    .internal()
+    .booleanConf
+    .createWithDefault(value = true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
