@@ -98,6 +98,13 @@ dedicated shim modules.
 Thus, the conventional source code root directories `src/main/<language>` contain the files that
 are source-compatible with all supported Spark releases, both upstream and vendor-specific.
 
+The following acronyms may appear in directory names:
+
+|Acronym|Definition|Example|Example Explanation|
+|-------|-------|----------|-------------------|
+|cdh|Cloudera CDH|311cdh|Cloudera CDH Spark based on Apache Spark 3.1.1|
+|db|Databricks|312db|Databricks Spark based on Spark 3.1.2|
+
 The version-specific directory names have one of the following forms / use cases:
 - `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
 - `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
@@ -107,6 +114,10 @@ The version-specific directory names have one of the following forms / use cases
 3.1.2 *exclusive*
 - `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
    3.1.2 *inclusive*
+- `src/main/pre320-treenode` contains shims for the Catalyst `TreeNode` class before the
+  [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
+- `src/main/post320-treenode` contains shims for the Catalyst `TreeNode` class after the
+  [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
 
 
 ### Setting up an Integrated Development Environment
