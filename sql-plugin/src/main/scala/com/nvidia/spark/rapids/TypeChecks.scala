@@ -1262,18 +1262,20 @@ class CastChecks extends ExprChecks {
 
   // When updating these please check child classes too
   import TypeSig._
-  val nullChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING + NULL
+  val nullChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING +
+    NULL + DECIMAL_128_FULL
   val sparkNullSig: TypeSig = all
 
-  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
+  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128_FULL
   val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
-  val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+  val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING +
+    BINARY + DECIMAL_128_FULL
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
   val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
       s"${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to be true."
-  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING)
+  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128_FULL)
       .withPsNote(TypeEnum.STRING, fpToStringPsNote)
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
@@ -1283,7 +1285,8 @@ class CastChecks extends ExprChecks {
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
   val sparkTimestampSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
-  val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING + BINARY
+  val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
+    BINARY + DECIMAL_128_FULL
   val sparkStringSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
 
   val binaryChecks: TypeSig = none

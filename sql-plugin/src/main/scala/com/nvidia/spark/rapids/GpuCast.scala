@@ -95,9 +95,12 @@ class CastExprMeta[INPUT <: CastBase](
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
-      case (_: StringType, _: DecimalType) if !conf.isCastStringToDecimalEnabled =>
-        // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
-        willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
+      case (_: StringType, dt: DecimalType) => if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+          willNotWorkOnGpu("String to Decimal with precision > 18 is unsupported")
+        }
+        if (!conf.isCastStringToDecimalEnabled) {
+          // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
+          willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
             "results which slightly differed from the correct results when the string represents " +
             "any number exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For " +
             "instance, the GPU returns 99999999999999987 when given the input string " +
@@ -106,6 +109,8 @@ class CastExprMeta[INPUT <: CastBase](
             "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
             "precision loss. To enable this operation on the GPU, set " +
             s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
+        }
+
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
           recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
@@ -382,21 +387,21 @@ object GpuCast extends Arm {
         }
 
       // ansi cast from larger-than-integer integral-like types, to integer
-      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
-          Scalar.fromInt(Int.MaxValue))
+      case (t @(LongType | _: DecimalType), IntegerType) if ansiMode =>
+        assertValuesInRange(input, GpuScalar.from(Int.MinValue, t),
+          GpuScalar.from(Int.MaxValue, t))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral-like types, to short
-      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
-          Scalar.fromShort(Short.MaxValue))
+      case (t @(LongType | IntegerType | _: DecimalType), ShortType) if ansiMode =>
+        assertValuesInRange(input, GpuScalar.from(Short.MinValue, t),
+          GpuScalar.from(Short.MaxValue, t))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral-like types, to byte
-      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
-          Scalar.fromByte(Byte.MaxValue))
+      case (t @ (LongType | IntegerType | ShortType | _: DecimalType), ByteType) if ansiMode =>
+        assertValuesInRange(input, GpuScalar.from(Byte.MinValue, t),
+          GpuScalar.from(Byte.MaxValue, t))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to byte
@@ -507,7 +512,7 @@ object GpuCast extends Arm {
             castFloatsToDecimal(fp, dt, ansiMode)
           }
         }
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
+      case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
@@ -1124,30 +1129,24 @@ object GpuCast extends Arm {
     }
   }
 
+  private def getPrecisionScaleForIntegralInput(input: ColumnView): (Int, Int) = {
+    input.getType match {
+      case DType.INT8 =>  (3, 0)
+      case DType.INT16 => (5, 0)
+      case DType.INT32 => (10, 0)
+      case DType.INT64 => (20, 0)
+    }
+  }
+
   private def castIntegralsToDecimal(
       input: ColumnView,
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
-    // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
-    val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
-      case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
-      case bound => (-bound.toLong + 1, bound.toLong - 1)
-    }
-    // At first, we conduct overflow check onto input column.
-    // Then, we cast checked input into target decimal type.
-    if (ansiMode) {
-      assertValuesInRange(input,
-        minValue = Scalar.fromLong(lowBound),
-        maxValue = Scalar.fromLong(upBound))
-      castIntegralsToDecimalAfterCheck(input, dt)
-    } else {
-      val checkedInput = replaceOutOfRangeValues(input,
-        minValue = Scalar.fromLong(lowBound),
-        maxValue = Scalar.fromLong(upBound),
-        replaceValue = Scalar.fromNull(input.getType))
-      withResource(checkedInput) { checked =>
-        castIntegralsToDecimalAfterCheck(checked, dt)
-      }
+    val (prec, scale) = getPrecisionScaleForIntegralInput(input)
+    // Cast input to decimal
+    val inputDecimalType = new DecimalType(prec, scale)
+    withResource(castIntegralsToDecimalAfterCheck(input, inputDecimalType)) { castedInput =>
+      castDecimalToDecimal(castedInput, inputDecimalType, dt, ansiMode)
     }
   }
 
@@ -1165,7 +1164,7 @@ object GpuCast extends Arm {
       withResource(roundedDouble) { rounded =>
         // We rely on containerDecimal to perform preciser rounding. So, we have to take extra
         // space cost of container into consideration when we run bound check.
-        val containerScaleBound = DType.DECIMAL64_MAX_PRECISION - (dt.scale + 1)
+        val containerScaleBound = DType.DECIMAL128_MAX_PRECISION - (dt.scale + 1)
         val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
         if (ansiMode) {
           assertValuesInRange(rounded,
@@ -1187,9 +1186,9 @@ object GpuCast extends Arm {
 
     withResource(checkedInput) { checked =>
       val targetType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale)
-      // If target scale reaches DECIMAL64_MAX_PRECISION, container DECIMAL can not
+      // If target scale reaches DECIMAL128_MAX_PRECISION, container DECIMAL can not
       // be created because of precision overflow. In this case, we perform casting op directly.
-      val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
+      val casted = if (DecimalUtil.getMaxPrecision(targetType) == dt.scale) {
         checked.castTo(targetType)
       } else {
         val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)

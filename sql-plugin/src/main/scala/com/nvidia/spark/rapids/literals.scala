@@ -248,6 +248,8 @@ object GpuScalar extends Arm with Logging {
     case decType: DecimalType =>
       val dec = v match {
         case de: Decimal => de
+        case vb: Byte => Decimal(vb)
+        case vs: Short => Decimal(vs)
         case vi: Int => Decimal(vi)
         case vl: Long => Decimal(vl)
         case vd: Double => Decimal(vd)
@@ -265,6 +267,8 @@ object GpuScalar extends Arm with Logging {
     case LongType => v match {
       case l: Long => Scalar.fromLong(l)
       case i: Int => Scalar.fromLong(i.toLong)
+      case s: Short => Scalar.fromLong(s.toLong)
+      case b: Byte => Scalar.fromLong(b.toLong)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for LongType, expecting Long, or Int.")
     }
@@ -284,6 +288,8 @@ object GpuScalar extends Arm with Logging {
     }
     case IntegerType => v match {
       case i: Int =>  Scalar.fromInt(i)
+      case s: Short =>  Scalar.fromInt(s.toInt)
+      case b: Byte =>  Scalar.fromInt(b.toInt)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for IntegerType, expecting Int.")
     }
@@ -302,6 +308,7 @@ object GpuScalar extends Arm with Logging {
     }
     case ShortType => v match {
       case s: Short => Scalar.fromShort(s)
+      case b: Byte => Scalar.fromShort(b.toShort)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for ShortType, expecting Short.")
     }
