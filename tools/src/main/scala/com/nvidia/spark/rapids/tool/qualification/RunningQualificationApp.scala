@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.tool.qualification
+package com.nvidia.spark.rapids.tool.qualification
 
-import com.nvidia.spark.rapids.tool.qualification.{PluginTypeChecker, QualificationArgs, QualOutputWriter}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.sql.rapids.tool.qualification._
 
 /**
  * A Qualification app that is processing events while the application is 
