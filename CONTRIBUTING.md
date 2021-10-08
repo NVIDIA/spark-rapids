@@ -100,10 +100,10 @@ are source-compatible with all supported Spark releases, both upstream and vendo
 
 The following acronyms may appear in directory names:
 
-|Acronym|Definition|Example|Example Explanation|
-|-------|-------|----------|-------------------|
-|cdh|Cloudera CDH|311cdh|Cloudera CDH Spark based on Apache Spark 3.1.1|
-|db|Databricks|312db|Databricks Spark based on Spark 3.1.2|
+|Acronym|Definition  |Example|Example Explanation                           |
+|-------|------------|-------|----------------------------------------------|
+|cdh    |Cloudera CDH|311cdh |Cloudera CDH Spark based on Apache Spark 3.1.1|
+|db     |Databricks  |312db  |Databricks Spark based on Spark 3.1.2         |
 
 The version-specific directory names have one of the following forms / use cases:
 - `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
