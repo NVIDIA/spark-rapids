@@ -1198,8 +1198,6 @@ def compare_percentile_approx(df_fun, percentiles):
 
     # run approx_percentile on CPU and GPU
     approx_cpu, approx_gpu = run_with_cpu_and_gpu(run_approx, 'COLLECT', _approx_percentile_conf)
-    print(approx_cpu)
-    print(approx_gpu)
 
     assert len(exact) == len(approx_cpu)
     assert len(exact) == len(approx_gpu)
