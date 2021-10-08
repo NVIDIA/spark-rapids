@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.ColumnWriterOptions._
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
@@ -113,55 +112,6 @@ object GpuOrcFileFormat extends Logging {
       None
     }
   }
-
-  def orcWriterOptionsFromField[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
-      builder: ColumnWriterOptions.NestedBuilder[T, V],
-      dataType: DataType,
-      name: String,
-      nullable: Boolean): T = {
-    dataType match {
-      case dt: DecimalType =>
-        builder.withDecimalColumn(name, dt.precision, nullable)
-      case TimestampType =>
-        builder.withTimestampColumn(name, false, nullable)
-      case s: StructType =>
-        builder.withStructColumn(
-          orcWriterOptionsFromSchema(structBuilder(name, nullable), s).build()
-        )
-      case a: ArrayType =>
-        builder.withListColumn(
-          orcWriterOptionsFromField(
-            listBuilder(name, nullable),
-            a.elementType,
-            name,
-            nullable).build())
-      case m: MapType =>
-        builder.withMapColumn(
-          mapColumn(name,
-            orcWriterOptionsFromField(
-              ORCWriterOptions.builder(),
-              m.keyType,
-              "key",
-              nullable = false).build().getChildColumnOptions()(0),
-            orcWriterOptionsFromField(
-              ORCWriterOptions.builder(),
-              m.valueType,
-              "value",
-              nullable).build().getChildColumnOptions()(0)))
-      case _ =>
-        builder.withColumns(nullable, name)
-    }
-    builder.asInstanceOf[T]
-  }
-
-  def orcWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
-      builder: ColumnWriterOptions.NestedBuilder[T, V],
-      schema: StructType): T = {
-    schema.foreach(field =>
-      orcWriterOptionsFromField(builder, field.dataType, field.name, field.nullable)
-    )
-    builder.asInstanceOf[T]
-  }
 }
 
 class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
@@ -211,8 +161,8 @@ class GpuOrcWriter(path: String,
   extends ColumnarOutputWriter(path, context, dataSchema, "ORC") {
 
   override val tableWriter: TableWriter = {
-    val builder = GpuOrcFileFormat
-      .orcWriterOptionsFromSchema(ORCWriterOptions.builder(), dataSchema)
+    val builder = SchemaUtils
+      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
     Table.writeORCChunked(builder.build(), this)
   }
