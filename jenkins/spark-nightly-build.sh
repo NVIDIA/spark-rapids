@@ -35,7 +35,7 @@ BUILDVERS=${BUILDVERS:-"
 320
 "}
 
-BUILD_PARALLEL=${BUILD_PARALLEL:-4}
+BUILD_PARALLEL=${BUILD_PARALLEL:-8}
 time (
 echo -n "$BUILDVERS" | xargs -P "$BUILD_PARALLEL" -I% bash -c "
 mvn -U -B -Dbuildver=% clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER && \
