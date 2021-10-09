@@ -28,6 +28,21 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 
+mvn_install() {
+  echo "Run mvn install for BUID_VER=$1"
+  BUILD_VER="$1"
+  env -u SPARK_HOME mvn -U -B "$MVN_URM_MIRROR" clean install \
+          -Dbuildver="$BUILD_VER" \
+          -Drat.skip=true \
+          -DskipTests=$( [[ % == 311 || % == 320 ]] && echo false || echo true ) \
+          -Dmaven.javadoc.skip=true \
+          -Dskip \
+          -Dmaven.scalastyle.skip=$( [[ % == 320 ]] && echo false || echo true ) \
+          -Dcuda.version="$CUDA_CLASSIFIER" \
+          -Dpytest.TEST_TAGS='' \
+          -pl aggregator -am
+}
+
 mvn_verify() {
     echo "Run mvn verify..."
     # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
