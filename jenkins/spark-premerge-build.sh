@@ -29,15 +29,20 @@ fi
 
 
 mvn_install() {
+  # build all the versions but only run unit tests on one 3.0.X version (base version covers this),
+  # one 3.1.X version, and one 3.2.X version.
+  # All others shims test should be covered in nightly pipelines
   echo "Run mvn install for BUID_VER=$1"
   BUILD_VER="$1"
+  SKIP_TESTS=$( [[ "$BUILD_VER" == "311" || "$BUILD_VER" == "320" ]] && echo false || echo true )
+  SKIP_SCALASTYLE=$( [[ "$BUILD_VER" == "320" ]] && echo false || echo true )
   env -u SPARK_HOME mvn -U -B "$MVN_URM_MIRROR" clean install \
           -Dbuildver="$BUILD_VER" \
           -Drat.skip=true \
-          -DskipTests=$( [[ % == 311 || % == 320 ]] && echo false || echo true ) \
+          -DskipTests="$SKIP_TESTS" \
           -Dmaven.javadoc.skip=true \
           -Dskip \
-          -Dmaven.scalastyle.skip=$( [[ % == 320 ]] && echo false || echo true ) \
+          -Dmaven.scalastyle.skip="$SKIP_SCALASTYLE" \
           -Dcuda.version="$CUDA_CLASSIFIER" \
           -Dpytest.TEST_TAGS='' \
           -pl aggregator -am
@@ -49,35 +54,6 @@ mvn_verify() {
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
-
-    # build all the versions but only run unit tests on one 3.0.X version (base version covers this), one 3.1.X version, and one 3.2.X version.
-    # All others shims test should be covered in nightly pipelines
-
-    BUILDVERS=${BUILDVERS:-"
-      302
-      303
-      304
-      311
-      311cdh
-      312
-      313
-      320
-    "}
-
-    BUILD_PARALLEL=${BUILD_PARALLEL:-8}
-    time (
-    echo -n "$BUILDVERS" | xargs -n 1 -P "$BUILD_PARALLEL" -I% bash -c \
-      "env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR clean install \
-        -Dbuildver=% \
-        -Drat.skip=true \
-        -DskipTests=\$( [[ % == 311 || % == 320 ]] && echo false || echo true ) \
-        -Dmaven.javadoc.skip=true \
-        -Dskip \
-        -Dmaven.scalastyle.skip=\$( [[ % == 320 ]] && echo false || echo true ) \
-        -Dcuda.version=$CUDA_CLASSIFIER \
-        -Dpytest.TEST_TAGS='' \
-        -pl aggregator -am || exit 255"
-    )
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.

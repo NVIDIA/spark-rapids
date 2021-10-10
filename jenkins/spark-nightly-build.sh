@@ -25,6 +25,7 @@ export M2DIR="$WORKSPACE/.m2"
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
 
+# TODO switch to parallel pipeline
 BUILDVERS=${BUILDVERS:-"
 302
 303
