@@ -150,7 +150,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
       .orderBy("uid", "dateLong", "dollars")
       .rowsBetween(Window.unboundedPreceding, 0)
     windowAggregationTester(rowsWindow)
-    windowAggregationTesterForDecimal(rowsWindow, scale = -1)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 1)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [NO PART]",
@@ -160,7 +160,7 @@ class WindowFunctionSuite extends SparkQueryCompareTestSuite {
         .orderBy("uid", "dateLong", "dollars")
         .rowsBetween(Window.unboundedPreceding, 0)
     windowAggregationTester(rowsWindow)
-    windowAggregationTesterForDecimal(rowsWindow, scale = -1)
+    windowAggregationTesterForDecimal(rowsWindow, scale = 1)
   }
 
   testSparkResultsAreEqual("[Window] [ROWS] [UNBOUNDED PRECEDING, CURRENT ROW] [ROW_NUMBER]",
