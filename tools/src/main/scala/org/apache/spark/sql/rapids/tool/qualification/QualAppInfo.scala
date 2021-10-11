@@ -31,7 +31,7 @@ import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
 class QualAppInfo(
     eventLogInfo: Option[EventLogInfo],
-    hadoopConf: Configuration,
+    hadoopConf: Option[Configuration] = None,
     pluginTypeChecker: Option[PluginTypeChecker],
     readScorePercent: Int)
   extends AppBase(eventLogInfo, hadoopConf) with Logging {
@@ -67,6 +67,7 @@ class QualAppInfo(
   def getEventListener: SparkListener = {
     eventProcessor
   }
+
   def getEventProcessor: QualEventProcessor = {
     eventProcessor
   }
@@ -340,7 +341,7 @@ object QualAppInfo extends Logging {
       pluginTypeChecker: Option[PluginTypeChecker],
       readScorePercent: Int): Option[QualAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(Some(path), hadoopConf, pluginTypeChecker,
+        val app = new QualAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
           readScorePercent)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)

@@ -22,24 +22,45 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.sql.rapids.tool.qualification._
 
 /**
- * A Qualification app that is processing events while the application is 
- * actively running.
+ * A Qualification tool application used for analyzing the application while it is
+ * actively running. The qualification tool analyzes applications to determine if the
+ * RAPIDS Accelerator for Apache Spark might be a good fit for those applications.
+ * The standalone tool runs on Spark event logs after they have run. This class provides
+ * an API to use with a running Spark application and processes events as they arrive.
+ * This tool is intended to give the user a starting point and does not guarantee the
+ * applications it scores high will actually be accelerated the most. When running
+ * like this on a single application, the detailed output may be most useful to look
+ * for potential issues. The score could be used to compare against other applications.
+ *
+ * Create the `RunningQualicationApp`:
+ * {{{
+ *   val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp()
+ * }}}
+ *
+ * Get the event listener from it and install it as a Spark listener:
+ * {{{
+ *   val listener = qualApp.getEventListener
+ *   spark.sparkContext.addSparkListener(listener)
+ * }}}
+ *
+ * Run your queries and then get the summary or detailed output to see the results.
+ * {{{
+ *   // run your sql queries
+ *   val summaryOutput = qualApp.getTextSummary()
+ *   val detailedOutput = qualApp.getTextDetailed()
+ * }}}
+ *
+ * @param readScorePercent The percent the read format and datatypes
+ *                         apply to the score. Default is 20 percent.
  */
-class RunningQualificationApp(
-    hadoopConf: Configuration = new Configuration(),
-    pluginTypeChecker: Option[PluginTypeChecker] = Some(new PluginTypeChecker()),
-    readScorePercent: Int = QualificationArgs.DEFAULT_READ_SCORE_PERCENT)
-  extends QualAppInfo(None, hadoopConf, pluginTypeChecker, readScorePercent) {
+class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_READ_SCORE_PERCENT)
+  extends QualAppInfo(None, None, Some(new PluginTypeChecker()), readScorePercent) {
 
   // since application is running, try to initialize current state
   private def initApp(): Unit = {
     val appName = SparkEnv.get.conf.get("spark.app.name", "")
-    logWarning("app name conf is: " + appName)
-
     val appIdConf = SparkEnv.get.conf.getOption("spark.app.id")
-    logWarning("app id conf is: " + appIdConf)
     val appStartTime = SparkEnv.get.conf.get("spark.app.startTime", "-1")
-    logWarning("app start is: " + appStartTime)
 
     // start event doesn't happen so initial it
     val thisAppInfo = QualApplicationInfo(
@@ -57,7 +78,7 @@ class RunningQualificationApp(
 
   initApp()
 
-  def getTextSummary: String = {
+  def getTextSummary(): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
@@ -88,7 +109,7 @@ class RunningQualificationApp(
     }
   }
 
-  def getCSVSummary: String = {
+  def getCSVSummary(): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>

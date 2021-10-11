@@ -37,7 +37,7 @@ import org.apache.spark.util.{JsonProtocol, Utils}
 
 abstract class AppBase(
     val eventLogInfo: Option[EventLogInfo],
-    val hadoopConf: Configuration) extends Logging {
+    val hadoopConf: Option[Configuration]) extends Logging {
 
   var sparkVersion: String = ""
   var appEndTime: Option[Long] = None
@@ -71,7 +71,8 @@ abstract class AppBase(
         logInfo("Parsing Event Log: " + eventLogPath.toString)
 
         // at this point all paths should be valid event logs or event log dirs
-        val fs = eventLogPath.getFileSystem(hadoopConf)
+        val hconf = hadoopConf.getOrElse(new Configuration())
+        val fs = eventLogPath.getFileSystem(hconf)
         var totalNumEvents = 0
         val readerOpt = eventLogInfo match {
           case dblog: DatabricksEventLog =>
