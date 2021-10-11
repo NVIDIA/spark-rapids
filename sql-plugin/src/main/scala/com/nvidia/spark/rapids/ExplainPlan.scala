@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.DataFrame
 
-object ExplainGPUPlan {
+object ExplainPlan {
   /**
    * Looks at the CPU plan associated with the dataframe and outputs information
    * about which parts of the query the RAPIDS Accelerator for Apache Spark
@@ -32,7 +32,7 @@ object ExplainGPUPlan {
    * in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
    *
    * {{{
-   *   com.nvidia.spark.rapids.ExplainGPUPlan.explainPotentialGPUPlan(df)
+   *   com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df)
    * }}}
    *
    * @param df The Spark DataFrame to get the query plan from
