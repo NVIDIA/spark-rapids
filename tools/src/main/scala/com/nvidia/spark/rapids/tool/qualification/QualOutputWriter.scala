@@ -63,7 +63,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
 
   private def writeTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
-    val appIdMaxSize = getAppidSize(sums)
+    val appIdMaxSize = QualOutputWriter.getAppidSize(sums)
     val entireHeader = QualOutputWriter.constructHeaderTextString(appIdMaxSize)
     val sep = "=" * entireHeader.size
     writer.write(s"$sep\n")
