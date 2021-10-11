@@ -76,7 +76,8 @@ class RunningQualificationApp(
     appInfo match {
       case Some(info) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val headersAndSizes = QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
+        val headersAndSizes =
+          QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
         val textHeaderStr =
           QualOutputWriter.constructHeaderTextStringDetailed(headersAndSizes)
         val textAppStr = QualOutputWriter.constructAppInfoTextStringDetailed(info, headersAndSizes)
@@ -101,7 +102,7 @@ class RunningQualificationApp(
     }
   }
 
-  def getCSVDetailed(reportReadSchema: Boolean = false: String = {
+  def getCSVDetailed(reportReadSchema: Boolean = false): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
