@@ -44,13 +44,7 @@ case class GpuCheckOverflow(child: Expression,
     if (resultDType.equals(base.getType)) {
       base.incRefCount()
     } else {
-      val foundScale = -base.getType.getScale
-      val rounded = if (foundScale > dataType.scale) {
-        base.round(dataType.scale, cudf.RoundMode.HALF_UP)
-      } else {
-        base.incRefCount()
-      }
-      withResource(rounded) { rounded =>
+      withResource(DecimalUtil.round(base, dataType.scale, cudf.RoundMode.HALF_UP)) { rounded =>
         if (resultDType.getTypeId != base.getType.getTypeId) {
           rounded.castTo(resultDType)
         } else {

@@ -1175,7 +1175,7 @@ object GpuCast extends Arm {
       } else {
         val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
-          container.round(dt.scale, cudf.RoundMode.HALF_UP)
+          DecimalUtil.round(container, dt.scale, cudf.RoundMode.HALF_UP)
         }
       }
       // Cast NaN values to nulls
@@ -1238,7 +1238,7 @@ object GpuCast extends Arm {
       input.copyToColumnVector()
     } else {
       // We have to round first to match what Spark is doing...
-      val (rounded, roundedType) = if (!isScaleUpcast) {
+      val rounded = if (!isScaleUpcast) {
         // We have to round the data to the desired scale. Spark uses HALF_UP rounding in
         // this case so we need to also.
 
@@ -1252,10 +1252,9 @@ object GpuCast extends Arm {
         // DECIMAL64 min unscaled and rounded = -1000000000000000000 (Which fits)
         // That means we don't need to cast it to a wider type first, we just need to be sure
         // that we do boundary checks, if we did need to round
-        val roundedType = DecimalType(from.precision, to.scale)
-        (input.round(to.scale, cudf.RoundMode.HALF_UP), roundedType)
+        DecimalUtil.round(input, to.scale, cudf.RoundMode.HALF_UP)
       } else {
-        (input.copyToColumnVector(), from)
+        input.copyToColumnVector()
       }
 
       val checked = withResource(rounded) { rounded =>

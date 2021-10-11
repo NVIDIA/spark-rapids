@@ -431,14 +431,15 @@ abstract class GpuRoundBase(child: Expression, scale: Expression) extends GpuBin
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType, IntegerType)
 
   override def doColumnar(value: GpuColumnVector, scale: GpuScalar): ColumnVector = {
-    val scaleVal = dataType match {
-      case DecimalType.Fixed(_, s) => s
+    val lhsValue = value.getBase
+    dataType match {
+      case DecimalType.Fixed(_, scaleVal) =>
+        DecimalUtil.round(lhsValue, scaleVal, roundMode)
       case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType =>
-        scale.getValue.asInstanceOf[Int]
+        val scaleVal = scale.getValue.asInstanceOf[Int]
+        lhsValue.round(scaleVal, roundMode)
       case _ => throw new IllegalArgumentException(s"Round operator doesn't support $dataType")
     }
-    val lhsValue = value.getBase
-    lhsValue.round(scaleVal, roundMode)
   }
 
   override def doColumnar(value: GpuColumnVector, scale: GpuColumnVector): ColumnVector = {

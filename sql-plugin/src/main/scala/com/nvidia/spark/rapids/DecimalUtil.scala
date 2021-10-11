@@ -62,6 +62,43 @@ object DecimalUtil extends Arm {
   }
 
   /**
+   * CUDF can have overflow issues when rounding values. This works around those issues for you.
+   * @param input the input data to round.
+   * @param decimalPlaces the decimal places to round to
+   * @param mode the rounding mode
+   * @return the rounded data.
+   */
+  def round(input: cudf.ColumnView,
+      decimalPlaces: Int,
+      mode: cudf.RoundMode): cudf.ColumnVector = {
+    assert(input.getType.isDecimalType)
+    val cudfInputScale = input.getType.getScale
+    if (cudfInputScale >= -decimalPlaces) {
+      // No issues with overflow for these cases, so just do it.
+      input.round(decimalPlaces, mode)
+    } else {
+      // We actually will need to round because we will be losing some information during the round
+      // The DECIMAL type we use needs to be able to hold
+      // `std::pow(10, std::abs(decimal_places + input.type().scale()));`
+      // in it without overflowing.
+      val scaleMovement = Math.abs(decimalPlaces + cudfInputScale)
+      val maxInputPrecision = getMaxPrecision(input.getType)
+      if (scaleMovement > maxInputPrecision) {
+        // This is going to overflow unless we do something else first. But for round to work all
+        // we actually need is 1 decimal place more than the target decimalPlaces, so we can cast
+        // to this first (which will truncate the extra information), and then round to the desired
+        // result
+        val intermediateDType = DType.create(input.getType.getTypeId, (-decimalPlaces) + 1)
+        withResource(input.castTo(intermediateDType)) { truncated =>
+          truncated.round(decimalPlaces, mode)
+        }
+      } else {
+        input.round(decimalPlaces, mode)
+      }
+    }
+  }
+
+  /**
    * Because CUDF can have issues with comparing decimal values that have different precision
    * and scale accurately it takes some special steps to do this. This handles the corner cases
    * for you.
