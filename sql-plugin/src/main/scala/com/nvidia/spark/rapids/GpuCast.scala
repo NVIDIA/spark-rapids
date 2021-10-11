@@ -1108,13 +1108,15 @@ object GpuCast extends Arm {
     }
   }
 
-  private def getPrecisionForIntegralInput(input: ColumnView): Int = {
-    input.getType match {
-      case DType.INT8 =>  3
-      case DType.INT16 => 5
-      case DType.INT32 => 10
-      case DType.INT64 => 19
-    }
+  /**
+   * Get the number of decimal places needed to hold the integral type held by this column
+   */
+  private def getPrecisionForIntegralInput(input: ColumnView): Int = input.getType match {
+    case DType.INT8 =>  3 // -128 to 127
+    case DType.INT16 => 5 // -32768 to 32767
+    case DType.INT32 => 10 // -2147483648 to 2147483647
+    case DType.INT64 => 19 // -9223372036854775808 to 9223372036854775807
+    case t => throw new IllegalArgumentException(s"Unsupported type $t")
   }
 
   private def castIntegralsToDecimal(

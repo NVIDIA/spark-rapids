@@ -1018,19 +1018,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         withGpuSparkSession((ss: SparkSession) => execFun(createDF(ss)).collect(), conf)
       }
     } finally {
-      def deleteFile(f: File): Unit = {
-        if (f.exists()) {
-          if (f.isDirectory) {
-            f.listFiles().foreach(deleteFile)
-          } else {
-            if (!f.delete()) {
-              f.deleteOnExit()
-              System.err.println(s"COULD NOT DELETE $f")
-            }
-          }
-        }
-      }
-      deleteFile(dir)
+      org.apache.commons.io.FileUtils.deleteQuietly(dir)
     }
   }
 
