@@ -451,3 +451,46 @@ def test_like_complex_escape():
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
+def test_rlike():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a{2}"',
+                'a rlike "a{1,3}"',
+                'a rlike "a{1,}"',
+                'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_escape():
+    gen = mk_str_gen('[ab]{0,2}[\\-\\+]{0,2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a[\\\\-]"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.xfail(reason='cuDF supports multiline but Spark does not')
+def test_rlike_multi_line():
+    gen = mk_str_gen('[abc]\n[def]')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "^a"',
+                'a rlike "^d"',
+                'a rlike "c$"',
+                'a rlike "e$"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.xfail(reason='cuDF has stricter requirements around escaping')
+def test_rlike_missing_escape():
+    gen = mk_str_gen('a[\\-\\+]')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a[-]"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.xfail(reason='cuDF does not support qualifier with nothing to repeat')
+def test_rlike_nothing_to_repeat():
+    gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a*+"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
