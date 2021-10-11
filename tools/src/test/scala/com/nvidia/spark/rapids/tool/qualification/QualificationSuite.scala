@@ -555,10 +555,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("streaming qualification app") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val appId = ToolTestUtils.runAndCollect("streaming") { spark =>
-        val qualApp = new RunningQualificationApp(new Configuration())
+        val qualApp = new RunningQualificationApp()
         val listener = qualApp.getEventListener
         spark.sparkContext.addSparkListener(listener)
-        val eventProcessor = qualApp.getEventProcessor
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
         testData.createOrReplaceTempView("t1")
