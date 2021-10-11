@@ -30,7 +30,7 @@ case class EnvironmentInfo(configName: Map[String, String])
 
 class FilterAppInfo(
     eventLogInfo: EventLogInfo,
-    hadoopConf: Configuration) extends AppBase(Some(eventLogInfo), hadoopConf) {
+    hadoopConf: Configuration) extends AppBase(Some(eventLogInfo), Some(hadoopConf)) {
 
   def doSparkListenerApplicationStart(
       event: SparkListenerApplicationStart): Unit = {
