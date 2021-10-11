@@ -34,8 +34,12 @@ class RunningQualificationApp(
   // since applciation is running, try to initialize current state
   private def initApp(): Unit = {
     val appName = SparkEnv.get.conf.get("spark.app.name", "")
+    logWarning("app name conf is: " + appName)
+
     val appIdConf = SparkEnv.get.conf.getOption("spark.app.id")
+    logWarning("app id conf is: " + appIdConf)
     val appStartTime = SparkEnv.get.conf.get("spark.app.startTime", "-1")
+    logWarning("app start is: " + appStartTime)
 
     // start event doesn't happen so initial it
     val thisAppInfo = QualApplicationInfo(
