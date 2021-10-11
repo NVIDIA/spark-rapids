@@ -113,7 +113,7 @@ object QualOutputWriter {
 
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
-    getMaxSizeForHeader(sizes, QualOutputWriter.appIdStr.size)
+    getMaxSizeForHeader(sizes, QualOutputWriter.appIdStr)
   }
 
   def getMaxSizeForHeader(sizes: Seq[Int], headerTxtStr: String): Int = {
