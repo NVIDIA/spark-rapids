@@ -75,7 +75,6 @@ class RunningQualificationApp(
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
         val headersAndSizes =
           QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
         val textHeaderStr =
@@ -106,8 +105,8 @@ class RunningQualificationApp(
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val header = QualOutputWriter.headerCSVDetailed(false)
-        val data = QualOutputWriter.toCSVDetailed(info, false)
+        val header = QualOutputWriter.headerCSVDetailed(reportReadSchema)
+        val data = QualOutputWriter.toCSVDetailed(info, reportReadSchema)
         header + "\n" + data
       case None =>
         logWarning(s"Unable to get qualification information for this application")

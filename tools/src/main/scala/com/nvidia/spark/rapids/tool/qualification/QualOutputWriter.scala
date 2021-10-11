@@ -216,7 +216,7 @@ object QualOutputWriter {
     val entireHeader = new StringBuffer
     entireHeader.append("|")
     finalDetails.foreach { str =>
-      entireHeader.append(s"%${str}s|")
+      entireHeader.append(s"${str}|")
     }
     entireHeader.toString
   }
@@ -239,12 +239,16 @@ object QualOutputWriter {
     constructHeaderTextString(appIdMaxSize)
       .replaceAll("\\s", "")
       .replace("|", ",")
+      .stripPrefix(",")
+      .stripSuffix(",")
   }
 
   def toCSVSummary(appSum: QualificationSummaryInfo, appIdSize: Int): String = {
     constructAppInfoTextString(appSum, appIdSize)
       .replaceAll("\\s", "")
       .replace("|", ",")
+      .stripPrefix(",")
+      .stripSuffix(",")
   }
 
   private def stringIfempty(str: String): String = {
