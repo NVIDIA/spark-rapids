@@ -64,7 +64,7 @@ class RunningQualificationApp(
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
         val textHeaderStr = QualOutputWriter.constructHeaderTextString(appIdMaxSize)
         val textAppStr = QualOutputWriter.constructAppInfoTextString(info, appIdMaxSize)
-        textHeaderStr + "\n" + textAppStr
+        textHeaderStr + textAppStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
         ""
@@ -94,7 +94,7 @@ class RunningQualificationApp(
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
         val header = QualOutputWriter.headerCSVSummary
         val data = QualOutputWriter.toCSVSummary(info, appIdMaxSize)
-        header + "\n" + data
+        header + data
       case None =>
         logWarning(s"Unable to get qualification information for this application")
         ""
