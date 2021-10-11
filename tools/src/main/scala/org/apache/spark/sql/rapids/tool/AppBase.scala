@@ -71,9 +71,11 @@ abstract class AppBase(
         logInfo("Parsing Event Log: " + eventLogPath.toString)
 
         // at this point all paths should be valid event logs or event log dirs
+        logWarning("hadoop conf is defined: : " + hadoopConf)
         val hconf = hadoopConf.getOrElse(new Configuration())
         val fs = eventLogPath.getFileSystem(hconf)
         var totalNumEvents = 0
+        logWarning("event log infO: " + eventLogInfo)
         val readerOpt = eventLogInfo match {
           case dblog: DatabricksEventLog =>
             Some(new DatabricksRollingEventLogFilesFileReader(fs, eventLogPath))

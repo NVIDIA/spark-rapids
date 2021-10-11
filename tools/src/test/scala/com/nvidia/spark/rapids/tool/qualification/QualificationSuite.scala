@@ -99,7 +99,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  /*
   test("test order asc") {
     val logFiles = Array(
       s"$logDir/dataset_eventlog",
@@ -550,7 +549,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
-  */
 
   test("streaming qualification app") {
     TrampolineUtil.withTempDir { eventLogDir =>
