@@ -26,12 +26,12 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * actively running.
  */
 class RunningQualificationApp(
-    hadoopConf: Configuration,
+    hadoopConf: Configuration = new Configuration(),
     pluginTypeChecker: Option[PluginTypeChecker] = Some(new PluginTypeChecker()),
     readScorePercent: Int = QualificationArgs.DEFAULT_READ_SCORE_PERCENT)
   extends QualAppInfo(None, hadoopConf, pluginTypeChecker, readScorePercent) {
 
-  // since applciation is running, try to initialize current state
+  // since application is running, try to initialize current state
   private def initApp(): Unit = {
     val appName = SparkEnv.get.conf.get("spark.app.name", "")
     logWarning("app name conf is: " + appName)
@@ -61,9 +61,25 @@ class RunningQualificationApp(
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val appIdMaxSize = QualOutputWriter.getAppidSize(Seq(info))
+        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
         val textHeaderStr = QualOutputWriter.constructHeaderTextString(appIdMaxSize)
         val textAppStr = QualOutputWriter.constructAppInfoTextString(info, appIdMaxSize)
+        textHeaderStr + "\n" + textAppStr
+      case None =>
+        logWarning(s"Unable to get qualification information for this application")
+        ""
+    }
+  }
+
+  def getTextDetailed(reportReadSchema: Boolean = false): String = {
+    val appInfo = super.aggregateStats()
+    appInfo match {
+      case Some(info) =>
+        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
+        val headersAndSizes = QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
+        val textHeaderStr =
+          QualOutputWriter.constructHeaderTextStringDetailed(headersAndSizes)
+        val textAppStr = QualOutputWriter.constructAppInfoTextStringDetailed(info, headersAndSizes)
         textHeaderStr + "\n" + textAppStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
@@ -75,8 +91,22 @@ class RunningQualificationApp(
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val header = QualOutputWriter.headerCSV(false)
-        val data = QualOutputWriter.toCSV(info, false)
+        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
+        val header = QualOutputWriter.headerCSVSummary(appIdMaxSize)
+        val data = QualOutputWriter.toCSVSummary(info, appIdMaxSize)
+        header + "\n" + data
+      case None =>
+        logWarning(s"Unable to get qualification information for this application")
+        ""
+    }
+  }
+
+  def getCSVDetailed(reportReadSchema: Boolean = false: String = {
+    val appInfo = super.aggregateStats()
+    appInfo match {
+      case Some(info) =>
+        val header = QualOutputWriter.headerCSVDetailed(false)
+        val data = QualOutputWriter.toCSVDetailed(info, false)
         header + "\n" + data
       case None =>
         logWarning(s"Unable to get qualification information for this application")
