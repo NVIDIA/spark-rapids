@@ -51,6 +51,7 @@ class RunningQualificationApp(
       None,
       endDurationEstimated = false
     )
+    appId = appIdConf.getOrElse("")
     appInfo = Some(thisAppInfo)
   }
 
