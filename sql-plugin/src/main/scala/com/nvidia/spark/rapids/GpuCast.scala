@@ -1111,30 +1111,12 @@ object GpuCast extends Arm {
     }
   }
 
-  private def castIntegralsToDecimalAfterCheck(input: ColumnView, dt: DecimalType): ColumnVector = {
-    if (dt.scale < 0) {
-      // Rounding is essential when scale is negative,
-      // so we apply HALF_UP rounding manually to keep align with CpuCast.
-      withResource(input.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
-        scaleZero => scaleZero.round(dt.scale, cudf.RoundMode.HALF_UP)
-      }
-    } else if (dt.scale > 0) {
-      // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
-      // before casting it to decimal in case of overflow.
-      withResource(input.castTo(DType.INT64)) { long =>
-        long.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
-      }
-    } else {
-      input.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
-    }
-  }
-
-  private def getPrecisionScaleForIntegralInput(input: ColumnView): (Int, Int) = {
+  private def getPrecisionForIntegralInput(input: ColumnView): Int = {
     input.getType match {
-      case DType.INT8 =>  (3, 0)
-      case DType.INT16 => (5, 0)
-      case DType.INT32 => (10, 0)
-      case DType.INT64 => (20, 0)
+      case DType.INT8 =>  3
+      case DType.INT16 => 5
+      case DType.INT32 => 10
+      case DType.INT64 => 19
     }
   }
 
@@ -1142,10 +1124,10 @@ object GpuCast extends Arm {
       input: ColumnView,
       dt: DecimalType,
       ansiMode: Boolean): ColumnVector = {
-    val (prec, scale) = getPrecisionScaleForIntegralInput(input)
+    val prec = getPrecisionForIntegralInput(input)
     // Cast input to decimal
-    val inputDecimalType = new DecimalType(prec, scale)
-    withResource(castIntegralsToDecimalAfterCheck(input, inputDecimalType)) { castedInput =>
+    val inputDecimalType = new DecimalType(prec, 0)
+    withResource(input.castTo(DecimalUtil.createCudfDecimal(prec, 0))) { castedInput =>
       castDecimalToDecimal(castedInput, inputDecimalType, dt, ansiMode)
     }
   }
@@ -1207,12 +1189,32 @@ object GpuCast extends Arm {
     }
   }
 
+  private def checkNFixDecimalBounds(
+      input: ColumnView,
+      to: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
+    assert(input.getType.isDecimalType)
+    withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
+      if (ansiMode) {
+        withResource(outOfBounds.any()) { isAny =>
+          if (isAny.isValid && isAny.getBoolean) {
+            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        input.copyToColumnVector()
+      } else {
+        withResource(Scalar.fromNull(input.getType)) { nullVal =>
+          outOfBounds.ifElse(nullVal, input)
+        }
+      }
+    }
+  }
+
   private def castDecimalToDecimal(
       input: ColumnView,
       from: DecimalType,
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {
-
     val toDType = DecimalUtil.createCudfDecimal(to.precision, to.scale)
     val fromDType = DecimalUtil.createCudfDecimal(from.precision, from.scale)
 
@@ -1236,59 +1238,32 @@ object GpuCast extends Arm {
       input.copyToColumnVector()
     } else {
       // We have to round first to match what Spark is doing...
-      val rounded = if (!isScaleUpcast) {
+      val (rounded, roundedType) = if (!isScaleUpcast) {
         // We have to round the data to the desired scale. Spark uses HALF_UP rounding in
         // this case so we need to also.
-        input.round(to.scale, cudf.RoundMode.HALF_UP)
+
+        // Rounding up can cause overflow, but if the input is in the proper range for Spark
+        // the overflow will fit in the current CUDF type without the need to cast it.
+        // Int.MinValue =                       -2147483648
+        // DECIMAL32 min unscaled =              -999999999
+        // DECIMAL32 min unscaled and rounded = -1000000000 (Which fits)
+        // Long.MinValue =                      -9223372036854775808
+        // DECIMAL64 min unscaled =              -999999999999999999
+        // DECIMAL64 min unscaled and rounded = -1000000000000000000 (Which fits)
+        // That means we don't need to cast it to a wider type first, we just need to be sure
+        // that we do boundary checks, if we did need to round
+        val roundedType = DecimalType(from.precision, to.scale)
+        (input.round(to.scale, cudf.RoundMode.HALF_UP), roundedType)
       } else {
-        input.copyToColumnVector()
+        (input.copyToColumnVector(), from)
       }
 
       val checked = withResource(rounded) { rounded =>
-        if (!isWholeNumUpcast) {
-          val roundedType = DecimalType(from.precision, -rounded.getType.getScale)
-
-          // We need to check for out of bound values. We have to be careful because cudf can have
-          // problems when comparing values that have different precision/scale. So we start off by
-          // creating the maximum and minimum value that the toType can hold in the same
-          // precision/scale as the to type.
-
-          val boundStr = ("9" * to.precision) + "e" + (-to.scale)
-          val toUpperBound = BigDecimal(boundStr)
-          val toLowerBound = BigDecimal("-" + boundStr)
-
-          // Now we have to move these into the same precision/scale as the rounded data
-          // We round down (towards 0) so we can do a check for rounded > upperBound and
-          // rounded < lowerBound. Using an "or equal to" operator like <= would require us
-          // to do extra checks so we need to avoid them.
-          // This also lets us not worry about increasing the precision on accident when rounding
-          // up.
-          val upperBound = toUpperBound.setScale(roundedType.scale, BigDecimal.RoundingMode.DOWN)
-          val lowerBound = toLowerBound.setScale(roundedType.scale, BigDecimal.RoundingMode.DOWN)
-
-          val outOfBounds = withResource(GpuScalar.from(upperBound, roundedType)) { ubScale =>
-            withResource(rounded.greaterThan(ubScale)) { over =>
-              withResource(GpuScalar.from(lowerBound, roundedType)) { lbScale =>
-                withResource(rounded.lessThan(lbScale)) { under =>
-                  over.or(under)
-                }
-              }
-            }
-          }
-          withResource(outOfBounds) { outOfBounds =>
-            if (ansiMode) {
-              withResource(outOfBounds.any()) { isAny =>
-                if (isAny.isValid && isAny.getBoolean) {
-                  throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-                }
-              }
-              rounded.incRefCount()
-            } else {
-              withResource(Scalar.fromNull(rounded.getType)) { nullVal =>
-                outOfBounds.ifElse(nullVal, rounded)
-              }
-            }
-          }
+        if (!isWholeNumUpcast || !isScaleUpcast) {
+          // We need to check for out of bound values.
+          // The wholeNumberUpcast is obvious why we have to check, but we also have to check it
+          // when we rounded, because rounding can add a digit to the effective precision.
+          checkNFixDecimalBounds(rounded, to, ansiMode)
         } else {
           rounded.incRefCount()
         }

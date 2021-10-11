@@ -113,6 +113,7 @@ def test_cast_decimal_to_decimal(data_gen, to_type):
             conf = allow_negative_scale_of_decimal_conf)
 
 
+#TODO is this needed???
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen] + decimal_gens, ids=idfn)
 @pytest.mark.parametrize('to_data_gen', [DecimalGen(precision=1, scale=-1), DecimalGen(precision=2, scale=0),
                                          DecimalGen(precision=18, scale= 3), DecimalGen(precision=20, scale= 2),
@@ -122,4 +123,43 @@ def test_cast_to_decimal(data_gen, to_data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).select(
             f.col('a').cast(to_data_gen.data_type)),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+@pytest.mark.parametrize('to_type', [
+    DecimalType(precision=2, scale=0),
+    DecimalType(precision=3, scale=0),
+    DecimalType(precision=5, scale=0),
+    DecimalType(precision=7, scale=2),
+    DecimalType(precision=10, scale=0),
+    DecimalType(precision=10, scale=2),
+    DecimalType(precision=18, scale=0),
+    DecimalType(precision=18, scale=2)], ids=idfn)
+def test_cast_integral_to_decimal(data_gen, to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).select(
+            f.col('a').cast(to_type)))
+
+def test_cast_byte_to_decimal_overflow():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, byte_gen).select(
+            f.col('a').cast(DecimalType(2, -1))),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+def test_cast_short_to_decimal_overflow():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, short_gen).select(
+            f.col('a').cast(DecimalType(4, -1))),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+def test_cast_int_to_decimal_overflow():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, int_gen).select(
+            f.col('a').cast(DecimalType(9, -1))),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+def test_cast_long_to_decimal_overflow():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, long_gen).select(
+            f.col('a').cast(DecimalType(18, -1))),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
