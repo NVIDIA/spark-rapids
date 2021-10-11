@@ -98,8 +98,11 @@ object QualOutputWriter {
 
   def getAppidSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
-    val appIdMaxSize = if (sizes.size > 0) sizes.max else QualOutputWriter.appIdStr.size
-    appIdMaxSize
+    if (sizes.size > 0 && sizes.max > QualOutputWriter.appIdStr.size) {
+      sizes.max
+    } else {
+      QualOutputWriter.appIdStr.size
+    }
   }
 
   def constructAppInfoTextString(sumInfo: QualificationSummaryInfo, appIdMaxSize: Int): String = {
