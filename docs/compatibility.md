@@ -569,6 +569,51 @@ distribution. Because the results are not bit-for-bit identical with the Apache 
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
 `spark.rapids.approxPercentileEnabled=true`.
 
-There are known issues with the approximate percentile implementation
-([#3706](https://github.com/NVIDIA/spark-rapids/issues/3706),
-[#3692](https://github.com/NVIDIA/spark-rapids/issues/3692)) and the feature should be considered experimental.
+## RLike
+
+The GPU implementation of RLike has a number of known issues where behavior is not consistent with Apache Spark and
+is disabled by default.
+
+### Multi-line
+
+The GPU implementation of RLike supports `^` and `$` to represent the start and end of lines within a string but
+Spark uses `^` and `$` to refer to the start and end of the entire string (equivalent to `\A` and `\Z`).
+
+| Pattern | Input  | Spark on CPU | Spark on GPU |
+|---------|--------|--------------|--------------|
+| `^A`    | `A\nB` | Match        | Match        |
+| `A$`    | `A\nB` | No Match     | Match        |
+| `^B`    | `A\nB` | No Match     | Match        |
+| `B$`    | `A\nB` | Match        | Match        |
+
+### Null character in input
+
+The GPU implementation of RLike will not match anything after a null character within a string.
+
+| Pattern   | Input     | Spark on CPU | Spark on GPU |
+|-----------|-----------|--------------|--------------|
+| `A`       | `\u0000A` | Match        | No Match     |
+
+### Qualifiers with nothing to repeat
+
+Spark supports qualifiers in cases where there is nothing to repeat. For example, Spark supports `a*+` and this
+will match all inputs. The GPU implementation of RLike does not support this syntax and will throw an exception with
+the message `nothing to repeat at position 0`.
+
+### Stricter escaping requirements
+
+The GPU implementation of RLike has stricter requirements around escaping special characters in some cases.
+
+| Pattern   | Input  | Spark on CPU | Spark on GPU |
+|-----------|--------|--------------|--------------|
+| `a[-+]`   | `a-`   | Match        | No Match     |
+| `a[\-\+]` | `a-`   | Match        | Match        |
+
+### Miscellaneous
+
+Here are some other edge cases where results do not match between CPU and GPU.
+
+| Pattern   | Input  | Spark on CPU | Spark on GPU |
+|-----------|--------|--------------|--------------|
+| `z()?1+`  | `a12b` | No Match     | Match        |
+| `z()*1+`  | `a12b` | No Match     | Match        |
