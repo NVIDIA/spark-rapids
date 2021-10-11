@@ -220,7 +220,7 @@ object SchemaUtils extends Arm {
       case dt: DecimalType =>
         builder.withDecimalColumn(name, dt.precision, nullable)
       case TimestampType =>
-        builder.withTimestampColumn(name, false, nullable)
+        builder.withTimestampColumn(name, writeInt96, nullable)
       case s: StructType =>
         builder.withStructColumn(
           writerOptionsFromSchema(
