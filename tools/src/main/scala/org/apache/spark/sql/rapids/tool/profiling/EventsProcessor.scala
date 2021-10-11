@@ -34,8 +34,6 @@ import org.apache.spark.sql.rapids.tool.EventProcessorBase
 class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[ApplicationInfo](app)
   with  Logging {
 
-  // type T = ApplicationInfo
-
   override def doSparkListenerResourceProfileAddedReflect(
       app: ApplicationInfo,
       event: SparkListenerEvent): Boolean = {

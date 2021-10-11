@@ -22,8 +22,6 @@ import org.apache.spark.sql.execution.ui._
 
 abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener with Logging {
 
- // type T <: AppBase
-
   def processAnyEvent(event: SparkListenerEvent): Unit = {
     event match {
       case _: SparkListenerLogStart =>

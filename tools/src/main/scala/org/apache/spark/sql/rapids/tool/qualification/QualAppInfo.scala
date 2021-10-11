@@ -68,9 +68,6 @@ class QualAppInfo(
     eventProcessor
   }
 
-  def getEventProcessor: QualEventProcessor = {
-    eventProcessor
-  }
   processEvents()
 
   override def processEvent(event: SparkListenerEvent): Boolean = {
