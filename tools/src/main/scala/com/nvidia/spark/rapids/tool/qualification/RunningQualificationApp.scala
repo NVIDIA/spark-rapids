@@ -92,7 +92,7 @@ class RunningQualificationApp(
     appInfo match {
       case Some(info) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val header = QualOutputWriter.headerCSVSummary(appIdMaxSize)
+        val header = QualOutputWriter.headerCSVSummary
         val data = QualOutputWriter.toCSVSummary(info, appIdMaxSize)
         header + "\n" + data
       case None =>

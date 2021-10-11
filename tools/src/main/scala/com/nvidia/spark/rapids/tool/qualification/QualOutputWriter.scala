@@ -235,12 +235,14 @@ object QualOutputWriter {
     }
   }
 
-  def headerCSVSummary(appIdMaxSize: Int): String = {
-    constructHeaderTextString(appIdMaxSize)
-      .replaceAll("\\s", "")
-      .replace("|", ",")
-      .stripPrefix(",")
-      .stripSuffix(",")
+  def headerCSVSummary: String = {
+    val entireHeader = new StringBuffer
+    entireHeader.append(s"${QualOutputWriter.appNameStr},")
+    entireHeader.append(s"${QualOutputWriter.appDurStr},")
+    entireHeader.append(s"${QualOutputWriter.sqlDurStr},")
+    entireHeader.append(s"${QualOutputWriter.problemDurStr},")
+    entireHeader.append("\n")
+    entireHeader.toString
   }
 
   def toCSVSummary(appSum: QualificationSummaryInfo, appIdSize: Int): String = {
