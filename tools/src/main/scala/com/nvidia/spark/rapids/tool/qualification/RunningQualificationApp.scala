@@ -79,7 +79,8 @@ class RunningQualificationApp(
           QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
         val textHeaderStr =
           QualOutputWriter.constructHeaderTextStringDetailed(headersAndSizes)
-        val textAppStr = QualOutputWriter.constructAppInfoTextStringDetailed(info, headersAndSizes)
+        val textAppStr = QualOutputWriter.constructAppInfoTextStringDetailed(info,
+          headersAndSizes, reportReadSchema)
         textHeaderStr + "\n" + textAppStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
