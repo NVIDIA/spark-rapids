@@ -2720,11 +2720,12 @@ object GpuOverrides extends Logging {
     expr[CreateArray](
       "Returns an array with the given elements",
       ExprChecks.projectOnly(
-        TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
-            TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY + TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL +
+          TypeSig.NULL + TypeSig.STRING + TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP +
+          TypeSig.ARRAY + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("arg",
-          TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
+          TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.STRING +
               TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +
               TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.NULL + TypeSig.STRING +
                 TypeSig.BOOLEAN + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.STRUCT +

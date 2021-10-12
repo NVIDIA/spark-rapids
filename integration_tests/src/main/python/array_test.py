@@ -52,7 +52,7 @@ def test_nested_array_index(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', all_basic_gens +
-                         [decimal_gen_default, decimal_gen_scale_precision]
+                         [decimal_gen_default, decimal_gen_scale_precision] + decimal_128_gens_no_neg
                          + [StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
                             StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
 def test_make_array(data_gen):
