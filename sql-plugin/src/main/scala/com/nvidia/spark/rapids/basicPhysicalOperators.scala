@@ -17,15 +17,12 @@
 package com.nvidia.spark.rapids
 
 import java.util.Random
-
 import scala.annotation.tailrec
-
 import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.{ShimSparkPlan, ShimUnaryExecNode}
-
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -36,7 +33,8 @@ import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SampleExec, Sp
 import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler, GpuPredicateHelper}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.{ColumnVector, ColumnarBatch}
+import org.apache.spark.util.random.BernoulliCellSampler
 
 class GpuProjectExecMeta(
     proj: ProjectExec,
@@ -414,16 +412,16 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
     } else {
       rdd.mapPartitionsWithIndex(
         (index, iterator) => {
-          val rng: Random = new XORShiftRandom
-          rng.setSeed(seed + index)
+          // use CPU sampler generate filter
+          val sampler = new BernoulliCellSampler(lowerBound, upperBound)
+          sampler.setSeed(seed + index)
           iterator.map[ColumnarBatch] { batch =>
             withResource(batch) { b => // will generate new columnar column, close this
               val numRows = b.numRows()
               val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
                 builder =>
                   (0 until numRows).foreach { _ =>
-                    val x = rng.nextDouble()
-                    val n = if ((x >= lowerBound) && (x < upperBound)) 1 else 0
+                    val n = sampler.sample()
                     if (n > 0) {
                       builder.append(1.toByte)
                       numOutputRows += 1
@@ -434,6 +432,7 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
                   builder.buildAndPutOnDevice()
               }
 
+              // use GPU filer rows
               val colTypes = GpuColumnVector.extractTypes(b)
               withResource(filter) { filter =>
                 withResource(GpuColumnVector.from(b)) { tbl =>
