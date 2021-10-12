@@ -99,9 +99,11 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val textHeaderStr = QualOutputWriter.constructDetailedHeader(Seq(info), delimiter,
-          prettyPrint, reportReadSchema)
-        val textAppStr = QualOutputWriter.constructAppDetailedInfo(info, delimiter,
+        val headersAndSizes =
+          QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info),reportReadSchema )
+        val textHeaderStr = QualOutputWriter.constructDetailedHeader(Seq(info), headersAndSizes,
+          delimiter, prettyPrint, reportReadSchema)
+        val textAppStr = QualOutputWriter.constructAppDetailedInfo(info, headersAndSizes, delimiter,
           prettyPrint, reportReadSchema)
         textHeaderStr + textAppStr
       case None =>

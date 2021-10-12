@@ -168,7 +168,7 @@ object QualOutputWriter {
     )
   }
 
-  private def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
+  def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       appNameStr -> getMaxSizeForHeader(appInfos.map(_.appName.size), appNameStr),
@@ -263,7 +263,7 @@ object QualOutputWriter {
     )
 
     if (reportReadSchema) {
-      dataMap += (readfileFormats, headersAndSizes(readSchemaStr))
+      dataMap += (readfileFormats -> headersAndSizes(readSchemaStr))
     }
     constructOutputRow(dataMap, delimiter, prettyPrint)
   }
