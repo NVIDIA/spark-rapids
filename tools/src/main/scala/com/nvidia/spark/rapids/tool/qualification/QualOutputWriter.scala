@@ -39,7 +39,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   private def writeCSVHeader(writer: ToolTextFileWriter,
       appInfos: Seq[QualificationSummaryInfo],
       headersAndSizes: LinkedHashMap[String, Int]): Unit = {
-    writer.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false) + "\n")
+    writer.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
   }
 
   def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
