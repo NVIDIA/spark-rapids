@@ -567,8 +567,4 @@ The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
 distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.approxPercentileEnabled=true`.
-
-There are known issues with the approximate percentile implementation
-([#3706](https://github.com/NVIDIA/spark-rapids/issues/3706),
-[#3692](https://github.com/NVIDIA/spark-rapids/issues/3692)) and the feature should be considered experimental.
+`spark.rapids.sql.expression.ApproximatePercentile=true`.
