@@ -2985,8 +2985,8 @@ object GpuOverrides extends Logging {
     expr[RLike](
       "RLike",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("src", TypeSig.STRING, TypeSig.STRING),
-        ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+        ("str", TypeSig.STRING, TypeSig.STRING),
+        ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
       "The GPU implementation of rlike is not " +
       "compatible with Apache Spark. See the compatibility guide for more information."),
