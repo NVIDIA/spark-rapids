@@ -50,7 +50,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       writeCSVHeader(csvFileWriter, sums, headersAndSizes)
       sums.foreach { appSum =>
         csvFileWriter.write(QualOutputWriter.constructAppDetailedInfo(appSum, headersAndSizes,
-          ",", false, reportReadSchema) + "\n")
+          ",", false, reportReadSchema))
       }
     } finally {
       csvFileWriter.close()
@@ -72,7 +72,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
       sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
     val entireHeader = QualOutputWriter.constructSummaryHeader(appIdMaxSize, "|", true)
-    val sep = "=" * entireHeader.size
+    val sep = "=" * (entireHeader.size - 1)
     writer.write(s"$sep\n")
     writer.write(entireHeader)
     writer.write(s"$sep\n")
@@ -85,8 +85,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     val finalSums = sums.take(numOutputRows)
     finalSums.foreach { sumInfo =>
       val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, appIdMaxSize, "|", true)
-      writer.write(wStr + "\n")
-      if (printStdout) print(wStr + "\n")
+      writer.write(wStr)
+      if (printStdout) print(wStr)
     }
     writer.write(s"$sep\n")
     if (printStdout) print(s"$sep\n")
