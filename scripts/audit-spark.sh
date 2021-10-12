@@ -18,7 +18,8 @@
 # This script generates the commits that went in Apache Spark for audit.
 # Audit is required to evaluate if the code needs to be updated based
 # on new commits merged in Apache Spark. This currently audits changes for
-# Spark master branch
+# Spark master branch by default. The script can be run for different branches by providing
+# the argument -b along with the branch name.
 # Arguments:
 #   lastcommit - File which contains the latest commit hash when this script ran last.
 #   basebranch - branch in Apache Spark for which commits needs to be audited.
@@ -102,13 +103,11 @@ else
     sed -i 's/\]/\\]/g' commits.to.audit.3.3
 
     filename=commits.to.audit.3.3
-    echo "priting audits to commit"
-    eval "cat $filename"
     while read -r line; do
       echo "1"
       git log --grep="$line" --pretty="%h %s" >> ${COMMIT_DIFF_LOG}
     done < $filename
     git log HEAD -n 1 --pretty="%h"
 fi
-cd ${ABSOLUTE_PATH}/../
+cd ${ABSOLUTE_PATH}/../ 
 . scripts/prioritize-commits.sh
