@@ -55,6 +55,20 @@ def premerge_mvn_install_vers = [
 def premergeInstallStage(buildVer) {
     return {
         stage("mvn install $buildVer") {
+            options {
+                // We have to use params to pass the resource label in options block,
+                // this is a limitation of declarative pipeline. And we need to lock resource before agent start
+                lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
+            }
+            agent {
+                kubernetes {
+                    label "premerge-ci-1-${BUILD_TAG}"
+                    cloud 'sc-ipp-blossom-prod'
+                    yaml pod.getGPUYAML("${IMAGE_PREMERGE}", "${env.GPU_RESOURCE}", '8', '32Gi')
+                    workspaceVolume persistentVolumeClaimWorkspaceVolume(claimName: "${PVC}", readOnly: false)
+                    customWorkspace "${CUSTOM_WORKSPACE}"
+                }
+            }
             environment {
                 BUILD_VER = "$buildVer"
             }
@@ -328,6 +342,7 @@ pipeline {
             // If any one is failed will abort another if not finish yet and will upload failure log to Github
             failFast true
             parallel {
+                premergeInstallStages
                 stage('mvn verify') {
                     options {
                         // We have to use params to pass the resource label in options block,
@@ -364,9 +379,6 @@ pipeline {
                                 }
                             }
                         }
-                    }
-                    stage('mvn install for each buildver') {
-                        parallel premergeInstallStages
                     }
                 } // end of mvn verify stage
 
