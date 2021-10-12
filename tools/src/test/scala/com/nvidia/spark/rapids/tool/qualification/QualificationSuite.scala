@@ -565,8 +565,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "GROUP BY a ORDER BY a")
 
         // do inside application to simulate similar calling
-        val textOut = qualApp.getTextSummary
-        val csvOut = qualApp.getCSVSummary
+        val textOut = qualApp.getSummary()
+        val csvOut = qualApp.getDetailed()
         assert(textOut.nonEmpty)
         assert(csvOut.nonEmpty)
 
