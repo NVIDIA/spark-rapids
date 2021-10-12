@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import scala.collection.mutable.LinkedHashMap
+import scala.collection.mutable.{Buffer, LinkedHashMap, ListBuffer}
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 
@@ -135,6 +135,13 @@ object QualOutputWriter {
       strAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean = false): String = {
+    constructOutputRow(strAndSizes.toBuffer, delimiter, prettyPrint)
+  }
+
+  private def constructOutputRow(
+      strAndSizes: Buffer[(String, Int)],
+      delimiter: String = "|",
+      prettyPrint: Boolean = false): String = {
     val entireHeader = new StringBuffer
     if (prettyPrint) {
       entireHeader.append(delimiter)
@@ -207,7 +214,7 @@ object QualOutputWriter {
 
   def constructAppSummaryInfo(sumInfo: QualificationSummaryInfo,
       appIdMaxSize: Int, delimiter: String, prettyPrint: Boolean): String = {
-    val dataMap = LinkedHashMap[String, Int](
+    val dataMap = ListBuffer[(String, Int)](
       sumInfo.appId -> appIdMaxSize,
       sumInfo.appDuration.toString -> appDurStrSize,
       sumInfo.sqlDataFrameDuration.toString -> sqlDurStrSize,
@@ -239,7 +246,7 @@ object QualOutputWriter {
       val nestedComplexTypes = stringIfempty(appInfo.nestedComplexTypes)
       (readFileFormats, complexTypes, nestedComplexTypes)
     }
-    val dataMap = LinkedHashMap[String, Int](
+    val dataMap = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(appNameStr),
       stringIfempty(appInfo.appId) -> headersAndSizes(appIdStr),
       appInfo.score.toString -> headersAndSizes(scoreStr),
