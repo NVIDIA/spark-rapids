@@ -416,41 +416,39 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
         (index, iterator) => {
           val rng: Random = new XORShiftRandom
           rng.setSeed(seed + index)
-          iterator.map[ColumnarBatch](
-            batch => {
-              withResource(batch) { batch =>  // will generate new columnar column, close this
-                val numRows = batch.numRows()
-                val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
-                  builder =>
-                    (0 until numRows).foreach(_ => {
-                      val x = rng.nextDouble()
-                      val n = if ((x >= lowerBound) && (x < upperBound)) 1 else 0
-                      if (n > 0) {
-                        builder.append(1.toByte)
-                        numOutputRows += 1
-                      } else {
-                        builder.append(0.toByte)
-                      }
+          iterator.map[ColumnarBatch] { batch =>
+            withResource(batch) { b => // will generate new columnar column, close this
+              val numRows = b.numRows()
+              val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
+                builder =>
+                  (0 until numRows).foreach { _ =>
+                    val x = rng.nextDouble()
+                    val n = if ((x >= lowerBound) && (x < upperBound)) 1 else 0
+                    if (n > 0) {
+                      builder.append(1.toByte)
+                      numOutputRows += 1
+                    } else {
+                      builder.append(0.toByte)
                     }
-                    )
-                    builder.buildAndPutOnDevice()
-                }
+                  }
+                  builder.buildAndPutOnDevice()
+              }
 
-                val colTypes = GpuColumnVector.extractTypes(batch)
-                withResource(filter) { filter =>
-                  withResource(GpuColumnVector.from(batch)) { tbl =>
-                    withResource(tbl.filter(filter)) { filteredData =>
-                      if (filteredData.getRowCount == 0) {
-                        GpuColumnVector.emptyBatchFromTypes(colTypes)
-                      } else {
-                        GpuColumnVector.from(filteredData, colTypes)
-                      }
+              val colTypes = GpuColumnVector.extractTypes(b)
+              withResource(filter) { filter =>
+                withResource(GpuColumnVector.from(b)) { tbl =>
+                  withResource(tbl.filter(filter)) { filteredData =>
+                    if (filteredData.getRowCount == 0) {
+                      logInfo("my-debug: empty batch !!!")
+                      GpuColumnVector.emptyBatchFromTypes(colTypes)
+                    } else {
+                      GpuColumnVector.from(filteredData, colTypes)
                     }
                   }
                 }
               }
             }
-          )
+          }
         }
         ,preservesPartitioning = true
       )

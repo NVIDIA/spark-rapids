@@ -1,3 +1,18 @@
+/*
+ * Copyright (c) 2021, NVIDIA CORPORATION.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, DType, GatherMap, HostMemoryBuffer, NvtxColor}
@@ -32,7 +47,7 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
             val intBytes = DType.INT32.getSizeInBytes()
 
             // 1. select rows, same with CPU version
-            withResource(generateHostBuffer(cb)) { hostBufferWithRowNum =>
+            withResource(generateHostBuffer(cb.numRows())) { hostBufferWithRowNum =>
               val hostBuffer = hostBufferWithRowNum.buffer
               val selectedRows = hostBufferWithRowNum.rowNum
               // 2. generate gather map and send to GPU to gather
@@ -63,8 +78,7 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
     }
   }
 
-  private def generateHostBuffer(columnarBatch: ColumnarBatch): HostBufferWithRowNum = {
-    val rows = columnarBatch.numRows()
+  private def generateHostBuffer(rows: Int): HostBufferWithRowNum = {
     val intBytes = DType.INT32.getSizeInBytes()
     val estimateBytes = (rows * intBytes * fraction).toLong + 128L
     var buffer = HostMemoryBuffer.allocate(estimateBytes)
@@ -95,9 +109,9 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
     if (offset + DType.INT32.getSizeInBytes <= buffer.getLength) {
       buffer
     } else {
-      withResource(buffer) { buffer =>
-        val newBuffer = HostMemoryBuffer.allocate(buffer.getLength * 2)
-        newBuffer.copyFromHostBuffer(0, buffer, 0, buffer.getLength)
+      withResource(buffer) { buf =>
+        val newBuffer = HostMemoryBuffer.allocate(buf.getLength * 2)
+        newBuffer.copyFromHostBuffer(0, buf, 0, buf.getLength)
         newBuffer
       }
     }

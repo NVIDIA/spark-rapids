@@ -19,20 +19,21 @@ from data_gen import *
 from pyspark.sql.types import *
 from marks import *
 
-_table_gen = [
-    ('a', StringGen()),
-    ('b', StringGen())]
+all_gens = all_gen + [NullGen()]
+all_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+# all_gens += all_nested_gens
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', [_table_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
 def test_sample(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=2048).sample(0.9, 1)
+        lambda spark: unary_op_df(spark, data_gen, length=2048).sample(fraction = 0.9, seed = 1)
     )
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', [_table_gen], ids=idfn)
-def test_sample_override(data_gen):
+@pytest.mark.parametrize('data_gen', all_gens, ids=idfn)
+def test_sample_with_replacement(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen).sample(True, 0.5, 1)
+        lambda spark: unary_op_df(spark, data_gen).sample(
+            withReplacement =True, fraction = 0.5, seed = 1)
     )
