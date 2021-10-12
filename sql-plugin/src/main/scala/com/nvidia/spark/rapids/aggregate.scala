@@ -822,56 +822,57 @@ class GpuHashAggregateIterator(
 
     val boundCudfAggregates = boundExpressions.boundCudfAggregates
     val computeAggTime = metrics.computeAggTime
-    val opTime = metrics.opTime
-    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
-      opTime)) { _ =>
-      if (groupingExpressions.nonEmpty) {
-        // Perform group by aggregation
-        // Create a cudf Table, which we use as the base of aggregations.
-        // At this point we are getting the cudf aggregate's merge or update version
-        //
-        // For example: GpuAverage has an update version of: (CudfSum, CudfCount)
-        // and CudfCount has an update version of AggregateOp.COUNT and a
-        // merge version of AggregateOp.COUNT.
-        val dataTypes = new mutable.ArrayBuffer[DataType]()
-        val cudfAggregates = new mutable.ArrayBuffer[GroupByAggregationOnColumn]()
+    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
+      // Perform group by aggregation
+      // Create a cudf Table, which we use as the base of aggregations.
+      // At this point we are getting the cudf aggregate's merge or update version
+      //
+      // For example: GpuAverage has an update version of: (CudfSum, CudfCount)
+      // and CudfCount has an update version of AggregateOp.COUNT and a
+      // merge version of AggregateOp.COUNT.
+      val dataTypes = new mutable.ArrayBuffer[DataType]()
+      val cudfAggregates = new mutable.ArrayBuffer[GroupByAggregationOnColumn]()
+      val reductionAggregates = new mutable.ArrayBuffer[Seq[GpuColumnVector] => cudf.Scalar]()
 
-        // `GpuAggregateFunction` can add a pre and post step for update
-        // and merge aggregates.
-        val preStep = new mutable.ArrayBuffer[Expression]()
-        val postStep = new mutable.ArrayBuffer[Expression]()
-        val postStepAttr = new mutable.ArrayBuffer[Attribute]()
+      // `GpuAggregateFunction` can add a pre and post step for update
+      // and merge aggregates.
+      val preStep = new mutable.ArrayBuffer[Expression]()
+      val postStep = new mutable.ArrayBuffer[Expression]()
+      val postStepAttr = new mutable.ArrayBuffer[Attribute]()
 
-        // we add the grouping expression first, which bind as pass-through
-        preStep ++= GpuBindReferences.bindGpuReferences(
-          groupingAttributes, groupingAttributes)
-        postStep ++= GpuBindReferences.bindGpuReferences(
-          groupingAttributes, groupingAttributes)
-        postStepAttr ++= groupingAttributes
-        dataTypes ++=
-          groupingExpressions.map(_.dataType)
+      // we add the grouping expression first, which bind as pass-through
+      preStep ++= GpuBindReferences.bindGpuReferences(
+        groupingAttributes, groupingAttributes)
+      postStep ++= GpuBindReferences.bindGpuReferences(
+        groupingAttributes, groupingAttributes)
+      postStepAttr ++= groupingAttributes
+      dataTypes ++=
+        groupingExpressions.map(_.dataType)
 
-        for (BoundCudfAggregate(aggExp, updateAggs, mergeAggs) <- boundCudfAggregates) {
-          val aggFn = aggExp.aggregateFunction
-          if ((aggExp.mode == Partial || aggExp.mode == Complete) && ! merge) {
-            preStep ++= aggFn.preUpdate
-            postStep ++= aggFn.postUpdate
-            postStepAttr ++= aggFn.postUpdateAttr
-            cudfAggregates ++= updateAggs.map(_.updateAggregate)
-            dataTypes ++= updateAggs.map(_.updateDataType)
-          } else {
-            preStep ++= aggFn.preMerge
-            postStep ++= aggFn.postMerge
-            postStepAttr ++= aggFn.postMergeAttr
-            cudfAggregates ++= mergeAggs.map(_.mergeAggregate)
-            dataTypes ++= mergeAggs.map(_.dataType)
-          }
+      for (BoundCudfAggregate(aggExp, updateAggs, mergeAggs) <- boundCudfAggregates) {
+        val aggFn = aggExp.aggregateFunction
+        if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
+          cudfAggregates ++= updateAggs.map(_.updateAggregate)
+          dataTypes ++= updateAggs.map(_.updateDataType)
+          preStep ++= aggFn.preUpdate
+          postStep ++= aggFn.postUpdate
+          postStepAttr ++= aggFn.postUpdateAttr
+          reductionAggregates ++= updateAggs.map(_.updateReductionAggregate)
+        } else {
+          cudfAggregates ++= mergeAggs.map(_.mergeAggregate)
+          dataTypes ++= mergeAggs.map(_.dataType)
+          preStep ++= aggFn.preMerge
+          postStep ++= aggFn.postMerge
+          postStepAttr ++= aggFn.postMergeAttr
+          reductionAggregates ++= mergeAggs.map(_.mergeReductionAggregate)
         }
+      }
 
-        // a pre-processing step required before we go into the cuDF aggregate, in some cases
-        // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
-        val preStepBound = GpuBindReferences.bindGpuReferences(preStep, aggBufferAttributes)
-        withResource(GpuProjectExec.project(toAggregateBatch, preStepBound)) { preProcessed =>
+      // a pre-processing step required before we go into the cuDF aggregate, in some cases
+      // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
+      val preStepBound = GpuBindReferences.bindGpuReferences(preStep, aggBufferAttributes)
+      withResource(GpuProjectExec.project(toAggregateBatch, preStepBound)) { preProcessed =>
+        val resultTbl = if (groupingExpressions.nonEmpty) {
           withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
             val groupOptions = cudf.GroupByOptions.builder()
               .withIgnoreNullKeys(false)
@@ -879,51 +880,41 @@ class GpuHashAggregateIterator(
               .build()
 
             // perform the aggregate
-            withResource(preProcessedTbl
+            preProcessedTbl
               .groupBy(groupOptions, groupingExpressions.indices: _*)
-              .aggregate(cudfAggregates: _*)) { result =>
-              withResource(GpuColumnVector.from(result, dataTypes.toArray)) { resultBatch =>
-                // a post-processing step required in some scenarios, casting or picking
-                // apart a struct
-                val postStepBound = GpuBindReferences.bindGpuReferences(postStep, postStepAttr)
-                GpuProjectExec.project(resultBatch, postStepBound)
-              }
+              .aggregate(cudfAggregates: _*)
+          }
+        } else {
+          val cvs = mutable.ArrayBuffer[GpuColumnVector]()
+          reductionAggregates.zip(dataTypes).foreach { case (aggFn, dataType) =>
+            withResource(aggFn(GpuColumnVector.extractColumns(preProcessed))) { res =>
+              cvs += GpuColumnVector.from(
+                cudf.ColumnVector.fromScalar(res, 1), dataType)
             }
           }
-        }
-      } else {
-        // Reduction aggregate
-        // we ask the appropriate merge or update CudfAggregates, what their
-        // reduction merge or update aggregates functions are
-        val cvs = mutable.ArrayBuffer[GpuColumnVector]()
-        boundCudfAggregates.foreach { case BoundCudfAggregate(aggExp, updateAggs, mergeAggs) =>
-          val aggs =
-            if ((aggExp.mode == Partial || aggExp.mode == Complete) && !merge) {
-              updateAggs.map(a => (a.dataType, a.updateReductionAggregate))
-            } else {
-              mergeAggs.map(a => (a.dataType, a.mergeReductionAggregate))
-            }
-          aggs.foreach { case (dataType, aggFn) =>
-            withResource(aggFn(GpuColumnVector.extractColumns(toAggregateBatch))) { res =>
-              val rapidsType = GpuColumnVector.getNonNestedRapidsType(dataType)
-              withResource(cudf.ColumnVector.fromScalar(res, 1)) { cv =>
-                cvs += GpuColumnVector.from(cv.castTo(rapidsType), dataType)
-              }
+          if (cvs.isEmpty) {
+            // If cvs is empty, we add a single row with zero value. The value in the row is
+            // meaningless as it doesn't matter what we put in it. The projection will add a zero
+            // column to the result set in case of a parameter-less count.
+            // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
+            // desired result compared to Spark-CPU.
+            // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
+            withResource(Scalar.fromLong(0L)) { ZERO =>
+              cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
             }
           }
-        }
-        // If cvs is empty, we add a single row with zero value. The value in the row is
-        // meaningless as it doesn't matter what we put in it. The projection will add a zero
-        // column to the result set in case of a parameter-less count.
-        // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
-        // desired result compared to Spark-CPU.
-        // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
-        if (cvs.isEmpty) {
-          withResource(Scalar.fromLong(0L)) { ZERO =>
-            cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
+          withResource(cvs) { _ =>
+            GpuColumnVector.from(new ColumnarBatch(cvs.toArray, 1))
           }
         }
-        new ColumnarBatch(cvs.toArray, cvs.head.getBase.getRowCount.toInt)
+        withResource(resultTbl) { result =>
+          withResource(GpuColumnVector.from(result, dataTypes.toArray)) { resultBatch =>
+            // a post-processing step required in some scenarios, casting or picking
+            // apart a struct
+            val postStepBound = GpuBindReferences.bindGpuReferences(postStep, postStepAttr)
+            GpuProjectExec.project(resultBatch, postStepBound)
+          }
+        }
       }
     }
   }
