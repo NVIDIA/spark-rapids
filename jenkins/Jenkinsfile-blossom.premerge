@@ -55,10 +55,13 @@ def premerge_mvn_install_vers = [
 def premergeInstallStage(buildVer) {
     return {
         stage("mvn install $buildVer") {
+            environment {
+                BUILD_VER = "$buildVer"
+            }
             script {
                 container('gpu') {
                     timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
-                        sh "$PREMERGE_SCRIPT mvn_install $buildVer"
+                        sh "$PREMERGE_SCRIPT mvn_install"
                     }
                 }
             }

@@ -32,8 +32,8 @@ mvn_install() {
   # build all the versions but only run unit tests on one 3.0.X version (base version covers this),
   # one 3.1.X version, and one 3.2.X version.
   # All others shims test should be covered in nightly pipelines
-  echo "Run mvn install for BUID_VER=$1"
-  BUILD_VER="$1"
+  BUILD_VER=${BUILD_VER:-"301"}
+  echo "Run mvn install for BUILD_VER=$BUILD_VER"
   SKIP_TESTS=$( [[ "$BUILD_VER" == "311" || "$BUILD_VER" == "320" ]] && echo false || echo true )
   SKIP_SCALASTYLE=$( [[ "$BUILD_VER" == "320" ]] && echo false || echo true )
   env -u SPARK_HOME mvn -U -B "$MVN_URM_MIRROR" clean install \
@@ -146,8 +146,13 @@ case $BUILD_TYPE in
 
     all)
         echo "Run all testings..."
+        mvn_install
         mvn_verify
         ci_2
+        ;;
+
+    mvn_install)
+        mvn_install
         ;;
 
     mvn_verify)
