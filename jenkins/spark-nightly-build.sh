@@ -24,26 +24,23 @@ export M2DIR="$WORKSPACE/.m2"
 # build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
+mvn -U -B -Dbuildver=302 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=302 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=303 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=303 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=304 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=304 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=311 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=311 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=312 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=312 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=313 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=313 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=311cdh clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=311cdh deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=320 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=320 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 
-# TODO switch to parallel pipeline
-BUILDVERS=${BUILDVERS:-"
-302
-303
-304
-311
-312
-313
-320
-"}
-
-BUILD_PARALLEL=${BUILD_PARALLEL:-8}
-time (
-echo -n "$BUILDVERS" | xargs -P "$BUILD_PARALLEL" -I% bash -c "
-mvn -U -B -Dbuildver=% clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER && \
-mvn -B -Dbuildver=% deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests || \
-exit 255
-"
-)
 mvn -U -B -Dbuildver=301 -PsnapshotsWithDatabricks clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 
 # Parse cudf and spark files from local mvn repo
