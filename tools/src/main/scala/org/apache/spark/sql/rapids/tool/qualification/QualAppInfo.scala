@@ -58,8 +58,8 @@ class QualAppInfo(
 
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
 
-  // SQL containing any Dataset operation
-  val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
+  // SQL containing any Dataset operation or RDD to DataSet/DataFrame operation
+  val sqlIDToDataSetOrRDDCase: HashSet[Long] = HashSet[Long]()
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
 
@@ -115,19 +115,19 @@ class QualAppInfo(
   // for the SQL dataframe duration
   private def calculateSqlDataframeDuration: Long = {
     sqlDurationTime.filterNot { case (sqlID, dur) =>
-        sqlIDToDataSetCase.contains(sqlID) || dur == -1
+      sqlIDToDataSetOrRDDCase.contains(sqlID) || dur == -1
     }.values.sum
   }
 
   private def probNotDataset: HashMap[Long, Set[String]] = {
-    sqlIDtoProblematic.filterNot { case (sqlID, _) => sqlIDToDataSetCase.contains(sqlID) }
+    sqlIDtoProblematic.filterNot { case (sqlID, _) => sqlIDToDataSetOrRDDCase.contains(sqlID) }
   }
 
   // The total task time for all tasks that ran during SQL dataframe
   // operations.  if the SQL contains a dataset, it isn't counted.
   private def calculateTaskDataframeDuration: Long = {
     val validSums = sqlIDToTaskEndSum.filterNot { case (sqlID, _) =>
-      sqlIDToDataSetCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
+      sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
     validSums.values.map(dur => dur.totalTaskDuration).sum
   }
@@ -164,7 +164,7 @@ class QualAppInfo(
 
   private def calculateCpuTimePercent: Double = {
     val validSums = sqlIDToTaskEndSum.filterNot { case (sqlID, _) =>
-      sqlIDToDataSetCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
+      sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
     val totalCpuTime = validSums.values.map { dur =>
       dur.executorCPUTime
@@ -252,8 +252,8 @@ class QualAppInfo(
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
       checkGraphNodeForBatchScan(sqlID, node)
-      if (isDataSetPlan(node.desc)) {
-        sqlIDToDataSetCase += sqlID
+      if (isDataSetOrRDDPlan(node.desc)) {
+        sqlIDToDataSetOrRDDCase += sqlID
       }
       val issues = findPotentialIssues(node.desc)
       if (issues.nonEmpty) {
