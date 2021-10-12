@@ -216,8 +216,7 @@ object QualOutputWriter {
     constructOutputRow(dataMap, delimiter, prettyPrint)
   }
 
-  def constructDetailedHeader(appInfos: Seq[QualificationSummaryInfo],
-      headersAndSizes: LinkedHashMap[String, Int],
+  def constructDetailedHeader(headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String,
       prettyPrint: Boolean): String = {
     QualOutputWriter.constructOutputRow(headersAndSizes, delimiter, prettyPrint)

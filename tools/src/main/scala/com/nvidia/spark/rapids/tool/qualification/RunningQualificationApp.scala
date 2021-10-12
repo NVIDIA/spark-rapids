@@ -101,8 +101,8 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
       case Some(info) =>
         val headersAndSizes =
           QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info),reportReadSchema )
-        val textHeaderStr = QualOutputWriter.constructDetailedHeader(Seq(info), headersAndSizes,
-          delimiter, prettyPrint, reportReadSchema)
+        val textHeaderStr = QualOutputWriter.constructDetailedHeader(headersAndSizes,
+          delimiter, prettyPrint)
         val textAppStr = QualOutputWriter.constructAppDetailedInfo(info, headersAndSizes, delimiter,
           prettyPrint, reportReadSchema)
         textHeaderStr + textAppStr
