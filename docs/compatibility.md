@@ -572,9 +572,12 @@ distribution. Because the results are not bit-for-bit identical with the Apache 
 ## RLike
 
 The GPU implementation of RLike has a number of known issues where behavior is not consistent with Apache Spark and
-is disabled by default.
+this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
 
-### Multi-line
+A summary of known issues is shown below but this is not intended to be a comprehensive list. We recommend that you
+do your own testing to verify whether the GPU implementation of `RLike` is suitable for your use case.
+
+### Multi-line handling
 
 The GPU implementation of RLike supports `^` and `$` to represent the start and end of lines within a string but
 Spark uses `^` and `$` to refer to the start and end of the entire string (equivalent to `\A` and `\Z`).
