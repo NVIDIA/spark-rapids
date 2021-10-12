@@ -491,17 +491,10 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       val opTime = gpuLongMetric(OP_TIME)
       val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
       lazy val builtBatch = makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
-      joinType match {
+      val joinIterator: RDD[ColumnarBatch] = joinType match {
         case LeftSemi =>
           // just return the left table
-          left.executeColumnar().mapPartitions { leftIter =>
-            leftIter.map { cb =>
-              joinOutputRows += cb.numRows()
-              numOutputRows += cb.numRows()
-              numOutputBatches += 1
-              cb
-            }
-          }
+          left.executeColumnar()
         case LeftAnti =>
           // degenerate case, no rows are returned.
           val childRDD = left.executeColumnar()
@@ -525,6 +518,12 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
               opTime = opTime,
               joinTime = joinTime)
           }
+      }
+      joinIterator.map { cb =>
+        joinOutputRows += cb.numRows()
+        numOutputRows += cb.numRows()
+        numOutputBatches += 1
+        cb
       }
     }
   }
