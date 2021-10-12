@@ -342,7 +342,7 @@ pipeline {
             // If any one is failed will abort another if not finish yet and will upload failure log to Github
             failFast true
             parallel {
-                premergeInstallStages
+                premergeInstallStages.values()
                 stage('mvn verify') {
                     options {
                         // We have to use params to pass the resource label in options block,
