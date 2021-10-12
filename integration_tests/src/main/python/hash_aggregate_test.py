@@ -265,13 +265,17 @@ _grpkey_short_big_decimals = [
     ('c', decimal_gen_20_2)]
 
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
+    _grpkey_small_decimals]
+
+_init_list_no_nans_with_decimalbig = _init_list_no_nans + [
     _grpkey_small_decimals, _grpkey_short_mid_decimals, _grpkey_short_big_decimals]
+
 
 @shuffle_test
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(

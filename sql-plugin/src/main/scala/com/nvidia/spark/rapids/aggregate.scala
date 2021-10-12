@@ -590,11 +590,11 @@ class GpuHashAggregateIterator(
       // Perform the last project to get the correct shape that Spark expects. Note this may
       // add things like literals that were not part of the aggregate into the batch.
       val resultCvs = withResource(finalBatch) { _ =>
-        withResource(GpuColumnVector.from(finalBatch)) { table =>
-          System.err.println(
-              s"BOUND EXPRESSIONS: ${boundExpressions.boundResultReferences.toList}\n" +
-              s"BATCH: $table")
-        }
+//        withResource(GpuColumnVector.from(finalBatch)) { table =>
+//          System.err.println(
+//              s"BOUND EXPRESSIONS: ${boundExpressions.boundResultReferences.toList}\n" +
+//              s"BATCH: $table")
+//        }
         boundExpressions.boundResultReferences.safeMap { ref =>
           // Result references can be virtually anything, we need to coerce
           // them to be vectors since this is going into a ColumnarBatch

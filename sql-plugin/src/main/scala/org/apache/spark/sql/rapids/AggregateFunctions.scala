@@ -28,7 +28,9 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeS
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuAggregateFunction extends GpuExpression
     with ShimExpression
@@ -590,12 +592,65 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   }
 }
 
+/**
+ * This is equivalent to what Spark does after a sum to check for overflow
+ * `
+ * If(isEmpty, Literal.create(null, resultType),
+ *    CheckOverflowInSum(sum, d, !SQLConf.get.ansiEnabled))`
+ *
+ * But we are renaming it to avoid confusion with the overflow detection we do as a part of sum
+ * itself that takes the place of the overflow checking that happens with add.
+ */
+case class GpuCheckOverflowAfterSum(
+    data: Expression,
+    isEmpty: Expression,
+    dataType: DecimalType,
+    nullOnOverflow: Boolean) extends GpuExpression with ShimExpression {
+
+  override def nullable: Boolean = true
+
+  override def toString: String = s"CheckOverflowInSum($data, $isEmpty, $dataType, $nullOnOverflow)"
+
+  override def sql: String = data.sql
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
+      val dataBase = dataCol.getBase
+      withResource(GpuProjectExec.projectSingle(batch, isEmpty)) { isEmptyCol =>
+        val isEmptyBase = isEmptyCol.getBase
+        if (nullOnOverflow) {
+          // ANSI mode
+          val problem = withResource(dataBase.isNull) { isNull =>
+            withResource(isEmptyBase.not()) { notEmpty =>
+              isNull.and(notEmpty)
+            }
+          }
+          withResource(problem) { problem =>
+            withResource(problem.any()) { anyProblem =>
+              if (anyProblem.isValid && anyProblem.getBoolean) {
+                throw new ArithmeticException("Overflow in sum of decimals.")
+              }
+            }
+          }
+          // No problems fall through...
+        }
+        withResource(GpuScalar.from(null, dataType)) { nullScale =>
+          GpuColumnVector.from(isEmptyBase.ifElse(nullScale, dataBase), dataType)
+        }
+      }
+    }
+  }
+
+  override def children: Seq[Expression] = Seq(data, isEmpty)
+}
+
 case class GpuSum(child: Expression, resultType: DataType)
   extends GpuAggregateFunction with ImplicitCastInputTypes
       with GpuBatchedRunningWindowWithFixer
       with GpuAggregateWindowFunction
       with GpuRunningWindowFunction {
 
+  private lazy val isAnsi = SQLConf.get.ansiEnabled
   private lazy val cudfSum = AttributeReference("sum", resultType)()
   private lazy val isEmpty = AttributeReference("isEmpty", BooleanType, nullable = false)()
   private lazy val zeroDec = {
@@ -607,27 +662,42 @@ case class GpuSum(child: Expression, resultType: DataType)
     case _: DecimalType => Seq(child, GpuIsNull(child))
     case _ => Seq(child)
   }
+
+  // we need to cast to `resultType` here, since Spark is not widening types
+  // as done before Spark 3.2.0. See CudfSum for more info.
+  override lazy val preUpdate: Seq[Expression] = resultType match {
+    case _: DecimalType =>
+      // Spark tracks null columns through isEmpty for decimal.
+      // TODO should we cast the sum to a type with one larger precision first (if possible)
+      //  that way we can get a larger range to detect overflows 10 billion entries instead of
+      //  1 billion
+      Seq(GpuIf(isEmpty, zeroDec, GpuCast(cudfSum, resultType)), isEmpty)
+    case _ => Seq(GpuCast(cudfSum, resultType))
+  }
+
   override lazy val updateExpressions: Seq[Expression] = resultType match {
     case _: DecimalType => Seq(new CudfSum(cudfSum), new CudfMin(isEmpty))
     case _ => Seq(new CudfSum(cudfSum))
   }
-  // we need to cast to `resultType` here, since Spark is not widening types
-  // as done before Spark 3.2.0. See CudfSum for more info.
-  override lazy val preUpdate: Seq[Expression] = resultType match {
-    // TODO For some reason Spark generates code that says this can never be null, but
-    //  it feels like I am missing something because the code indicates that null should
-    //  work.
-    case _: DecimalType => Seq(GpuIf(isEmpty, zeroDec, GpuCast(cudfSum, resultType)), isEmpty)
-    case _ => Seq(GpuCast(cudfSum, resultType))
+
+  override lazy val postUpdate: Seq[Expression] = resultType match {
+    case dt: DecimalType => Seq(GpuCheckOverflow(cudfSum, dt, !isAnsi), isEmpty)
+    case _ => aggBufferAttributes
   }
 
+  // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
+  // Cudf does not have such an aggregation, so for merge we have to work around that similar to
+  // what happens with isEmpty
   override lazy val mergeExpressions: Seq[Expression] = resultType match {
     case _: DecimalType => Seq(new CudfSum(cudfSum), new CudfMin(isEmpty))
     case _ => Seq(new CudfSum(cudfSum))
   }
-  // TODO at some point we need to use isEmpty for Decimal and figure out a story for overflow
-  //  checking
-  override lazy val evaluateExpression: Expression = cudfSum
+
+  override lazy val evaluateExpression: Expression = resultType match {
+    case d: DecimalType =>
+      GpuCheckOverflowAfterSum(cudfSum, isEmpty, d, !isAnsi)
+    case _ => cudfSum
+  }
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = resultType match {
     case _: DecimalType => cudfSum :: isEmpty :: Nil

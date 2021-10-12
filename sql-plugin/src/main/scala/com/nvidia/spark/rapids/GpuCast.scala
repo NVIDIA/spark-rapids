@@ -62,6 +62,9 @@ class CastExprMeta[INPUT <: CastBase](
       willNotWorkOnGpu(s"Casting child type $fromDataType to $toDataType is not supported")
     }
     (fromDataType, toDataType) match {
+      case (dt: DecimalType, _: StringType) if dt.precision > DType.DECIMAL64_MAX_PRECISION =>
+        willNotWorkOnGpu(s"decimal to string with a " +
+            s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
       case ( _: DecimalType, _: FloatType | _: DoubleType) if !conf.isCastDecimalToFloatEnabled =>
         willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
             "to convert decimal data types to floating point and this can produce results that " +
@@ -95,8 +98,10 @@ class CastExprMeta[INPUT <: CastBase](
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
-      case (_: StringType, dt: DecimalType) => if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
-          willNotWorkOnGpu("String to Decimal with precision > 18 is unsupported")
+      case (_: StringType, dt: DecimalType) =>
+        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+          willNotWorkOnGpu(s"string to decimal with a " +
+              s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
         }
         if (!conf.isCastStringToDecimalEnabled) {
           // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
@@ -1191,7 +1196,7 @@ object GpuCast extends Arm {
     }
   }
 
-  private def checkNFixDecimalBounds(
+  def checkNFixDecimalBounds(
       input: ColumnView,
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {
