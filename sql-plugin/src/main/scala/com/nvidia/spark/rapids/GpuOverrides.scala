@@ -2629,9 +2629,9 @@ object GpuOverrides extends Logging {
     expr[ArrayMin](
       "Returns the minimum value in the array",
       ExprChecks.unaryProject(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
             .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
             .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
@@ -2646,9 +2646,9 @@ object GpuOverrides extends Logging {
     expr[ArrayMax](
       "Returns the maximum value in the array",
       ExprChecks.unaryProject(
-        TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
             .withPsNote(TypeEnum.DOUBLE, nanAggPsNote)
             .withPsNote(TypeEnum.FLOAT, nanAggPsNote),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
