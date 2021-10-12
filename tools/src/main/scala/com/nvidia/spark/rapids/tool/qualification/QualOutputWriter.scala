@@ -188,6 +188,7 @@ object QualOutputWriter {
         readFileFormatAndTypesStr),
       writeDataFormatStr -> getMaxSizeForHeader(appInfos.map(_.writeDataFormat.size),
         writeDataFormatStr),
+      complexTypesStr -> getMaxSizeForHeader(appInfos.map(_.complexTypes.size)),
       nestedTypesStr -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
         nestedTypesStr),
     )
