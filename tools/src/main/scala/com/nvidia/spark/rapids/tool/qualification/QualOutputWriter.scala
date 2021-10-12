@@ -131,7 +131,7 @@ object QualOutputWriter {
   }
 
   // ordered hashmap contains each header string and the size to use
-  private def constructOutputRow(
+  private def constructOutputRowFromMap(
       strAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean = false): String = {
@@ -209,7 +209,7 @@ object QualOutputWriter {
   def constructSummaryHeader(appIdMaxSize: Int, delimiter: String,
       prettyPrint: Boolean): String = {
     val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appIdMaxSize)
-    QualOutputWriter.constructOutputRow(headersAndSizes, delimiter, prettyPrint)
+    QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
   }
 
   def constructAppSummaryInfo(sumInfo: QualificationSummaryInfo,
@@ -226,7 +226,7 @@ object QualOutputWriter {
   def constructDetailedHeader(headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String,
       prettyPrint: Boolean): String = {
-    QualOutputWriter.constructOutputRow(headersAndSizes, delimiter, prettyPrint)
+    QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
   }
 
   def constructAppDetailedInfo(
