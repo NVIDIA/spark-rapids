@@ -2275,7 +2275,7 @@ object GpuOverrides extends Logging {
 
           a.dataType match {
             case dt: DecimalType if dt.precision >= DType.DECIMAL128_MAX_PRECISION =>
-              willNotWorkOnGpu("Because of a lack of full overflow checking on aggregations " +
+              willNotWorkOnGpu("of a lack of full overflow checking on aggregations " +
                   s"a precision of ${DType.DECIMAL128_MAX_PRECISION} is not supported.")
             case _ => // NOOP
           }
