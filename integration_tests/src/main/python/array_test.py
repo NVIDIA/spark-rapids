@@ -203,7 +203,7 @@ def test_array_transform(data_gen):
 
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
 array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens + decimal_128_gens
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_min(data_gen):
