@@ -36,16 +36,22 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   // a file extension will be added to this later
   private val logFileName = "rapids_4_spark_qualification_output"
 
-  private def writeCSVHeader(writer: ToolTextFileWriter): Unit = {
-    writer.write(QualOutputWriter.headerCSVDetailed(reportReadSchema) + "\n")
+  private def writeCSVHeader(writer: ToolTextFileWriter,
+      appInfos: Seq[QualificationSummaryInfo],
+      headersAndSizes: LinkedHashMap[String, Int]): Unit = {
+    writer.write(QualOutputWriter.constructDetailedHeader(appInfos, headersAndSizes, ",",
+      false) + "\n")
   }
 
   def writeCSV(sums: Seq[QualificationSummaryInfo]): Unit = {
     val csvFileWriter = new ToolTextFileWriter(finalOutputDir, s"${logFileName}.csv", "CSV")
     try {
-      writeCSVHeader(csvFileWriter)
+      val headersAndSizes = QualOutputWriter
+        .getDetailedHeaderStringsAndSizes(sums, reportReadSchema)
+      writeCSVHeader(csvFileWriter, sums, headersAndSizes)
       sums.foreach { appSum =>
-        csvFileWriter.write(QualOutputWriter.toCSVDetailed(appSum, reportReadSchema) + "\n")
+        csvFileWriter.write(QualOutputWriter.constructAppDetailedInfo(appSum, headersAndSizes,
+          ",", false, reportReadSchema) + "\n")
       }
     } finally {
       csvFileWriter.close()
@@ -66,7 +72,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
   private def writeTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo], numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
-    val entireHeader = QualOutputWriter.constructHeaderTextString(appIdMaxSize)
+    val entireHeader = QualOutputWriter.constructSummaryHeader(appIdMaxSize, "|", true)
     val sep = "=" * entireHeader.size
     writer.write(s"$sep\n")
     writer.write(entireHeader)
@@ -79,7 +85,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
     }
     val finalSums = sums.take(numOutputRows)
     finalSums.foreach { sumInfo =>
-      val wStr = QualOutputWriter.constructAppInfoTextString(sumInfo, appIdMaxSize)
+      val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, appIdMaxSize, "|", true)
       writer.write(wStr + "\n")
       if (printStdout) print(wStr + "\n")
     }
@@ -105,6 +111,7 @@ object QualOutputWriter {
   val readFileFormatScoreStr = "Read File Format Score"
   val readFileFormatAndTypesStr = "Unsupported Read File Formats and Types"
   val writeDataFormatStr = "Unsupported Write Data Format"
+  val complexTypesStr = "Complex Types"
   val nestedTypesStr = "Unsupported Nested Types"
   val readSchemaStr = "Read Schema"
   val appDurStrSize = appDurStr.size
@@ -116,7 +123,7 @@ object QualOutputWriter {
     getMaxSizeForHeader(sizes, QualOutputWriter.appIdStr)
   }
 
-  def getMaxSizeForHeader(sizes: Seq[Int], headerTxtStr: String): Int = {
+  private def getMaxSizeForHeader(sizes: Seq[Int], headerTxtStr: String): Int = {
     if (sizes.size > 0 && sizes.max > headerTxtStr.size) {
       sizes.max
     } else {
@@ -124,29 +131,44 @@ object QualOutputWriter {
     }
   }
 
-  def constructAppInfoTextString(sumInfo: QualificationSummaryInfo, appIdMaxSize: Int): String = {
-    val appId = sumInfo.appId
-    val appIdStrV = s"%${appIdMaxSize}s".format(appId)
-    val appDur = sumInfo.appDuration.toString
-    val appDurStrV = s"%${QualOutputWriter.appDurStrSize}s".format(appDur)
-    val sqlDur = sumInfo.sqlDataFrameDuration.toString
-    val sqlDurStrV = s"%${QualOutputWriter.sqlDurStrSize}s".format(sqlDur)
-    val sqlProbDur = sumInfo.sqlDurationForProblematic.toString
-    val sqlProbDurStrV = s"%${QualOutputWriter.problemStrSize}s".format(sqlProbDur)
-    s"|$appIdStrV|$appDurStrV|$sqlDurStrV|$sqlProbDurStrV|"
-  }
-
-  def constructHeaderTextString(appIdMaxSize: Int): String = {
+  // ordered hashmap contains each header string and the size to use
+  private def constructOutputRow(
+      strAndSizes: LinkedHashMap[String, Int],
+      delimiter: String = "|",
+      prettyPrint: Boolean = false): String = {
     val entireHeader = new StringBuffer
-    entireHeader.append(s"|%${appIdMaxSize}s|".format(QualOutputWriter.appNameStr))
-    entireHeader.append(s"%${appDurStrSize}s|".format(QualOutputWriter.appDurStr))
-    entireHeader.append(s"%${sqlDurStrSize}s|".format(QualOutputWriter.sqlDurStr))
-    entireHeader.append(s"%${problemStrSize}s|".format(QualOutputWriter.problemDurStr))
+    if (prettyPrint) {
+      entireHeader.append(delimiter)
+    }
+    val lastEntry = strAndSizes.last
+    strAndSizes.dropRight(1).foreach { case (str, strSize) =>
+      if (prettyPrint) {
+        entireHeader.append(s"%${strSize}s${delimiter}".format(str))
+      } else {
+        entireHeader.append(s"${str}${delimiter}")
+      }
+    }
+    // for the last element we don't want to print the delimiter at the end unless
+    // pretty printing
+    if (prettyPrint) {
+      entireHeader.append(s"%${lastEntry._2}s${delimiter}".format(lastEntry._1))
+    } else {
+      entireHeader.append(s"${lastEntry._1}")
+    }
     entireHeader.append("\n")
     entireHeader.toString
   }
 
-  def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
+  private def getSummaryHeaderStringsAndSizes(appIdMaxSize: Int): LinkedHashMap[String, Int] = {
+    LinkedHashMap[String, Int](
+      appIdStr -> appIdMaxSize,
+      appDurStr -> appDurStrSize,
+      sqlDurStr -> sqlDurStrSize,
+      problemDurStr -> problemStrSize
+    )
+  }
+
+  private def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       appNameStr -> getMaxSizeForHeader(appInfos.map(_.appName.size), appNameStr),
@@ -177,107 +199,76 @@ object QualOutputWriter {
     detailedHeadersAndFields
   }
 
-  // ordered hashmap contains each header string and the size to use
-  def constructHeaderTextStringDetailed(strAndSizes: LinkedHashMap[String, Int]): String = {
-    val entireHeader = new StringBuffer
-    entireHeader.append("|")
-    strAndSizes.foreach { case (str, strSize) =>
-      entireHeader.append(s"%${strSize}s|".format(str))
-    }
-    entireHeader.append("\n")
-    entireHeader.toString
+  def constructSummaryHeader(appIdMaxSize: Int, delimiter: String,
+      prettyPrint: Boolean): String = {
+    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appIdMaxSize)
+    QualOutputWriter.constructOutputRow(headersAndSizes, delimiter, prettyPrint)
   }
 
-  def constructAppInfoTextStringDetailed(sumInfo: QualificationSummaryInfo,
-      headersAndSizes: LinkedHashMap[String, Int], reportReadSchema: Boolean = false): String = {
-    val details = Seq(s"%${headersAndSizes(appNameStr)}s".format(sumInfo.appName),
-      s"%${headersAndSizes(appIdStr)}s".format(sumInfo.appId),
-      s"%${headersAndSizes(scoreStr)}s".format(sumInfo.score.toString),
-      s"%${headersAndSizes(potProblemsStr)}s".format(sumInfo.potentialProblems),
-      s"%${headersAndSizes(sqlDurStr)}s".format(sumInfo.sqlDataFrameDuration.toString),
-      s"%${headersAndSizes(taskDurStr)}s".format(sumInfo.sqlDataframeTaskDuration.toString),
-      s"%${headersAndSizes(appDurStr)}s".format(sumInfo.appDuration.toString),
-      s"%${headersAndSizes(execCPUPercentStr)}s".format(sumInfo.executorCpuTimePercent.toString),
-      s"%${headersAndSizes(appDurEstimatedStr)}s".format(sumInfo.endDurationEstimated.toString),
-      s"%${headersAndSizes(sqlDurPotProbsStr)}s".format(sumInfo.potentialProblems),
-      s"%${headersAndSizes(sqlIdsFailuresStr)}s".format(sumInfo.failedSQLIds),
-      s"%${headersAndSizes(readScorePercentStr)}s".format(sumInfo.readScorePercent.toString),
-      s"%${headersAndSizes(readFileFormatScoreStr)}s".format(sumInfo.readFileFormatScore.toString),
-      s"%${headersAndSizes(readFileFormatAndTypesStr)}s"
-        .format(sumInfo.readFileFormatAndTypesNotSupported),
-      s"%${headersAndSizes(writeDataFormatStr)}s".format(sumInfo.writeDataFormat),
-      s"%${headersAndSizes(nestedTypesStr)}s".format(sumInfo.nestedComplexTypes)
+  def constructAppSummaryInfo(sumInfo: QualificationSummaryInfo,
+      appIdMaxSize: Int, delimiter: String, prettyPrint: Boolean): String = {
+    val dataMap = LinkedHashMap[String, Int](
+      sumInfo.appId -> appIdMaxSize,
+      sumInfo.appDuration.toString -> appDurStrSize,
+      sumInfo.sqlDataFrameDuration.toString -> sqlDurStrSize,
+      sumInfo.sqlDurationForProblematic.toString -> problemStrSize
     )
-    val finalDetails = if (reportReadSchema) {
-      details :+ s"%${headersAndSizes(readSchemaStr)}s".format(sumInfo.readFileFormats)
-    } else {
-      details
-    }
-    val entireHeader = new StringBuffer
-    entireHeader.append("|")
-    finalDetails.foreach { str =>
-      entireHeader.append(s"${str}|")
-    }
-    entireHeader.toString
+    constructOutputRow(dataMap, delimiter, prettyPrint)
   }
 
-  def headerCSVDetailed(reportReadSchema: Boolean): String = {
-    val initHeader = s"$appNameStr,${appIdStr},${scoreStr}," +
-      s"${potProblemsStr},${sqlDurStr},${taskDurStr}," +
-      s"${appDurStr},${execCPUPercentStr},${appDurEstimatedStr}," +
-      s"${sqlDurPotProbsStr},${sqlIdsFailuresStr},${readScorePercentStr}," +
-      s"${readFileFormatScoreStr},${readFileFormatAndTypesStr}," +
-      s"${writeDataFormatStr},${nestedTypesStr}"
+  def constructDetailedHeader(appInfos: Seq[QualificationSummaryInfo],
+      headersAndSizes: LinkedHashMap[String, Int],
+      delimiter: String,
+      prettyPrint: Boolean): String = {
+    QualOutputWriter.constructOutputRow(headersAndSizes, delimiter, prettyPrint)
+  }
+
+  def constructAppDetailedInfo(
+      appInfo: QualificationSummaryInfo,
+      headersAndSizes: LinkedHashMap[String, Int],
+      delimiter: String = "|",
+      prettyPrint: Boolean,
+      reportReadSchema: Boolean = false): String = {
+    val (readfileFormats, complexTypes, nestedComplexTypes) = if (delimiter.equals(",")) {
+      val readFileFormats = stringIfempty(appInfo.readFileFormats.replace(",", ";"))
+      val complexTypes = stringIfempty(appInfo.complexTypes.replace(",", ";"))
+      val nestedComplexTypes = stringIfempty(appInfo.nestedComplexTypes.replace(",", ";"))
+      (readFileFormats, complexTypes, nestedComplexTypes)
+    } else {
+      val readFileFormats = stringIfempty(appInfo.readFileFormats)
+      val complexTypes = stringIfempty(appInfo.complexTypes)
+      val nestedComplexTypes = stringIfempty(appInfo.nestedComplexTypes)
+      (readFileFormats, complexTypes, nestedComplexTypes)
+    }
+    val dataMap = LinkedHashMap[String, Int](
+      stringIfempty(appInfo.appName) -> headersAndSizes(appNameStr),
+      stringIfempty(appInfo.appId) -> headersAndSizes(appIdStr),
+      appInfo.score.toString -> headersAndSizes(scoreStr),
+      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(potProblemsStr),
+      appInfo.sqlDataFrameDuration.toString -> headersAndSizes(sqlDurStr),
+      appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(taskDurStr),
+      appInfo.appDuration.toString -> headersAndSizes(appDurStr),
+      appInfo.executorCpuTimePercent.toString -> headersAndSizes(execCPUPercentStr),
+      appInfo.endDurationEstimated.toString -> headersAndSizes(appDurEstimatedStr),
+      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(sqlDurPotProbsStr),
+      stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(sqlIdsFailuresStr),
+      appInfo.readScorePercent.toString -> headersAndSizes(readScorePercentStr),
+      stringIfempty(appInfo.readFileFormatScore.toString) ->
+        headersAndSizes(readFileFormatScoreStr),
+      stringIfempty(appInfo.readFileFormatAndTypesNotSupported) ->
+        headersAndSizes(readFileFormatAndTypesStr),
+      stringIfempty(appInfo.writeDataFormat) -> headersAndSizes(writeDataFormatStr),
+      complexTypes -> headersAndSizes(complexTypesStr),
+      nestedComplexTypes -> headersAndSizes(nestedTypesStr)
+    )
+
     if (reportReadSchema) {
-      initHeader + s",${readSchemaStr}"
-    } else {
-      initHeader
+      dataMap += (readfileFormats, headersAndSizes(readSchemaStr))
     }
-  }
-
-  def headerCSVSummary: String = {
-    val entireHeader = new StringBuffer
-    entireHeader.append(s"${QualOutputWriter.appNameStr},")
-    entireHeader.append(s"${QualOutputWriter.appDurStr},")
-    entireHeader.append(s"${QualOutputWriter.sqlDurStr},")
-    entireHeader.append(s"${QualOutputWriter.problemDurStr}")
-    entireHeader.append("\n")
-    entireHeader.toString
-  }
-
-  def toCSVSummary(appSum: QualificationSummaryInfo, appIdSize: Int): String = {
-    constructAppInfoTextString(appSum, appIdSize)
-      .replaceAll("\\s", "")
-      .replace("|", ",")
-      .stripPrefix(",")
-      .stripSuffix(",")
+    constructOutputRow(dataMap, delimiter, prettyPrint)
   }
 
   private def stringIfempty(str: String): String = {
     if (str.isEmpty) "\"\"" else str
-  }
-
-  def toCSVDetailed(appSum: QualificationSummaryInfo, reportReadSchema: Boolean): String = {
-    val probStr = stringIfempty(appSum.potentialProblems)
-    val appIdStr = stringIfempty(appSum.appId)
-    val appNameStr = stringIfempty(appSum.appName)
-    val failedIds = stringIfempty(appSum.failedSQLIds)
-    // since csv, replace any commas with ; in the schema
-    val readFileFormats = stringIfempty(appSum.readFileFormats.replace(",", ";"))
-    val complexTypes = stringIfempty(appSum.complexTypes.replace(",", ";"))
-    val nestedComplexTypes = stringIfempty(appSum.nestedComplexTypes.replace(",", ";"))
-    val readFormatNS = stringIfempty(appSum.readFileFormatAndTypesNotSupported)
-    val writeDataFormat = stringIfempty(appSum.writeDataFormat)
-    val initRow = s"$appNameStr,$appIdStr,${appSum.score},$probStr," +
-      s"${appSum.sqlDataFrameDuration},${appSum.sqlDataframeTaskDuration}," +
-      s"${appSum.appDuration},${appSum.executorCpuTimePercent}," +
-      s"${appSum.endDurationEstimated},${appSum.sqlDurationForProblematic},$failedIds," +
-      s"${appSum.readScorePercent},${appSum.readFileFormatScore}," +
-      s"${readFormatNS},${writeDataFormat},${complexTypes},${nestedComplexTypes}"
-    if (reportReadSchema) {
-      initRow + s",$readFileFormats"
-    } else {
-      initRow
-    }
   }
 }

@@ -78,13 +78,15 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
 
   initApp()
 
-  def getTextSummary(): String = {
+  def getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val textHeaderStr = QualOutputWriter.constructHeaderTextString(appIdMaxSize)
-        val textAppStr = QualOutputWriter.constructAppInfoTextString(info, appIdMaxSize)
+        val textHeaderStr = QualOutputWriter.constructSummaryHeader(appIdMaxSize, delimiter,
+          prettyPrint)
+        val textAppStr = QualOutputWriter.constructAppSummaryInfo(info, appIdMaxSize,
+          delimiter, prettyPrint)
         textHeaderStr + textAppStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
@@ -92,44 +94,16 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
     }
   }
 
-  def getTextDetailed(reportReadSchema: Boolean = false): String = {
+  def getDetailed(delimiter: String = "|", prettyPrint: Boolean = true,
+      reportReadSchema: Boolean = false): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val headersAndSizes =
-          QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
-        val textHeaderStr =
-          QualOutputWriter.constructHeaderTextStringDetailed(headersAndSizes)
-        val textAppStr = QualOutputWriter.constructAppInfoTextStringDetailed(info,
-          headersAndSizes, reportReadSchema)
-        textHeaderStr + "\n" + textAppStr
-      case None =>
-        logWarning(s"Unable to get qualification information for this application")
-        ""
-    }
-  }
-
-  def getCSVSummary(): String = {
-    val appInfo = super.aggregateStats()
-    appInfo match {
-      case Some(info) =>
-        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val header = QualOutputWriter.headerCSVSummary
-        val data = QualOutputWriter.toCSVSummary(info, appIdMaxSize)
-        header + data
-      case None =>
-        logWarning(s"Unable to get qualification information for this application")
-        ""
-    }
-  }
-
-  def getCSVDetailed(reportReadSchema: Boolean = false): String = {
-    val appInfo = super.aggregateStats()
-    appInfo match {
-      case Some(info) =>
-        val header = QualOutputWriter.headerCSVDetailed(reportReadSchema)
-        val data = QualOutputWriter.toCSVDetailed(info, reportReadSchema)
-        header + "\n" + data
+        val textHeaderStr = QualOutputWriter.constructDetailedHeader(Seq(info), delimiter,
+          prettyPrint, reportReadSchema)
+        val textAppStr = QualOutputWriter.constructAppDetailedInfo(info, delimiter,
+          prettyPrint, reportReadSchema)
+        textHeaderStr + textAppStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
         ""
