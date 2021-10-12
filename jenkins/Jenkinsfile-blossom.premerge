@@ -341,8 +341,14 @@ pipeline {
             // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
             // If any one is failed will abort another if not finish yet and will upload failure log to Github
             failFast true
+            stage('parallel mvn install of 302+') {
+                steps {
+                    script {
+                        parallel premergeInstallStages
+                    }
+                }
+            }
             parallel {
-                premergeInstallStages.values()
                 stage('mvn verify') {
                     options {
                         // We have to use params to pass the resource label in options block,
