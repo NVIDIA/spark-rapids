@@ -295,7 +295,7 @@ class HashJoinIterator(
           throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
               s" supported")
       }
-      makeGatherer(maps, leftData, rightData)
+      makeGatherer(maps, leftData, rightData, joinType)
     }
   }
 
