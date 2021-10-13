@@ -41,35 +41,6 @@ def PROJECT_VER // project version retrieved from 'version-def.sh' to determine 
 def major_ver // major version extracted from project version
 def minor_ver // minor version extracted from project version
 def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running from stage of Premerge CI 2
-def premerge_mvn_install_vers = [
-        '302',
-        '303',
-        '304',
-        '311',
-        '311cdh',
-        '312',
-        '313',
-        '320'
-]
-
-def premergeInstallStage(buildVer) {
-    return {
-        stage("mvn install $buildVer") {
-            script {
-                container('gpu') {
-                    timeout(time: 4, unit: 'HOURS') { // step only timeout for test run
-                        sh "$PREMERGE_SCRIPT mvn_install $buildVer"
-                    }
-                }
-            }
-        }
-    }
-}
-
-def premergeInstallStages = premerge_mvn_install_vers.collectEntries {
-    ["mvn_install_$it" : premergeInstallStage(it) ]
-}
-
 
 // constant parameters for aws and azure databricks cluster
 // CSP params
@@ -359,9 +330,6 @@ pipeline {
                                 }
                             }
                         }
-                    }
-                    stage('mvn install for each buildver') {
-                        parallel premergeInstallStages
                     }
                 } // end of mvn verify stage
 
