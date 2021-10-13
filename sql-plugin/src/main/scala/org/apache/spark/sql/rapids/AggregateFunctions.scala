@@ -242,8 +242,10 @@ abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable with S
 }
 
 class CudfCount(ref: Expression) extends CudfAggregate(ref) {
-  override val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
+  override val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar = {
+    // Return the value as an it to match what the group by aggregation does.
     (col: cudf.ColumnVector) => cudf.Scalar.fromInt((col.getRowCount - col.getNullCount).toInt)
+  }
   override val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.sum
   override lazy val updateAggregate: GroupByAggregationOnColumn =
@@ -399,13 +401,12 @@ abstract class CudfFirstLastBase(ref: Expression) extends CudfAggregate(ref) {
   override val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
   override val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
-    (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.nth(offset, includeNulls))
+    updateReductionAggregateInternal
+
   override lazy val updateAggregate: GroupByAggregationOnColumn =
-    GroupByAggregation.nth(offset, includeNulls)
-      .onColumn(getOrdinal(ref))
+    GroupByAggregation.nth(offset, includeNulls).onColumn(getOrdinal(ref))
   override lazy val mergeAggregate: GroupByAggregationOnColumn =
-    GroupByAggregation.nth(offset, includeNulls)
-      .onColumn(getOrdinal(ref))
+    updateAggregate
 }
 
 class CudfFirstIncludeNulls(ref: Expression) extends CudfFirstLastBase(ref) {
@@ -864,19 +865,30 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
-  // counts are GpuToCpuBufferTransitionLong
-  private lazy val cudfCount = AttributeReference("count", LongType)()
+  // This is really confusing because we use the same attribute reference for multiple different
+  // values.  This is to try and make things simpler with binding, but also keep the code readable
+  // Count is the output of the update, and is all through the merge phase
+  private lazy val count = AttributeReference("count", LongType)()
+  // Input is the actual input to this function (Keep the same expression ID to make binding
+  // simpler)
+  private lazy val input = AttributeReference("input", children.head.dataType)(count.exprId)
+  // cudfCountOutput is the output of the CudfCount aggregation. It is an int, not a long
+  private lazy val cudfCountOutput = AttributeReference("cudfCount", IntegerType)(count.exprId)
 
+  // The output of the inputProjection is `input`
   override lazy val inputProjection: Seq[Expression] = Seq(children.head)
-  override lazy val updateExpressions: Seq[Expression] = Seq(new CudfCount(cudfCount))
+  // The output of updateExpressions is `cudfCountOutput`
+  override lazy val updateExpressions: Seq[Expression] = Seq(new CudfCount(input))
 
-  override lazy val postUpdate: Seq[Expression] = Seq(GpuCast(cudfCount, dataType))
-  override lazy val postUpdateAttr: Seq[AttributeReference] = Seq(cudfCount)
+  // The output of postUpdate is `count`
+  override lazy val postUpdate: Seq[Expression] = Seq(GpuCast(cudfCountOutput, dataType))
 
-  override lazy val mergeExpressions: Seq[Expression] = Seq(new CudfSum(cudfCount))
-  override lazy val evaluateExpression: Expression = cudfCount
+  override lazy val mergeExpressions: Seq[Expression] = Seq(new CudfSum(count))
+  override lazy val evaluateExpression: Expression = count
 
-  override lazy val aggBufferAttributes: Seq[AttributeReference] = cudfCount :: Nil
+  // We say that everything is count, but it really is not. See the comments just before count
+  // to explain what is happening.
+  override lazy val aggBufferAttributes: Seq[AttributeReference] = count :: Nil
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(0L, LongType))
 

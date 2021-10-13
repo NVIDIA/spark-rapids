@@ -827,7 +827,9 @@ class GpuHashAggregateIterator(
 
     val boundCudfAggregates = boundExpressions.boundCudfAggregates
     val computeAggTime = metrics.computeAggTime
-    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime)) { _ =>
+    val opTime = metrics.opTime
+    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
+      opTime)) { _ =>
       // Perform group by aggregation
       // Create a cudf Table, which we use as the base of aggregations.
       // At this point we are getting the cudf aggregate's merge or update version
