@@ -13,20 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.nvidia.spark.rapids
-
-import ai.rapids.cudf.{ColumnVector, Scalar}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.hashing.byteswap32
+
+import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
+
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DataType, DataTypes, IntegerType}
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuRangePartitioner {
