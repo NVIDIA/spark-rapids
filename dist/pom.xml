@@ -294,6 +294,18 @@
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
@@ -581,6 +593,18 @@
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
                                         >
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
