@@ -880,8 +880,10 @@ class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
     case dec if dec.isDecimalType =>
       if (dec.getTypeId == DType.DTypeEnum.DECIMAL32) {
         Scalar.fromDecimal(dec.getScale, 0)
-      } else {
+      } else if (dec.getTypeId == DType.DTypeEnum.DECIMAL64) {
         Scalar.fromDecimal(dec.getScale, 0L)
+      } else {
+        Scalar.fromDecimal(dec.getScale, java.math.BigInteger.ZERO)
       }
     case other =>
       throw new IllegalArgumentException(s"Making a zero scalar for $other is not supported")

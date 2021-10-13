@@ -142,7 +142,7 @@ def test_decimal128_count_window(data_gen):
         'select '
         ' count(c) over '
         '   (partition by a order by b asc '
-        '      rows between 2 preceding and 10 following) as sum_c_asc '
+        '      rows between 2 preceding and 10 following) as count_c_asc '
         'from window_agg_table',
         conf = allow_negative_scale_of_decimal_conf)
 
@@ -155,9 +155,64 @@ def test_decimal128_count_window_no_part(data_gen):
         'select '
         ' count(b) over '
         '   (order by a asc '
+        '      rows between 2 preceding and 10 following) as count_b_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_sum_window(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(c) over '
+        '   (partition by a order by b asc '
+        '      rows between 2 preceding and 10 following) as sum_c_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_sum_window_no_part(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
         '      rows between 2 preceding and 10 following) as sum_b_asc '
         'from window_agg_table',
         conf = allow_negative_scale_of_decimal_conf)
+
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_running_sum_window(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(c) over '
+        '   (partition by a order by b asc '
+        '      rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_c_asc '
+        'from window_agg_table',
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+            {'spark.rapids.sql.batchSizeBytes': '100'}))
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_running_sum_window_no_part(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
+        '      rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_b_asc '
+        'from window_agg_table',
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+            {'spark.rapids.sql.batchSizeBytes': '100'}))
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
