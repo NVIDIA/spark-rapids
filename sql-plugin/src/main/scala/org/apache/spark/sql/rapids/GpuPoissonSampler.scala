@@ -15,6 +15,8 @@
  */
 package org.apache.spark.sql.rapids
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{DeviceMemoryBuffer, DType, GatherMap, HostMemoryBuffer, NvtxColor}
 import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuMetric, NvtxWithMetrics}
 import org.apache.commons.math3.distribution.PoissonDistribution
@@ -43,17 +45,22 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
         withResource(new NvtxWithMetrics("Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
           numOutputBatches += 1
           withResource(columnarBatch) { cb =>
-            val rows = cb.numRows()
-            val intBytes = DType.INT32.getSizeInBytes()
+            // collect sampled row idx
+            // samples idx in batch one by one, so it's same with CPU version
+            val sampledRows = sample(cb.numRows())
 
-            // 1. select rows, same with CPU version
-            withResource(generateHostBuffer(cb.numRows())) { hostBufferWithRowNum =>
-              val hostBuffer = hostBufferWithRowNum.buffer
-              val selectedRows = hostBufferWithRowNum.rowNum
-              // 2. generate gather map and send to GPU to gather
-              withResource(DeviceMemoryBuffer.allocate(selectedRows * intBytes)) { deviceBuffer =>
-                deviceBuffer.copyFromHostBuffer(0, hostBuffer, 0, selectedRows * intBytes)
-                withResource(new GatherMap(deviceBuffer).toColumnView(0, selectedRows)) {
+            val intBytes = DType.INT32.getSizeInBytes()
+            val totalBytes = sampledRows.length * intBytes
+            withResource(HostMemoryBuffer.allocate(totalBytes)) { hostBuffer =>
+              // copy row idx to host buffer
+              for (idx <- 0 until sampledRows.length) {
+                hostBuffer.setInt(idx * intBytes, sampledRows(idx))
+              }
+
+              // generate gather map and send to GPU to gather
+              withResource(DeviceMemoryBuffer.allocate(totalBytes)) { deviceBuffer =>
+                deviceBuffer.copyFromHostBuffer(0, hostBuffer, 0, totalBytes)
+                withResource(new GatherMap(deviceBuffer).toColumnView(0, sampledRows.length)) {
                   gatherCv =>
                     val colTypes = GpuColumnVector.extractTypes(cb)
                     withResource(GpuColumnVector.from(cb)) { table =>
@@ -70,50 +77,18 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
     }
   }
 
-  private case class HostBufferWithRowNum(buffer: HostMemoryBuffer, rowNum: Int)
-    extends AutoCloseable {
-    @throws[Exception]
-    def close(): Unit = {
-      buffer.close()
-    }
-  }
-
-  private def generateHostBuffer(rows: Int): HostBufferWithRowNum = {
-    val intBytes = DType.INT32.getSizeInBytes()
-    val estimateBytes = (rows * intBytes * fraction).toLong + 128L
-    var buffer = HostMemoryBuffer.allocate(estimateBytes)
-    var selectedRows = 0
-    for (row <- 0 until rows) {
+  // collect the sampled row idx
+  private def sample(numRows: Int): ArrayBuffer[Int] = {
+    val buf = new ArrayBuffer[Int]
+    for (rowIdx <- 0 until numRows) {
       val rowCount = rng.sample()
       if (rowCount > 0) {
         numOutputRows += rowCount
         for (_ <- 0 until rowCount) {
-          // select row with rowCount times
-          buffer = safeSetInt(buffer, selectedRows * intBytes, row)
-          selectedRows += 1
+          buf += rowIdx
         }
       }
     }
-    HostBufferWithRowNum(buffer, selectedRows)
-  }
-
-  // set int, expand if necessary
-  private def safeSetInt(buffer: HostMemoryBuffer, offset: Int, value: Int): HostMemoryBuffer = {
-    val buf = ensureCapacity(buffer, offset)
-    buf.setInt(offset, value)
     buf
-  }
-
-  // expand if buffer is full
-  private def ensureCapacity(buffer: HostMemoryBuffer, offset: Int): HostMemoryBuffer = {
-    if (offset + DType.INT32.getSizeInBytes <= buffer.getLength) {
-      buffer
-    } else {
-      withResource(buffer) { buf =>
-        val newBuffer = HostMemoryBuffer.allocate(buf.getLength * 2)
-        newBuffer.copyFromHostBuffer(0, buf, 0, buf.getLength)
-        newBuffer
-      }
-    }
   }
 }

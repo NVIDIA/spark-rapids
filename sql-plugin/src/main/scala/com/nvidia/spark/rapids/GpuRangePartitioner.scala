@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 import scala.util.hashing.byteswap32
 
-import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
@@ -186,12 +185,7 @@ case class GpuRangePartitioner(
           GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)) { sorted =>
           val retCv = withResource(converters.convertBatch(rangeBounds,
             TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
-            if(sorted.numRows() == 0) {
-              // table row num is 0, upper bound should be 0, avoid exception
-              ai.rapids.cudf.ColumnVector.fromScalar(Scalar.fromInt(0), 1)
-            } else {
               sorter.upperBound(sorted, ranges)
-            }
           }
           withResource(retCv) { retCv =>
             // The first entry must always be 0, which upper bound is not doing

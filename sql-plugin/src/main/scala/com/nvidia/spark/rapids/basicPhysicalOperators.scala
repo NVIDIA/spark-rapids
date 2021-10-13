@@ -372,8 +372,12 @@ class GpuSampleExecMeta(sample: SampleExec, conf: RapidsConf, p: Option[RapidsMe
   with Logging {
   override def convertToGpu(): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
-    GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement, sample.seed,
-      gpuChild)
+    val sampleExec = GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
+      sample.seed, gpuChild)
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sampleExec.conf)
+    // add one coalesce exec to avoid empty batch and small batch,
+    // because sample will decrease the batch size
+    GpuCoalesceBatches(sampleExec, TargetSize(targetSize))
   }
 }
 
@@ -417,6 +421,7 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
           val sampler = new BernoulliCellSampler(lowerBound, upperBound)
           sampler.setSeed(seed + index)
           iterator.map[ColumnarBatch] { batch =>
+            numOutputBatches += 1
             withResource(batch) { b => // will generate new columnar column, close this
               val numRows = b.numRows()
               val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
@@ -439,7 +444,6 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
                 withResource(GpuColumnVector.from(b)) { tbl =>
                   withResource(tbl.filter(filter)) { filteredData =>
                     if (filteredData.getRowCount == 0) {
-                      logInfo("my-debug: empty batch !!!")
                       GpuColumnVector.emptyBatchFromTypes(colTypes)
                     } else {
                       GpuColumnVector.from(filteredData, colTypes)
