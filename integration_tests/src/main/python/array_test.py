@@ -135,6 +135,14 @@ def test_get_array_item_ansi_not_fail(data_gen):
                                conf={'spark.sql.ansi.enabled':True,
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
+
+@pytest.mark.parametrize('data_gen', array_gens_sample_with_decimal128, ids=idfn)
+def test_get_array_item_decimal128(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
+        spark, data_gen).select(col('a')[100]),
+                                         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
+
 @pytest.mark.parametrize('data_gen', array_gens_sample_with_decimal128, ids=idfn)
 def test_array_element_at(data_gen):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(
