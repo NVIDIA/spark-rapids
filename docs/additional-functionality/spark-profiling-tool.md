@@ -18,7 +18,9 @@ The output information contains the Spark version, executor details, properties,
 * [Profiling tool options](#Profiling-tool-options)
 * [Profiling tool metrics definitions](#Profiling-tool-metrics-definitions)
 
-## Prerequisites
+## How to use the Profiling tool
+
+### Prerequisites
 - Java 8 or above, Spark 3.0.1+ jars
 - Spark event log(s) from Spark 2.0 or above version. Supports both rolled and compressed event logs 
   with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes as well as Databricks-specific rolled and compressed(.gz) event logs. 
