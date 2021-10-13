@@ -4,7 +4,7 @@ title: Spark Qualification tool
 parent: Additional Functionality
 nav_order: 7
 ---
-# Spark Qualification and Profiling tools
+# Spark Qualification tool
 
 The qualification tool analyzes event logs generated from CPU based Spark applications to determine 
 if the RAPIDS Accelerator for Apache Spark might be a good fit for GPU acceleration.
@@ -19,8 +19,8 @@ This document covers below topics:
     * [Step 2: Run the Qualification tool](#Step 2.-Run-the-Qualification-tool)
     * [Step 3: Interpreting the Qualification tool output](#Step 3:-How-to-interpret-the-Qualification-tool-output)
 * [Qualification tool options](#Qualification-tool-options)
-* [Qualification tool score algorithm](#Qualification-tool-score-algorithm)git 
-* [How to compile the Qualification tool jar from the source](#Optional:-Compiling the jars)
+* [Qualification tool score algorithm](#Qualification-tool-score-algorithm)
+* [How to compile the Qualification tool jar from the source](#Optional:-Compiling-the-jars)
 
 ## How to use the Qualification tool
 
