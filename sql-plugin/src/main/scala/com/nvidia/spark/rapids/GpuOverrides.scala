@@ -3031,7 +3031,7 @@ object GpuOverrides extends Logging {
       "The size of an array or a map",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL
-            + TypeSig.DECIMAL_64 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new UnaryExprMeta[Size](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
@@ -3057,11 +3057,11 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-            TypeSig.DECIMAL_64 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[Explode](a, conf, p, r) {
         override val supportOuter: Boolean = true
@@ -3072,11 +3072,11 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(
         // Here is a walk-around representation, since multi-level nested type is not supported yet.
         // related issue: https://github.com/NVIDIA/spark-rapids/issues/1901
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.commonCudfTypes + TypeSig.NULL +
-            TypeSig.DECIMAL_64 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+            TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.ARRAY + TypeSig.MAP).nested(TypeSig.all)),
       (a, conf, p, r) => new GeneratorExprMeta[PosExplode](a, conf, p, r) {
         override val supportOuter: Boolean = true
@@ -3382,7 +3382,7 @@ object GpuOverrides extends Logging {
     exec[GenerateExec] (
       "The backend for operations that generate more output rows than input rows like explode",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.ARRAY +
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all),
       (gen, conf, p, r) => new GpuGenerateExecSparkPlanMeta(gen, conf, p, r)),
