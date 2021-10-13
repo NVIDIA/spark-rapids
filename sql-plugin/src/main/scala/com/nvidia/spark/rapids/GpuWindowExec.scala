@@ -1054,7 +1054,7 @@ trait BasicWindowCalc extends Arm {
     }
   }
 
-  def castResultsIfNeeded(dataTypes: Array[DataType],
+  def convertToBatch(dataTypes: Array[DataType],
       cols: Array[cudf.ColumnVector]): ColumnarBatch =
     aggregations.convertToColumnarBatch(dataTypes, cols)
 }
@@ -1082,7 +1082,7 @@ class GpuWindowIterator(
     withResource(input.next()) { cb =>
       withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
         val ret = withResource(computeBasicWindow(cb)) { cols =>
-          castResultsIfNeeded(outputTypes, cols)
+          convertToBatch(outputTypes, cols)
         }
         numOutputBatches += 1
         numOutputRows += ret.numRows()
@@ -1283,7 +1283,7 @@ class GpuRunningWindowIterator(
           }
           withResource(fixedUp) { fixed =>
             saveLastParts(getScalarRow(numRows - 1, partColumns))
-            castResultsIfNeeded(outputTypes, fixed)
+            convertToBatch(outputTypes, fixed)
           }
         }
       }

@@ -864,7 +864,8 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
  * fixers, but it has to special case nulls and that is not super generic.  In the future we
  * might be able to make this more generic but we need to see what the use case really is.
  */
-class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
+class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
+    extends BatchedRunningWindowFixer with Arm with Logging {
   private val name = "sum"
   private val binOp = BinaryOp.ADD
   private var previousResult: Option[Scalar] = None
@@ -942,8 +943,17 @@ class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
           incRef(windowedColumnOutput)
         }
     }
-    updateState(ret)
-    ret
+    closeOnExcept(ret) { ret =>
+      updateState(ret)
+    }
+    toType match {
+      case dt: DecimalType =>
+        withResource(ret) { ret =>
+          GpuCast.checkNFixDecimalBounds(ret, dt, isAnsi)
+        }
+      case _ =>
+        ret
+    }
   }
 
   override def close(): Unit = {

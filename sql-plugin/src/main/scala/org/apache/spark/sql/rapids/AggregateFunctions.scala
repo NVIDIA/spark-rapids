@@ -752,11 +752,16 @@ case class GpuSum(child: Expression, resultType: DataType)
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.sum().onColumn(inputs.head._2)
 
-  // TODO how to get overflow checks at the end???
+  override def windowOutput(result: ColumnVector): ColumnVector = resultType match {
+    case dt: DecimalType =>
+      // Check for overflow
+      GpuCast.checkNFixDecimalBounds(result, dt, isAnsi)
+    case _ => result.incRefCount()
+  }
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
-    new SumBinaryFixer()
+    new SumBinaryFixer(resultType, isAnsi)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     windowInputProjection
@@ -770,6 +775,17 @@ case class GpuSum(child: Expression, resultType: DataType)
 
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
     Seq(AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
+
+  override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
+    // We do bounds checks if we are not going to use the running fixer and it is decimal
+    // The fixer will do the bounds checks for us on the actual final values.
+    resultType match {
+      case dt: DecimalType if !isRunningBatched =>
+        // Check for overflow
+        GpuCast.checkNFixDecimalBounds(cols.head, dt, isAnsi)
+      case _ => cols.head.incRefCount()
+    }
+  }
 }
 
 /*
