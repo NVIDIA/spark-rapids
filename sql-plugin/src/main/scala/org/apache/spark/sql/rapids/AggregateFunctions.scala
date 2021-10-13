@@ -653,6 +653,7 @@ case class GpuSum(child: Expression, resultType: DataType)
   private lazy val isAnsi = SQLConf.get.ansiEnabled
   private lazy val cudfSum = AttributeReference("sum", resultType)()
   private lazy val isEmpty = AttributeReference("isEmpty", BooleanType, nullable = false)()
+  private lazy val isOverflow = AttributeReference("isOverflow", BooleanType, nullable = false)()
   private lazy val zeroDec = {
     val dt = resultType.asInstanceOf[DecimalType]
     GpuLiteral(Decimal(0, dt.precision, dt.scale), dt)
@@ -685,17 +686,35 @@ case class GpuSum(child: Expression, resultType: DataType)
     case _ => aggBufferAttributes
   }
 
+  override lazy val preMerge: Seq[Expression] = resultType match {
+    case _: DecimalType => Seq(cudfSum, isEmpty, GpuIsNull(cudfSum))
+    case _ => aggBufferAttributes
+  }
+
+  override def mergeBufferAttributes: Seq[AttributeReference] = postMergeAttr
+
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
   // Cudf does not have such an aggregation, so for merge we have to work around that similar to
   // what happens with isEmpty
   override lazy val mergeExpressions: Seq[Expression] = resultType match {
-    case _: DecimalType => Seq(new CudfSum(cudfSum), new CudfMin(isEmpty))
+    case _: DecimalType => Seq(new CudfSum(cudfSum), new CudfMin(isEmpty), new CudfMax(isOverflow))
     case _ => Seq(new CudfSum(cudfSum))
   }
 
+  override lazy val postMergeAttr: Seq[AttributeReference] = resultType match {
+    case _: DecimalType => cudfSum :: isEmpty :: isOverflow :: Nil
+    case _ => aggBufferAttributes
+  }
+
+  override lazy val postMerge: Seq[Expression] = resultType match {
+    case _: DecimalType =>
+      Seq(GpuIf(isOverflow, GpuLiteral.create(null, resultType), cudfSum), isEmpty)
+    case _ => aggBufferAttributes
+  }
+
   override lazy val evaluateExpression: Expression = resultType match {
-    case d: DecimalType =>
-      GpuCheckOverflowAfterSum(cudfSum, isEmpty, d, !isAnsi)
+    case dt: DecimalType =>
+      GpuCheckOverflowAfterSum(cudfSum, isEmpty, dt, !isAnsi)
     case _ => cudfSum
   }
 
