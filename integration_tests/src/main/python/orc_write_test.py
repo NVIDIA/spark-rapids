@@ -18,7 +18,6 @@ from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fall
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
-from orc_test import orc_basic_map_gens as orc_write_basic_map_gens
 from pyspark.sql.types import *
 
 orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -36,6 +35,11 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
     ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
     ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
+    BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
+    lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
+    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable)]]
 
 orc_write_gens_list = [orc_write_basic_gens,
         orc_write_struct_gens_sample,
