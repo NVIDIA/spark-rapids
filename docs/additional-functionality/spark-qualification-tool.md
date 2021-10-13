@@ -15,12 +15,12 @@ This document covers below topics:
 
 * How to use the Qualification tool
     * [Prerequisites](#Prerequisites)
-    * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step-1.-Download-the-tools-jar-&-Apache-Spark-3-Distribution)
-    * [Step 2: Run the Qualification tool](#Step-2.-Run-the-Qualification-tool)
-    * [Step 3: Interpreting the Qualification tool output](#Step-3:-How-to-interpret-the-Qualification-tool-output)
+    * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step 1.-Download-the-tools-jar-&-Apache-Spark-3-Distribution)
+    * [Step 2: Run the Qualification tool](#Step 2.-Run-the-Qualification-tool)
+    * [Step 3: Interpreting the Qualification tool output](#Step 3:-How-to-interpret-the-Qualification-tool-output)
 * [Qualification tool options](#Qualification-tool-options)
-* [Qualification tool score algorithm](#Qualification-tool-score-algorithm)
-* [How to compile the Qualification tool jar from the source](#Optional:-Compiling-the-jars)
+* [Qualification tool score algorithm](#Qualification-tool-score-algorithm)git 
+* [How to compile the Qualification tool jar from the source](#Optional:-Compiling the jars)
 
 ## How to use the Qualification tool
 
