@@ -28,7 +28,7 @@ pytestmark = pytest.mark.premerge_ci_1
 basic_struct_gen = StructGen([
     ['child' + str(ind), sub_gen]
     for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
+                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default] + decimal_128_gens_no_neg)],
     nullable=False)
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)

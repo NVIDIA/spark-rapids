@@ -1153,11 +1153,11 @@ object CreateMapCheck extends ExprChecks {
 
   // Spark supports all types except for Map for key (Map is not supported
   // even in child types)
-  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
     TypeSig.ARRAY + TypeSig.STRUCT).nested()
 
-  private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-    TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+  private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL +
+    TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
     meta.willNotWorkInAst("CreateMap is not supported by AST")
