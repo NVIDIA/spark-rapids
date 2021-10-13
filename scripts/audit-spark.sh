@@ -83,26 +83,26 @@ else
 
     ## Get all the commits from TOT branch-3.2 to 79a6e00b7621bb
     git checkout $tag
-    git log --oneline HEAD...79a6e00b7621bb -- sql/core/src/main sql/catalyst/src/main  > b3.2.log
+    git log --oneline HEAD...79a6e00b7621bb -- sql/core/src/main sql/catalyst/src/main  > previousVersion.log
 
     ## Get all the commits from TOT master to 79a6e00b7621bb
     git checkout $basebranch
-    git log --oneline HEAD...79a6e00b7621bb -- sql/core/src/main sql/catalyst/src/main  > b3.3.log
+    git log --oneline HEAD...79a6e00b7621bb -- sql/core/src/main sql/catalyst/src/main  > currentVersion.log
 
     ## Below steps filter commit header messages, sorts and saves only uniq commits that needs to be audited in commits.to.audit.3.3 file
-    cat b3.2.log | awk '{$1 = "";print $0}' > b3.2.filter.log
-    cat b3.3.log | awk '{$1 = "";print $0}' > b3.3.filter.log
-    cat b3.3.filter.log b3.2.filter.log | sort | uniq -c | sort | awk '{$1=$1;print}' > uniqsort.log
+    cat previousVersion.log | awk '{$1 = "";print $0}' > previousVersion.filter.log
+    cat currentVersion.log | awk '{$1 = "";print $0}' > currentVersion.filter.log
+    cat currentVersion.filter.log previousVersion.filter.log | sort | uniq -c | sort | awk '{$1=$1;print}' > uniqsort.log
     cat uniqsort.log | awk '/^1/{$1 = "";print $0}' > uniqcommits.log
-    cat b3.2.filter.log | sort > b3.2.filter.sorted.log
-    cat b3.3.filter.log | sort > b3.3.filter.sorted.log
+    cat previousVersion.filter.log | sort > previousVersion.filter.sorted.log
+    cat currentVersion.filter.log | sort > currentVersion.filter.sorted.log
     cat uniqcommits.log | sort > uniqcommits.sorted.log
-    comm -12 b3.2.filter.sorted.log uniqcommits.sorted.log | wc -l
-    comm -12 b3.3.filter.sorted.log uniqcommits.sorted.log > commits.to.audit.3.3
-    sed -i 's/\[/\\[/g' commits.to.audit.3.3
-    sed -i 's/\]/\\]/g' commits.to.audit.3.3
+    comm -12 previousVersion.filter.sorted.log uniqcommits.sorted.log | wc -l
+    comm -12 currentVersion.filter.sorted.log uniqcommits.sorted.log > commits.to.audit.currentVersion
+    sed -i 's/\[/\\[/g' commits.to.audit.currentVersion
+    sed -i 's/\]/\\]/g' commits.to.audit.currentVersion
 
-    filename=commits.to.audit.3.3
+    filename=commits.to.audit.currentVersion
     while read -r line; do
       echo "1"
       git log --grep="$line" --pretty="%h %s" >> ${COMMIT_DIFF_LOG}
