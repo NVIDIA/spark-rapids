@@ -688,5 +688,5 @@ abstract class SparkBaseShims extends Spark30XShims {
       new KryoJavaSerializer())
   }
 
-  override def getCentralMomentDivideByZeroEvalResult(): Expression = GpuLiteral(Double.NaN)
+  override def getLegacyStatisticalAggregate(): Boolean = true
 }
