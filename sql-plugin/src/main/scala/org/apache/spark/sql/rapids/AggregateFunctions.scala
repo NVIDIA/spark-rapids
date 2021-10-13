@@ -752,6 +752,8 @@ case class GpuSum(child: Expression, resultType: DataType)
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.sum().onColumn(inputs.head._2)
 
+  // TODO how to get overflow checks at the end???
+
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new SumBinaryFixer()
@@ -904,6 +906,11 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
     RollingAggregation.count(NullPolicy.EXCLUDE).onColumn(inputs.head._2)
 
+  override def windowOutput(result: ColumnVector): ColumnVector = {
+    // The output needs to be a long
+    result.castTo(DType.INT64)
+  }
+
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
     new BatchedRunningWindowBinaryFixer(BinaryOp.ADD, "count")
@@ -931,6 +938,9 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
 
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
     Seq(AggAndReplace(ScanAggregation.sum(), None))
+
+  override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector =
+    cols.head.castTo(DType.INT64)
 }
 
 case class GpuAverage(child: Expression) extends GpuAggregateFunction
