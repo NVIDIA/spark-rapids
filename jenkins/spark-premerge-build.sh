@@ -28,32 +28,25 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 
-mvn_install() {
-  # build all the versions but only run unit tests on one 3.0.X version (base version covers this),
-  # one 3.1.X version, and one 3.2.X version.
-  # All others shims test should be covered in nightly pipelines
-  BUILD_VER=${BUILD_VER:-"301"}
-  echo "Run mvn install for BUILD_VER=$BUILD_VER"
-  SKIP_TESTS=$( [[ "$BUILD_VER" == "311" || "$BUILD_VER" == "320" ]] && echo false || echo true )
-  SKIP_SCALASTYLE=$( [[ "$BUILD_VER" == "320" ]] && echo false || echo true )
-  env -u SPARK_HOME mvn -U -B "$MVN_URM_MIRROR" clean install \
-          -Dbuildver="$BUILD_VER" \
-          -Drat.skip=true \
-          -DskipTests="$SKIP_TESTS" \
-          -Dmaven.javadoc.skip=true \
-          -Dskip \
-          -Dmaven.scalastyle.skip="$SKIP_SCALASTYLE" \
-          -Dcuda.version="$CUDA_CLASSIFIER" \
-          -Dpytest.TEST_TAGS='' \
-          -pl aggregator -am
-}
-
 mvn_verify() {
     echo "Run mvn verify..."
     # get merge BASE from merged pull request. Log message e.g. "Merge HEAD into BASE"
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
+
+    # build all the versions but only run unit tests on one 3.0.X version (base version covers this), one 3.1.X version, and one 3.2.X version.
+    # All others shims test should be covered in nightly pipelines
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=302 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=303 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=304 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    # don't skip tests
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=311 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS=''
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=312 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=313 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    # don't skip tests
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS=''
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
@@ -146,13 +139,8 @@ case $BUILD_TYPE in
 
     all)
         echo "Run all testings..."
-        mvn_install
         mvn_verify
         ci_2
-        ;;
-
-    mvn_install)
-        mvn_install
         ;;
 
     mvn_verify)
