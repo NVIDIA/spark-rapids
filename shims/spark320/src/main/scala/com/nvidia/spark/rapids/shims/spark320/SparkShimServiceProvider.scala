@@ -19,10 +19,8 @@ package com.nvidia.spark.rapids.shims.spark320
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
 
 object SparkShimServiceProvider {
-  // temporarily allow 3.2.1 while 3.2.0 release candidates are being produced
   val VERSION320 = SparkShimVersion(3, 2, 0)
-  val VERSION321 = SparkShimVersion(3, 2, 1)
-  val VERSIONNAMES: Seq[String] = Seq(VERSION320, VERSION321)
+  val VERSIONNAMES: Seq[String] = Seq(VERSION320)
     .flatMap(v => Seq(s"$v", s"$v-SNAPSHOT"))
 }
 
