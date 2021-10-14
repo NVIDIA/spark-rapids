@@ -3244,7 +3244,7 @@ object GpuOverrides extends Logging {
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         Nil, None),
       (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {
