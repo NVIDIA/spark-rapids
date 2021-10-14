@@ -2,7 +2,7 @@
 layout: page
 title: Spark Profiling tool
 parent: Additional Functionality
-nav_order: 7
+nav_order: 8
 ---
 # Spark Profiling tool
 
@@ -23,7 +23,8 @@ The output information contains the Spark version, executor details, properties,
 ### Prerequisites
 - Java 8 or above, Spark 3.0.1+ jars
 - Spark event log(s) from Spark 2.0 or above version. Supports both rolled and compressed event logs 
-  with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes as well as Databricks-specific rolled and compressed(.gz) event logs. 
+  with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes as well as 
+  Databricks-specific rolled and compressed(.gz) event logs. 
 - The tool does not support nested directories.
   Event log files or event log directories should be at the top level when specifying a directory.
 
@@ -34,15 +35,18 @@ more information.
 
 ### Step 1. Download the tools jar & Apache Spark 3 Distribution
 The Profiling tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
-If you do not already have Spark 3.x installed, you can download the Spark distribution to any machine and include the jars in the classpath.
+If you do not already have Spark 3.x installed, 
+you can download the Spark distribution to any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.1/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#Optional:-Compiling-the-jars). 
 
 ### Step 2. How to Run the Profiling tool
-This tool extracts the Spark distribution if necessary and parses the Spark CPU or GPU event log(s) and creates an output report.
+This tool extracts the Spark distribution if necessary and 
+parses the Spark CPU or GPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
-in the local filesystem, HDFS, S3 or mixed. Please note, if processing a lot of event logs use combined or compare mode.
+in the local filesystem, HDFS, S3 or mixed. 
+Please note, if processing a lot of event logs use combined or compare mode.
 Both these modes may need you to increase the java heap size using `-Xmx` option.
 For instance, to specify 30 GB heap size `java -Xmx30g`. 
 
@@ -58,7 +62,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 ```
 
  2. Combined Mode:
-    Combined mode is collection mode but then combines all the applications together and you get one file for all applications.
+    Combined mode is collection mode but then combines all the applications 
+    together and you get one file for all applications.
     
 ```bash
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
@@ -76,7 +81,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        <eventlogs | eventlog directories ...>
 ```
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output 
-so if you want to point to the local filesystem be sure to include `file:` in the path
+so if you want to point to the local filesystem be sure to include `file:` in the path.
 
 Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
 
@@ -86,7 +91,8 @@ java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP
 ```
 
 ## Understanding Profile tool Detailed Output and Examples
-The default output location is the current directory. The output location can be changed using the `--output-directory` option.
+The default output location is the current directory. 
+The output location can be changed using the `--output-directory` option.
 The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
 If running in normal collect mode, it processes event log individually and outputs files for each application under
 a directory named `rapids_4_spark_profile/{APPLICATION_ID}`. It creates a summary text file named `profile.log`.
@@ -102,10 +108,13 @@ visualizations or printing the SQL plans.
 Optionally if the `--csv` option is specified then it creates a csv file for each table for each application in the
 corresponding sub-directory.
 
-There is a 100 characters limit for each output column. If the result of the column exceeds this limit, it is suffixed with ... for that column.
+There is a 100 characters limit for each output column.
+If the result of the column exceeds this limit, it is suffixed with ... for that column.
 
-ResourceProfile ids are parsed for the event logs that are from Spark 3.1 or later.  A ResourceProfile allows the user to specify executor and task requirements
-for an RDD that will get applied during a stage. This allows the user to change the resource requirements between stages.
+ResourceProfile ids are parsed for the event logs that are from Spark 3.1 or later.
+A ResourceProfile allows the user to specify executor and task requirements
+for an RDD that will get applied during a stage. 
+This allows the user to change the resource requirements between stages.
   
 Run `--help` for more information.
 
@@ -155,7 +164,8 @@ Executor Information:
 ```
 
 - Data Source information
-The details of this output differ between using a Spark Data Source V1 and Data Source V2 reader. The Data Source V2 truncates the schema, so if you see `...`, then
+The details of this output differ between using a Spark Data Source V1 and Data Source V2 reader. 
+The Data Source V2 truncates the schema, so if you see `...`, then
 the full schema is not available.
 
 ```
@@ -351,7 +361,8 @@ stage. Jobs and SQL are not color coordinated.
 - SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent
 - Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
-Below we will aggregate the task level metrics at different levels to do some analysis such as detecting possible shuffle skew.
+Below we will aggregate the task level metrics at different levels 
+to do some analysis such as detecting possible shuffle skew.
 
 - Job + Stage level aggregated task metrics:
 
