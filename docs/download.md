@@ -54,7 +54,7 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 ### Release Notes
 New functionality and performance improvements for this release include:
 * Support collect_list and collect_set in group-by aggregation
-* Support stddev, percentile_approx
+* Support stddev, percentile_approx in group-by aggregation
 * RunningWindow operations on map
 * HashAggregate on struct and nested struct
 * Sorting on nested structs
