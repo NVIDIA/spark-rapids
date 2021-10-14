@@ -19,6 +19,15 @@ may have been resolved in the 1.22 release but this has not been tested yet with
 sudo snap install microk8s --classic --channel=1.20/stable
 ```
 
+## Permissions
+To avoid the need to use `sudo` when running `microk8s` commands, add the current user to the `microk8s` group and
+ensure that the user has access to files in the `~/.kube` folder.
+
+```bash
+sudo usermod -a -G microk8s $USER
+sudo chown -f -R $USER ~/.kube
+```
+
 ## Generate Kube config
 
 Backup any existing Kube configuration file and then generate a new kube config.
