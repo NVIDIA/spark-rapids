@@ -600,7 +600,7 @@ def test_columnar_pow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr('pow(a, b)'))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_least(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -615,7 +615,7 @@ def test_least(data_gen):
             lambda spark : gen_df(spark, gen).select(
                 f.least(*command_args)), conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_greatest(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))

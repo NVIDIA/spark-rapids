@@ -937,6 +937,8 @@ nonempty_struct_gens_sample = [all_basic_struct_gen,
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
 
 struct_gens_sample = nonempty_struct_gens_sample + [StructGen([])]
+struct_gens_sample_with_decimal128 = struct_gens_sample + [
+    StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(decimal_128_gens)])]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
         StringGen(), max_length=10)

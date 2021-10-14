@@ -713,10 +713,10 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
 
   def compareResults(
       sort: Boolean,
-      maxFloatDiff:Double,
+      floatEpsilon:Double,
       fromCpu: Array[Row],
       fromGpu: Array[Row]): Unit = {
-    val relaxedFloatDisclaimer = if (maxFloatDiff > 0) {
+    val relaxedFloatDisclaimer = if (floatEpsilon > 0) {
       "(relaxed float comparison)"
     } else {
       ""
@@ -724,7 +724,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     if (sort) {
       val cpu = fromCpu.map(_.toSeq).sortWith(seqLt)
       val gpu = fromGpu.map(_.toSeq).sortWith(seqLt)
-      if (!compare(cpu, gpu, maxFloatDiff)) {
+      if (!compare(cpu, gpu, floatEpsilon)) {
         fail(
           s"""
              |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
@@ -735,7 +735,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
             stripMargin)
       }
     } else {
-      if (!compare(fromCpu, fromGpu, maxFloatDiff)) {
+      if (!compare(fromCpu, fromGpu, floatEpsilon)) {
         fail(
           s"""
              |Running on the GPU and on the CPU did not match $relaxedFloatDisclaimer
