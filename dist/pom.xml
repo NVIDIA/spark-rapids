@@ -128,6 +128,15 @@
                                     <outputDirectory>${project.build.directory}/deps</outputDirectory>
                                 </artifactItem>
                                 <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark320</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
                                   <groupId>com.nvidia</groupId>
                                   <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
                                   <classifier>spark301db</classifier>
@@ -285,6 +294,18 @@
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
@@ -427,6 +448,15 @@
                                     <overWrite>false</overWrite>
                                     <outputDirectory>${project.build.directory}/deps</outputDirectory>
                                 </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark320</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
                             </artifactItems>
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
@@ -563,6 +593,18 @@
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
                                         >
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
@@ -1586,6 +1628,10 @@
                                                 dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
                                         >
                                         </unzip>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"
@@ -1684,6 +1730,10 @@
                                                 dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
                                         >
                                         </unzip>
+                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
+                                              dir="${project.build.directory}"
+                                              failonerror="true"
+                                        />
                                         <jar
                                                 destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
                                                 basedir="${project.build.directory}/parallel-world"

@@ -17213,9 +17213,9 @@ dates or timestamps, or for a lack of type coercion support.
 <td> </td>
 <td><b>NS</b></td>
 <td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types DECIMAL, BINARY, MAP, UDT</em></td>
 <td><b>NS</b></td>
-<td><b>NS</b></td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types DECIMAL, BINARY, MAP, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>

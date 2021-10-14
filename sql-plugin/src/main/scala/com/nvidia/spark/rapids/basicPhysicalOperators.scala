@@ -310,7 +310,10 @@ object GpuFilter extends Arm {
   }
 }
 
-case class GpuFilterExec(condition: Expression, child: SparkPlan)
+case class GpuFilterExec(
+    condition: Expression,
+    child: SparkPlan,
+    override val coalesceAfter: Boolean = true)
     extends ShimUnaryExecNode with GpuPredicateHelper with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -321,11 +324,6 @@ case class GpuFilterExec(condition: Expression, child: SparkPlan)
     case GpuIsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
     case _ => false
   }
-
-  /**
-   * Potentially a lot is removed.
-   */
-  override def coalesceAfter: Boolean = true
 
   // If one expression and its children are null intolerant, it is null intolerant.
   private def isNullIntolerant(expr: Expression): Boolean = expr match {
