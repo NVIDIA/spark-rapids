@@ -55,14 +55,14 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 New functionality and performance improvements for this release include:
 * Support collect_list and collect_set in group-by aggregation
 * Support stddev, percentile_approx
-* Support decimal in ORC reader
-* RunningWindow operations on Map
-* HashAggregate on Struct and nested Struct
-* Sorting on nested Struct  
-* Explode on Map, Array, Struct
-* Parquet writing of Map
-* Union-All on Map, Array and Struct of Map
-* ORC reader supports reading Map/Struct columns
+* RunningWindow operations on map
+* HashAggregate on struct and nested struct
+* Sorting on nested structs
+* Explode on map, array, struct
+* Union-all on map, array and struct of maps
+* Parquet writing of map
+* ORC reader supports reading map/struct columns
+* ORC reader support decimal64 
 * Spark Qualification Tool
   * Add conjunction and disjunction filters
   * Filtering specific configuration values
