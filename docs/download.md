@@ -53,11 +53,15 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* HashAggregate on struct and nested struct
-* Sorting on nested struct
 * Support collect_list and collect_set in group-by aggregation
-* Create non-shim specific version of ParquetCachedBatchSerializer
-* Support decimal in ORC reader  
+* Support stddev, percentile_approx
+* Support decimal in ORC reader
+* RunningWindow operations on Map
+* HashAggregate on Struct and nested Struct
+* Sorting on nested Struct  
+* Explode on Map, Array, Struct
+* Parquet writing of Map
+* Union-All on Map, Array and Struct of Map
 * ORC reader supports reading Map/Struct columns
 * Spark Qualification Tool
   * Add conjunction and disjunction filters
