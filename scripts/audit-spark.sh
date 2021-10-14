@@ -32,14 +32,16 @@ ABSOLUTE_PATH=$(cd $(dirname $0) && pwd)
 lastcommit=""
 basebranch="master"
 tag="branch-3.2"
+commonancestor=""
 REF=${REF:-"main"}
 REF=main
-while getopts v:b:t: flag
+while getopts v:b:t:c: flag
 do
   case "${flag}" in
       v) lastcommit=${OPTARG};;
       b) basebranch=${OPTARG};;
       t) tag=${OPTARG};;
+      c) commonancestor=${OPTARG};;
   esac
 done
 
@@ -81,13 +83,18 @@ else
     echo "file $lastcommit not found"
     cd ${SPARK_TREE}
 
-    ## Get all the commits from TOT branch-3.2 to 79a6e00b7621bb
-    git checkout $tag
-    git log --oneline HEAD...79a6e00b7621bb -- sql/core/src/main sql/catalyst/src/main  > previousVersion.log
+    # if common ancestor is not provided, then provide the default commit id.
+    if [ -z "$commonancestor" ]; then
+        commonancestor="79a6e00b7621bb"
+    fi
 
-    ## Get all the commits from TOT master to 79a6e00b7621bb
+    ## Get all the commits from TOT branch-3.2 to common ancestor
+    git checkout $tag
+    git log --oneline HEAD...$commonancestor -- sql/core/src/main sql/catalyst/src/main  > previousVersion.log
+
+    ## Get all the commits from TOT master to common ancestor
     git checkout $basebranch
-    git log --oneline HEAD...79a6e00b7621bb -- sql/core/src/main sql/catalyst/src/main  > currentVersion.log
+    git log --oneline HEAD...$commonancestor -- sql/core/src/main sql/catalyst/src/main  > currentVersion.log
 
     ## Below steps filter commit header messages, sorts and saves only uniq commits that needs to be audited in commits.to.audit.3.3 file
     cat previousVersion.log | awk '{$1 = "";print $0}' > previousVersion.filter.log
