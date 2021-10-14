@@ -21,8 +21,8 @@ from spark_session import with_cpu_session
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
 
-nested_gens = [ArrayGen(LongGen()),
-               StructGen([("a", LongGen())]),
+nested_gens = [ArrayGen(LongGen()), ArrayGen(decimal_gen_38_10),
+               StructGen([("a", LongGen()), ("b", decimal_gen_38_10)]),
                MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen())]
 # additional test for NonNull Array because of https://github.com/rapidsai/cudf/pull/8181
 non_nested_array_gens = [ArrayGen(sub_gen, nullable=nullable)
@@ -82,7 +82,7 @@ def test_concat_string():
                 f.concat(f.lit(''), f.col('b')),
                 f.concat(f.col('a'), f.lit(''))))
 
-@pytest.mark.parametrize('data_gen', all_gen + nested_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens_no_neg + nested_gens, ids=idfn)
 @pytest.mark.parametrize('size_of_null', ['true', 'false'], ids=idfn)
 def test_size_of_array(data_gen, size_of_null):
     gen = ArrayGen(data_gen)
