@@ -33,14 +33,14 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 more information.
 
 ### Step 1. Download the tools jar & Apache Spark 3 Distribution
-The Qualification and Profiling tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
+The Profiling tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, you can download the Spark distribution to any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.1/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#Optional:-Compiling-the-jars). 
 
 ### Step 2. How to Run the Profiling tool
-This tool parses the Spark CPU or GPU event log(s) and creates an output report.
+This tool extracts the Spark distribution if necessary and parses the Spark CPU or GPU event log(s) and creates an output report.
 Acceptable input event log paths are files or directories containing spark events logs
 in the local filesystem, HDFS, S3 or mixed. Please note, if processing a lot of event logs use combined or compare mode.
 Both these modes may need you to increase the java heap size using `-Xmx` option.
@@ -96,7 +96,7 @@ If running compare mode the output is put under a directory named `rapids_4_spar
 text file named `rapids_4_spark_tools_compare.log`.
 The output will go into your default filesystem, it supports local filesystem or HDFS.
 Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output
-so if you want to point to the local filesystem be sure to include `file:` in the path
+so if you want to point to the local filesystem be sure to include `file:` in the path.
 There are separate files that are generated under the same sub-directory when using the options to generate query
 visualizations or printing the SQL plans.
 Optionally if the `--csv` option is specified then it creates a csv file for each table for each application in the

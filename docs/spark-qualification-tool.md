@@ -17,7 +17,7 @@ This document covers below topics:
     * [Prerequisites](#Prerequisites)
     * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step-1.-Download-the-tools-jar-&-Apache-Spark-3-Distribution)
     * [Step 2: Run the Qualification tool](#Step-2.-Run-the-Qualification-tool)
-    * [Step 3: Interpreting the Qualification tool output](#Step-3:-How-to-interpret-the-Qualification-tool-output)
+* [Understanding the qualification tool output](#Understanding-the-Qualification-tool-Output)
 * [Qualification tool options](#Qualification-tool-options)
 * [Qualification tool score algorithm](#Qualification-tool-score-algorithm)
 * [How to compile the Qualification tool jar from the source](#Optional:-Compiling-the-jars)
@@ -37,14 +37,14 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 more information.
 
 ### Step 1. Download the tools jar & Apache Spark 3 Distribution
-The Qualification and Profiling tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
+The Qualification tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, you can download the Spark distribution to any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.1/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
 ### Step 2. Run the Qualification tool
 1. Event logs stored on a local machine:
-    - Extract the Spark distribution into a local directory.
+    - Extract the Spark distribution into a local directory if necessary.
     - Either set SPARK_HOME to point to that directory or just put the path inside of the classpath
        `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool.
 
@@ -62,7 +62,10 @@ Sample: java -cp rapids-4-spark-tools_2.12-21.10.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
 ```
 
-2. Event logs stored on a on-premises HDFS cluster:
+2. Event logs stored on an on-premises HDFS cluster:
+
+Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
+
 ```bash
 Usage: java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
@@ -71,7 +74,7 @@ Usage: java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:
 Note, on an HDFS cluster, the default filesystem is likely HDFS for both the input and output
 so if you want to point to the local filesystem be sure to include file: in the path.
 
-### Step 3: How to interpret the Qualification tool output
+## Understanding the Qualification tool Output
 After the above command is executed, the summary report goes to STDOUT and by default it outputs 2 files 
 under `./rapids_4_spark_qualification_output/` that contain the processed applications.
 The output will go into your default filesystem and it supports both local filesystem and HDFS. 
@@ -89,7 +92,7 @@ It outputs the following information on the terminal:
 2. Application duration
 3. SQL/DF duration 
 4. Problematic Duration, which indicates potential issues for acceleration.
-   Some of the potential issues include unsupported data formats such as Decimal 128-bit or User Defined Function (UDF) or any RDD/Dataset APIs. 
+   Some of the potential issues include unsupported data formats such as Decimal 128-bit or User Defined Function (UDF) or any Dataset APIs. 
 
 Note: the duration(s) reported are in milli-seconds.
 Sample output in text:
@@ -104,7 +107,8 @@ Sample output in text:
 In the above example, two application event logs were analyzed. “app-20210507174503-2538” is rated higher 
 than the “app-20210507174503-1704” because the score(in the csv output) for “app-20210507174503-2538”   
 is higher than  “app-20210507174503-1704”. Here the `Problematic Duration` is zero but the tool won't capture all UDFs 
-in the application. Some of the UDFs can be handled with additional steps. Please refer to [supported_ops.md](https://github.com/NVIDIA/spark-rapids/blob/branch-21.10/docs/supported_ops.md) for more details on UDF.
+in the application.
+Note: Some of the UDFs can be handled with additional steps. Please refer to [supported_ops.md](https://github.com/NVIDIA/spark-rapids/blob/branch-21.10/docs/supported_ops.md) for more details on UDF.
 For decimals, the tool tries to parse for decimal operations but it may not capture all of the decimal operations if they aren’t in the event logs.
 
 The second output is a CSV file that contains more information and can be used for further post processing.
@@ -117,21 +121,21 @@ job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.
 
 As you can see on the above sample csv output, we have more columns than the STDOUT summary. Here is a brief description of each of column that is in the CSV:
 
-1. App Name: Spark Application Name 
-2. App ID: Spark Application ID
-3. Score :  A score calculated based on SQL Dataframe Task Duration and gets negatively affected for any unsupported operators.Please refer to [Qualification tool score algorithm](#Qualification-tool-score-algorithm) for more details.
+1. App Name: Spark Application Name. 
+2. App ID: Spark Application ID.
+3. Score :  A score calculated based on SQL Dataframe Task Duration and gets negatively affected for any unsupported operators. Please refer to [Qualification tool score algorithm](#Qualification-tool-score-algorithm) for more details.
 4. Potential Problems : Some UDFs, some decimal operations and nested complex types.
-5. SQL DF Duration: Time duration that includes only SQL/DF
-6. SQL Dataframe Task Duration: Amount of time spent in tasks of SQL Dataframe operations
-7. App Duration: Total Application time
+5. SQL DF Duration: Time duration that includes only SQL/Dataframe queries.
+6. SQL Dataframe Task Duration: Amount of time spent in tasks of SQL Dataframe operations.
+7. App Duration: Total Application time.
 8. Executor CPU Time Percent: This is an estimate at how much time the tasks spent doing processing on the CPU vs waiting on IO. 
-   This is not always a good indicator because sometimes the IO that is encrypted and the CPU has to do work to decrypt it, so the environment you are running on needs to be taken into account
-9. App Duration Estimated: True or False indicates if we had to estimate the application duration. If we had to estimate it, the value will be `Ture` and
+   This is not always a good indicator because sometimes the IO that is encrypted and the CPU has to do work to decrypt it, so the environment you are running on needs to be taken into account.
+9. App Duration Estimated: True or False indicates if we had to estimate the application duration. If we had to estimate it, the value will be `True` and
    it means the event log was missing the application finished event so we will use the last job or sql execution time we find as the end time used to calculate the duration.
 10. SQL Duration with Potential Problems : Time duration of any SQL/DF operations that contains operations we consider potentially problematic. 
-11. SQL Ids with Failures: SQLs with failed jobs 
+11. SQL Ids with Failures: SQL Ids of queries with failed jobs.
 12. Read Score Percent: The value of the parameter `--read-score-percent` when the qualification tool was run. Default is 20 percent. 
-13. Read File Format Score: A score given based on whether the read file formats and types are supported
+13. Read File Format Score: A score given based on whether the read file formats and types are supported.
 14. Unsupported Read File Formats and Types: Looks at the Read Schema and reports the file formats along with types which may not be fully supported.
     Example: Parquet[decimal]. Note that this is based on the current version of the plugin and future versions may add support for more file formats and types.
 15. Unsupported Write Data Format: Reports the data format which we currently don’t support, i.e. if the result is written in JSON or CSV format.
@@ -283,13 +287,11 @@ Note: The “regular expression” used by -a option is based on [java.util.rege
 
 In the qualification tool’s output, all applications are ranked based on a “score”. 
 
-The score is based on the total time spent in tasks of SQL Dataframe operations.
+The score is based on the total time spent in tasks of SQL Dataframe operations. The tool also looks for read data formats and types that the plugin doesn't fully support and if it finds any,
+it will take away from the score. The parameter to control this negative impact of the score is  `-r, --read-score-percent` with the default value as 20(percent).
 
 The idea behind this algorithm is that the longer the total task time doing SQL Dataframe operations
-the higher the score is and the more likely the plugin will be able to help accelerate that application. 
-
-However, the tool also looks for read data formats and types that the plugin doesn't fully support and if it finds any,
-it will take away from the score. The parameter to control this negative impact of the score is  `-r, --read-score-percent` with the default value as 20(percent).
+the higher the score is and the more likely the plugin will be able to help accelerate that application.
 
 Note: The score does not guarantee there will be GPU acceleration and we are continuously improving the score algorithm to qualify the best queries for GPU acceleration.
 
