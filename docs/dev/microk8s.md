@@ -24,6 +24,7 @@ sudo snap install microk8s --classic --channel=1.20/stable
 Backup any existing Kube configuration file and then generate a new kube config.
 
 ```bash
+mkdir -p ~/.kube
 microk8s config > ~/.kube/config
 ```
 
