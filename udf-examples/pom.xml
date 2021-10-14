@@ -39,6 +39,7 @@
     <PER_THREAD_DEFAULT_STREAM>ON</PER_THREAD_DEFAULT_STREAM>
     <CPP_PARALLEL_LEVEL>10</CPP_PARALLEL_LEVEL>
     <CUDF_ENABLE_ARROW_S3>OFF</CUDF_ENABLE_ARROW_S3>
+    <target.classifier/>
   </properties>
 
   <dependencies>
@@ -65,7 +66,6 @@
   </dependencies>
 
   <build>
-    <directory>${project.basedir}/target</directory>
     <resources>
       <resource>
         <!-- Include the properties file to provide the build information. -->

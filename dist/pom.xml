@@ -29,6 +29,10 @@
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
     <version>21.12.0-SNAPSHOT</version>
 
+    <properties>
+        <target.classifier/>
+    </properties>
+
     <profiles>
         <profile>
             <id>noSnapshotsWithDatabricks</id>
@@ -1774,7 +1778,6 @@
     </profiles>
 
     <build>
-        <directory>${project.basedir}/target</directory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

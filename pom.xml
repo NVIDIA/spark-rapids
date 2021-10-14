@@ -1098,7 +1098,13 @@
                             <target>
                                 <dirset dir="${project.basedir}" includes="**/target" id="target.dirs.for.clean"/>
                                 <pathconvert property="target.dirs.str" pathsep=" ">
-                                    <dirset refid="target.dirs.for.clean"/>
+                                    <sort>
+                                        <dirset refid="target.dirs.for.clean"/>
+                                        <!-- remove subdirs first if we have something like target/somedir/target -->
+                                        <reverse xmlns="antlib:org.apache.tools.ant.types.resources.comparators">
+                                            <name/>
+                                        </reverse>
+                                    </sort>
                                 </pathconvert>
                                 <echo>Cleaning build directories of all modules ${target.dirs.str}</echo>
                                 <!-- workaround ant delete does not work with dirset -->
