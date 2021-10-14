@@ -121,6 +121,8 @@ total task time in SQL Dataframe operations).
 
 Each application(event log) could have multiple SQL queries. If a SQL's plan has Dataset API inside such as keyword
  `$Lambda` or `.apply`, that SQL query is categorized as a DataSet SQL query, otherwise it is a Dataframe SQL query.
+If there are RDD to Dataset/Dataframe conversion then it would have `SerializeFromObject` in it's SQL plan. These
+time taken by these operations are not included in total task time as the score is based on only pure Dataframe SQL.
 
 Note: the duration(s) reported are in milli-seconds.
 
