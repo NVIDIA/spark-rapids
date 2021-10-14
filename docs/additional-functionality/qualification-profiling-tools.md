@@ -119,10 +119,9 @@ likely the plugin will be able to help accelerate that application. The tool als
 that the plugin doesn't support and if it finds any not supported it will take away from the score (based on the
 total task time in SQL Dataframe operations).
 
-Each application(event log) could have multiple SQL queries. If a SQL's plan has Dataset API inside such as keyword
- `$Lambda` or `.apply`, that SQL query is categorized as a DataSet SQL query, otherwise it is a Dataframe SQL query.
-If there are RDD to Dataset/Dataframe conversion then it would have `SerializeFromObject` in it's SQL plan. These
-time taken by these operations are not included in total task time as the score is based on only pure Dataframe SQL.
+Each application(event log) could have multiple SQL queries. If a SQL's plan has a Dataset API or RDD call 
+inside of it, that SQL query is not categorized as a Dataframe SQL query. We are unable to determine how much
+of that query is made up of Dataset or RDD calls so the entire query task time is not included in the score.
 
 Note: the duration(s) reported are in milli-seconds.
 

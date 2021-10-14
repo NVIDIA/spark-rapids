@@ -324,11 +324,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
   }
 
-  test("test rdd to dataframe/dataset conversion") {
-    val logFiles = Array(s"$logDir/rdd_to_dataframe_eventlog")
-    runQualificationTest(logFiles, "rdd_to_dataframe_expectation.csv")
-  }
-
   // event log rolling creates files under a directory
   test("test event log rolling") {
     val logFiles = Array(s"$logDir/eventlog_v2_local-1623876083964")
