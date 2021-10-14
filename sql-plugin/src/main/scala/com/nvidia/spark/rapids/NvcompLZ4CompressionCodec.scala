@@ -33,7 +33,7 @@ class NvcompLZ4CompressionCodec(codecConfigs: TableCompressionCodecConfig)
       stream: Cuda.Stream): CompressedTable = {
     val tableBuffer = contigTable.getBuffer
     val (compressedSize, oversizedBuffer) =
-      NvcompLZ4CompressionCodec.compress(tableBuffer, codecConfigs.lz4ChunkSize, stream)
+      NvcompLZ4CompressionCodec.compress(tableBuffer, codecConfigs, stream)
     closeOnExcept(oversizedBuffer) { oversizedBuffer =>
       require(compressedSize <= oversizedBuffer.getLength, "compressed buffer overrun")
       val tableMeta = MetaUtils.buildTableMeta(
@@ -77,21 +77,21 @@ object NvcompLZ4CompressionCodec extends Arm {
   /**
    * Compress a data buffer.
    * @param input buffer containing data to compress
-   * @param lz4ChunkSize chunk size to use for compression
+   * @param codecConfigs codec specific configuration options
    * @param stream CUDA stream to use
    * @return the size of the compressed data in bytes and the (probably oversized) output buffer
    */
   def compress(
       input: DeviceMemoryBuffer,
-      lz4ChunkSize: Int,
+      codecConfigs: TableCompressionCodecConfig,
       stream: Cuda.Stream): (Long, DeviceMemoryBuffer) = {
-    val lz4Config = LZ4Compressor.configure(lz4ChunkSize, input.getLength())
+    val lz4Config = LZ4Compressor.configure(codecConfigs.lz4ChunkSize, input.getLength())
     withResource(DeviceMemoryBuffer.allocate(lz4Config.getTempBytes)) { tempBuffer =>
       var compressedSize: Long = 0L
       val outputSize = lz4Config.getMaxCompressedBytes
       closeOnExcept(DeviceMemoryBuffer.allocate(outputSize)) { outputBuffer =>
-        compressedSize = LZ4Compressor.compress(input, CompressionType.CHAR, lz4ChunkSize,
-          tempBuffer, outputBuffer, stream)
+        compressedSize = LZ4Compressor.compress(input, CompressionType.CHAR,
+          codecConfigs.lz4ChunkSize, tempBuffer, outputBuffer, stream)
         require(compressedSize <= outputBuffer.getLength, "compressed buffer overrun")
         (compressedSize, outputBuffer)
       }
