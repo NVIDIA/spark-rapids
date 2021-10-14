@@ -852,7 +852,8 @@ object GpuOverrides extends Logging {
     (OrcFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64 +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
-      cudfWrite = TypeSig.commonCudfTypes,
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          TypeSig.STRUCT).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
