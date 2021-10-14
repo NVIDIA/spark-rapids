@@ -970,7 +970,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     dataType: DataType,
     scale: Int,
     precision: Int = ai.rapids.cudf.DType.DECIMAL128_MAX_PRECISION,
-    maxFloatDiff: Double = 1e-9,
+    floatEpsilon: Double = 1e-9,
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
     ansiEnabled: Boolean = false,
@@ -1014,7 +1014,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
             }
             fromCpu.map(r => Row(fetchFromRow(r))) -> fromGpu.map(r => Row(fetchFromRow(r)))
         }
-        compareResults(sort = false, maxFloatDiff, cpuResult, gpuResult)
+        compareResults(sort = false, floatEpsilon, cpuResult, gpuResult)
       } else {
         withGpuSparkSession((ss: SparkSession) => execFun(createDF(ss)).collect(), conf)
       }

@@ -20,8 +20,6 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
 
-nested_scalar_mark = pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/1459")
-
 # 4 level nested struct
 # each level has a different number of children to avoid a bug in spark < 3.1
 nested_struct = StructGen([
@@ -59,7 +57,7 @@ struct_of_maps = StructGen([['child0', BooleanGen()]] + [
     ['child%d' % (i + 1), gen] for i, gen in enumerate(map_gens)])
 
 @pytest.mark.parametrize('data_gen', [pytest.param((StructGen([['child0', DecimalGen(7, 2)]]),
-                                                    StructGen([['child1', IntegerGen()]])), marks=nested_scalar_mark),
+                                                    StructGen([['child1', IntegerGen()]]))),
                                       # left_struct(child0 = 4 level nested struct, child1 = Int)
                                       # right_struct(child0 = 4 level nested struct, child1 = missing)
                                       (StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
@@ -110,8 +108,8 @@ def test_unionAll(data_gen):
 
 @pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
-                                      pytest.param(all_basic_struct_gen, marks=nested_scalar_mark),
-                                      pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]]), marks=nested_scalar_mark),
+                                      pytest.param(all_basic_struct_gen),
+                                      pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]])),
                                       nested_struct,
                                       StructGen([['child0', StructGen([['child0', StructGen([['child0', StructGen([['child0',
                                                             StructGen([['child0', DecimalGen(7, 2)]])]])]])]])], ['child1', IntegerGen()]]),
