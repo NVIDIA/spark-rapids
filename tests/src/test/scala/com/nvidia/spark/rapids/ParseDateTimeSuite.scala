@@ -281,7 +281,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   // the output to find which ones failed
   override def compareResults(
       sort: Boolean,
-      maxFloatDiff: Double,
+      floatEpsilon: Double,
       fromCpu: Array[Row],
       fromGpu: Array[Row]): Unit = {
     assert(fromCpu.length === fromGpu.length)

@@ -3194,13 +3194,16 @@ object GpuOverrides extends Logging {
       ExprChecks.groupByOnly(
         // note that output can be single number or array depending on whether percentiles param
         // is a single number or an array
-        TypeSig.gpuNumeric + TypeSig.ARRAY.nested(TypeSig.gpuNumeric),
+        TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL +
+            TypeSig.ARRAY.nested(TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL),
         TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP + TypeSig.ARRAY.nested(
           TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
         Seq(
-          ParamCheck("input", TypeSig.gpuNumeric, TypeSig.numeric + TypeSig.DATE +
-            TypeSig.TIMESTAMP),
-          ParamCheck("percentage", TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
+          ParamCheck("input",
+            TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+            TypeSig.numeric + TypeSig.DATE + TypeSig.TIMESTAMP),
+          ParamCheck("percentage",
+            TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE),
             TypeSig.DOUBLE + TypeSig.ARRAY.nested(TypeSig.DOUBLE)),
           ParamCheck("accuracy", TypeSig.INT, TypeSig.INT))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[ApproximatePercentile](c, conf, p, r) {
@@ -3601,7 +3604,7 @@ object GpuOverrides extends Logging {
     exec[ObjectHashAggregateExec](
       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
@@ -3613,7 +3616,7 @@ object GpuOverrides extends Logging {
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")

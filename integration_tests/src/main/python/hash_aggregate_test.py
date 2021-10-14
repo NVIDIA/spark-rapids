@@ -1201,7 +1201,7 @@ def test_hash_groupby_approx_percentile_long():
 
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_long_scalar():
+def test_hash_groupby_approx_percentile_long_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
@@ -1217,10 +1217,52 @@ def test_hash_groupby_approx_percentile_double():
 
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_double_scalar():
+def test_hash_groupby_approx_percentile_double_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
+        0.05)
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal32():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
+                                     ('v', DecimalGen(6, 2))]),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal32_single():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
+                                     ('v', DecimalGen(6, 2))]),
+        0.05)
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal64():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
+                                     ('v', DecimalGen(10, 9))]),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal64_single():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
+                                     ('v', DecimalGen(10, 9))]),
+        0.05)
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal128():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
+                                     ('v', DecimalGen(19, 18))]),
+        [0.05, 0.25, 0.5, 0.75, 0.95])
+
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_decimal128_single():
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
+                                     ('v', DecimalGen(19, 18))]),
         0.05)
 
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
