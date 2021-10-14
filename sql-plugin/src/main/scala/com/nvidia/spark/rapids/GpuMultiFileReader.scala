@@ -83,6 +83,7 @@ trait MultiFileReaderFunctions extends Arm {
     }
   }
 
+  @scala.annotation.nowarn
   protected def fileSystemBytesRead(): Long = {
     FileSystem.getAllStatistics.asScala.map(_.getThreadStatistics.getBytesRead).sum
   }

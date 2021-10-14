@@ -23,6 +23,7 @@ import scala.language.implicitConversions
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuParquetFileFormat, ShimLoader}
+import org.apache.commons.lang3.reflect.ConstructorUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -473,7 +474,7 @@ object GpuDataSource extends Logging {
     // [[FileDataSourceV2]] will still be used if we call the load()/save() method in
     // [[DataFrameReader]]/[[DataFrameWriter]], since they use method `lookupDataSource`
     // instead of `providingClass`.
-    val fallbackCls = cls.newInstance() match {
+    val fallbackCls = ConstructorUtils.invokeConstructor(cls) match {
       case f: FileDataSourceV2 => f.fallbackFileFormat
       case _ => cls
     }

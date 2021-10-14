@@ -24,7 +24,6 @@ import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
 import org.apache.parquet.hadoop.codec.CodecConfig
 import org.apache.parquet.hadoop.util.ContextUtil
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
@@ -35,6 +34,8 @@ import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, MapType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import scala.reflect.internal.annotations
 
 object GpuParquetFileFormat {
   def tagGpuSupport(
@@ -205,6 +206,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
    * here by setting the output committer class in the conf of
    * spark.sql.sources.outputCommitterClass.
    */
+  @scala.annotation.nowarn
   override def prepareWrite(
       sparkSession: SparkSession,
       job: Job,

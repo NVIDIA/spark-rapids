@@ -1474,6 +1474,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
  */
 private[rapids] class ParquetOutputFileFormat {
 
+  @scala.annotation.nowarn
   def getRecordWriter(output: OutputFile, conf: Configuration): RecordWriter[Void, InternalRow] = {
     import ParquetOutputFormat._
 
