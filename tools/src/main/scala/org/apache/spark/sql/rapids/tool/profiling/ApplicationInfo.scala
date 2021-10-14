@@ -271,7 +271,7 @@ class ApplicationInfo(
       val allnodes = planGraph.allNodes
       for (node <- allnodes) {
         checkGraphNodeForBatchScan(sqlID, node)
-        if (isDataSetPlan(node.desc)) {
+        if (isDataSetOrRDDPlan(node.desc)) {
           sqlIdToInfo.get(sqlID).foreach { sql =>
             sql.hasDataset = true
           }
