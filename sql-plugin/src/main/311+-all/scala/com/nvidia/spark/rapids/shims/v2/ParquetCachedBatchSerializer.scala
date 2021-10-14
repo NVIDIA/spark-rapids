@@ -435,8 +435,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
       table: Table,
       schema: StructType): ParquetBufferConsumer = {
     val buffer = new ParquetBufferConsumer(table.getRowCount.toInt)
-    val opts = GpuParquetFileFormat
-        .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
+    val opts = SchemaUtils
+        .writerOptionsFromSchema(ParquetWriterOptions.builder(), schema, writeInt96 = false)
         .withStatisticsFrequency(StatisticsFrequency.ROWGROUP).build()
     withResource(Table.writeParquetChunked(opts, buffer)) { writer =>
       writer.write(table)

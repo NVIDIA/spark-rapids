@@ -20,10 +20,24 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
-orc_write_gens_list = [
-        [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-            string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-            TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))],
+orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+        string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+        TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
+
+orc_write_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_write_basic_gens)])
+
+orc_write_struct_gens_sample = [orc_write_basic_struct_gen,
+    StructGen([['child0', byte_gen], ['child1', orc_write_basic_struct_gen]]),
+    StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_gens] + [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+    ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+orc_write_gens_list = [orc_write_basic_gens,
+        orc_write_struct_gens_sample,
+        orc_write_array_gens_sample,
         pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/139')),
         pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/140'))]
 
