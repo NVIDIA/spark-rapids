@@ -1673,7 +1673,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
 
-  lazy val  shuffleCompressionLz4ChunkSize: Int = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
+  lazy val shuffleCompressionLz4ChunkSize: Int = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 

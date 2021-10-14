@@ -77,6 +77,7 @@ object NvcompLZ4CompressionCodec extends Arm {
   /**
    * Compress a data buffer.
    * @param input buffer containing data to compress
+   * @param lz4ChunkSize chunk size to use for compression
    * @param stream CUDA stream to use
    * @return the size of the compressed data in bytes and the (probably oversized) output buffer
    */
@@ -123,12 +124,11 @@ object NvcompLZ4CompressionCodec extends Arm {
 }
 
 class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long,
-                                 codecConfigs: TableCompressionCodecConfig, stream: Cuda.Stream)
+    codecConfigs: TableCompressionCodecConfig, stream: Cuda.Stream)
     extends BatchedTableCompressor(maxBatchMemorySize, stream) {
   override protected def compress(
       tables: Array[ContiguousTable],
       stream: Cuda.Stream): Array[CompressedTable] = {
-    // TODO: what intermediate size should be used?
     val batchCompressor = new BatchedLZ4Compressor(codecConfigs.lz4ChunkSize,
       maxBatchMemorySize)
     val inputBuffers: Array[BaseDeviceMemoryBuffer] = tables.map { table =>

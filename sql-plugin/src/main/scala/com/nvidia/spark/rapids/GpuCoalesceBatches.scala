@@ -29,7 +29,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.types.{DataType, NullType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
