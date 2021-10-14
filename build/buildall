@@ -17,40 +17,93 @@
 
 set -ex
 
-# Install all the versions we support
+DIST_PROFILE=${DIST_PROFILE:-"minimumFeatureVersionMix"}
 
-# First loop over all supported versions except for 301 skipping expensive plugins that
+case $DIST_PROFILE in
+
+  snapshots)
+    SPARK_SHIM_VERSIONS=(
+      301
+      302
+      303
+      304
+      311
+      311cdh
+      312
+      313
+      320
+    )
+    ;;
+
+  noSnapshots)
+    SPARK_SHIM_VERSIONS=(
+      301
+      302
+      303
+      311
+      311cdh
+      312
+      320
+    )
+    ;;
+
+  minimumFeatureVersionMix)
+    SPARK_SHIM_VERSIONS=(
+      302
+      311cdh
+      312
+      320
+    )
+    ;;
+
+  *)
+    echo "ERROR: Supported profiles are: snapshots, noSnapshots, minimumFeatureVersionMix"
+    exit 1
+
+esac
+
+# First element in SPARK_SHIM_VERSIONS to do most of the checks
+BASE_VER=${SPARK_SHIM_VERSIONS[0]}
+
+BUILD_PARALLEL=${BUILD_PARALLEL:-4}
+
+# clean once across all modules
+mvn clean
+
+echo Building a combined dist jar with Shims for "$SHIMS_CSV" ...
+
+build_single_shim() {
+  set -x
+  BUILD_VER=$1
+  SKIP_CHECKS=$( [[ "$BUILD_VER" == "$BASE_VER" ]] && echo false || echo true )
+
+  mvn -U install \
+      -DskipTests \
+      -Dbuildver="$BUILD_VER" \
+      -Drat.skip="$SKIP_CHECKS" \
+      -Dmaven.javadoc.skip="$SKIP_CHECKS" \
+      -Dskip="$SKIP_CHECKS" \
+      -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
+      -pl aggregator -am || exit 255
+}
+
+export -f build_single_shim
+
+
+# Install all the versions for DIST_PROFILE
+
+# First loop over except for SPARK_SHIM_VERSIONS last skipping expensive plugins that
 # - either deferred to 301 because the check is identical in all shim profiles such as scalastyle
 # - or deferred to 301 because we currently don't require it per shim such as javadoc generation
 # - or there is a dedicated step to run against a particular shim jar such as unit tests, in
 #   the near future we will run unit tests against a combined multi-shim jar to catch classloading
 #   regressions even before pytest-based integration_tests
 #
-SPARK_SHIM_VERSIONS="
-  302
-  303
-  304
-  311
-  311cdh
-  312
-  313
-  320
-"
 
-BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 time (
-echo -n "$SPARK_SHIM_VERSIONS" | xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
-  bash -c "
-  mvn -U clean install \
-    -Dbuildver=% \
-    -Drat.skip=true \
-    -DskipTests \
-    -Dmaven.javadoc.skip=true \
-    -Dskip \
-    -Dmaven.scalastyle.skip=true \
-    -pl aggregator -am || exit 255
-    "
-)
+  printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
+    bash -c 'build_single_shim "$@"' _ %
 
-# install 301 skipping only tests
-mvn -U -Dbuildver=301 clean install -DskipTests -Psnapshots
+  echo "Resuming from dist build only using $BASE_VER"
+  mvn -U -Dbuildver="$BASE_VER" install --resume-from dist -DskipTests -P "$DIST_PROFILE"
+)
