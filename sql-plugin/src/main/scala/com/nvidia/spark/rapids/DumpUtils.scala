@@ -21,11 +21,8 @@ import java.util.Random
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{
-  ColumnView, CompressionType, DType, HostBufferConsumer, HostMemoryBuffer,
-  ParquetColumnWriterOptions, ParquetWriterOptions, Table, TableWriter
-}
-import ai.rapids.cudf.ParquetColumnWriterOptions.{listBuilder, structBuilder, NestedBuilder}
+import ai.rapids.cudf._
+import ai.rapids.cudf.ColumnWriterOptions._
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -144,8 +141,8 @@ private class ColumnIndex() {
 object ParquetDumper extends Arm {
   val COMPRESS_TYPE = CompressionType.SNAPPY
 
-  def parquetWriterOptionsFromTable[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions](
-      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
+  def parquetWriterOptionsFromTable[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
+      builder: ColumnWriterOptions.NestedBuilder[T, V],
       table: Table): T = {
 
     val cIndex = new ColumnIndex
@@ -159,8 +156,8 @@ object ParquetDumper extends Arm {
   }
 
   private def parquetWriterOptionsFromColumnView[T <: NestedBuilder[_, _],
-    V <: ParquetColumnWriterOptions](
-      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
+    V <: ColumnWriterOptions](
+      builder: ColumnWriterOptions.NestedBuilder[T, V],
       cv: ColumnView,
       cIndex: ColumnIndex,
       toClose: ArrayBuffer[ColumnView]): T = {

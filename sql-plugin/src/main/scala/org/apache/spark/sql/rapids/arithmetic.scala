@@ -246,7 +246,6 @@ case class GpuMultiply(
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    import DecimalUtil._
     (left.dataType, right.dataType) match {
       case (l: DecimalType, r: DecimalType)
         if !DecimalType.is32BitDecimalType(dataType) &&
