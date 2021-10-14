@@ -287,8 +287,10 @@ AdaptiveSparkPlan isFinalPlan=false
 
 ### Are cache and persist supported?
 
-Yes cache and persist are supported, the cache is GPU accelerated but still stored on the host memory. 
-Please refer to [RAPIDS Cache Serializer](./additional-functionality/cache-serializer.md) for more details.
+Yes cache and persist are supported, the cache is GPU accelerated 
+but still stored on the host memory. 
+Please refer to [RAPIDS Cache Serializer](./additional-functionality/cache-serializer.md) 
+for more details.
 
 ### Can I cache data into GPU memory?
 

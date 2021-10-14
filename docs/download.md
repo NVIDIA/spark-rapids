@@ -53,8 +53,21 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* TODO1
-* TODO2
+* HashAggregate on struct and nested struct
+* Sorting on nested struct
+* Support collect_list and collect_set in group-by aggregation
+* Create non-shim specific version of ParquetCachedBatchSerializer
+* Support decimal in ORC reader  
+* ORC reader supports reading Map/Struct columns
+* Spark Qualification Tool
+  * Add conjunction and disjunction filters
+  * Filtering specific configuration values
+  * Filtering user name
+  * Reporting nested data types
+  * Reporting write data formats
+* Spark Profiling Tool
+  * Generating structured output format
+  * Improved profiling tool performance
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
