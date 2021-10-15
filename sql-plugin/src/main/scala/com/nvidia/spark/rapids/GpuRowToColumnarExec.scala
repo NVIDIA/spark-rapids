@@ -778,8 +778,8 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |
          |    int dataOffset = 0;
          |    int currentRow = 0;
+         |    int offsetIndex = 0;
          |
-         |    offsetsBuffer.setInt(0, dataOffset);
          |    // If we are here we have at least one row to process, so don't bother checking yet
          |    boolean done = false;
          |    while (!done) {
@@ -791,6 +791,8 @@ object GeneratedUnsafeRowToCudfRowIterator extends Logging {
          |        row = (UnsafeRow)input.next();
          |      }
          |      int numBytesUsedByRow = copyInto(row, dataBaseAddress + dataOffset, endDataAddress);
+         |      offsetsBuffer.setInt(offsetIndex, dataOffset);
+         |      offsetIndex += 4;
          |      if (numBytesUsedByRow < 0) {
          |        pending = row;
          |        done = true;
