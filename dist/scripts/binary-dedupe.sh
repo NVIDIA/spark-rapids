@@ -81,7 +81,7 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 # and count the number of distinct checksums. There are two representative cases
 # 1) The class is contributed to the unshimmed location via the unshimmed-from-each-spark3xx list. These are classes
 #    carrying the shim classifier in their package name such as
-#    com.nvidia.spark.rapids.spark312.RapidsShuffleManager. They are by unique by construction,
+#    com.nvidia.spark.rapids.spark312.RapidsShuffleManager. They are unique by construction,
 #    and will have zero copies in any non-spark312 shims. Although such classes are currently excluded from
 #    being copied to the /spark312 Parallel World we keep the algorithm below general without assuming this.
 #
