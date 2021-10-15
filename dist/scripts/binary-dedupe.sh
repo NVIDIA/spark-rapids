@@ -25,10 +25,10 @@ set -ex
 BASH="bash --norc --noprofile -c"
 case "$OSTYPE" in
   darwin*)
-    export SHASUM=shasum
+    export SHASUM="shasum -b"
     ;;
   *)
-    export SHASUM=sha1sum
+    export SHASUM="sha1sum -b"
     ;;
 esac
 
@@ -51,7 +51,7 @@ export SPARK3XX_COMMON_DIR="$PWD/spark3xx-common"
 # - put the path starting with /spark3xy back together for the final list
 echo "Retrieving class files hashing to a single value"
 find . -path './parallel-world/spark*' -type f -name '*class' | \
-  xargs -n 100 -I% $BASH "$SHASUM"' -b "$@"' _ % | \
+  xargs -I% $BASH "$SHASUM"' "$@"' _ % | \
   awk -F/ '$1=$1' | \
   awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | tr -s ' ' | \
   sort -k3 -k2,2 -u | uniq -f 2 -c | grep '^\s\+1 .*' | \
@@ -102,7 +102,7 @@ touch "$DELETE_DUPLICATES_TXT"
 echo "Retaining a single copy of spark3xx-common classes"
 # https://stackoverflow.com/questions/11003418/calling-shell-functions-with-xargs
 < "$SPARK3XX_COMMON_TXT" xargs -n 1 -I% $BASH 'retain_single_copy "$@"' _ %
-< "$DELETE_DUPLICATES_TXT" xargs -n 100 -I% $BASH 'rm "$@"' _ %
+< "$DELETE_DUPLICATES_TXT" xargs -I% $BASH 'rm "$@"' _ %
 
 mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
@@ -143,7 +143,7 @@ verify_same_sha_for_unshimmed() {
   set -e
   class_file="$1"
   DISTINCT_COPIES=$(find './parallel-world' -path "./*/$class_file" | \
-      xargs "$SHASUM" -b | cut -d' ' -f 1 | sort -u | wc -l)
+      xargs -I% $BASH "$SHASUM"'  "$@"' _ % | cut -d' ' -f 1 | sort -u | wc -l)
 
   ((DISTINCT_COPIES == 1)) || {
     echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";
@@ -157,4 +157,4 @@ export -f verify_same_sha_for_unshimmed
 # TODO rework with low priority, only a few classes.
 echo Removing duplicates of unshimmed classes
 < "$UNSHIMMED_LIST_TXT" xargs -n 1 -I% \
-  find . -path './parallel-world/spark*/%' | xargs -n 1000 rm || exit 255
+  find . -path './parallel-world/spark*/%' | xargs -I% $BASH 'rm "$@"' _ % || exit 255
