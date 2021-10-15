@@ -418,7 +418,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test decimal generate udf same") {
     TrampolineUtil.withTempDir { outpath =>
-
       TrampolineUtil.withTempDir { eventLogDir =>
         val tmpParquet = s"$outpath/decparquet"
         createDecFile(sparkSession, tmpParquet)
@@ -568,8 +567,28 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val detailedOut = qualApp.getDetailed()
       assert(sumOut.nonEmpty)
       assert(detailedOut.nonEmpty)
-      println(sumOut)
-      println(detailedOut)
+
+      val csvSumOut = qualApp.getSummary(",", false)
+      val rowsSumOut = csvSumOut.split("\n")
+      assert(rowsSumOut.size == 2)
+      val headers = rowsSumOut(0).split(",")
+      val values = rowsSumOut(1).split(",")
+      assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+      assert(values.size == headers.size)
+      // 2 should be the SQL DF Duration
+      assert(headers(2).contains("SQL DF"))
+      assert(values(2).toInt > 0)
+      val csvDetailedOut = qualApp.getDetailed(",", false)
+      val rowsDetailedOut = csvDetailedOut.split("\n")
+      assert(rowsDetailedOut.size == 2)
+      val headersDetailed = rowsDetailedOut(0).split(",")
+      val valuesDetailed = rowsDetailedOut(1).split(",")
+      assert(headersDetailed.size == QualOutputWriter
+        .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats().get), false).keys.size)
+      assert(values.size == headers.size)
+      // 2 should be the Score
+      assert(headers(2).contains("Score"))
+      assert(values(2).toInt > 0)
     }
   }
 }
