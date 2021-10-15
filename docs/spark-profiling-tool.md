@@ -1,7 +1,6 @@
 ---
 layout: page
 title: Spark Profiling tool
-parent: Additional Functionality
 nav_order: 8
 ---
 # Spark Profiling tool
