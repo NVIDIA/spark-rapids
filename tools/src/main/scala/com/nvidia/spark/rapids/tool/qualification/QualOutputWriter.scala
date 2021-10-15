@@ -267,7 +267,7 @@ object QualOutputWriter {
     val readFileFormatsNotSupported =
       stringIfempty(replaceDelimiter(appInfo.readFileFormatAndTypesNotSupported, delimiter))
     val dataWriteFormat = stringIfempty(replaceDelimiter(appInfo.writeDataFormat, delimiter))
-    val potentialProbs = stringIfempty(replaceDelimiter(appInfo.potentialProblems))
+    val potentialProbs = stringIfempty(replaceDelimiter(appInfo.potentialProblems, delimiter))
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),

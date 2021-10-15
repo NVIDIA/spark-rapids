@@ -619,8 +619,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         // 2 should be the SQL DF Duration
         assert(headers(2).contains("SQL DF"))
         assert(values(2).toInt > 0)
-        val detailedOUt = qualApp.getDetailed(":", prettyPrint = false, reportReadSchema = true)
-        val rowsDetailedOut = detailedOUt.split("\n")
+        val detailedOut = qualApp.getDetailed(":", prettyPrint = false, reportReadSchema = true)
+        val rowsDetailedOut = detailedOut.split("\n")
         assert(rowsDetailedOut.size == 2)
         val headersDetailed = rowsDetailedOut(0).split(":")
         val valuesDetailed = rowsDetailedOut(1).split(":")
