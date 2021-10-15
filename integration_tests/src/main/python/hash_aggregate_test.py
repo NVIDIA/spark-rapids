@@ -1124,60 +1124,74 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_long_repeated_keys():
+def test_hash_groupby_approx_percentile_byte(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', ByteGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
+
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', ByteGen())], length=100),
+        0.5, conf)
+
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@ignore_order(local=True)
+def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', LongRangeGen())], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_byte():
-    compare_percentile_approx(
-        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', ByteGen())], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
-
-@ignore_order(local=True)
-def test_hash_groupby_approx_percentile_byte_scalar():
-    compare_percentile_approx(
-        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
-                                     ('v', ByteGen())], length=100),
-        0.5)
-
-@ignore_order(local=True)
-def test_hash_groupby_approx_percentile_long():
+def test_hash_groupby_approx_percentile_long(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_long_scalar():
+def test_hash_groupby_approx_percentile_long_scalar(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
-        0.5)
+        0.5, conf)
 
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_double():
+def test_hash_groupby_approx_percentile_double(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
-def test_hash_groupby_approx_percentile_double_scalar():
+def test_hash_groupby_approx_percentile_double_scalar(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
-        0.05)
+        0.05, conf)
 
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
 # compute approximate percentiles on CPU and GPU and assert that the GPU numbers are accurate within some percentage
 # of the CPU numbers
-def compare_percentile_approx(df_fun, percentiles):
+def compare_percentile_approx(df_fun, percentiles, conf):
 
     # create SQL statements for exact and approx percentiles
     p_exact_sql = create_percentile_sql("percentile", percentiles)
