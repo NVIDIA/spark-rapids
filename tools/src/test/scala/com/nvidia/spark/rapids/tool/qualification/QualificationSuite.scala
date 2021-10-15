@@ -549,46 +549,79 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("running qualification app") {
-    TrampolineUtil.withTempDir { eventLogDir =>
+  test("running qualification app join") {
+    val qualApp = new RunningQualificationApp()
+    ToolTestUtils.runAndCollect("streaming") { spark =>
+      val listener = qualApp.getEventListener
+      spark.sparkContext.addSparkListener(listener)
+      import spark.implicits._
+      val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+      testData.createOrReplaceTempView("t1")
+      testData.createOrReplaceTempView("t2")
+      spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
+        "FROM t1 JOIN t2 ON t1.a = t2.a) AS t " +
+        "GROUP BY a ORDER BY a")
+    }
+    val sumOut = qualApp.getSummary()
+    val detailedOut = qualApp.getDetailed()
+    assert(sumOut.nonEmpty)
+    assert(sumOut.startsWith("|") && sumOut.endsWith("|"))
+    assert(detailedOut.nonEmpty)
+    assert(detailedOut.startsWith("|") && detailedOut.endsWith("|"))
+
+    val csvSumOut = qualApp.getSummary(",", false)
+    val rowsSumOut = csvSumOut.split("\n")
+    assert(rowsSumOut.size == 2)
+    val headers = rowsSumOut(0).split(",")
+    val values = rowsSumOut(1).split(",")
+    assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+    assert(values.size == headers.size)
+    // 2 should be the SQL DF Duration
+    assert(headers(2).contains("SQL DF"))
+    assert(values(2).toInt > 0)
+    val csvDetailedOut = qualApp.getDetailed(",", false)
+    val rowsDetailedOut = csvDetailedOut.split("\n")
+    assert(rowsDetailedOut.size == 2)
+    val headersDetailed = rowsDetailedOut(0).split(",")
+    val valuesDetailed = rowsDetailedOut(1).split(",")
+    assert(headersDetailed.size == QualOutputWriter
+      .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats().get), false).keys.size)
+    assert(valuesDetailed.size == headersDetailed.size)
+    // 2 should be the Score
+    assert(headersDetailed(2).contains("Score"))
+    assert(valuesDetailed(2).toDouble > 0)
+  }
+
+  test("running qualification app files") {
+    TrampolineUtil.withTempDir { outputFile =>
       val qualApp = new RunningQualificationApp()
       ToolTestUtils.runAndCollect("streaming") { spark =>
         val listener = qualApp.getEventListener
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
-        testData.createOrReplaceTempView("t1")
-        testData.createOrReplaceTempView("t2")
-        spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
-          "FROM t1 JOIN t2 ON t1.a = t2.a) AS t " +
-          "GROUP BY a ORDER BY a")
+        testData.write.parquet(outputFile.getCanonicalPath)
+        val df = spark.read.parquet(outputFile.getCanonicalPath)
+        val df2 = spark.read.parquet(outputFile.getCanonicalPath)
+        df.select( $"value" as "a").join(df2.select($"value" as "b"), $"a" === $"b")
       }
       val sumOut = qualApp.getSummary()
       val detailedOut = qualApp.getDetailed()
       assert(sumOut.nonEmpty)
-      assert(detailedOut.nonEmpty)
+      println(sumOut)
+      println(detailedOut)
 
-      val csvSumOut = qualApp.getSummary(",", false)
+      // test different delimiter
+      val csvSumOut = qualApp.getSummary(":", false)
       val rowsSumOut = csvSumOut.split("\n")
       assert(rowsSumOut.size == 2)
-      val headers = rowsSumOut(0).split(",")
-      val values = rowsSumOut(1).split(",")
+      val headers = rowsSumOut(0).split(":")
+      val values = rowsSumOut(1).split(":")
       assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
       assert(values.size == headers.size)
       // 2 should be the SQL DF Duration
       assert(headers(2).contains("SQL DF"))
       assert(values(2).toInt > 0)
-      val csvDetailedOut = qualApp.getDetailed(",", false)
-      val rowsDetailedOut = csvDetailedOut.split("\n")
-      assert(rowsDetailedOut.size == 2)
-      val headersDetailed = rowsDetailedOut(0).split(",")
-      val valuesDetailed = rowsDetailedOut(1).split(",")
-      assert(headersDetailed.size == QualOutputWriter
-        .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats().get), false).keys.size)
-      assert(valuesDetailed.size == headersDetailed.size)
-      // 2 should be the Score
-      assert(headersDetailed(2).contains("Score"))
-      assert(valuesDetailed(2).toInt > 0)
     }
   }
 }
