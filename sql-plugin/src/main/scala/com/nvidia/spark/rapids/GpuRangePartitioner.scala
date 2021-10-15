@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
@@ -185,7 +186,7 @@ case class GpuRangePartitioner(
           GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)) { sorted =>
           val retCv = withResource(converters.convertBatch(rangeBounds,
             TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
-              sorter.upperBound(sorted, ranges)
+            sorter.upperBound(sorted, ranges)
           }
           withResource(retCv) { retCv =>
             // The first entry must always be 0, which upper bound is not doing

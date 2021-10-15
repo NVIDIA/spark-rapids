@@ -372,12 +372,8 @@ class GpuSampleExecMeta(sample: SampleExec, conf: RapidsConf, p: Option[RapidsMe
   with Logging {
   override def convertToGpu(): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
-    val sampleExec = GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
+    GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
       sample.seed, gpuChild)
-    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sampleExec.conf)
-    // add one coalesce exec to avoid empty batch and small batch,
-    // because sample will decrease the batch size
-    GpuCoalesceBatches(sampleExec, TargetSize(targetSize))
   }
 }
 
@@ -391,6 +387,10 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
   override def output: Seq[Attribute] = {
     child.output
   }
+
+  // add one coalesce exec to avoid empty batch and small batch,
+  // because sample will shrink the batch
+  override val coalesceAfter: Boolean = true
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
