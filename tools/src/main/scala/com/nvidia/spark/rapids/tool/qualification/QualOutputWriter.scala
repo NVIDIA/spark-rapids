@@ -165,7 +165,8 @@ object QualOutputWriter {
     entireHeader.toString
   }
 
-  private[qualification] def getSummaryHeaderStringsAndSizes(appIdMaxSize: Int): LinkedHashMap[String, Int] = {
+  private[qualification] def getSummaryHeaderStringsAndSizes(
+      appIdMaxSize: Int): LinkedHashMap[String, Int] = {
     LinkedHashMap[String, Int](
       APP_ID_STR -> appIdMaxSize,
       APP_DUR_STR -> APP_DUR_STR_SIZE,
@@ -237,28 +238,41 @@ object QualOutputWriter {
     QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
   }
 
+  // if a string contains what we are going to use for a delimiter, replace
+  // it with something else
+  private def replaceDelimiter(str: String, delimiter: String): String = {
+    if (str.contains(delimiter)) {
+      val replaceWith = if (delimiter.equals(",")) {
+        ";"
+      } else if (delimiter.equals(";")) {
+        ":"
+      } else {
+        ";"
+      }
+      str.replace(delimiter, replaceWith)
+    } else {
+      str
+    }
+  }
+
   def constructAppDetailedInfo(
       appInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String = "|",
       prettyPrint: Boolean,
       reportReadSchema: Boolean = false): String = {
-    val (readfileFormats, complexTypes, nestedComplexTypes) = if (delimiter.equals(",")) {
-      val fileFormats = stringIfempty(appInfo.readFileFormats.replace(",", ";"))
-      val types = stringIfempty(appInfo.complexTypes.replace(",", ";"))
-      val nestedTypes = stringIfempty(appInfo.nestedComplexTypes.replace(",", ";"))
-      (fileFormats, types, nestedTypes)
-    } else {
-      val fileFormats = stringIfempty(appInfo.readFileFormats)
-      val types = stringIfempty(appInfo.complexTypes)
-      val nestedTypes = stringIfempty(appInfo.nestedComplexTypes)
-      (fileFormats, types, nestedTypes)
-    }
+    val readFileFormats = stringIfempty(replaceDelimiter(appInfo.readFileFormats, delimiter))
+    val complexTypes = stringIfempty(replaceDelimiter(appInfo.complexTypes, delimiter))
+    val nestedComplexTypes = stringIfempty(replaceDelimiter(appInfo.nestedComplexTypes, delimiter))
+    val readFileFormatsNotSupported =
+      stringIfempty(replaceDelimiter(appInfo.readFileFormatAndTypesNotSupported, delimiter))
+    val dataWriteFormat = stringIfempty(replaceDelimiter(appInfo.writeDataFormat, delimiter))
+    val potentialProbs = stringIfempty(replaceDelimiter(appInfo.potentialProblems))
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
       stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
       appInfo.score.toString -> headersAndSizes(SCORE_STR),
-      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(POT_PROBLEM_STR),
+      potentialProbs -> headersAndSizes(POT_PROBLEM_STR),
       appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
       appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
       appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
@@ -269,15 +283,14 @@ object QualOutputWriter {
       appInfo.readScorePercent.toString -> headersAndSizes(READ_SCORE_PERCENT_STR),
       stringIfempty(appInfo.readFileFormatScore.toString) ->
         headersAndSizes(READ_FILE_FORMAT_SCORE_STR),
-      stringIfempty(appInfo.readFileFormatAndTypesNotSupported) ->
-        headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
-      stringIfempty(appInfo.writeDataFormat) -> headersAndSizes(WRITE_DATA_FORMAT_STR),
+      readFileFormatsNotSupported -> headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
+      dataWriteFormat -> headersAndSizes(WRITE_DATA_FORMAT_STR),
       complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
       nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR)
     )
 
     if (reportReadSchema) {
-      data += (readfileFormats -> headersAndSizes(READ_SCHEMA_STR))
+      data += (readFileFormats -> headersAndSizes(READ_SCHEMA_STR))
     }
     constructOutputRow(data, delimiter, prettyPrint)
   }
