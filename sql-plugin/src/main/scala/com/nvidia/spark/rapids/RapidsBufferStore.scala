@@ -143,7 +143,8 @@ abstract class RapidsBufferStore(
    * @param targetTotalSize maximum total size of this store after spilling completes
    * @return number of bytes that were spilled
    */
-  def synchronousSpill(targetTotalSize: Long): Long = synchronousSpill(targetTotalSize, null)
+  def synchronousSpill(targetTotalSize: Long): Long =
+    synchronousSpill(targetTotalSize, Cuda.DEFAULT_STREAM)
 
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
