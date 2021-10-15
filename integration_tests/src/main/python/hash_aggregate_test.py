@@ -1451,7 +1451,6 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_groupby_std_variance(data_gen, conf):
     local_conf = copy_and_update(conf, {
-        'spark.rapids.sql.decimalType.enabled': 'true',
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1000),
