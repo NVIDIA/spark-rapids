@@ -3,8 +3,7 @@ layout: page
 title: Spark Qualification tool
 nav_order: 8
 ---
-* TOC
-{:toc}
+
 # Spark Qualification tool
 
 The Qualification tool analyzes event logs generated from CPU based Spark applications to determine 
@@ -15,14 +14,8 @@ applications with the highest scores will actually be accelerated the most. Curr
 it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.
 This document covers below topics:
 
-* [How to use the Qualification tool](#How-to-use-the-Qualification-tool)
-    * [Prerequisites](#Prerequisites)
-    * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step1-Download-the-tools-jar-and-Apache-Spark-3-Distribution)
-    * [Step 2: Run the Qualification tool](#Step2-run-the-Qualification-tool)
-* [Understanding the Qualification tool output](#Understanding-the-Qualification-tool-Output)
-* [Qualification tool options](#Qualification-tool-options)
-* [Qualification tool score algorithm](#Qualification-tool-score-algorithm)
-* [How to compile the tools jar from the source(Optional)](#How-to-compile-the-tools-jar)
+* TOC
+{:toc}
 
 ## How to use the Qualification tool
 
