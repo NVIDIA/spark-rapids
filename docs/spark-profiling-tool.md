@@ -51,40 +51,40 @@ There are 3 modes of operation for the Profiling tool:
     Collection mode is the default mode when no other options are specified it simply collects information
     on each application individually and outputs a file per application
     
-```bash
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
-       com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
-       <eventlogs | eventlog directories ...>
-```
+    ```bash
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+           com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
+           <eventlogs | eventlog directories ...>
+    ```
 
  2. Combined Mode:
     Combined mode is collection mode but then combines all the applications 
     together and you get one file for all applications.
     
-```bash
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
-       com.nvidia.spark.rapids.tool.profiling.ProfileMain --combined
-       <eventlogs | eventlog directories ...>
-```
+    ```bash
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+           com.nvidia.spark.rapids.tool.profiling.ProfileMain --combined
+           <eventlogs | eventlog directories ...>
+    ```
  3. Compare Mode:
     Compare mode will combine all the applications information in the same tables into a single file 
     and also adds in tables to compare stages and sql ids across all of those applications.
     The Compare mode will use more memory if comparing lots of applications.
     
-```bash
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
-       com.nvidia.spark.rapids.tool.profiling.ProfileMain --compare
-       <eventlogs | eventlog directories ...>
-```
-Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output 
-so if you want to point to the local filesystem be sure to include `file:` in the path.
-
-Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
-
-```bash
-java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
- com.nvidia.spark.rapids.tool.profiling.ProfileMain  /eventlogDir
-```
+    ```bash
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+           com.nvidia.spark.rapids.tool.profiling.ProfileMain --compare
+           <eventlogs | eventlog directories ...>
+    ```
+    Note that if you are on an HDFS cluster the default filesystem is likely HDFS for both the input and output 
+    so if you want to point to the local filesystem be sure to include `file:` in the path.
+    
+    Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
+    
+    ```bash
+    java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+     com.nvidia.spark.rapids.tool.profiling.ProfileMain  /eventlogDir
+    ```
 
 ## Understanding Profiling tool detailed output and examples
 The default output location is the current directory. 

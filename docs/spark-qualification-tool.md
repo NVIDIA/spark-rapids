@@ -44,31 +44,31 @@ any machine and include the jars in the classpath.
     - Either set SPARK_HOME to point to that directory or just put the path inside of the classpath
        `java -cp toolsJar:pathToSparkJars/*:...` when you run the Qualification tool.
 
-This tool parses the Spark CPU event log(s) and creates an output report. Acceptable inputs are either individual or 
-multiple event logs files or directories containing spark event logs in the local filesystem, HDFS, S3 or mixed.
+    This tool parses the Spark CPU event log(s) and creates an output report. Acceptable inputs are either individual or 
+    multiple event logs files or directories containing spark event logs in the local filesystem, HDFS, S3 or mixed.
+    
+    ```bash
+    Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+           com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
+           <eventlogs | eventlog directories ...>
+    ```
 
-```bash
-Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
-       com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
-       <eventlogs | eventlog directories ...>
-```
-
-```bash
-Sample: java -cp rapids-4-spark-tools_2.12-21.10.jar:$SPARK_HOME/jars/*
-       com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
-```
+    ```bash
+    Sample: java -cp rapids-4-spark-tools_2.12-21.10.jar:$SPARK_HOME/jars/*
+           com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
+    ```
 
 2. Event logs stored on an on-premises HDFS cluster:
 
-Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
-
-```bash
-Usage: java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
- com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
-```
-
-Note, on an HDFS cluster, the default filesystem is likely HDFS for both the input and output
-so if you want to point to the local filesystem be sure to include file: in the path.
+    Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
+    
+    ```bash
+    Usage: java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+     com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
+    ```
+    
+    Note, on an HDFS cluster, the default filesystem is likely HDFS for both the input and output
+    so if you want to point to the local filesystem be sure to include file: in the path.
 
 ## Understanding the Qualification tool Output
 After the above command is executed, the summary report goes to STDOUT and by default it outputs 2 files 
