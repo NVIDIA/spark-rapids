@@ -170,7 +170,7 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
 
-@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', array_gens_sample_with_decimal128, ids=idfn)
 def test_array_transform(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
