@@ -550,30 +550,26 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("streaming qualification app") {
+  test("running qualification app") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val appId = ToolTestUtils.runAndCollect("streaming") { spark =>
-        val qualApp = new RunningQualificationApp()
+      val qualApp = new RunningQualificationApp()
+      ToolTestUtils.runAndCollect("streaming") { spark =>
         val listener = qualApp.getEventListener
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
         testData.createOrReplaceTempView("t1")
         testData.createOrReplaceTempView("t2")
-        val df = spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
+        spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
           "FROM t1 JOIN t2 ON t1.a = t2.a) AS t " +
           "GROUP BY a ORDER BY a")
-
-        // do inside application to simulate similar calling
-        val textOut = qualApp.getSummary()
-        val csvOut = qualApp.getDetailed()
-        assert(textOut.nonEmpty)
-        assert(csvOut.nonEmpty)
-
-        println(textOut)
-        println(csvOut)
-        df
       }
+      val sumOut = qualApp.getSummary()
+      val detailedOut = qualApp.getDetailed()
+      assert(sumOut.nonEmpty)
+      assert(detailedOut.nonEmpty)
+      println(sumOut)
+      println(detailedOut)
     }
   }
 }

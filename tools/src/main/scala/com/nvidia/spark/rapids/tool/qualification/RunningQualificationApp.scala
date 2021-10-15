@@ -30,7 +30,8 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * This tool is intended to give the user a starting point and does not guarantee the
  * applications it scores high will actually be accelerated the most. When running
  * like this on a single application, the detailed output may be most useful to look
- * for potential issues. The score could be used to compare against other applications.
+ * for potential issues and time spent in Dataframe operations. The score could be
+ * used to compare against other applications.
  *
  * Create the `RunningQualicationApp`:
  * {{{
