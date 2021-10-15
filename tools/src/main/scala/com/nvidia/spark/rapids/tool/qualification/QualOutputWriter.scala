@@ -165,7 +165,7 @@ object QualOutputWriter {
     entireHeader.toString
   }
 
-  private[tools] def getSummaryHeaderStringsAndSizes(appIdMaxSize: Int): LinkedHashMap[String, Int] = {
+  private[qualification] def getSummaryHeaderStringsAndSizes(appIdMaxSize: Int): LinkedHashMap[String, Int] = {
     LinkedHashMap[String, Int](
       APP_ID_STR -> appIdMaxSize,
       APP_DUR_STR -> APP_DUR_STR_SIZE,

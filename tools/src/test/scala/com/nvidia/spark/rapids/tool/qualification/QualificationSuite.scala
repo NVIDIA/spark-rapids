@@ -585,10 +585,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val valuesDetailed = rowsDetailedOut(1).split(",")
       assert(headersDetailed.size == QualOutputWriter
         .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats().get), false).keys.size)
-      assert(values.size == headers.size)
+      assert(valuesDetailed.size == headersDetailed.size)
       // 2 should be the Score
-      assert(headers(2).contains("Score"))
-      assert(values(2).toInt > 0)
+      assert(headersDetailed(2).contains("Score"))
+      assert(valuesDetailed(2).toInt > 0)
     }
   }
 }
