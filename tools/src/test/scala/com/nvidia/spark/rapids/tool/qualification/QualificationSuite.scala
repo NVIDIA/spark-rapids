@@ -593,35 +593,39 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("running qualification app files") {
-    TrampolineUtil.withTempPath { outputFile =>
-      val qualApp = new RunningQualificationApp()
-      ToolTestUtils.runAndCollect("streaming") { spark =>
-        val listener = qualApp.getEventListener
-        spark.sparkContext.addSparkListener(listener)
-        import spark.implicits._
-        val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
-        testData.write.parquet(outputFile.getCanonicalPath)
-        val df = spark.read.parquet(outputFile.getCanonicalPath)
-        val df2 = spark.read.parquet(outputFile.getCanonicalPath)
-        df.select( $"value" as "a").join(df2.select($"value" as "b"), $"a" === $"b")
-      }
-      val sumOut = qualApp.getSummary()
-      val detailedOut = qualApp.getDetailed()
-      assert(sumOut.nonEmpty)
-      println(sumOut)
-      println(detailedOut)
+    TrampolineUtil.withTempPath { outParquetFile =>
+      TrampolineUtil.withTempPath { outJsonFile =>
 
-      // test different delimiter
-      val csvSumOut = qualApp.getSummary(":", false)
-      val rowsSumOut = csvSumOut.split("\n")
-      assert(rowsSumOut.size == 2)
-      val headers = rowsSumOut(0).split(":")
-      val values = rowsSumOut(1).split(":")
-      assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
-      assert(values.size == headers.size)
-      // 2 should be the SQL DF Duration
-      assert(headers(2).contains("SQL DF"))
-      assert(values(2).toInt > 0)
+        val qualApp = new RunningQualificationApp()
+        ToolTestUtils.runAndCollect("streaming") { spark =>
+          val listener = qualApp.getEventListener
+          spark.sparkContext.addSparkListener(listener)
+          import spark.implicits._
+          val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+          testData.write.json(outJsonFile.getCanonicalPath)
+          testData.write.parquet(outParquetFile.getCanonicalPath)
+          val df = spark.read.parquet(outParquetFile.getCanonicalPath)
+          val df2 = spark.read.parquet(outJsonFile.getCanonicalPath)
+          df.join(df2.select($"a" as "a2"), $"a" === $"a2")
+        }
+        val sumOut = qualApp.getSummary()
+        val detailedOut = qualApp.getDetailed()
+        assert(sumOut.nonEmpty)
+        println(sumOut)
+        println(detailedOut)
+
+        // test different delimiter
+        val csvSumOut = qualApp.getSummary(":", false)
+        val rowsSumOut = csvSumOut.split("\n")
+        assert(rowsSumOut.size == 2)
+        val headers = rowsSumOut(0).split(":")
+        val values = rowsSumOut(1).split(":")
+        assert(headers.size == QualOutputWriter.getSummaryHeaderStringsAndSizes(0).keys.size)
+        assert(values.size == headers.size)
+        // 2 should be the SQL DF Duration
+        assert(headers(2).contains("SQL DF"))
+        assert(values(2).toInt > 0)
+      }
     }
   }
 }
