@@ -1,8 +1,9 @@
 ---
 layout: page
 title: Spark Profiling tool
-nav_order: 8
+nav_order: 9
 ---
+  
 # Spark Profiling tool
 
 The Profiling tool analyzes both CPU or GPU generated event logs and generates information 
@@ -11,9 +12,9 @@ The output information contains the Spark version, executor details, properties,
 
 * How to use Profiling tool
     * [Prerequisites](#Prerequisites)
-    * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step-1.-Download-the-tools-jar-&-Apache-Spark-3-Distribution)
-    * [Step 2: How to run the Profiling tool](#Step-2.-How-to-Run-the-Profiling-tool)
-* [Understanding the Profiling tool output](#Understanding-Profile-tool-Detailed-Output-and-Examples)
+    * [Step 1: Download the tools jar and Apache Spark 3 distribution](#Step1-Download-the-tools-jar-and-Apache-Spark-3-distribution)
+    * [Step 2: How to run the Profiling tool](#Step2-How-to-run-the-Profiling-tool)
+* [Understanding Profiling tool detailed output and examples](#Understanding-Profiling-tool-detailed-output-and-examples)
 * [Profiling tool options](#Profiling-tool-options)
 * [Profiling tool metrics definitions](#Profiling-tool-metrics-definitions)
 
@@ -32,15 +33,15 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 [Apache Spark Monitoring](http://spark.apache.org/docs/latest/monitoring.html) documentation for
 more information.
 
-### Step 1. Download the tools jar & Apache Spark 3 Distribution
+### Step1 Download the tools jar and Apache Spark 3 distribution
 The Profiling tool requires the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, 
 you can download the Spark distribution to any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.10.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
-If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#Optional:-Compiling-the-jars). 
+If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar). 
 
-### Step 2. How to Run the Profiling tool
+### Step2 How to run the Profiling tool
 This tool parses the Spark CPU or GPU event log(s) and creates an output report.
 We need to extract the Spark distribution into a local directory if necessary.
 Either set `SPARK_HOME` to point to that directory or just put the path inside of the
@@ -87,11 +88,11 @@ so if you want to point to the local filesystem be sure to include `file:` in th
 Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
 
 ```bash
-java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.profiling.ProfileMain  /eventlogDir
 ```
 
-## Understanding Profiling tool Detailed Output and Examples
+## Understanding Profiling tool detailed output and examples
 The default output location is the current directory. 
 The output location can be changed using the `--output-directory` option.
 The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.

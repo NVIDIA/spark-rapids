@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Spark Qualification tool
-nav_order: 9
+nav_order: 8
 ---
 # Spark Qualification tool
 
@@ -13,14 +13,14 @@ applications with the highest scores will actually be accelerated the most. Curr
 it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.
 This document covers below topics:
 
-* How to use the Qualification tool
+* [How to use the Qualification tool](#How-to-use-the-Qualification-tool)
     * [Prerequisites](#Prerequisites)
-    * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step-1.-Download-the-tools-jar-&-Apache-Spark-3-Distribution)
-    * [Step 2: Run the Qualification tool](#Step-2.-Run-the-Qualification-tool)
+    * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step1-Download-the-tools-jar-and-Apache-Spark-3-Distribution)
+    * [Step 2: Run the Qualification tool](#Step2-run-the-Qualification-tool)
 * [Understanding the Qualification tool output](#Understanding-the-Qualification-tool-Output)
 * [Qualification tool options](#Qualification-tool-options)
 * [Qualification tool score algorithm](#Qualification-tool-score-algorithm)
-* [How to compile the Qualification tool jar from the source](#Optional:-Compiling-the-jars)
+* [How to compile the tools jar from the source(Optional)](#How-to-compile-the-tools-jar)
 
 ## How to use the Qualification tool
 
@@ -36,14 +36,14 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 [Apache Spark Monitoring](http://spark.apache.org/docs/latest/monitoring.html) documentation for
 more information.
 
-### Step 1. Download the tools jar & Apache Spark 3 Distribution
+### Step1 Download the tools jar and Apache Spark 3 Distribution
 The Qualification tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, you can download the Spark distribution to 
 any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.10.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 
-### Step 2. Run the Qualification tool
+### Step2 run the Qualification tool
 1. Event logs stored on a local machine:
     - Extract the Spark distribution into a local directory if necessary.
     - Either set SPARK_HOME to point to that directory or just put the path inside of the classpath
@@ -316,7 +316,8 @@ the higher the score is and the more likely the plugin will be able to help acce
 Note: The score does not guarantee there will be GPU acceleration and we are continuously improving
 the score algorithm to qualify the best queries for GPU acceleration.
 
-## Optional: Compiling the jars
+## How to compile the tools jar
+Note: This step is optional.
 
 ```bash
 git clone https://github.com/NVIDIA/spark-rapids.git
