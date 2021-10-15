@@ -608,15 +608,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           val df2 = spark.read.json(outJsonFile.getCanonicalPath)
           df.join(df2.select($"a" as "a2"), $"a" === $"a2")
         }
-        val sumOut = qualApp.getSummary()
-        val detailedOut = qualApp.getDetailed()
-        assert(sumOut.nonEmpty)
-        println(sumOut)
-        println(detailedOut)
-
         // test different delimiter
-        val csvSumOut = qualApp.getSummary(":", false)
-        val rowsSumOut = csvSumOut.split("\n")
+        val sumOut = qualApp.getSummary(":", false)
+        val rowsSumOut = sumOut.split("\n")
         assert(rowsSumOut.size == 2)
         val headers = rowsSumOut(0).split(":")
         val values = rowsSumOut(1).split(":")
@@ -625,6 +619,16 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         // 2 should be the SQL DF Duration
         assert(headers(2).contains("SQL DF"))
         assert(values(2).toInt > 0)
+        val detailedOUt = qualApp.getDetailed(":", false)
+        val rowsDetailedOut = detailedOUt.split("\n")
+        assert(rowsDetailedOut.size == 2)
+        val headersDetailed = rowsDetailedOut(0).split(":")
+        val valuesDetailed = rowsDetailedOut(1).split(":")
+        // Read File Format Score
+        assert(headersDetailed(11).contains("Read File Format Score"))
+        assert(valuesDetailed(11).toDouble == 50.0)
+        assert(headersDetailed(12).contains("Read File Formats"))
+        assert(valuesDetailed(12).contains("JSON"))
       }
     }
   }
