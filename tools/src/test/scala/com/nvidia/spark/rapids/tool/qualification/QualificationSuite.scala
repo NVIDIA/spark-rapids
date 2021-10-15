@@ -565,9 +565,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val sumOut = qualApp.getSummary()
     val detailedOut = qualApp.getDetailed()
     assert(sumOut.nonEmpty)
-    assert(sumOut.startsWith("|") && sumOut.endsWith("|"))
+    assert(sumOut.startsWith("|") && sumOut.endsWith("|\n"))
     assert(detailedOut.nonEmpty)
-    assert(detailedOut.startsWith("|") && detailedOut.endsWith("|"))
+    assert(detailedOut.startsWith("|") && detailedOut.endsWith("|\n"))
 
     val csvSumOut = qualApp.getSummary(",", false)
     val rowsSumOut = csvSumOut.split("\n")
@@ -593,7 +593,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("running qualification app files") {
-    TrampolineUtil.withTempDir { outputFile =>
+    TrampolineUtil.withTempPath { outputFile =>
       val qualApp = new RunningQualificationApp()
       ToolTestUtils.runAndCollect("streaming") { spark =>
         val listener = qualApp.getEventListener
