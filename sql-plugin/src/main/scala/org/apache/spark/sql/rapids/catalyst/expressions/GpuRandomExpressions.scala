@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,22 +18,25 @@ package org.apache.spark.sql.rapids.catalyst.expressions
 
 import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.AnalysisException
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExpressionWithRandomSeed, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExpressionWithRandomSeed}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 import org.apache.spark.util.random.XORShiftRandom
 
 /** Generate a random column with i.i.d. uniformly distributed values in [0, 1). */
-case class GpuRand(child: Expression) extends UnaryExpression with GpuExpression
+case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpression
   with ExpectsInputTypes with ExpressionWithRandomSeed {
 
   def this() = this(GpuLiteral(Utils.random.nextLong(), LongType))
 
   override def withNewSeed(seed: Long): GpuRand = GpuRand(GpuLiteral(seed, LongType))
+
+  def seedExpression: Expression = child
 
   /**
    * Record ID within each partition. By being transient, the Random Number Generator is

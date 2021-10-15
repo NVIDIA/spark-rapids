@@ -109,16 +109,17 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           assert(bss.hasMoreSends)
-          val mb = bss.getBufferToSend()
-          val receiveBlocks = receiveWindow.next()
-          compareRanges(bounceBuffer, receiveBlocks)
-          assertResult(10000)(mb.getLength)
-          assert(!bss.hasMoreSends)
-          bss.releaseAcquiredToCatalog()
-          mockBuffers.foreach { b: RapidsBuffer =>
-            // should have seen 2 closes, one for BufferSendState acquiring for metadata
-            // and the second acquisition for copying
-            verify(b, times(numCloses.get(b))).close()
+          withResource(bss.getBufferToSend()) { mb =>
+            val receiveBlocks = receiveWindow.next()
+            compareRanges(bounceBuffer, receiveBlocks)
+            assertResult(10000)(mb.getLength)
+            assert(!bss.hasMoreSends)
+            bss.releaseAcquiredToCatalog()
+            mockBuffers.foreach { b: RapidsBuffer =>
+              // should have seen 2 closes, one for BufferSendState acquiring for metadata
+              // and the second acquisition for copying
+              verify(b, times(numCloses.get(b))).close()
+            }
           }
         }
       }
@@ -139,17 +140,19 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         val (handler, mockBuffers, numCloses) = setupMocks(deviceBuffers)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
-          var buffs = bss.getBufferToSend()
-          var receiveBlocks = receiveWindow.next()
-          compareRanges(bounceBuffer, receiveBlocks)
-          assert(bss.hasMoreSends)
-          bss.releaseAcquiredToCatalog()
+          withResource(bss.getBufferToSend()) { _ =>
+            val receiveBlocks = receiveWindow.next()
+            compareRanges(bounceBuffer, receiveBlocks)
+            assert(bss.hasMoreSends)
+            bss.releaseAcquiredToCatalog()
+          }
 
-          buffs = bss.getBufferToSend()
-          receiveBlocks = receiveWindow.next()
-          compareRanges(bounceBuffer, receiveBlocks)
-          assert(!bss.hasMoreSends)
-          bss.releaseAcquiredToCatalog()
+          withResource(bss.getBufferToSend()) { _ =>
+            val receiveBlocks = receiveWindow.next()
+            compareRanges(bounceBuffer, receiveBlocks)
+            assert(!bss.hasMoreSends)
+            bss.releaseAcquiredToCatalog()
+          }
 
           mockBuffers.foreach { b: RapidsBuffer =>
             // should have seen 2 closes, one for BufferSendState acquiring for metadata
@@ -177,10 +180,11 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper with Arm {
         val receiveWindow = new WindowedBlockIterator[MockBlockWithSize](receiveSide, 10000)
         withResource(new BufferSendState(mockTx, bounceBuffer, handler)) { bss =>
           (0 until 246).foreach { _ =>
-            bss.getBufferToSend()
-            val receiveBlocks = receiveWindow.next()
-            compareRanges(bounceBuffer, receiveBlocks)
-            bss.releaseAcquiredToCatalog()
+            withResource(bss.getBufferToSend()) { _ =>
+              val receiveBlocks = receiveWindow.next()
+              compareRanges(bounceBuffer, receiveBlocks)
+              bss.releaseAcquiredToCatalog()
+            }
           }
           assert(!bss.hasMoreSends)
         }

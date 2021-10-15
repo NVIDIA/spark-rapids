@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import scala.reflect.runtime.universe._
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.ToolUtils
 
@@ -63,4 +65,9 @@ object ProfileUtils {
     try Some(a.get - b) catch {
       case _: NoSuchElementException => None
     }
+
+
+  def truncateFailureStr(failureStr: String): String = {
+    failureStr.substring(0, Math.min(failureStr.size, 100))
+  }
 }

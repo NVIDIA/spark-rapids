@@ -18,18 +18,22 @@ package com.nvidia.spark.rapids.shims.spark311cdh
 
 import java.net.URI
 
+import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.spark311.{ParquetCachedBatchSerializer, Spark311Shims}
+import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
 import com.nvidia.spark.rapids.spark311cdh.RapidsShuffleManager
+import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
-import org.apache.spark.sql.rapids.shims.spark311._
+import org.apache.spark.sql.rapids.shims.spark311cdh._
+import org.apache.spark.sql.rapids.shims.v2.{GpuColumnarToRowTransitionExec, GpuInMemoryTableScanExec}
 import org.apache.spark.sql.sources.BaseRelation
 
-class Spark311CDHShims extends Spark311Shims {
+class Spark311CDHShims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
@@ -37,7 +41,7 @@ class Spark311CDHShims extends Spark311Shims {
     super.getExecs ++ Seq(
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL + TypeSig.STRUCT).nested()
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT).nested()
           .withPsNote(TypeEnum.DECIMAL,
             "Negative scales aren't supported at the moment even with " +
               "spark.sql.legacy.allowNegativeScaleOfDecimal set to true. This is because Parquet " +
@@ -93,4 +97,18 @@ class Spark311CDHShims extends Spark311Shims {
     sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
   }
 
+  override def hasCastFloatTimestampUpcast: Boolean = false
+
+  override def getParquetFilters(
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters = {
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive)
+  }
 }

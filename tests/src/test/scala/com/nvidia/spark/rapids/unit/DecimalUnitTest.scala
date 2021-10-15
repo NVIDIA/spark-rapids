@@ -276,7 +276,7 @@ class DecimalUnitTest extends GpuUnitTests {
 
     withGpuSparkSession((ss: SparkSession) => {
       var rootPlan = frameFromOrc("decimal-test.orc")(ss).queryExecution.executedPlan
-      assert(rootPlan.map(p => p).exists(_.isInstanceOf[FileSourceScanExec]))
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuFileSourceScanExec]))
       rootPlan = fromCsvDf("decimal-test.csv", decimalCsvStruct)(ss).queryExecution.executedPlan
       assert(rootPlan.map(p => p).exists(_.isInstanceOf[FileSourceScanExec]))
       rootPlan = frameFromParquet("decimal-test.parquet")(ss).queryExecution.executedPlan
@@ -285,7 +285,7 @@ class DecimalUnitTest extends GpuUnitTests {
 
     withGpuSparkSession((ss: SparkSession) => {
       var rootPlan = frameFromOrc("decimal-test.orc")(ss).queryExecution.executedPlan
-      assert(rootPlan.map(p => p).exists(_.isInstanceOf[BatchScanExec]))
+      assert(rootPlan.map(p => p).exists(_.isInstanceOf[GpuBatchScanExec]))
       rootPlan = fromCsvDf("decimal-test.csv", decimalCsvStruct)(ss).queryExecution.executedPlan
       assert(rootPlan.map(p => p).exists(_.isInstanceOf[BatchScanExec]))
       rootPlan = frameFromParquet("decimal-test.parquet")(ss).queryExecution.executedPlan

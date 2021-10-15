@@ -20,8 +20,8 @@ import com.nvidia.spark.rapids.GpuDataWritingCommand
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.SparkContext
-import org.apache.spark.sql.execution.datasources.BasicWriteJobStatsTracker
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker.TASK_COMMIT_TIME
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -31,7 +31,7 @@ import org.apache.spark.util.SerializableConfiguration
 class GpuWriteTaskStatsTracker(
     hadoopConf: Configuration,
     taskMetrics: Map[String, SQLMetric])
-    extends BasicColumnarWriteTaskStatsTracker(hadoopConf) {
+    extends BasicColumnarWriteTaskStatsTracker(hadoopConf, taskMetrics.get(TASK_COMMIT_TIME)) {
   def addGpuTime(nanos: Long): Unit = {
     taskMetrics(GpuWriteJobStatsTracker.GPU_TIME_KEY) += nanos
   }
@@ -49,9 +49,9 @@ class GpuWriteTaskStatsTracker(
  */
 class GpuWriteJobStatsTracker(
     serializableHadoopConf: SerializableConfiguration,
-    @transient basicMetrics: Map[String, SQLMetric],
+    @transient driverSideMetrics: Map[String, SQLMetric],
     taskMetrics: Map[String, SQLMetric])
-    extends BasicColumnarWriteJobStatsTracker(serializableHadoopConf, basicMetrics) {
+    extends BasicColumnarWriteJobStatsTracker(serializableHadoopConf, driverSideMetrics) {
   override def newTaskInstance(): ColumnarWriteTaskStatsTracker = {
     new GpuWriteTaskStatsTracker(serializableHadoopConf.value, taskMetrics)
   }
@@ -61,13 +61,14 @@ object GpuWriteJobStatsTracker {
   val GPU_TIME_KEY = "gpuTime"
   val WRITE_TIME_KEY = "writeTime"
 
-  def basicMetrics: Map[String, SQLMetric] = BasicWriteJobStatsTracker.metrics
+  def basicMetrics: Map[String, SQLMetric] = BasicColumnarWriteJobStatsTracker.metrics
 
   def taskMetrics: Map[String, SQLMetric] = {
     val sparkContext = SparkContext.getActive.get
     Map(
       GPU_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "GPU time"),
-      WRITE_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "write time")
+      WRITE_TIME_KEY -> SQLMetrics.createNanoTimingMetric(sparkContext, "write time"),
+      TASK_COMMIT_TIME -> basicMetrics(TASK_COMMIT_TIME)
     )
   }
 

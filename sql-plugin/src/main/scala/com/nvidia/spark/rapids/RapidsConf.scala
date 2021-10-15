@@ -330,7 +330,7 @@ object RapidsConf {
       s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
-    .createWithDefault(0.9)
+    .createWithDefault(1)
 
   val RMM_ALLOC_MAX_FRACTION = conf(RMM_ALLOC_MAX_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the maximum size of the RMM pool. " +
@@ -350,7 +350,7 @@ object RapidsConf {
 
   val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
-          "system use such as memory needed for kernels, kernel launches or JIT compilation.")
+          "system use such as memory needed for kernels and kernel launches.")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(ByteUnit.MiB.toBytes(1024))
 
@@ -411,12 +411,13 @@ object RapidsConf {
     .createWithDefault(true)
 
   val RMM_POOL = conf("spark.rapids.memory.gpu.pool")
-    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", and " +
-      "\"NONE\". With \"DEFAULT\", `rmm::mr::pool_memory_resource` is used; with \"ARENA\", " +
-      "`rmm::mr::arena_memory_resource` is used. If set to \"NONE\", pooling is disabled and RMM " +
+    .doc("Select the RMM pooling allocator to use. Valid values are \"DEFAULT\", \"ARENA\", " +
+      "\"ASYNC\", and \"NONE\". With \"DEFAULT\", the RMM pool allocator is used; with " +
+      "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
+      "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly. Note: \"ARENA\" is the " +
-      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), " +
-      "as \"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
+      "recommended pool allocator if CUDF is built with Per-Thread Default Stream (PTDS), as " +
+      "\"DEFAULT\" is known to be unstable (https://github.com/NVIDIA/spark-rapids/issues/1141)")
     .stringConf
     .createWithDefault("ARENA")
 
@@ -599,6 +600,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_CAST_DECIMAL_TO_FLOAT = conf("spark.rapids.sql.castDecimalToFloat.enabled")
+      .doc("Casting from decimal to floating point types on the GPU returns results that have " +
+          "tiny difference compared to results returned from CPU.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_CAST_STRING_TO_FLOAT = conf("spark.rapids.sql.castStringToFloat.enabled")
     .doc("When set to true, enables casting from strings to float types (float, double) " +
       "on the GPU. Currently hex values aren't supported on the GPU. Also note that casting from " +
@@ -629,6 +636,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
+  val HAS_EXTENDED_YEAR_VALUES = conf("spark.rapids.sql.hasExtendedYearValues")
+      .doc("Spark 3.2.0+ extended parsing of years in dates and " +
+          "timestamps to support the full range of possible values. Prior " +
+          "to this it was limited to a positive 4 digit year. The Accelerator does not " +
+          "support the extended range yet. This config indicates if your data includes " +
+          "this extended range or not, or if you don't care about getting the correct " +
+          "values on values with the extended range.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_CAST_DECIMAL_TO_STRING = conf("spark.rapids.sql.castDecimalToString.enabled")
       .doc("When set to true, casting from decimal to string is supported on the GPU. The GPU " +
         "does NOT produce exact same string as spark produces, but producing strings which are " +
@@ -636,6 +653,14 @@ object RapidsConf {
         "\"12300\", which spark produces \"1.23E+4\".")
       .booleanConf
       .createWithDefault(false)
+
+  val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
+    .doc("The GPU-enabled version of the `CreateMap` expression (`map` SQL function) does not " +
+      "detect duplicate keys in all cases and does not guarantee which key wins if there are " +
+      "duplicates. When this config is set to true, `CreateMap` will be enabled to run on the " +
+      "GPU even when there might be duplicate keys.")
+    .booleanConf
+    .createWithDefault(false)
 
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
@@ -671,6 +696,12 @@ object RapidsConf {
       .doc("When set to true left anti joins are enabled on the GPU")
       .booleanConf
       .createWithDefault(true)
+
+  val ENABLE_PROJECT_AST = conf("spark.rapids.sql.projectAstEnabled")
+      .doc("Enable project operations to use cudf AST expressions when possible.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
 
   // FILE FORMATS
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
@@ -959,7 +990,8 @@ object RapidsConf {
       "\"all\" (try to replace all aggregates, default), " +
       "\"complete\" (exclusively replace complete aggregates), " +
       "\"partial\" (exclusively replace partial aggregates), " +
-      "\"final\" (exclusively replace final aggregates)")
+      "\"final\" (exclusively replace final aggregates)." +
+      " These modes can be connected with &(AND) or |(OR) to form sophisticated patterns.")
     .internal()
     .stringConf
     .createWithDefault("all")
@@ -967,6 +999,13 @@ object RapidsConf {
   val PARTIAL_MERGE_DISTINCT_ENABLED = conf("spark.rapids.sql.partialMerge.distinct.enabled")
     .doc("Enables aggregates that are in PartialMerge mode to run on the GPU if true")
     .internal()
+    .booleanConf
+    .createWithDefault(true)
+
+  val SHUFFLE_MANAGER_ENABLED = conf("spark.rapids.shuffle.enabled")
+    .doc("Enable or disable the RAPIDS Shuffle Manager at runtime. " +
+      "The [RAPIDS Shuffle Manager](additional-functionality/rapids-shuffle.md) must " +
+      "already be configured. When set to `false`, the built-in Spark shuffle will be used. ")
     .booleanConf
     .createWithDefault(true)
 
@@ -1140,7 +1179,14 @@ object RapidsConf {
       "If you are using a custom Spark version such as Spark 3.0.1.0 then this can be used to " +
       "specify the shims provider that matches the base Spark version of Spark 3.0.1, i.e.: " +
       "com.nvidia.spark.rapids.shims.spark301.SparkShimServiceProvider. If you modified Spark " +
-      "then there is no guarantee the RAPIDS Accelerator will function properly.")
+      "then there is no guarantee the RAPIDS Accelerator will function properly." +
+      "When tested in a combined jar with other Shims, it's expected that the provided " +
+      "implementation follows the same convention as existing Spark shims. If its class" +
+      " name has the form com.nvidia.spark.rapids.shims.<shimId>.YourSparkShimServiceProvider. " +
+      "The last package name component, i.e., shimId, can be used in the combined jar as the root" +
+      " directory /shimId for any incompatible classes. When tested in isolation, no special " +
+      "jar root is required"
+    )
     .stringConf
     .createOptional
 
@@ -1250,6 +1296,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val FORCE_SHIMCALLER_CLASSLOADER = conf("spark.rapids.force.caller.classloader")
+    .doc("Option to statically add shim's parallel world classloader URLs to " +
+      "the classloader of the ShimLoader class, typically Bootstrap classloader. This option" +
+      " uses reflection with setAccessible true on a classloader that is not created by Spark.")
+    .internal()
+    .booleanConf
+    .createWithDefault(value = true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1280,7 +1334,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.08.0.jar,cudf-21.08.2-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.10.0.jar,cudf-21.10.0-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1343,24 +1397,6 @@ object RapidsConf {
       printToggleHeader("Partitioning\n")
     }
     GpuOverrides.parts.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
-    if (asTable) {
-      printSectionHeader("JIT Kernel Cache Path")
-      println("""
-      |  CUDF can compile GPU kernels at runtime using a just-in-time (JIT) compiler. The
-      |  resulting kernels are cached on the filesystem. The default location for this cache is
-      |  under the `.cudf` directory in the user's home directory. When running in an environment
-      |  where the user's home directory cannot be written, such as running in a container
-      |  environment on a cluster, the JIT cache path will need to be specified explicitly with
-      |  the `LIBCUDF_KERNEL_CACHE_PATH` environment variable.
-      |  The specified kernel cache path should be specific to the user to avoid conflicts with
-      |  others running on the same host. For example, the following would specify the path to a
-      |  user-specific location under `/tmp`:
-      |
-      |  ```
-      |  --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH="/tmp/cudf-$USER"
-      |  ```
-      |""".stripMargin)
-    }
   }
   def main(args: Array[String]): Unit = {
     // Include the configs in PythonConfEntries
@@ -1460,6 +1496,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val explain: String = get(EXPLAIN)
 
+  lazy val shouldExplain: Boolean = !explain.equalsIgnoreCase("NONE")
+
+  lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
+
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
@@ -1492,11 +1532,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val areLeftAntiJoinsEnabled: Boolean = get(ENABLE_LEFT_ANTI_JOIN)
 
+  lazy val isCastDecimalToFloatEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_FLOAT)
+
   lazy val isCastFloatToDecimalEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_DECIMAL)
 
   lazy val isCastFloatToStringEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_STRING)
 
   lazy val isCastStringToTimestampEnabled: Boolean = get(ENABLE_CAST_STRING_TO_TIMESTAMP)
+
+  lazy val hasExtendedYearValues: Boolean = get(HAS_EXTENDED_YEAR_VALUES)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
@@ -1523,6 +1567,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvDoubleReadEnabled: Boolean = get(ENABLE_READ_CSV_DOUBLES)
 
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
+
+  lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
+
+  lazy val isCreateMapEnabled: Boolean = get(ENABLE_CREATE_MAP)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
@@ -1573,6 +1621,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCsvEnabled: Boolean = get(ENABLE_CSV)
 
   lazy val isCsvReadEnabled: Boolean = get(ENABLE_CSV_READ)
+
+  lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
   lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
 
@@ -1632,6 +1682,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
+
+  lazy val optimizerShouldExplainAll: Boolean = optimizerExplain.equalsIgnoreCase("ALL")
 
   lazy val optimizerClassName: String = get(OPTIMIZER_CLASS_NAME)
 

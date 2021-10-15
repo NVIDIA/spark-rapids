@@ -19,7 +19,7 @@
 # Build the image for rapids-plugin development environment
 #
 # Arguments:
-#    CUDA_VER=11.0, 11.1 or 11.2.x
+#    CUDA_VER=11.0+
 #    UBUNTU_VER=18.04 or 20.04
 #    CUDF_VER=<cudf-py version>
 ###
@@ -36,7 +36,7 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
-    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git wget
+    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git wget parallel
 RUN python3.8 -m easy_install pip
 
 # Set default jdk as 1.8.0

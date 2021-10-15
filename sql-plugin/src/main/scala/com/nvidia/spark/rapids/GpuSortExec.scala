@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -29,7 +30,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.{SortExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -45,20 +46,34 @@ class GpuSortMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[SortExec](sort, conf, parent, rule) {
+
+  // Uses output attributes of child plan because SortExec will not change the attributes,
+  // and we need to propagate possible type conversions on the output attributes of
+  // GpuSortAggregateExec.
+  override protected val useOutputAttributesOfChild: Boolean = true
+
+  // For transparent plan like ShuffleExchange, the accessibility of runtime data transition is
+  // depended on the next non-transparent plan. So, we need to trace back.
+  override val availableRuntimeDataTransition: Boolean =
+    childPlans.head.availableRuntimeDataTransition
+
   override def convertToGpu(): GpuExec = {
     GpuSortExec(childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]],
       sort.global,
       childPlans.head.convertIfNeeded(),
-      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort)
+      if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort
+    )(sort.sortOrder)
   }
 }
 
 case class GpuSortExec(
-    sortOrder: Seq[SortOrder],
+    gpuSortOrder: Seq[SortOrder],
     global: Boolean,
     child: SparkPlan,
-    sortType: SortExecType)
-  extends UnaryExecNode with GpuExec {
+    sortType: SortExecType)(cpuSortOrder: Seq[SortOrder])
+  extends ShimUnaryExecNode with GpuExec {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = sortType match {
     case FullSortSingleBatch => Seq(RequireSingleBatch)
@@ -68,14 +83,14 @@ case class GpuSortExec(
 
   override def output: Seq[Attribute] = child.output
 
-  override def outputOrdering: Seq[SortOrder] = sortOrder
+  override def outputOrdering: Seq[SortOrder] = cpuSortOrder
 
   // sort performed is local within a given partition so will retain
   // child operator's partitioning
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def requiredChildDistribution: Seq[Distribution] =
-    if (global) OrderedDistribution(sortOrder) :: Nil else UnspecifiedDistribution :: Nil
+    if (global) OrderedDistribution(cpuSortOrder) :: Nil else UnspecifiedDistribution :: Nil
 
   override def outputBatching: CoalesceGoal = sortType match {
     // We produce a single batch if we know that our input will be a single batch
@@ -101,7 +116,7 @@ case class GpuSortExec(
   private [this] lazy val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sorter = new GpuSorter(sortOrder, output)
+    val sorter = new GpuSorter(gpuSortOrder, output)
 
     val sortTime = gpuLongMetric(SORT_TIME)
     val peakDevMemory = gpuLongMetric(PEAK_DEVICE_MEMORY)

@@ -21,20 +21,21 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{NvtxColor, Table}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 /**
  * Helper trait which defines methods that are shared by both
  * [[GpuLocalLimitExec]] and [[GpuGlobalLimitExec]].
  */
-trait GpuBaseLimitExec extends LimitExec with GpuExec {
+trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
@@ -140,8 +141,10 @@ class GpuCollectLimitMeta(
 
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
-      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded())))
+      ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+        GpuSinglePartitioning,
+        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
+        SinglePartition))
 
 }
 
@@ -259,9 +262,12 @@ object GpuTopN extends Arm {
  */
 case class GpuTopN(
     limit: Int,
-    sortOrder: Seq[SortOrder],
+    gpuSortOrder: Seq[SortOrder],
     projectList: Seq[NamedExpression],
-    child: SparkPlan) extends GpuExec with UnaryExecNode {
+    child: SparkPlan)(
+    cpuSortOrder: Seq[SortOrder]) extends GpuExec with ShimUnaryExecNode {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuSortOrder :: Nil
 
   override def output: Seq[Attribute] = {
     projectList.map(_.toAttribute)
@@ -278,7 +284,7 @@ case class GpuTopN(
   ) ++ spillMetrics
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val sorter = new GpuSorter(sortOrder, child.output)
+    val sorter = new GpuSorter(gpuSortOrder, child.output)
     val boundProjectExprs = GpuBindReferences.bindGpuReferences(projectList, child.output)
     val totalTime = gpuLongMetric(TOTAL_TIME)
     val inputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
@@ -304,12 +310,12 @@ case class GpuTopN(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  override def outputOrdering: Seq[SortOrder] = sortOrder
+  override def outputOrdering: Seq[SortOrder] = cpuSortOrder
 
   override def outputPartitioning: Partitioning = SinglePartition
 
   override def simpleString(maxFields: Int): String = {
-    val orderByString = truncatedString(sortOrder, "[", ",", "]", maxFields)
+    val orderByString = truncatedString(gpuSortOrder, "[", ",", "]", maxFields)
     val outputString = truncatedString(output, "[", ",", "]", maxFields)
 
     s"GpuTopN(limit=$limit, orderBy=$orderByString, output=$outputString)"

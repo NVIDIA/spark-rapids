@@ -46,6 +46,7 @@ object QualificationMain extends Logging {
 
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
+    val userName = appArgs.userName
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
@@ -71,15 +72,19 @@ object QualificationMain extends Logging {
         return (1, Seq[QualificationSummaryInfo]())
     }
 
-    val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-      matchEventLogs.toOption, eventlogPaths, hadoopConf)
+    val (eventLogFsFiltered, allEventLogs) = EventLogPathProcessor.processAllPaths(
+      filterN.toOption, matchEventLogs.toOption, eventlogPaths, hadoopConf)
 
     val filteredLogs = if (argsContainsAppFilters(appArgs)) {
       val appFilter = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
-      val finaleventlogs = appFilter.filterEventLogs(eventLogInfos, appArgs)
+      val finaleventlogs = if (appArgs.any() && argsContainsFSFilters(appArgs)) {
+        (appFilter.filterEventLogs(allEventLogs, appArgs) ++ eventLogFsFiltered).toSet.toSeq
+      } else {
+        appFilter.filterEventLogs(eventLogFsFiltered, appArgs)
+      }
       finaleventlogs
     } else {
-      eventLogInfos
+      eventLogFsFiltered
     }
 
     if (filteredLogs.isEmpty) {
@@ -93,9 +98,16 @@ object QualificationMain extends Logging {
     (0, res)
   }
 
+  def argsContainsFSFilters(appArgs: QualificationArgs): Boolean = {
+    val filterCriteria = appArgs.filterCriteria.toOption
+    appArgs.matchEventLogs.isSupplied ||
+        (filterCriteria.isDefined && filterCriteria.get.endsWith("-filesystem"))
+  }
+
   def argsContainsAppFilters(appArgs: QualificationArgs): Boolean = {
     val filterCriteria = appArgs.filterCriteria.toOption
     appArgs.applicationName.isSupplied || appArgs.startAppTime.isSupplied ||
+        appArgs.userName.isSupplied || appArgs.sparkProperty.isSupplied ||
         (filterCriteria.isDefined && (filterCriteria.get.endsWith("-newest") ||
             filterCriteria.get.endsWith("-oldest") || filterCriteria.get.endsWith("-per-app-name")))
   }

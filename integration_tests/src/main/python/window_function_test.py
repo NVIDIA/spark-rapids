@@ -14,13 +14,14 @@
 import math
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_fallback_collect, assert_gpu_sql_fallback_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
+from spark_session import is_before_spark_320
 
 def meta_idfn(meta):
     def tmp(something):
@@ -609,6 +610,54 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
 
 
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
+@allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
+@ignore_order(local=True)
+@pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
+@pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
+def test_window_aggs_lead_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
+    data_gen = [
+            ('a', RepeatSeqGen(a_gen, length=20)),
+            ('b', b_gen),
+            ('c', c_gen),
+            ('d', d_gen)]
+
+    assert_gpu_sql_fallback_collect(
+        lambda spark: gen_df(spark, data_gen),
+        'Lead',
+        "window_agg_table",
+        '''
+        SELECT
+            LEAD(d, 5) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lead_d_5
+        FROM window_agg_table
+        ''')
+
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
+@allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lag', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
+@ignore_order(local=True)
+@pytest.mark.parametrize('d_gen', all_basic_gens, ids=meta_idfn('agg:'))
+@pytest.mark.parametrize('c_gen', [LongRangeGen()], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('b_gen', [long_gen], ids=meta_idfn('orderBy:'))
+@pytest.mark.parametrize('a_gen', [long_gen], ids=meta_idfn('partBy:'))
+def test_window_aggs_lag_ignore_nulls_fallback(a_gen, b_gen, c_gen, d_gen):
+    data_gen = [
+            ('a', RepeatSeqGen(a_gen, length=20)),
+            ('b', b_gen),
+            ('c', c_gen),
+            ('d', d_gen)]
+
+    assert_gpu_sql_fallback_collect(
+        lambda spark: gen_df(spark, data_gen),
+        'Lag',
+        "window_agg_table",
+        '''
+        SELECT
+            LAG(d, 5) IGNORE NULLS OVER (PARTITION by a ORDER BY b,c) lag_d_5
+        FROM window_agg_table
+        ''')
+
 # Test for RANGE queries, with timestamp order-by expressions.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
@@ -658,7 +707,7 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
 
 _gen_data_for_collect_list = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
-    ('b', IntegerGen()),
+    ('b', LongRangeGen()),
     ('c_bool', BooleanGen()),
     ('c_short', ShortGen()),
     ('c_int', IntegerGen()),
@@ -674,7 +723,9 @@ _gen_data_for_collect_list = [
         ['child_int', IntegerGen()],
         ['child_time', DateGen()],
         ['child_string', StringGen()],
-        ['child_decimal', DecimalGen(precision=8, scale=3)]]))]
+        ['child_decimal', DecimalGen(precision=8, scale=3)]])),
+    ('c_array', ArrayGen(int_gen)),
+    ('c_map', simple_string_to_string_map_gen)]
 
 
 # SortExec does not support array type, so sort the result locally.
@@ -708,7 +759,11 @@ def test_window_aggs_for_rows_collect_list():
           collect_list(c_decimal) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal,
           collect_list(c_struct) over
-            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct,
+          collect_list(c_array) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_array,
+          collect_list(c_map) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_map
         from window_collect_table
         ''')
 
@@ -819,14 +874,13 @@ def test_window_aggs_for_rows_collect_set():
         ) t
         ''')
 
-
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('part_gen', [StructGen([["a", long_gen]]), ArrayGen(long_gen)], ids=meta_idfn('partBy:'))
 # For arrays the sort and hash partition are also not supported
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'AggregateExpression', 'Count', 'WindowSpecDefinition', 'SpecifiedWindowFrame', 'Literal', 'SortExec', 'SortOrder', 'ShuffleExchangeExec', 'HashPartitioning')
-def test_nested_part_fallbck(part_gen):
+def test_nested_part_fallback(part_gen):
     data_gen = [
             ('a', RepeatSeqGen(part_gen, length=20)),
             ('b', LongRangeGen()),
@@ -838,3 +892,16 @@ def test_nested_part_fallbck(part_gen):
             .withColumn('rn', f.count('c').over(window_spec))
 
     assert_gpu_fallback_collect(do_it, 'WindowExec')
+
+# In a distributed setup the order of the partitions returend might be different, so we must ignore the order
+# but small batch sizes can make sort very slow, so do the final order by locally
+@ignore_order(local=True)
+@pytest.mark.parametrize('ride_along', all_basic_gens + decimal_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+def test_window_ride_along(ride_along):
+    assert_gpu_and_cpu_are_equal_sql(
+            lambda spark : gen_df(spark, [('a', LongRangeGen()), ('b', ride_along)]),
+            "window_agg_table",
+            'select *,'
+            ' row_number() over (order by a) as row_num '
+            'from window_agg_table ',
+            conf = allow_negative_scale_of_decimal_conf)

@@ -40,6 +40,10 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         for index in range(len(cpu)):
             _assert_equal(cpu[index], gpu[index], float_check, path + [index])
+    elif (t is tuple):
+        assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
+        for index in range(len(cpu)):
+            _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is pytypes.GeneratorType):
         index = 0
         # generator has no zip :( so we have to do this the hard way
@@ -64,9 +68,11 @@ def _assert_equal(cpu, gpu, float_check, path):
 
             index = index + 1
     elif (t is dict):
-        # TODO eventually we need to split this up so we can do the right thing for float/double
-        # values stored under the map some where, especially for NaNs
-        assert cpu == gpu, "GPU and CPU map values are different at {}".format(path)
+        # The order of key/values is not guaranteed in python dicts, nor are they guaranteed by Spark
+        # so sort the items to do our best with ignoring the order of dicts
+        cpu_items = list(cpu.items()).sort(key=_RowCmp)
+        gpu_items = list(gpu.items()).sort(key=_RowCmp)
+        _assert_equal(cpu_items, gpu_items, float_check, path + ["map"])
     elif (t is int):
         assert cpu == gpu, "GPU and CPU int values are different at {}".format(path)
     elif (t is float):
@@ -301,6 +307,53 @@ def assert_gpu_fallback_write(write_func,
 
     assert_equal(from_cpu, from_gpu)
 
+def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
+        exist_classes='',
+        non_exist_classes='',
+        conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, 'COLLECT_WITH_DATAFRAME')
+
+    conf = _prep_incompat_conf(conf)
+
+    print('### CPU RUN ###')
+    cpu_start = time.time()
+    from_cpu, cpu_df = with_cpu_session(bring_back, conf=conf)
+    cpu_end = time.time()
+    print('### GPU RUN ###')
+    gpu_start = time.time()
+    from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
+    gpu_end = time.time()
+    jvm = spark_jvm()
+    for clz in exist_classes.split(','):
+        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
+    for clz in non_exist_classes.split(','):
+        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
+        gpu_end - gpu_start, cpu_end - cpu_start))
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
+    assert_equal(from_cpu, from_gpu)
+
+def assert_cpu_and_gpu_are_equal_sql_with_capture(df_fun,
+        sql,
+        table_name,
+        exist_classes='',
+        non_exist_classes='',
+        conf=None,
+        debug=False):
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        if debug:
+            return data_gen.debug_df(spark.sql(sql))
+        else:
+            return spark.sql(sql)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(do_it_all, exist_classes, non_exist_classes, conf)
+
 def assert_gpu_fallback_collect(func,
         cpu_fallback_class_name,
         conf={}):
@@ -378,6 +431,67 @@ def _assert_gpu_and_cpu_are_equal(func,
 
     assert_equal(from_cpu, from_gpu)
 
+def run_with_cpu(func,
+    mode,
+    conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, mode)
+    conf = _prep_incompat_conf(conf)
+
+    print("run_with_cpu")
+
+    def run_on_cpu():
+        print('### CPU RUN ###')
+        global cpu_start
+        cpu_start = time.time()
+        global from_cpu
+        from_cpu = with_cpu_session(bring_back, conf=conf)
+        global cpu_end
+        cpu_end = time.time()
+
+    run_on_cpu()
+
+    print('### {}: CPU TOOK {} ###'.format(collect_type,
+        cpu_end - cpu_start))
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+
+    return from_cpu
+
+def run_with_cpu_and_gpu(func,
+    mode,
+    conf={}):
+    (bring_back, collect_type) = _prep_func_for_compare(func, mode)
+    conf = _prep_incompat_conf(conf)
+
+    def run_on_cpu():
+        print('### CPU RUN ###')
+        global cpu_start
+        cpu_start = time.time()
+        global from_cpu
+        from_cpu = with_cpu_session(bring_back, conf=conf)
+        global cpu_end
+        cpu_end = time.time()
+
+    def run_on_gpu():
+        print('### GPU RUN ###')
+        global gpu_start
+        gpu_start = time.time()
+        global from_gpu
+        from_gpu = with_gpu_session(bring_back, conf=conf)
+        global gpu_end
+        gpu_end = time.time()
+
+    run_on_cpu()
+    run_on_gpu()
+
+    print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
+        gpu_end - gpu_start, cpu_end - cpu_start))
+    if should_sort_locally():
+        from_cpu.sort(key=_RowCmp)
+        from_gpu.sort(key=_RowCmp)
+
+    return (from_cpu, from_gpu)
+
 def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
@@ -450,3 +564,15 @@ def assert_gpu_and_cpu_error(df_fun, conf, error_message):
     """
     assert_py4j_exception(lambda: with_cpu_session(df_fun, conf), error_message)
     assert_py4j_exception(lambda: with_gpu_session(df_fun, conf), error_message)
+
+def with_cpu_sql(df_fun, table_name, sql, conf=None, debug=False):
+    if conf is None:
+        conf = {}
+    def do_it_all(spark):
+        df = df_fun(spark)
+        df.createOrReplaceTempView(table_name)
+        if debug:
+            return data_gen.debug_df(spark.sql(sql))
+        else:
+            return spark.sql(sql)
+    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)

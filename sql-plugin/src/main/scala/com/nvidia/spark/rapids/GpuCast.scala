@@ -23,11 +23,12 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.YearParseUtil
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.RegexReplace
+import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -39,90 +40,89 @@ class CastExprMeta[INPUT <: CastBase](
     rule: DataFromReplacementRule)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
-  val fromType = cast.child.dataType
-  val toType = cast.dataType
-  var legacyCastToString = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
+  val fromType: DataType = cast.child.dataType
+  val toType: DataType = cast.dataType
+  val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
+
+  // stringToDate supports ANSI mode from Spark v3.2.0.  Here is the details.
+  //     https://github.com/apache/spark/commit/6e862792fb
+  // We do not want to create a shim class for this small change, so define a method
+  // to support both cases in a single class.
+  protected def stringToDateAnsiModeEnabled: Boolean = false
 
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
   private def recursiveTagExprForGpuCheck(
       fromDataType: DataType = fromType,
-      toDataType: DataType = toType)
-  : Unit = {
-    if (!conf.isCastFloatToDecimalEnabled && toDataType.isInstanceOf[DecimalType] &&
-      (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
-      willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal to convert " +
-        "floating point data types to decimals and this can produce results that slightly " +
-        "differ from the default behavior in Spark.  To enable this operation on the GPU, set " +
-        s"${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
+      toDataType: DataType = toType,
+      depth: Int = 0): Unit = {
+    val checks = rule.getChecks.get.asInstanceOf[CastChecks]
+    if (depth > 0 &&
+        !checks.gpuCanCast(fromDataType, toDataType, allowDecimal = conf.decimalTypeEnabled)) {
+      willNotWorkOnGpu(s"Casting child type $fromDataType to $toDataType is not supported")
     }
-    if (!conf.isCastFloatToStringEnabled && toDataType == DataTypes.StringType &&
-      (fromDataType == DataTypes.FloatType || fromDataType == DataTypes.DoubleType)) {
-      willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
-        "converting floating point data types to strings and this can produce results that " +
-        "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
-        s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
-    }
-    if (!conf.isCastStringToFloatEnabled && cast.child.dataType == DataTypes.StringType &&
-      Seq(DataTypes.FloatType, DataTypes.DoubleType).contains(cast.dataType)) {
-      willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
-        "that casting from string to float types on the GPU returns incorrect results when the " +
-        "string represents any number \"1.7976931348623158E308\" <= x < " +
-        "\"1.7976931348623159E308\" and \"-1.7976931348623159E308\" < x <= " +
-        "\"-1.7976931348623158E308\" in both these cases the GPU returns Double.MaxValue while " +
-        "CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this operation on " +
-        "the GPU, set" + s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-    }
-    if (!conf.isCastStringToTimestampEnabled && fromDataType == DataTypes.StringType
-      && toDataType == DataTypes.TimestampType) {
-      willNotWorkOnGpu("the GPU only supports a subset of formats " +
-        "when casting strings to timestamps. Refer to the CAST documentation " +
-        "for more details. To enable this operation on the GPU, set" +
-        s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
-    }
-    // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
-    if (!conf.isCastStringToDecimalEnabled && cast.child.dataType == DataTypes.StringType &&
-        cast.dataType.isInstanceOf[DecimalType]) {
-      willNotWorkOnGpu("Currently string to decimal type on the GPU might produce results which " +
-        "slightly differed from the correct results when the string represents any number " +
-        "exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For instance, the GPU " +
-        "returns 99999999999999987 given input string \"99999999999999999\". The cause of " +
-        "divergence is that we can not cast strings containing scientific notation to decimal " +
-        "directly. So, we have to cast strings to floats firstly. Then, cast floats to decimals. " +
-        "The first step may lead to precision loss. To enable this operation on the GPU, set " +
-        s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
-    }
-    if (fromDataType.isInstanceOf[StructType]) {
-      val checks = rule.getChecks.get.asInstanceOf[CastChecks]
-      fromDataType.asInstanceOf[StructType].foreach{field =>
-        recursiveTagExprForGpuCheck(field.dataType)
-        if (toDataType == StringType) {
-          if (!checks.gpuCanCast(field.dataType, toDataType)) {
-            willNotWorkOnGpu(s"Unsupported type ${field.dataType} found in Struct column. " +
-              s"Casting ${field.dataType} to ${toDataType} not currently supported. Refer to " +
-              "CAST documentation for more details.")
-          }
-        }
-      }
-    }
-
     (fromDataType, toDataType) match {
-      case (
-        ArrayType(nestedFrom@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _),
-        ArrayType(nestedTo@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _)) => recursiveTagExprForGpuCheck(nestedFrom, nestedTo)
+      case ( _: DecimalType, _: FloatType | _: DoubleType) if !conf.isCastDecimalToFloatEnabled =>
+        willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
+            "to convert decimal data types to floating point and this can produce results that " +
+            "slightly differ from the default behavior in Spark.  To enable this operation on " +
+            s"the GPU, set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT} to true.")
+      case (_: FloatType | _: DoubleType, _: DecimalType) if !conf.isCastFloatToDecimalEnabled =>
+        willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
+            "to convert floating point data types to decimals and this can produce results that " +
+            "slightly differ from the default behavior in Spark.  To enable this operation on " +
+            s"the GPU, set ${RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL} to true.")
+      case (_: FloatType | _: DoubleType, _: StringType) if !conf.isCastFloatToStringEnabled =>
+        willNotWorkOnGpu("the GPU will use different precision than Java's toString method when " +
+            "converting floating point data types to strings and this can produce results that " +
+            "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
+            s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
+      case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
+        willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
+            "that casting from string to float types on the GPU returns incorrect results when " +
+            "the string represents any number \"1.7976931348623158E308\" <= x < " +
+            "\"1.7976931348623159E308\" and \"-1.7976931348623159E308\" < x <= " +
+            "\"-1.7976931348623158E308\" in both these cases the GPU returns Double.MaxValue " +
+            "while CPU returns \"+Infinity\" and \"-Infinity\" respectively. To enable this " +
+            s"operation on the GPU, set ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
+      case (_: StringType, _: TimestampType) =>
+        if (!conf.isCastStringToTimestampEnabled) {
+          willNotWorkOnGpu("the GPU only supports a subset of formats " +
+              "when casting strings to timestamps. Refer to the CAST documentation " +
+              "for more details. To enable this operation on the GPU, set" +
+              s" ${RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP} to true.")
+        }
+        YearParseUtil.tagParseStringAsDate(conf, this)
+      case (_: StringType, _: DateType) =>
+        YearParseUtil.tagParseStringAsDate(conf, this)
+      case (_: StringType, _: DecimalType) if !conf.isCastStringToDecimalEnabled =>
+        // FIXME: https://github.com/NVIDIA/spark-rapids/issues/2019
+        willNotWorkOnGpu("Currently string to decimal type on the GPU might produce " +
+            "results which slightly differed from the correct results when the string represents " +
+            "any number exceeding the max precision that CAST_STRING_TO_FLOAT can keep. For " +
+            "instance, the GPU returns 99999999999999987 when given the input string " +
+            "\"99999999999999999\". The cause of divergence is that we can not cast strings " +
+            "containing scientific notation to decimal directly. So, we have to cast strings " +
+            "to floats firstly. Then, cast floats to decimals. The first step may lead to " +
+            "precision loss. To enable this operation on the GPU, set " +
+            s" ${RapidsConf.ENABLE_CAST_STRING_TO_FLOAT} to true.")
+      case (structType: StructType, StringType) =>
+        structType.foreach { field =>
+          recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
+        }
+      case (fromStructType: StructType, toStructType: StructType) =>
+        fromStructType.zip(toStructType).foreach {
+          case (fromChild, toChild) =>
+            recursiveTagExprForGpuCheck(fromChild.dataType, toChild.dataType, depth + 1)
+        }
+      case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
+        recursiveTagExprForGpuCheck(nestedFrom, nestedTo, depth + 1)
 
-      case (nestedFrom@ArrayType(_, _), nestedTo@ArrayType(_, _)) =>
-        willNotWorkOnGpu(s"casting from $nestedFrom to $nestedTo is not supported")
+      case (MapType(keyFrom, valueFrom, _), MapType(keyTo, valueTo, _)) =>
+        recursiveTagExprForGpuCheck(keyFrom, keyTo, depth + 1)
+        recursiveTagExprForGpuCheck(valueFrom, valueTo, depth + 1)
 
-      case _ => ()
+      case _ =>
     }
   }
 
@@ -131,22 +131,22 @@ class CastExprMeta[INPUT <: CastBase](
   }
 
   override def convertToGpu(child: Expression): GpuExpression =
-    GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString)
+    GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString,
+      stringToDateAnsiModeEnabled)
 }
 
 object GpuCast extends Arm {
 
-  private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}([ T](:?[\\r\\n]|.)*)?\\Z"
+  private val DATE_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}([ T](:?[\\r\\n]|.)*)?\\Z"
+  private val DATE_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}\\Z"
+  private val DATE_REGEX_YYYY = "\\A\\d{4}\\Z"
 
-  private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{2}\\-\\d{2}[ ]?\\Z"
-  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z)\\Z"
-
-  /**
-   * The length of a timestamp with 6 digits for microseconds followed by 'Z', such
-   * as "2020-01-01T12:34:56.123456Z".
-   */
-  private val FULL_TIMESTAMP_LENGTH = 27
+  private val TIMESTAMP_REGEX_YYYY_MM_DD = "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ ]?\\Z"
+  private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}[ ]?\\Z"
+  private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
+  private val TIMESTAMP_REGEX_FULL =
+    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
+  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
 
   /**
    * Regex to match timestamps with or without trailing zeros.
@@ -155,26 +155,10 @@ object GpuCast extends Arm {
     "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
     "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
 
-  val INVALID_INPUT_MESSAGE = "Column contains at least one value that is not in the " +
+  val INVALID_INPUT_MESSAGE: String = "Column contains at least one value that is not in the " +
     "required range"
 
-  val INVALID_FLOAT_CAST_MSG = "At least one value is either null or is an invalid number"
-
-  /**
-   * Sanitization step for CAST string to date. Inserts a single zero before any
-   * single digit month or day.
-   */
-  def sanitizeStringToDate(input: ColumnVector): ColumnVector = {
-    val rules = Seq(
-      // replace yyyy-m with yyyy-mm
-      RegexReplace(raw"(\A\d{4})-(\d{1})(-|\Z)", raw"\1-0\2\3"),
-      // replace yyyy-mm-d with yyyy-mm-dd
-      RegexReplace(raw"(\A\d{4}-\d{2})-(\d{1})([ T]|\Z)", raw"\1-0\2\3")
-    )
-    rules.foldLeft(input.incRefCount())((cv, rule) => withResource(cv) { _ =>
-      cv.stringReplaceWithBackrefs(rule.search, rule.replace)
-    })
-  }
+  val INVALID_FLOAT_CAST_MSG: String = "At least one value is either null or is an invalid number"
 
   def sanitizeStringToFloat(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
 
@@ -265,21 +249,21 @@ object GpuCast extends Arm {
       }
     }
 
-    if (ansiEnabled) {
-      // ansi mode only supports simple integers, so no exponents or decimal places
-      val regex = "^[+\\-]?[0-9]+$"
-      withResource(sanitized.matchesRe(regex)) { isInt =>
-        withResource(isInt.all()) { allInts =>
-          // Check that all non-null values are valid integers.
-          if (allInts.isValid && !allInts.getBoolean) {
-            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+    withResource(sanitized) { _ =>
+      if (ansiEnabled) {
+        // ansi mode only supports simple integers, so no exponents or decimal places
+        val regex = "^[+\\-]?[0-9]+$"
+        withResource(sanitized.matchesRe(regex)) { isInt =>
+          withResource(isInt.all()) { allInts =>
+            // Check that all non-null values are valid integers.
+            if (allInts.isValid && !allInts.getBoolean) {
+              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
           }
+          sanitized.incRefCount()
         }
-        sanitized
-      }
-    } else {
-      // truncate strings that represent decimals, so that we just look at the string before the dot
-      withResource(sanitized) { _ =>
+      } else {
+        // truncate strings that represent decimals to just look at the string before the dot
         withResource(Scalar.fromString(".")) { dot =>
           withResource(sanitized.stringContains(dot)) { hasDot =>
             // only do the decimal sanitization if any strings do contain dot
@@ -307,101 +291,29 @@ object GpuCast extends Arm {
       }
     }
   }
-}
 
-/**
- * Casts using the GPU
- */
-case class GpuCast(
-    child: Expression,
-    dataType: DataType,
-    ansiMode: Boolean = false,
-    timeZoneId: Option[String] = None,
-    legacyCastToString: Boolean = false)
-  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
-
-  import GpuCast._
-
-  override def toString: String = if (ansiMode) {
-    s"ansi_cast($child as ${dataType.simpleString})"
-  } else {
-    s"cast($child as ${dataType.simpleString})"
-  }
-
-  override def checkInputDataTypes(): TypeCheckResult = {
-    if (Cast.canCast(child.dataType, dataType)) {
-      TypeCheckResult.TypeCheckSuccess
-    } else {
-      TypeCheckResult.TypeCheckFailure(
-        s"cannot cast ${child.dataType.catalogString} to ${dataType.catalogString}")
-    }
-  }
-
-  override def nullable: Boolean = Cast.forceNullable(child.dataType, dataType) || child.nullable
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
-    copy(timeZoneId = Option(timeZoneId))
-
-  /**
-   * Under certain conditions during hash partitioning, Spark will attempt to replace casts
-   * with semantically equivalent expressions. This method is overridden to prevent Spark
-   * from substituting non-GPU expressions.
-   */
-  override def semanticEquals(other: Expression): Boolean = other match {
-    case g: GpuExpression =>
-      if (this == g) {
-        true
-      } else {
-        super.semanticEquals(g)
-      }
-    case _ => false
-  }
-
-  // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
-  // Otherwise behave like Expression.resolved.
-  override lazy val resolved: Boolean =
-    childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
-
-  private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
-
-  override def sql: String = dataType match {
-    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
-    // this type of casting can only be introduced by the analyzer, and can be omitted when
-    // converting back to SQL query string.
-    case _: ArrayType | _: MapType | _: StructType => child.sql
-    case _ => s"CAST(${child.sql} AS ${dataType.sql})"
-  }
-
-  override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    (input.dataType(), dataType) match {
-      // Filter out casts to Decimal that utilize the ColumnVector to avoid a copy
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
-        castIntegralsToDecimal(input.getBase, dt)
-
-      case (FloatType | DoubleType, dt: DecimalType) =>
-        castFloatsToDecimal(input.getBase, dt)
-
-      case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.getBase, from, to)
-
-      case _ =>
-        recursiveDoColumnar(input.getBase, input.dataType())
-    }
-  }
-
-  private def recursiveDoColumnar(
+  def doCast(
       input: ColumnView,
       fromDataType: DataType,
-      toDataType: DataType = dataType)
-  : ColumnVector = {
+      toDataType: DataType,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+
+    if (DataType.equalsStructurally(fromDataType, toDataType)) {
+      return input.copyToColumnVector()
+    }
+
     (fromDataType, toDataType) match {
       case (NullType, to) =>
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, to)
+
       case (DateType, BooleanType | _: NumericType) =>
         // casts from date type to numerics are always null
         GpuColumnVector.columnVectorFromNull(input.getRowCount.toInt, toDataType)
       case (DateType, StringType) =>
         input.asStrings("%Y-%m-%d")
+
       case (TimestampType, FloatType | DoubleType) =>
         withResource(input.castTo(DType.INT64)) { asLongs =>
           withResource(Scalar.fromDouble(1000000)) { microsPerSec =>
@@ -440,23 +352,49 @@ case class GpuCast(
         }
       case (TimestampType, StringType) =>
         castTimestampToString(input)
-      case (StructType(fields), StringType) =>
-        castStructToString(input, fields)
 
-      // ansi cast from larger-than-integer integral types, to integer
-      case (LongType, IntegerType) if ansiMode =>
+      case (StructType(fields), StringType) =>
+        castStructToString(input, fields, ansiMode, legacyCastToString,
+          stringToDateAnsiModeEnabled)
+
+      // ansi cast from larger-than-long integral-like types, to long
+      case (dt: DecimalType, LongType) if ansiMode =>
+        // This is a work around for https://github.com/rapidsai/cudf/issues/9282
+        val min = BigDecimal(Long.MinValue)
+            .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
+        val max = BigDecimal(Long.MaxValue)
+            .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
+        assertValuesInRange(input, Scalar.fromDecimal(min), Scalar.fromDecimal(max))
+        if (dt.precision <= DType.DECIMAL32_MAX_PRECISION && dt.scale < 0) {
+          // This is a work around for https://github.com/rapidsai/cudf/issues/9281
+          withResource(input.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))) { tmp =>
+            tmp.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+          }
+        } else {
+          input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
+
+      case (dt: DecimalType, LongType) if dt.precision <= DType.DECIMAL32_MAX_PRECISION &&
+          dt.scale < 0 =>
+        // This is a work around for https://github.com/rapidsai/cudf/issues/9281
+        withResource(input.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))) { tmp =>
+          tmp.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
+        }
+
+      // ansi cast from larger-than-integer integral-like types, to integer
+      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
           Scalar.fromInt(Int.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
-      // ansi cast from larger-than-short integral types, to short
-      case (LongType | IntegerType, ShortType) if ansiMode =>
+      // ansi cast from larger-than-short integral-like types, to short
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
           Scalar.fromShort(Short.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
-      // ansi cast from larger-than-byte integral types, to byte
-      case (LongType | IntegerType | ShortType, ByteType) if ansiMode =>
+      // ansi cast from larger-than-byte integral-like types, to byte
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
         assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
           Scalar.fromByte(Byte.MaxValue))
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -492,7 +430,7 @@ case class GpuCast(
             withResource(FloatUtils.infinityToNulls(inputWithNansToNull)) {
               inputWithoutNanAndInfinity =>
                 if (fromDataType == FloatType &&
-                  ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
+                    ShimLoader.getSparkShims.hasCastFloatTimestampUpcast) {
                   withResource(inputWithoutNanAndInfinity.castTo(DType.FLOAT64)) { doubles =>
                     withResource(doubles.mul(microsPerSec, DType.INT64)) {
                       inputTimesMicrosCv =>
@@ -508,6 +446,10 @@ case class GpuCast(
             }
           }
         }
+      case (FloatType | DoubleType, dt: DecimalType) =>
+        castFloatsToDecimal(input, dt, ansiMode)
+      case (from: DecimalType, to: DecimalType) =>
+        castDecimalToDecimal(input, from, to, ansiMode)
       case (BooleanType, TimestampType) =>
         // cudf requires casting to a long first.
         withResource(input.castTo(DType.INT64)) { longs =>
@@ -542,9 +484,13 @@ case class GpuCast(
             case BooleanType =>
               castStringToBool(trimmed, ansiMode)
             case DateType =>
-              castStringToDate(trimmed)
+              if (stringToDateAnsiModeEnabled) {
+                castStringToDateAnsi(trimmed, ansiMode)
+              } else {
+                castStringToDate(trimmed)
+              }
             case TimestampType =>
-              castStringToTimestamp(trimmed)
+              castStringToTimestamp(trimmed, ansiMode)
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -558,45 +504,32 @@ case class GpuCast(
         // string to fp64. Then, cast fp64 to target decimal type to enforce HALF_UP rounding.
         withResource(input.strip()) { trimmed =>
           withResource(castStringToFloats(trimmed, ansiMode, DType.FLOAT64)) { fp =>
-            castFloatsToDecimal(fp, dt)
+            castFloatsToDecimal(fp, dt, ansiMode)
           }
         }
+      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
+        castIntegralsToDecimal(input, dt, ansiMode)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
 
-      case (ShortType | IntegerType | LongType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castIntegralsToDecimal(inputVector, dt)
-        }
-
-      case (FloatType | DoubleType, dt: DecimalType) =>
-        withResource(input.copyToColumnVector()) { inputVector =>
-          castFloatsToDecimal(inputVector, dt)
-        }
-
-      case (from: DecimalType, to: DecimalType) =>
-        castDecimalToDecimal(input.copyToColumnVector(), from, to)
-
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
 
-      case (
-        ArrayType(nestedFrom@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _),
-        ArrayType(nestedTo@(
-          FloatType |
-          DoubleType |
-          IntegerType |
-          ArrayType(_, _)), _)) => {
+      case (ArrayType(nestedFrom, _), ArrayType(nestedTo, _)) =>
+        withResource(input.getChildColumnView(0)) { childView =>
+          withResource(doCast(childView, nestedFrom, nestedTo,
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) { childColumnVector =>
+            withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())
+          }
+        }
 
-        withResource(input.getChildColumnView(0))(childView =>
-          withResource(recursiveDoColumnar(childView, nestedFrom, nestedTo))(childColumnVector =>
-            withResource(input.replaceListChild(childColumnVector))(_.copyToColumnVector())))
-      }
+      case (from: StructType, to: StructType) =>
+        castStructToStruct(from, to, input, ansiMode, legacyCastToString,
+          stringToDateAnsiModeEnabled)
+
+      case (from: MapType, to: MapType) =>
+        castMapToMap(from, to, input, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
 
       case _ =>
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -614,10 +547,10 @@ case class GpuCast(
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
   private def assertValuesInRange(values: ColumnView,
-    minValue: => Scalar,
-    maxValue: => Scalar,
-    inclusiveMin: Boolean = true,
-    inclusiveMax: Boolean = true): Unit = {
+      minValue: => Scalar,
+      maxValue: => Scalar,
+      inclusiveMin: Boolean = true,
+      inclusiveMax: Boolean = true): Unit = {
 
     def throwIfAny(cv: ColumnView): Unit = {
       withResource(cv) { cv =>
@@ -657,12 +590,12 @@ case class GpuCast(
    * @param inclusiveMin Whether the min value is included in the valid range or not
    * @param inclusiveMax Whether the max value is included in the valid range or not
    */
-  private def replaceOutOfRangeValues(values: ColumnVector,
-    minValue: => Scalar,
-    maxValue: => Scalar,
-    replaceValue: => Scalar,
-    inclusiveMin: Boolean = true,
-    inclusiveMax: Boolean = true): ColumnVector = {
+  private def replaceOutOfRangeValues(values: ColumnView,
+      minValue: => Scalar,
+      maxValue: => Scalar,
+      replaceValue: => Scalar,
+      inclusiveMin: Boolean = true,
+      inclusiveMax: Boolean = true): ColumnVector = {
 
     withResource(minValue) { minValue =>
       withResource(maxValue) { maxValue =>
@@ -697,8 +630,12 @@ case class GpuCast(
     }
   }
 
-  private def castStructToString(input: ColumnView,
-    inputSchema: Array[StructField]): ColumnVector = {
+  private def castStructToString(
+      input: ColumnView,
+      inputSchema: Array[StructField],
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
 
     val (leftStr, rightStr) = if (legacyCastToString) ("[", "]") else ("{", "}")
     val emptyStr = ""
@@ -709,26 +646,28 @@ case class GpuCast(
     val numInputColumns = input.getNumChildren
 
     def doCastStructToString(
-      emptyScalar: Scalar,
-      nullScalar: Scalar,
-      sepColumn: ColumnVector,
-      spaceColumn: ColumnVector,
-      leftColumn: ColumnVector,
-      rightColumn: ColumnVector) = {
+        emptyScalar: Scalar,
+        nullScalar: Scalar,
+        sepColumn: ColumnVector,
+        spaceColumn: ColumnVector,
+        leftColumn: ColumnVector,
+        rightColumn: ColumnVector): ColumnVector = {
       withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
         // legacy: [firstCol
         //   3.1+: {firstCol
         columns += leftColumn.incRefCount()
         withResource(input.getChildColumnView(0)) { firstColumnView =>
-          columns += recursiveDoColumnar(firstColumnView, inputSchema.head.dataType)
+          columns += doCast(firstColumnView, inputSchema.head.dataType, StringType,
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
         }
         for (nonFirstIndex <- 1 until numInputColumns) {
           withResource(input.getChildColumnView(nonFirstIndex)) { nonFirstColumnView =>
             // legacy: ","
             //   3.1+: ", "
             columns += sepColumn.incRefCount()
-            val nonFirstColumn = recursiveDoColumnar(nonFirstColumnView,
-              inputSchema(nonFirstIndex).dataType)
+            val nonFirstColumn = doCast(nonFirstColumnView,
+              inputSchema(nonFirstIndex).dataType, StringType, ansiMode, legacyCastToString,
+                stringToDateAnsiModeEnabled)
             if (legacyCastToString) {
               // " " if non-null
               columns += spaceColumn.mergeAndSetValidity(BinaryOp.BITWISE_AND, nonFirstColumnView)
@@ -744,18 +683,17 @@ case class GpuCast(
       }
     }
 
-    withResource(
-      Seq(emptyStr, nullStr, separatorStr, spaceStr, leftStr, rightStr)
-        .safeMap(Scalar.fromString _)
-    ) { case Seq(emptyScalar, nullScalar, columnScalars@_*) =>
+    withResource(Seq(emptyStr, nullStr, separatorStr, spaceStr, leftStr, rightStr)
+        .safeMap(Scalar.fromString)) {
+      case Seq(emptyScalar, nullScalar, columnScalars@_*) =>
 
-      withResource(
-        columnScalars.safeMap(s => ColumnVector.fromScalar(s, numRows))
-      ) { case Seq(sepColumn, spaceColumn, leftColumn, rightColumn) =>
+        withResource(
+          columnScalars.safeMap(s => ColumnVector.fromScalar(s, numRows))
+        ) { case Seq(sepColumn, spaceColumn, leftColumn, rightColumn) =>
 
-        doCastStructToString(emptyScalar, nullScalar, sepColumn,
-          spaceColumn, leftColumn, rightColumn)
-      }
+          doCastStructToString(emptyScalar, nullScalar, sepColumn,
+            spaceColumn, leftColumn, rightColumn)
+        }
     }
   }
 
@@ -829,7 +767,7 @@ case class GpuCast(
           }
         }
         withResource(sanitized.castTo(dType)) { parsedInt =>
-          withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          withResource(Scalar.fromNull(dType)) { nullVal =>
             isInt.ifElse(parsedInt, nullVal)
           }
         }
@@ -884,65 +822,42 @@ case class GpuCast(
     }
   }
 
-  /**
-   * Replace special date strings such as "now" with timestampDays. This method does not
-   * close the `input` ColumnVector.
-   */
-  def specialDateOr(
+  /** This method does not close the `input` ColumnVector. */
+  def convertDateOrNull(
       input: ColumnVector,
-      special: String,
-      value: Int,
-      orColumnVector: ColumnVector): ColumnVector = {
-
-    withResource(orColumnVector) { other =>
-      withResource(Scalar.fromString(special)) { str =>
-        withResource(input.equalTo(str)) { isStr =>
-          withResource(Scalar.timestampDaysFromInt(value)) { date =>
-            isStr.ifElse(date, other)
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Parse dates that match the provided length and format. This method does not
-   * close the `input` ColumnVector.
-   *
-   * @param input Input ColumnVector
-   * @param len The string length to match against
-   * @param cudfFormat The cuDF timestamp format to match against
-   * @return ColumnVector containing timestamps for input entries that match both
-   *         the length and format, and null for other entries
-   */
-  def convertFixedLenDateOrNull(
-      input: ColumnVector,
-      len: Int,
+      regex: String,
       cudfFormat: String): ColumnVector = {
 
-    withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
-      withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-        withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { nullScalar =>
-          isValidDate.ifElse(asDays, nullScalar)
+    val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+      withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+        isMatch.and(isTimestamp)
+      }
+    }
+
+    withResource(isValidDate) { _ =>
+      withResource(Scalar.fromNull(DType.TIMESTAMP_DAYS)) { orElse =>
+        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
+          isValidDate.ifElse(asDays, orElse)
         }
       }
     }
   }
 
-  /** This method does not close the `input` ColumnVector. */
-  def convertVarLenDateOr(
+    /** This method does not close the `input` ColumnVector. */
+  def convertDateOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
       orElse: ColumnVector): ColumnVector = {
 
-    withResource(orElse) { orElse =>
-      val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
-        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-          isMatch.and(isTimestamp)
-        }
+    val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+      withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+        isMatch.and(isTimestamp)
       }
-      withResource(isValidDate) { isValidDate =>
+    }
+
+    withResource(isValidDate) { _ =>
+      withResource(orElse) { _ =>
         withResource(input.asTimestampDays(cudfFormat)) { asDays =>
           isValidDate.ifElse(asDays, orElse)
         }
@@ -950,29 +865,22 @@ case class GpuCast(
     }
   }
 
-  /**
-   * Parse dates that match the provided length and format. This method does not
-   * close the `input` ColumnVector.
-   *
-   * @param input Input ColumnVector
-   * @param len The string length to match against
-   * @param cudfFormat The cuDF timestamp format to match against
-   * @return ColumnVector containing timestamps for input entries that match both
-   *         the length and format, and null for other entries
-   */
-  def convertFixedLenDateOr(
-      input: ColumnVector,
-      len: Int,
-      cudfFormat: String,
-      orElse: ColumnVector): ColumnVector = {
-
-    withResource(orElse) { orElse =>
-      withResource(isValidTimestamp(input, len, cudfFormat)) { isValidDate =>
-        withResource(input.asTimestampDays(cudfFormat)) { asDays =>
-          isValidDate.ifElse(asDays, orElse)
+  private def checkResultForAnsiMode(input: ColumnVector, result: ColumnVector,
+      errMessage: String): ColumnVector = {
+    closeOnExcept(result) { finalResult =>
+      withResource(input.isNotNull) { wasNotNull =>
+        withResource(finalResult.isNull) { isNull =>
+          withResource(wasNotNull.and(isNull)) { notConverted =>
+            withResource(notConverted.any()) { notConvertedAny =>
+              if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
+                throw new DateTimeException(errMessage)
+              }
+            }
+          }
         }
       }
     }
+    result
   }
 
   /**
@@ -987,64 +895,59 @@ case class GpuCast(
    * `yyyy-[m]m-[d]d *`
    * `yyyy-[m]m-[d]dT*`
    */
-  private def castStringToDate(input: ColumnVector): ColumnVector = {
+  private def castStringToDate(sanitizedInput: ColumnVector): ColumnVector = {
 
-    val specialDates = DateUtils.specialDatesDays
+    // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
+    val converted = convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+      convertDateOr(sanitizedInput, DATE_REGEX_YYYY_MM, "%Y-%m",
+        convertDateOrNull(sanitizedInput, DATE_REGEX_YYYY, "%Y")))
 
-    withResource(sanitizeStringToDate(input)) { sanitizedInput =>
-
-      // convert dates that are in valid formats yyyy, yyyy-mm, yyyy-mm-dd
-      val converted = convertVarLenDateOr(sanitizedInput, DATE_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-        convertFixedLenDateOr(sanitizedInput, 7, "%Y-%m",
-          convertFixedLenDateOrNull(sanitizedInput, 4, "%Y")))
-
-      // handle special dates like "epoch", "now", etc.
-      specialDates.foldLeft(converted)((prev, specialDate) =>
-        specialDateOr(sanitizedInput, specialDate._1, specialDate._2, prev))
-    }
-  }
-
-  /**
-   * Replace special date strings such as "now" with timestampMicros. This method does not
-   * close the `input` ColumnVector.
-   */
-  private def specialTimestampOr(
-      input: ColumnVector,
-      special: String,
-      value: Long,
-      orColumnVector: ColumnVector): ColumnVector = {
-
-    withResource(orColumnVector) { other =>
-      withResource(Scalar.fromString(special)) { str =>
-        withResource(input.equalTo(str)) { isStr =>
-          withResource(Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)) { date =>
-            isStr.ifElse(date, other)
-          }
-        }
+    // handle special dates like "epoch", "now", etc.
+    closeOnExcept(converted) { tsVector =>
+      DateUtils.fetchSpecialDates(DType.TIMESTAMP_DAYS) match {
+        case specialDates if specialDates.nonEmpty =>
+          // `tsVector` will be closed in replaceSpecialDates
+          replaceSpecialDates(sanitizedInput, tsVector, specialDates)
+        case _ =>
+          tsVector
       }
     }
   }
 
-  /**
-   * Parse dates that match the the provided regex. This method does not close the `input`
-   * ColumnVector.
-   */
-  private def convertFixedLenTimestampOrNull(
+  private def castStringToDateAnsi(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
+    val result = castStringToDate(input)
+    if (ansiMode) {
+      // When ANSI mode is enabled, we need to throw an exception if any values could not be
+      // converted
+      checkResultForAnsiMode(input, result,
+        "One or more values could not be converted to DateType")
+    } else {
+      result
+    }
+  }
+
+  /** This method does not close the `input` ColumnVector. */
+  private def convertTimestampOrNull(
       input: ColumnVector,
-      len: Int,
+      regex: String,
       cudfFormat: String): ColumnVector = {
 
-    withResource(isValidTimestamp(input, len, cudfFormat)) { isTimestamp =>
-      withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nullScalar =>
+    withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { orElse =>
+      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+        withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
+          isMatch.and(isTimestamp)
+        }
+      }
+      withResource(isValidTimestamp) { isValidTimestamp =>
         withResource(input.asTimestampMicroseconds(cudfFormat)) { asDays =>
-          isTimestamp.ifElse(asDays, nullScalar)
+          isValidTimestamp.ifElse(asDays, orElse)
         }
       }
     }
   }
 
   /** This method does not close the `input` ColumnVector. */
-  private def convertVarLenTimestampOr(
+  private def convertTimestampOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -1082,19 +985,14 @@ case class GpuCast(
       }
 
       val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
-        val isValidLength = withResource(Scalar.fromInt(FULL_TIMESTAMP_LENGTH)) { requiredLen =>
-          withResource(input.getCharLengths) { actualLen =>
-            requiredLen.equalTo(actualLen)
-          }
-        }
-        withResource(isValidLength) { isValidLength =>
-          isValidLength.and(isCudfMatch)
+        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+          isCudfMatch.and(isRegexMatch)
         }
       }
 
       // we only need to parse with one of the cuDF formats because the parsing code ignores
       // the ' ' or 'T' between the date and time components
-      withResource(isValidTimestamp) { isValidTimestamp =>
+      withResource(isValidTimestamp) { _ =>
         withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
           isValidTimestamp.ifElse(asDays, orElse)
         }
@@ -1102,31 +1000,14 @@ case class GpuCast(
     }
   }
 
-  private def castStringToTimestamp(input: ColumnVector): ColumnVector = {
+  private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
     val today = DateUtils.currentDate()
     val todayStr = new SimpleDateFormat("yyyy-MM-dd")
         .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
-    val specialDates = DateUtils.specialDatesMicros
 
     var sanitizedInput = input.incRefCount()
-
-    // replace partial months
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs("-([0-9])-", "-0\\1-")
-    }
-
-    // replace partial month or day at end of string
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs("-([0-9])[ ]?\\Z", "-0\\1")
-    }
-
-    // replace partial day in timestamp formats without dates
-    sanitizedInput = withResource(sanitizedInput) { cv =>
-      cv.stringReplaceWithBackrefs(
-        "-([0-9])([ T]\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z", "-0\\1\\2")
-    }
 
     // prepend today's date to timestamp formats without dates
     sanitizedInput = withResource(sanitizedInput) { _ =>
@@ -1137,62 +1018,116 @@ case class GpuCast(
       // convert dates that are in valid timestamp formats
       val converted =
         convertFullTimestampOr(sanitizedInput,
-          convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
-            convertVarLenTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
-              convertFixedLenTimestampOrNull(sanitizedInput, 4, "%Y"))))
+          convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM_DD, "%Y-%m-%d",
+            convertTimestampOr(sanitizedInput, TIMESTAMP_REGEX_YYYY_MM, "%Y-%m",
+              convertTimestampOrNull(sanitizedInput, TIMESTAMP_REGEX_YYYY, "%Y"))))
 
       // handle special dates like "epoch", "now", etc.
-      val finalResult = specialDates.foldLeft(converted)((prev, specialDate) =>
-        specialTimestampOr(sanitizedInput, specialDate._1, specialDate._2, prev))
+      val finalResult = closeOnExcept(converted) { tsVector =>
+        DateUtils.fetchSpecialDates(DType.TIMESTAMP_MICROSECONDS) match {
+          case specialDates if specialDates.nonEmpty =>
+            // `tsVector` will be closed in replaceSpecialDates.
+            replaceSpecialDates(sanitizedInput, tsVector, specialDates)
+          case _ =>
+            tsVector
+        }
+      }
 
-      // When ANSI mode is enabled, we need to throw an exception if any values could not be
-      // converted
       if (ansiMode) {
-        closeOnExcept(finalResult) { finalResult =>
-          withResource(input.isNotNull) { wasNotNull =>
-            withResource(finalResult.isNull) { isNull =>
-              withResource(wasNotNull.and(isNull)) { notConverted =>
-                withResource(notConverted.any()) { notConvertedAny =>
-                  if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
-                    throw new DateTimeException(
-                      "One or more values could not be converted to TimestampType")
-                  }
-                }
-              }
+        // When ANSI mode is enabled, we need to throw an exception if any values could not be
+        // converted
+        checkResultForAnsiMode(input, finalResult,
+          "One or more values could not be converted to TimestampType")
+      } else {
+        finalResult
+      }
+    }
+  }
+
+  private def castMapToMap(
+      from: MapType,
+      to: MapType,
+      input: ColumnView,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+    // For cudf a map is a list of (key, value) structs, but lets keep it in ColumnView as much
+    // as possible
+    withResource(input.getChildColumnView(0)) { kvStructColumn =>
+      val castKey = withResource(kvStructColumn.getChildColumnView(0)) { keyColumn =>
+        doCast(keyColumn, from.keyType, to.keyType, ansiMode, legacyCastToString,
+          stringToDateAnsiModeEnabled)
+      }
+      withResource(castKey) { castKey =>
+        val castValue = withResource(kvStructColumn.getChildColumnView(1)) { valueColumn =>
+          doCast(valueColumn, from.valueType, to.valueType,
+            ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+        }
+        withResource(castValue) { castValue =>
+          withResource(ColumnView.makeStructView(castKey, castValue)) { castKvStructColumn =>
+            // We don't have to worry about null in the key/value struct because they are not
+            // allowed for maps in Spark
+            withResource(input.replaceListChild(castKvStructColumn)) { replacedView =>
+              replacedView.copyToColumnVector()
             }
           }
         }
       }
-
-      finalResult
     }
   }
 
-  /**
-   * Determine which timestamps are the specified length and also comply with the specified
-   * cuDF format string.
-   *
-   * @param input Input ColumnVector
-   * @param len The string length to match against
-   * @param cudfFormat The cuDF timestamp format to match against
-   * @return ColumnVector containing booleans representing which entries match both
-   *         the length and format
-   */
-  private def isValidTimestamp(input: ColumnVector, len: Int, cudfFormat: String) = {
-    val isCorrectLength = withResource(Scalar.fromInt(len)) { requiredLen =>
-      withResource(input.getCharLengths) { actualLen =>
-        requiredLen.equalTo(actualLen)
+  private def castStructToStruct(
+      from: StructType,
+      to: StructType,
+      input: ColumnView,
+      ansiMode: Boolean,
+      legacyCastToString: Boolean,
+      stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+    withResource(new ArrayBuffer[ColumnVector](from.length)) { childColumns =>
+      from.indices.foreach { index =>
+        childColumns += doCast(
+          input.getChildColumnView(index),
+          from(index).dataType,
+          to(index).dataType,
+          ansiMode,
+          legacyCastToString, stringToDateAnsiModeEnabled)
       }
-    }
-    withResource(isCorrectLength) { isCorrectLength =>
-      withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
-        isCorrectLength.and(isTimestamp)
+      withResource(ColumnView.makeStructView(childColumns: _*)) { casted =>
+        if (input.getNullCount == 0) {
+          casted.copyToColumnVector()
+        } else {
+          withResource(input.isNull) { isNull =>
+            withResource(GpuScalar.from(null, to)) { nullVal =>
+              isNull.ifElse(nullVal, casted)
+            }
+          }
+        }
       }
     }
   }
 
-  private def castIntegralsToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+  private def castIntegralsToDecimalAfterCheck(input: ColumnView, dt: DecimalType): ColumnVector = {
+    if (dt.scale < 0) {
+      // Rounding is essential when scale is negative,
+      // so we apply HALF_UP rounding manually to keep align with CpuCast.
+      withResource(input.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
+        scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
+      }
+    } else if (dt.scale > 0) {
+      // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
+      // before casting it to decimal in case of overflow.
+      withResource(input.castTo(DType.INT64)) { long =>
+        long.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
+      }
+    } else {
+      input.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
+    }
+  }
 
+  private def castIntegralsToDecimal(
+      input: ColumnView,
+      dt: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
     // Use INT64 bounds instead of FLOAT64 bounds, which enables precise comparison.
     val (lowBound, upBound) = math.pow(10, dt.precision - dt.scale) match {
       case bound if bound > Long.MaxValue => (Long.MinValue, Long.MaxValue)
@@ -1200,38 +1135,26 @@ case class GpuCast(
     }
     // At first, we conduct overflow check onto input column.
     // Then, we cast checked input into target decimal type.
-    val checkedInput = if (ansiMode) {
+    if (ansiMode) {
       assertValuesInRange(input,
         minValue = Scalar.fromLong(lowBound),
         maxValue = Scalar.fromLong(upBound))
-      input.incRefCount()
+      castIntegralsToDecimalAfterCheck(input, dt)
     } else {
-      replaceOutOfRangeValues(input,
+      val checkedInput = replaceOutOfRangeValues(input,
         minValue = Scalar.fromLong(lowBound),
         maxValue = Scalar.fromLong(upBound),
         replaceValue = Scalar.fromNull(input.getType))
-    }
-
-    withResource(checkedInput) { checked =>
-      if (dt.scale < 0) {
-        // Rounding is essential when scale is negative,
-        // so we apply HALF_UP rounding manually to keep align with CpuCast.
-        withResource(checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, 0))) {
-          scaleZero => scaleZero.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
-        }
-      } else if (dt.scale > 0) {
-        // Integer will be enlarged during casting if scale > 0, so we cast input to INT64
-        // before casting it to decimal in case of overflow.
-        withResource(checked.castTo(DType.INT64)) { long =>
-          long.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
-        }
-      } else {
-        checked.castTo(DecimalUtil.createCudfDecimal(dt.precision, dt.scale))
+      withResource(checkedInput) { checked =>
+        castIntegralsToDecimalAfterCheck(checked, dt)
       }
     }
   }
 
-  private def castFloatsToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+  private def castFloatsToDecimal(
+      input: ColumnView,
+      dt: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
 
     // Approach to minimize difference between CPUCast and GPUCast:
     // step 1. cast input to FLOAT64 (if necessary)
@@ -1269,7 +1192,7 @@ case class GpuCast(
       val casted = if (DType.DECIMAL64_MAX_PRECISION == dt.scale) {
         checked.castTo(targetType)
       } else {
-        val containerType = DecimalUtil.createCudfDecimal(dt.precision, (dt.scale + 1))
+        val containerType = DecimalUtil.createCudfDecimal(dt.precision, dt.scale + 1)
         withResource(checked.castTo(containerType)) { container =>
           container.round(dt.scale, ai.rapids.cudf.RoundMode.HALF_UP)
         }
@@ -1285,18 +1208,21 @@ case class GpuCast(
     }
   }
 
-  private def castDecimalToDecimal(input: ColumnVector,
+  private def castDecimalToDecimal(
+      input: ColumnView,
       from: DecimalType,
-      to: DecimalType): ColumnVector = {
+      to: DecimalType,
+      ansiMode: Boolean): ColumnVector = {
 
     val isFrom32Bit = DecimalType.is32BitDecimalType(from)
     val isTo32Bit = DecimalType.is32BitDecimalType(to)
     val cudfDecimal = DecimalUtil.createCudfDecimal(to.precision, to.scale)
 
-    def castCheckedDecimal(checkedInput: ColumnVector): ColumnVector = {
+    def castCheckedDecimal(checkedInput: ColumnView): ColumnVector = {
       if (to.scale == from.scale) {
         if (isFrom32Bit == isTo32Bit) {
-          checkedInput.incRefCount()
+          // If the input is a ColumnVector already this will just inc the reference count
+          checkedInput.copyToColumnVector()
         } else {
           // the input is already checked, just cast it
           checkedInput.castTo(cudfDecimal)
@@ -1304,38 +1230,39 @@ case class GpuCast(
       } else if (to.scale > from.scale) {
         checkedInput.castTo(cudfDecimal)
       } else {
-          withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
-            rounded => rounded.castTo(cudfDecimal)
-          }
+        withResource(checkedInput.round(to.scale, ai.rapids.cudf.RoundMode.HALF_UP)) {
+          rounded => rounded.castTo(cudfDecimal)
+        }
       }
     }
 
     if (to.scale <= from.scale) {
       if (!isFrom32Bit && isTo32Bit) {
         // check for overflow when 64bit => 32bit
-        withResource(checkForOverflow(input, to, isFrom32Bit)) { checkedInput =>
+        withResource(checkForOverflow(input, to, isFrom32Bit, ansiMode)) { checkedInput =>
           castCheckedDecimal(checkedInput)
         }
       } else {
         if (to.scale < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
           throw new IllegalStateException(s"Negative scale is not allowed: ${to.scale}. " +
-            s"You can use spark.sql.legacy.allowNegativeScaleOfDecimal=true " +
-            s"to enable legacy mode to allow it.")
+              s"You can use spark.sql.legacy.allowNegativeScaleOfDecimal=true " +
+              s"to enable legacy mode to allow it.")
         }
         castCheckedDecimal(input)
       }
     } else {
       //  from.scale > to.scale
-      withResource(checkForOverflow(input, to, isFrom32Bit)) { checkedInput =>
+      withResource(checkForOverflow(input, to, isFrom32Bit, ansiMode)) { checkedInput =>
         castCheckedDecimal(checkedInput)
       }
     }
   }
 
   def checkForOverflow(
-     input: ColumnVector,
-     to: DecimalType,
-     isFrom32Bit: Boolean): ColumnVector = {
+      input: ColumnView,
+      to: DecimalType,
+      isFrom32Bit: Boolean,
+      ansiMode: Boolean): ColumnVector = {
 
     // Decimal numbers in general terms have two parts, a part before decimal (whole number)
     // and a part after decimal (fractional number)
@@ -1377,7 +1304,7 @@ case class GpuCast(
     // if (isFrom32Bit && prec > Decimal.MAX_INT_DIGITS ||
     // !isFrom32Bit && prec > Decimal.MAX_LONG_DIGITS)
     if (isFrom32Bit && absBoundPrecision > Decimal.MAX_INT_DIGITS) {
-      return input.incRefCount()
+      return input.copyToColumnVector()
     }
     val (minValueScalar, maxValueScalar) = if (!isFrom32Bit) {
       val absBound = math.pow(10, absBoundPrecision).toLong
@@ -1391,7 +1318,7 @@ case class GpuCast(
         minValue = minValueScalar,
         maxValue = maxValueScalar,
         inclusiveMin = false, inclusiveMax = false)
-      input.incRefCount()
+      input.copyToColumnVector()
     } else {
       replaceOutOfRangeValues(input,
         minValue = minValueScalar,
@@ -1402,4 +1329,59 @@ case class GpuCast(
 
     checkedInput
   }
+}
+
+/**
+ * Casts using the GPU
+ */
+case class GpuCast(
+    child: Expression,
+    dataType: DataType,
+    ansiMode: Boolean = false,
+    timeZoneId: Option[String] = None,
+    legacyCastToString: Boolean = false,
+    stringToDateAnsiModeEnabled: Boolean = false)
+  extends GpuUnaryExpression with TimeZoneAwareExpression with NullIntolerant {
+
+  import GpuCast._
+
+  override def toString: String = if (ansiMode) {
+    s"ansi_cast($child as ${dataType.simpleString})"
+  } else {
+    s"cast($child as ${dataType.simpleString})"
+  }
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (Cast.canCast(child.dataType, dataType)) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(
+        s"cannot cast ${child.dataType.catalogString} to ${dataType.catalogString}")
+    }
+  }
+
+  override def nullable: Boolean = Cast.forceNullable(child.dataType, dataType) || child.nullable
+
+  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
+    copy(timeZoneId = Option(timeZoneId))
+
+  // When this cast involves TimeZone, it's only resolved if the timeZoneId is set;
+  // Otherwise behave like Expression.resolved.
+  override lazy val resolved: Boolean =
+    childrenResolved && checkInputDataTypes().isSuccess && (!needsTimeZone || timeZoneId.isDefined)
+
+  private[this] def needsTimeZone: Boolean = Cast.needsTimeZone(child.dataType, dataType)
+
+  override def sql: String = dataType match {
+    // HiveQL doesn't allow casting to complex types. For logical plans translated from HiveQL,
+    // this type of casting can only be introduced by the analyzer, and can be omitted when
+    // converting back to SQL query string.
+    case _: ArrayType | _: MapType | _: StructType => child.sql
+    case _ => s"CAST(${child.sql} AS ${dataType.sql})"
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector =
+    doCast(input.getBase, input.dataType(), dataType, ansiMode, legacyCastToString,
+      stringToDateAnsiModeEnabled)
+
 }

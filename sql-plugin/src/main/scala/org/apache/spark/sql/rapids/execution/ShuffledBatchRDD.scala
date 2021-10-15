@@ -17,14 +17,17 @@
 // In order to have metrics and preferred locations work we need to be in a spark sql package
 package org.apache.spark.sql.rapids.execution
 
-import java.util
+import java.util.Arrays
 
-import com.nvidia.spark.rapids.{GpuMetric, ShimLoader}
+import com.nvidia.spark.rapids.GpuMetric
 
-import org.apache.spark.{MapOutputTrackerMaster, Partition, Partitioner, ShuffleDependency, SparkEnv, TaskContext}
+import org.apache.spark.{Dependency, Partition, Partitioner, ShuffleDependency, TaskContext}
+import org.apache.spark.rapids.shims.v2.ShuffledBatchRDDUtil
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec, ShufflePartitionSpec}
+import org.apache.spark.shuffle.sort.SortShuffleManager
+import org.apache.spark.sql.execution.{CoalescedPartitioner, CoalescedPartitionSpec, ShufflePartitionSpec}
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsReporter}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class ShuffledBatchRDDPartition(index: Int, spec: ShufflePartitionSpec) extends Partition
@@ -49,10 +52,10 @@ class BatchPartitionIdPassthrough(override val numPartitions: Int) extends Parti
 class CoalescedBatchPartitioner(val parent: Partitioner, val partitionStartIndices: Array[Int])
   extends Partitioner {
 
-  @transient private lazy val parentPartitionMapping = {
+  @transient private lazy val parentPartitionMapping: Array[Int] = {
     val n = parent.numPartitions
     val result = new Array[Int](n)
-    for (i <- partitionStartIndices.indices) {
+    for (i <- 0 until partitionStartIndices.length) {
       val start = partitionStartIndices(i)
       val end = if (i < partitionStartIndices.length - 1) partitionStartIndices(i + 1) else n
       for (j <- start until end) {
@@ -64,18 +67,18 @@ class CoalescedBatchPartitioner(val parent: Partitioner, val partitionStartIndic
 
   override def numPartitions: Int = partitionStartIndices.length
 
-  override def getPartition(key: Any): Int = parentPartitionMapping(parent.getPartition(key))
+  override def getPartition(key: Any): Int = {
+    parentPartitionMapping(parent.getPartition(key))
+  }
 
   override def equals(other: Any): Boolean = other match {
     case c: CoalescedBatchPartitioner =>
-      c.parent == parent && util.Arrays.equals(c.partitionStartIndices, partitionStartIndices)
+      c.parent == parent && Arrays.equals(c.partitionStartIndices, partitionStartIndices)
     case _ =>
       false
   }
 
-  override def hashCode(): Int = {
-    31 * parent.hashCode() + util.Arrays.hashCode(partitionStartIndices)
-  }
+  override def hashCode(): Int = 31 * parent.hashCode() + Arrays.hashCode(partitionStartIndices)
 }
 
 /**
@@ -83,8 +86,7 @@ class CoalescedBatchPartitioner(val parent: Partitioner, val partitionStartIndic
  * shuffling `ColumnarBatch` instead of Java key-value pairs.
  *
  * This RDD takes a `ShuffleDependency` (`dependency`),
- * and an optional array of partition start indices as input arguments
- * (`specifiedPartitionStartIndices`).
+ * and an array of `ShufflePartitionSpec` as input arguments.
  *
  * The `dependency` has the parent RDD of this RDD, which represents the dataset before shuffle
  * (i.e. map output). Elements of this RDD are (partitionId, Row) pairs.
@@ -93,20 +95,15 @@ class CoalescedBatchPartitioner(val parent: Partitioner, val partitionStartIndic
  * map output, and `dependency.partitioner.numPartitions` is the number of pre-shuffle partitions
  * (i.e. the number of partitions of the map output).
  *
- * When `specifiedPartitionStartIndices` is defined, `specifiedPartitionStartIndices.length`
- * will be the number of post-shuffle partitions. For this case, the `i`th post-shuffle
- * partition includes `specifiedPartitionStartIndices[i]` to
- * `specifiedPartitionStartIndices[i+1] - 1` (inclusive).
- *
- * When `specifiedPartitionStartIndices` is not defined, there will be
- * `dependency.partitioner.numPartitions` post-shuffle partitions. For this case,
- * a post-shuffle partition is created for every pre-shuffle partition.
+ * This code is made to try and match the Spark code as closely as possible to make maintenance
+ * simpler. Fixing compiler or IDE warnings in this code may not be ideal if the same warnings are
+ * in Spark.
  */
 class ShuffledBatchRDD(
     var dependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
     metrics: Map[String, SQLMetric],
     partitionSpecs: Array[ShufflePartitionSpec])
-    extends RDD[ColumnarBatch](dependency.rdd.context, Nil) {
+  extends RDD[ColumnarBatch](dependency.rdd.context, Nil) {
 
   def this(
       dependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch],
@@ -115,7 +112,11 @@ class ShuffledBatchRDD(
       Array.tabulate(dependency.partitioner.numPartitions)(i => CoalescedPartitionSpec(i, i + 1)))
   }
 
-  override def getDependencies = List(dependency)
+  dependency.rdd.context.setLocalProperty(
+    SortShuffleManager.FETCH_SHUFFLE_BLOCKS_IN_BATCH_ENABLED_KEY,
+    SQLConf.get.fetchShuffleBlocksInBatch.toString)
+
+  override def getDependencies: Seq[Dependency[_]] = List(dependency)
 
   override val partitioner: Option[Partitioner] =
     if (partitionSpecs.forall(_.isInstanceOf[CoalescedPartitionSpec])) {
@@ -136,85 +137,22 @@ class ShuffledBatchRDD(
     }
   }
 
-  override def getPreferredLocations(partition: Partition): Seq[String] = {
-    val tracker = SparkEnv.get.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
-    partition.asInstanceOf[ShuffledBatchRDDPartition].spec match {
-      case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
-        // TODO order by partition size.
-        startReducerIndex.until(endReducerIndex).flatMap { reducerIndex =>
-          tracker.getPreferredLocationsForShuffle(dependency, reducerIndex)
-        }
-
-      case prps: PartialReducerPartitionSpec =>
-        tracker.getMapLocation(dependency, prps.startMapIndex, prps.endMapIndex)
-
-      case PartialMapperPartitionSpec(mapIndex, _, _) =>
-        tracker.getMapLocation(dependency, mapIndex, mapIndex + 1)
-    }
-  }
+  override def getPreferredLocations(partition: Partition): Seq[String] =
+    ShuffledBatchRDDUtil.preferredLocations(partition, dependency)
 
   override def compute(split: Partition, context: TaskContext): Iterator[ColumnarBatch] = {
-    val shuffledBatchPartition = split.asInstanceOf[ShuffledBatchRDDPartition]
     val tempMetrics = context.taskMetrics().createTempShuffleReadMetrics()
     // `SQLShuffleReadMetricsReporter` will update its own metrics for SQL exchange operator,
     // as well as the `tempMetrics` for basic shuffle metrics.
     val sqlMetricsReporter = new SQLShuffleReadMetricsReporter(tempMetrics, metrics)
-    val shim = ShimLoader.getSparkShims
-    val shuffleManagerShims = shim.getShuffleManagerShims()
-    val (reader, partitionSize) = shuffledBatchPartition.spec match {
-      case CoalescedPartitionSpec(startReducerIndex, endReducerIndex) =>
-        val reader = SparkEnv.get.shuffleManager.getReader(
-          dependency.shuffleHandle,
-          startReducerIndex,
-          endReducerIndex,
-          context,
-          sqlMetricsReporter)
-        val blocksByAddress = shim.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
-        val partitionSize = blocksByAddress.flatMap(_._2).map(_._2).sum
-        (reader, partitionSize)
-
-      case prps: PartialReducerPartitionSpec =>
-        val reader = shuffleManagerShims.getReader(
-          SparkEnv.get.shuffleManager,
-          dependency.shuffleHandle,
-          prps.startMapIndex,
-          prps.endMapIndex,
-          prps.reducerIndex,
-          prps.reducerIndex + 1,
-          context,
-          sqlMetricsReporter)
-        val blocksByAddress = shim.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, prps.reducerIndex,
-          prps.reducerIndex + 1)
-        val partitionSize = blocksByAddress.flatMap(_._2)
-            .filter(tuple => tuple._3 >= prps.startMapIndex && tuple._3 < prps.endMapIndex)
-            .map(_._2).sum
-        (reader, partitionSize)
-
-      case PartialMapperPartitionSpec(mapIndex, startReducerIndex, endReducerIndex) =>
-        val reader = shuffleManagerShims.getReader(
-          SparkEnv.get.shuffleManager,
-          dependency.shuffleHandle,
-          mapIndex,
-          mapIndex + 1,
-          startReducerIndex,
-          endReducerIndex,
-          context,
-          sqlMetricsReporter)
-        val blocksByAddress = shim.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
-        val partitionSize = blocksByAddress.flatMap(_._2)
-            .filter(_._3 == mapIndex)
-            .map(_._2).sum
-        (reader, partitionSize)
-    }
+    val (reader, partitionSize) = ShuffledBatchRDDUtil.getReaderAndPartSize(split, context,
+      dependency, sqlMetricsReporter)
     metrics(GpuMetric.NUM_PARTITIONS).add(1)
     metrics(GpuMetric.PARTITION_SIZE).add(partitionSize)
     reader.read().asInstanceOf[Iterator[Product2[Int, ColumnarBatch]]].map(_._2)
   }
 
-  override def clearDependencies() {
+  override def clearDependencies(): Unit = {
     super.clearDependencies()
     dependency = null
   }

@@ -22,61 +22,73 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>21.08.0</version>
+        <version>21.10.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-shims_2.12</artifactId>
     <packaging>pom</packaging>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Shims</name>
     <description>The RAPIDS SQL plugin for Apache Spark Shims</description>
-    <version>21.08.0</version>
+    <version>21.10.0-SNAPSHOT</version>
 
     <profiles>
+        <!-- maven CLI and CI builds one at a time -->
         <profile>
-            <id>databricks301</id>
-            <modules>
-                <module>spark301db</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>databricks311</id>
-            <modules>
-                <module>spark311db</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>spark320</id>
-            <modules>
-                <module>spark320</module>
-            </modules>
-        </profile>
-        <profile>
-            <id>snapshot-shims</id>
+            <id>with-classifier</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
-            <modules>
-                <module>spark304</module>
-                <module>spark313</module>
-            </modules>
+            <modules><module>${shim.module.name}</module></modules>
+        </profile>
+
+        <!-- For easy switching in IDE: provide consistently named profiles
+        throughout submodules for easier single-checkbox activation in GUI.
+
+        Passing a proper flag such as -Dbuildver=320 to a Maven importer via
+        advanced settings is cumbersome and for this particular module seems
+        to fail to activate the right shim module in case of IDEA as of
+        2021.2.1
+        -->
+        <profile>
+            <id>release301</id>
+            <modules><module>spark301</module></modules>
+        </profile>
+        <profile>
+            <id>release302</id>
+            <modules><module>spark302</module></modules>
+        </profile>
+        <profile>
+            <id>release303</id>
+            <modules><module>spark303</module></modules>
+        </profile>
+        <profile>
+            <id>release304</id>
+            <modules><module>spark304</module></modules>
+        </profile>
+        <profile>
+            <id>release311</id>
+            <modules><module>spark311</module></modules>
+        </profile>
+        <profile>
+            <id>release312</id>
+            <modules><module>spark312</module></modules>
+        </profile>
+        <profile>
+            <id>release313</id>
+            <modules><module>spark313</module></modules>
+        </profile>
+        <profile>
+            <id>release320</id>
+            <modules><module>spark320</module></modules>
         </profile>
     </profiles>
 
-    <modules>
-        <module>spark301emr</module>
-        <module>spark301</module>
-        <module>spark302</module>
-        <module>spark303</module>
-        <module>spark311</module>
-        <module>spark312</module>
-        <module>aggregator</module>
-        <module>spark311cdh</module>
-    </modules>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
             <scope>provided</scope>
         </dependency>
         <dependency>

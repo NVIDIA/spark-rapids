@@ -19,7 +19,8 @@ set -ex
 
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
-BASE_SPARK_VER=${BASE_SPARK_VER:-'3.0.1'}
+BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.1'}
+[[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VER//.}db
 
 # tests
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
@@ -59,7 +60,7 @@ IS_SPARK_311_OR_LATER=0
 [[ "$(printf '%s\n' "3.1.1" "$BASE_SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
 
 TEST_TYPE="nightly"
-PCBS_CONF="com.nvidia.spark.rapids.shims.spark311.ParquetCachedBatchSerializer"
+PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 if [ -d "$LOCAL_JAR_PATH" ]; then
     ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the denpedency repo
     LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE

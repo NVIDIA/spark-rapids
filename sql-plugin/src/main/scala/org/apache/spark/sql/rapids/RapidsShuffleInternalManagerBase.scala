@@ -29,6 +29,7 @@ import org.apache.spark.scheduler.MapStatus
 import org.apache.spark.shuffle._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.shims.v2.GpuShuffleBlockResolver
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
 
@@ -40,8 +41,8 @@ class GpuShuffleHandle[K, V](
   override def toString: String = s"GPU SHUFFLE HANDLE $shuffleId"
 }
 
-class GpuShuffleBlockResolver(
-    private val wrapped: ShuffleBlockResolver,
+abstract class GpuShuffleBlockResolverBase(
+    protected val wrapped: ShuffleBlockResolver,
     catalog: ShuffleBufferCatalog)
   extends ShuffleBlockResolver with Logging {
   override def getBlockData(blockId: BlockId, dirs: Option[Array[String]]): ManagedBuffer = {
@@ -189,6 +190,10 @@ class RapidsCachingWriter[K, V](
       nvtxRange.close()
     }
   }
+
+  def getPartitionLengths(): Array[Long] = {
+    throw new UnsupportedOperationException("TODO")
+  }
 }
 
 /**
@@ -224,21 +229,16 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   private val rapidsConf = new RapidsConf(conf)
 
-  // set the shim override if specified since the shuffle manager loads early
-  if (rapidsConf.shimsProviderOverride.isDefined) {
-    ShimLoader.setSparkShimProviderClass(rapidsConf.shimsProviderOverride.get)
-  }
-
   protected val wrapped = new SortShuffleManager(conf)
-  GpuShuffleEnv.setRapidsShuffleManager(Some(this))
 
-  private [this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
-    "Transport disabled (local cached blocks only)."
+  private[this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
+    "Transport disabled (local cached blocks only)"
   } else {
-    s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName})."
+    s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName}"
   }
 
-  logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}")
+  logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}. To disable the " +
+      s"RAPIDS Shuffle Manager set `${RapidsConf.SHUFFLE_MANAGER_ENABLED}` to false")
 
   //Many of these values like blockManager are not initialized when the constructor is called,
   // so they all need to be lazy values that are executed when things are first called
@@ -246,10 +246,10 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   // NOTE: this can be null in the driver side.
   private lazy val env = SparkEnv.get
   private lazy val blockManager = env.blockManager
-  private lazy val shouldFallThroughOnEverything = {
+  protected lazy val shouldFallThroughOnEverything = {
     val fallThroughReasons = new ListBuffer[String]()
-    if (!GpuShuffleEnv.isRapidsShuffleEnabled) {
-      fallThroughReasons += "external shuffle is enabled"
+    if (GpuShuffleEnv.isExternalShuffleEnabled) {
+      fallThroughReasons += "External Shuffle Service is enabled"
     }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
@@ -266,12 +266,12 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   // Code that expects the shuffle catalog to be initialized gets it this way,
   // with error checking in case we are in a bad state.
-  private def getCatalogOrThrow: ShuffleBufferCatalog =
+  protected def getCatalogOrThrow: ShuffleBufferCatalog =
     Option(GpuShuffleEnv.getCatalog).getOrElse(
       throw new IllegalStateException("The ShuffleBufferCatalog is not initialized but the " +
-        "RapidsShuffleManager is configured"))
+          "RapidsShuffleManager is configured"))
 
-  private lazy val resolver = if (shouldFallThroughOnEverything) {
+  protected lazy val resolver = if (shouldFallThroughOnEverything) {
     wrapped.shuffleBlockResolver
   } else {
     new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, getCatalogOrThrow)
@@ -313,12 +313,13 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       dependency: ShuffleDependency[K, V, C]): ShuffleHandle = {
     // Always register with the wrapped handler so we can write to it ourselves if needed
     val orig = wrapped.registerShuffle(shuffleId, dependency)
-    if (!shouldFallThroughOnEverything && dependency.isInstanceOf[GpuShuffleDependency[K, V, C]]) {
-      val handle = new GpuShuffleHandle(orig,
-        dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
-      handle
-    } else {
-      orig
+
+    dependency match {
+      case _ if shouldFallThroughOnEverything => orig
+      case gpuDependency: GpuShuffleDependency[K, V, C] if gpuDependency.useRapidsShuffle =>
+        new GpuShuffleHandle(orig,
+          dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
+      case _ => orig
     }
   }
 
@@ -355,7 +356,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for dependency ${gpu.dependency}, " +
-          s"map output sizes for: ${gpu.shuffleId}, parts=$startPartition-$endPartition")
+            s"map output sizes for: ${gpu.shuffleId}, parts=$startPartition-$endPartition")
         if (gpu.dependency.keyOrdering.isDefined) {
           // very unlikely, but just in case
           throw new IllegalStateException("A key ordering was requested for a gpu shuffle "
@@ -416,4 +417,67 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       transport.foreach(_.close())
     }
   }
+}
+
+/**
+ * Trait that makes it easy to check whether we are dealing with the
+ * a RAPIDS Shuffle Manager
+ *
+ * TODO name does not match its function anymore
+ */
+trait VisibleShuffleManager {
+  def isDriver: Boolean
+  def initialize: Unit
+}
+
+/**
+ * A simple proxy wrapper allowing to delay loading of the
+ * real implementation to a later point when ShimLoader
+ * has already updated Spark classloaders.
+ *
+ * @param conf
+ * @param isDriver
+ */
+abstract class ProxyRapidsShuffleInternalManagerBase(
+    conf: SparkConf,
+    override val isDriver: Boolean
+) extends VisibleShuffleManager with Proxy {
+
+  // touched in the plugin code after the shim initialization
+  // is complete
+  lazy val self: ShuffleManager =
+    ShimLoader.newInternalShuffleManager(conf, isDriver)
+        .asInstanceOf[ShuffleManager]
+
+  // This function touches the lazy val `self` so we actually instantiate
+  // the manager. This is called from both the driver and executor.
+  // In the driver, it's mostly to display information on how to enable/disable the manager,
+  // in the executor, the UCXShuffleTransport starts and allocates memory at this time.
+  def initialize: Unit = self
+
+  //
+  // Signatures unchanged since 3.0.1 follow
+  //
+
+  def getWriter[K, V](
+      handle: ShuffleHandle,
+      mapId: Long,
+      context: TaskContext,
+      metrics: ShuffleWriteMetricsReporter
+  ): ShuffleWriter[K, V] = {
+    self.getWriter(handle, mapId, context, metrics)
+  }
+
+  def registerShuffle[K, V, C](
+      shuffleId: Int,
+      dependency: ShuffleDependency[K, V, C]
+  ): ShuffleHandle = {
+    self.registerShuffle(shuffleId, dependency)
+  }
+
+  def unregisterShuffle(shuffleId: Int): Boolean = self.unregisterShuffle(shuffleId)
+
+  def shuffleBlockResolver: ShuffleBlockResolver = self.shuffleBlockResolver
+
+  def stop(): Unit = self.stop()
 }

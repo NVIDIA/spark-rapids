@@ -414,7 +414,7 @@ guaranteed to produce the same results as the CPU:
 LEGACY timeParserPolicy support has the following limitations when running on the GPU:
 
 - Only 4 digit years are supported
-- The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calender 
+- The proleptic Gregorian calendar is used instead of the hybrid Julian+Gregorian calendar 
   that Spark uses in legacy mode
 
 ## Formatting dates and timestamps as strings
@@ -539,8 +539,7 @@ Casting from string to timestamp currently has the following limitations.
 | `"tomorrow"`                                                        | Yes               |
 | `"yesterday"`                                                       | Yes               |
 
-- <a name="Footnote1"></a>[1] The timestamp portion must be complete in terms of hours, minutes, seconds, and
- milliseconds, with 2 digits each for hours, minutes, and seconds, and 6 digits for milliseconds. 
+- <a name="Footnote1"></a>[1] The timestamp portion must have 6 digits for milliseconds.
  Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
 
 Spark is very lenient when casting from string to timestamp because all date and time components
@@ -561,3 +560,15 @@ double quotes around strings in JSON data, whereas Spark allows single quotes ar
 data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None` in PySpark or
 `Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
 updated in a future release to more closely match Spark.
+
+## Approximate Percentile
+
+The GPU implementation of `approximate_percentile` uses
+[t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
+distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
+`approximate_percentile`, this feature is disabled by default and can be enabled by setting
+`spark.rapids.sql.expression.ApproximatePercentile=true`.
+
+There are known issues with the approximate percentile implementation
+([#3706](https://github.com/NVIDIA/spark-rapids/issues/3706),
+[#3692](https://github.com/NVIDIA/spark-rapids/issues/3692)) and the feature should be considered experimental.

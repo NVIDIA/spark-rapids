@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.{Date, UUID}
 
 import ai.rapids.cudf.ColumnVector
+import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -209,11 +210,14 @@ object GpuFileFormatWriter extends Logging {
         } else {
           OutOfCoreSort
         }
+        // TODO: Using a GPU ordering as a CPU ordering here. Should be OK for now since we do not
+        //       support bucket expressions yet and the rest should be simple attributes.
         GpuSortExec(
           orderingExpr,
           global = false,
           child = empty2NullPlan,
-          sortType = sortType).executeColumnar()
+          sortType = sortType
+        )(orderingExpr).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single
@@ -246,10 +250,10 @@ object GpuFileFormatWriter extends Logging {
 
       val commitMsgs = ret.map(_.commitMsg)
 
-      committer.commitJob(job, commitMsgs)
-      logInfo(s"Write Job ${description.uuid} committed.")
+      val (_, duration) = TimingUtils.timeTakenMs { committer.commitJob(job, commitMsgs) }
+      logInfo(s"Write Job ${description.uuid} committed. Elapsed time: $duration ms.")
 
-      processStats(description.statsTrackers, ret.map(_.summary.stats))
+      processStats(description.statsTrackers, ret.map(_.summary.stats), duration)
       logInfo(s"Finished processing stats for write job ${description.uuid}.")
 
       // return a set of all the partition paths that were updated during this job
@@ -326,7 +330,8 @@ object GpuFileFormatWriter extends Logging {
    */
   private def processStats(
       statsTrackers: Seq[ColumnarWriteJobStatsTracker],
-      statsPerTask: Seq[Seq[WriteTaskStats]])
+      statsPerTask: Seq[Seq[WriteTaskStats]],
+      jobCommitDuration: Long)
   : Unit = {
 
     val numStatsTrackers = statsTrackers.length
@@ -343,7 +348,7 @@ object GpuFileFormatWriter extends Logging {
     }
 
     statsTrackers.zip(statsPerTracker).foreach {
-      case (statsTracker, stats) => statsTracker.processStats(stats)
+      case (statsTracker, stats) => statsTracker.processStats(stats, jobCommitDuration)
     }
   }
 }

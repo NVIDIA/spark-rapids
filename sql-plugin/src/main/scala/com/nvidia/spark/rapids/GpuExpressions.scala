@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
+import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -116,7 +117,7 @@ trait GpuExpression extends Expression with Arm {
   final override def eval(input: InternalRow = null): Any =
     throw new UnsupportedOperationException(s"Cannot evaluate expression: $this")
 
-  final override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode =
+  final override def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode =
     throw new UnsupportedOperationException(s"Cannot generate code for expression: $this")
 
   /**
@@ -148,9 +149,21 @@ trait GpuExpression extends Expression with Arm {
     val canonicalizedChildren = children.map(_.canonicalized)
     GpuCanonicalize.execute(withNewChildren(canonicalizedChildren))
   }
+
+  /**
+   * Build an equivalent representation of this expression in a cudf AST.
+   * @param numFirstTableColumns number of columns in the leftmost input table. Spark places the
+   *                             columns of all inputs in a single sequence, while cudf AST uses an
+   *                             explicit table reference to make column indices unique. This
+   *                             parameter helps translate input column references from Spark's
+   *                             single sequence into cudf's separate sequences.
+   * @return top node of the equivalent AST
+   */
+  def convertToAst(numFirstTableColumns: Int): ast.AstExpression =
+    throw new IllegalStateException(s"Cannot convert ${this.getClass.getSimpleName} to AST")
 }
 
-abstract class GpuLeafExpression extends GpuExpression {
+abstract class GpuLeafExpression extends GpuExpression with ShimExpression {
   override final def children: Seq[Expression] = Nil
 }
 
@@ -164,7 +177,7 @@ abstract class GpuUnevaluableUnaryExpression extends GpuUnaryExpression with Gpu
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
-abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
+abstract class GpuUnaryExpression extends ShimUnaryExpression with GpuExpression {
   protected def doColumnar(input: GpuColumnVector): ColumnVector
 
   def outputTypeOverride: DType = null
@@ -186,13 +199,43 @@ abstract class GpuUnaryExpression extends UnaryExpression with GpuExpression {
   }
 }
 
+object CudfUnaryExpression {
+  lazy val opToAstMap: Map[UnaryOp, ast.UnaryOperator] = Map(
+    UnaryOp.ABS -> ast.UnaryOperator.ABS,
+    UnaryOp.ARCSIN -> ast.UnaryOperator.ARCSIN,
+    UnaryOp.ARCSINH -> ast.UnaryOperator.ARCSINH,
+    UnaryOp.ARCCOS -> ast.UnaryOperator.ARCCOS,
+    UnaryOp.ARCCOSH -> ast.UnaryOperator.ARCCOSH,
+    UnaryOp.ARCTAN -> ast.UnaryOperator.ARCTAN,
+    UnaryOp.ARCTANH -> ast.UnaryOperator.ARCTANH,
+    UnaryOp.BIT_INVERT -> ast.UnaryOperator.BIT_INVERT,
+    UnaryOp.CBRT -> ast.UnaryOperator.CBRT,
+    UnaryOp.COS -> ast.UnaryOperator.COS,
+    UnaryOp.COSH -> ast.UnaryOperator.COSH,
+    UnaryOp.EXP -> ast.UnaryOperator.EXP,
+    UnaryOp.NOT -> ast.UnaryOperator.NOT,
+    UnaryOp.RINT -> ast.UnaryOperator.RINT,
+    UnaryOp.SIN -> ast.UnaryOperator.SIN,
+    UnaryOp.SINH -> ast.UnaryOperator.SINH,
+    UnaryOp.SQRT -> ast.UnaryOperator.SQRT,
+    UnaryOp.TAN -> ast.UnaryOperator.TAN,
+    UnaryOp.TANH -> ast.UnaryOperator.TANH)
+}
+
 trait CudfUnaryExpression extends GpuUnaryExpression {
   def unaryOp: UnaryOp
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = input.getBase.unaryOp(unaryOp)
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    val astOp = CudfUnaryExpression.opToAstMap.getOrElse(unaryOp,
+      throw new IllegalStateException(s"${this.getClass.getSimpleName} is not supported by AST"))
+    new ast.UnaryOperation(astOp,
+      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+  }
 }
 
-trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
+trait GpuBinaryExpression extends ShimBinaryExpression with GpuExpression {
 
   def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector
   def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector
@@ -221,6 +264,23 @@ trait GpuBinaryExpression extends BinaryExpression with GpuExpression {
 }
 
 trait GpuBinaryOperator extends BinaryOperator with GpuBinaryExpression
+
+object CudfBinaryExpression {
+  lazy val opToAstMap: Map[BinaryOp, ast.BinaryOperator] = Map(
+    BinaryOp.ADD -> ast.BinaryOperator.ADD,
+    BinaryOp.BITWISE_AND -> ast.BinaryOperator.BITWISE_AND,
+    BinaryOp.BITWISE_OR -> ast.BinaryOperator.BITWISE_OR,
+    BinaryOp.BITWISE_XOR -> ast.BinaryOperator.BITWISE_XOR,
+    BinaryOp.GREATER -> ast.BinaryOperator.GREATER,
+    BinaryOp.GREATER_EQUAL -> ast.BinaryOperator.GREATER_EQUAL,
+    BinaryOp.LESS -> ast.BinaryOperator.LESS,
+    BinaryOp.LESS_EQUAL -> ast.BinaryOperator.LESS_EQUAL,
+    BinaryOp.LOGICAL_AND -> ast.BinaryOperator.NULL_LOGICAL_AND,
+    BinaryOp.LOGICAL_OR -> ast.BinaryOperator.NULL_LOGICAL_OR,
+    BinaryOp.MUL -> ast.BinaryOperator.MUL,
+    BinaryOp.POW -> ast.BinaryOperator.POW,
+    BinaryOp.SUB -> ast.BinaryOperator.SUB)
+}
 
 trait CudfBinaryExpression extends GpuBinaryExpression {
   def binaryOp: BinaryOp
@@ -271,11 +331,21 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
       doColumnar(expandedLhs, rhs)
     }
   }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    val astOp = CudfBinaryExpression.opToAstMap.getOrElse(binaryOp,
+      throw new IllegalStateException(s"$this is not supported by AST"))
+    assert(left.dataType == right.dataType)
+    new ast.BinaryOperation(astOp,
+      left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+      right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+  }
 }
 
 abstract class CudfBinaryOperator extends GpuBinaryOperator with CudfBinaryExpression
 
-trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression {
+trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression
+    with ShimExpression {
 
   override def srcStr: Expression
 
@@ -289,7 +359,6 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
     s"TRIM($direction ${trimStr.get.sql} FROM ${srcStr.sql})"
   } else {
     super.sql
-
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -309,9 +378,22 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression 
       }
     }
   }
+
+  protected def doEval(
+      srcString: org.apache.spark.unsafe.types.UTF8String,
+      trimString: org.apache.spark.unsafe.types.UTF8String
+  ): org.apache.spark.unsafe.types.UTF8String = {
+    throw new UnsupportedOperationException("TODO: Columnar only message!")
+  }
+
+  protected def doEval(
+      srcString: org.apache.spark.unsafe.types.UTF8String
+  ): org.apache.spark.unsafe.types.UTF8String = {
+    throw new UnsupportedOperationException("TODO: Columnar only message!")
+  }
 }
 
-trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
+trait GpuTernaryExpression extends ShimTernaryExpression with GpuExpression {
 
   def doColumnar(
       val0: GpuColumnVector, val1: GpuColumnVector, val2: GpuColumnVector): ColumnVector
@@ -355,6 +437,7 @@ trait GpuTernaryExpression extends TernaryExpression with GpuExpression {
   }
 }
 
-trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuComplexTypeMergingExpression extends ComplexTypeMergingExpression
+    with GpuExpression with ShimExpression {
   def columnarEval(batch: ColumnarBatch): Any
 }

@@ -18,19 +18,24 @@ package com.nvidia.spark.rapids
 
 import java.lang.reflect.Method
 
+import scala.annotation.tailrec
+
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.ExecutedCommandExec
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -43,9 +48,21 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   def optimizeGpuPlanTransitions(plan: SparkPlan): SparkPlan = plan match {
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-      GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal)
+      val preProcessing = r2c.child.getTagValue(GpuOverrides.preRowToColProjection)
+          .getOrElse(Seq.empty)
+      GpuRowToColumnarExec(optimizeGpuPlanTransitions(r2c.child), goal, preProcessing)
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       getColumnarToRowExec(optimizeGpuPlanTransitions(bb.child))
+    // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
+    case p if p.getTagValue(GpuOverrides.postColToRowProjection).nonEmpty =>
+      val c2r = p.children.map(optimizeGpuPlanTransitions).head
+          .asInstanceOf[GpuColumnarToRowExecParent]
+      val postProjection = p.getTagValue(GpuOverrides.postColToRowProjection)
+          .getOrElse(Seq.empty)
+      val c2rCopy = c2r.makeCopy(Array(c2r.child.asInstanceOf[AnyRef],
+        c2r.exportColumnarRdd.asInstanceOf[AnyRef],
+        postProjection.asInstanceOf[AnyRef]))
+      p.withNewChildren(Array(c2rCopy))
     case p =>
       p.withNewChildren(p.children.map(optimizeGpuPlanTransitions))
   }
@@ -56,7 +73,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   /** Adds the appropriate coalesce after a shuffle depending on the type of shuffle configured */
   private def addPostShuffleCoalesce(plan: SparkPlan): SparkPlan = {
-    if (GpuShuffleEnv.isRapidsShuffleEnabled) {
+    if (GpuShuffleEnv.shouldUseRapidsShuffle(rapidsConf)) {
       GpuCoalesceBatches(plan, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
     } else {
       GpuShuffleCoalesceExec(plan, rapidsConf.gpuTargetBatchSizeBytes)
@@ -68,8 +85,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       parent: Option[SparkPlan]): SparkPlan = plan match {
     // HostColumnarToGpu(RowToColumnarExec(..)) => GpuRowToColumnarExec(..)
     case HostColumnarToGpu(r2c: RowToColumnarExec, goal) =>
-      val transition = GpuRowToColumnarExec(
-        optimizeAdaptiveTransitions(r2c.child, Some(r2c)), goal)
+      val child = optimizeAdaptiveTransitions(r2c.child, Some(r2c))
+      val preProcessing = child.getTagValue(GpuOverrides.preRowToColProjection)
+          .getOrElse(Seq.empty)
+      val transition = GpuRowToColumnarExec(child, goal, preProcessing)
       r2c.child match {
         case _: AdaptiveSparkPlanExec =>
           // When the input is an adaptive plan we do not get to see the GPU version until
@@ -114,7 +133,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
         parent match {
-          case Some(_: GpuCustomShuffleReaderExec | _: CustomShuffleReaderExec) =>
+          case Some(x) if ShimLoader.getSparkShims.isCustomReaderExec(x) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
@@ -124,6 +143,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             addPostShuffleCoalesce(s)
         }
       } else {
+        s.plan.getTagValue(GpuOverrides.preRowToColProjection).foreach { p =>
+          s.setTagValue(GpuOverrides.preRowToColProjection, p)
+        }
         s
       }
 
@@ -136,13 +158,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // don't need to recurse down and optimize them again
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       e.plan match {
-        case ReusedExchangeExec(_, b: GpuBroadcastExchangeExecBase) =>
+        case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) =>
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
           // hash join but Spark will sometimes try and do this (see
           // https://issues.apache.org/jira/browse/SPARK-35093 for more information) so we
           // need to convert the output to rows in the driver before broadcasting the data
           // to the executors
-          GpuBroadcastToCpuExec(b.mode, b.child)
+          val newChild = ReusedExchangeExec(output, GpuBroadcastToCpuExec(b.mode, b.child))
+          ShimLoader.getSparkShims.newBroadcastQueryStageExec(e, newChild)
         case _ => getColumnarToRowExec(e)
       }
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
@@ -150,15 +173,27 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case ColumnarToRowExec(bb: GpuBringBackToHost) =>
       optimizeAdaptiveTransitions(bb.child, Some(bb)) match {
-        case e: GpuBroadcastExchangeExecBase => e
+        case e: GpuBroadcastExchangeExec => e
         case e: GpuShuffleExchangeExecBase => e
         case other => getColumnarToRowExec(other)
       }
+
+    // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
+    case p if p.getTagValue(GpuOverrides.postColToRowProjection).nonEmpty =>
+      val c2r = p.children.map(optimizeAdaptiveTransitions(_, Some(p))).head
+          .asInstanceOf[GpuColumnarToRowExecParent]
+      val postProjection = p.getTagValue(GpuOverrides.postColToRowProjection)
+          .getOrElse(Seq.empty)
+      val c2rCopy = c2r.makeCopy(Array(c2r.child.asInstanceOf[AnyRef],
+        c2r.exportColumnarRdd.asInstanceOf[AnyRef],
+        postProjection.asInstanceOf[AnyRef]))
+      p.withNewChildren(Array(c2rCopy))
 
     case p =>
       p.withNewChildren(p.children.map(c => optimizeAdaptiveTransitions(c, Some(p))))
   }
 
+  @tailrec
   private def isGpuShuffleLike(execNode: SparkPlan): Boolean = execNode match {
     case _: GpuShuffleExchangeExecBase | _: GpuCustomShuffleReaderExec => true
     case qs: ShuffleQueryStageExec => isGpuShuffleLike(qs.plan)
@@ -189,7 +224,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
       // Don't build batches and then coalesce, just build the right sized batch
       GpuRowToColumnarExec(optimizeCoalesce(r2c.child),
-        CoalesceGoal.maxRequirement(goal, r2c.goal).asInstanceOf[CoalesceSizeGoal])
+        CoalesceGoal.maxRequirement(goal, r2c.goal).asInstanceOf[CoalesceSizeGoal],
+        r2c.preProcessing)
     case GpuCoalesceBatches(co: GpuCoalesceBatches, goal) =>
       GpuCoalesceBatches(optimizeCoalesce(co.child), CoalesceGoal.maxRequirement(goal, co.goal))
     case GpuCoalesceBatches(child: GpuExec, goal)
@@ -244,23 +280,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => false
   }
 
-  /**
-   * Because we cannot change the executors in spark itself we need to try and account for
-   * the ones that might have issues with coalesce here.
-   */
-  private def disableCoalesceUntilInput(exec: Expression): Boolean = exec match {
-    case _: InputFileName => true
-    case _: InputFileBlockStart => true
-    case _: InputFileBlockLength => true
-    case e => e.children.exists(disableCoalesceUntilInput)
-  }
+
 
   /**
    * Because we cannot change the executors in spark itself we need to try and account for
    * the ones that might have issues with coalesce here.
    */
   private def disableCoalesceUntilInput(plan: SparkPlan): Boolean = {
-    plan.expressions.exists(disableCoalesceUntilInput)
+    plan.expressions.exists(GpuTransitionOverrides.checkHasInputFileExpressions)
   }
 
   private def disableScanUntilInput(exec: Expression): Boolean = {
@@ -369,14 +396,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     if (rapidsConf.enableHashOptimizeSort) {
       // Insert a sort after the last hash-based op before the query result if there are no
       // intermediate nodes that have a specified sort order. This helps with the size of
-      // Parquet and Orc files
+      // Parquet and ORC files.
+      // Note that this is using a GPU SortOrder expression as the CPU SortOrder which should
+      // normally be avoided. However since we have checked that no node later in the plan
+      // needs a particular sort order, it should not be a problem in practice that would
+      // trigger a redundant sort in the plan.
       plan match {
         case _: GpuHashJoin =>
-          val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          val gpuSortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
         case _: GpuHashAggregateExec =>
-          val sortOrder = getOptimizedSortOrder(plan)
-          GpuSortExec(sortOrder, false, plan, SortEachBatch)
+          val gpuSortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
@@ -403,11 +434,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
   def assertIsOnTheGpu(exp: Expression, conf: RapidsConf): Unit = {
     // There are no GpuAttributeReference or GpuSortOrder
-    if (!exp.isInstanceOf[AttributeReference] &&
-        !exp.isInstanceOf[SortOrder] &&
-        !exp.isInstanceOf[GpuExpression] &&
-      !conf.testingAllowedNonGpu.contains(PlanUtils.getBaseNameFromClass(exp.getClass.toString))) {
-      throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
+    exp match {
+      case _: AttributeReference | _: SortOrder | _: GpuExpression =>
+      case _ =>
+        val classBaseName = PlanUtils.getBaseNameFromClass(exp.getClass.toString)
+        if (!conf.testingAllowedNonGpu.contains(classBaseName)) {
+          throw new IllegalArgumentException(s"The expression $exp is not columnar ${exp.getClass}")
+        }
     }
     exp.children.foreach(subExp => assertIsOnTheGpu(subExp, conf))
   }
@@ -420,7 +453,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       case _: BroadcastHashJoinExec | _: BroadcastNestedLoopJoinExec
           if isAdaptiveEnabled =>
         // broadcasts are left on CPU for now when AQE is enabled
-      case _: AdaptiveSparkPlanExec | _: QueryStageExec | _: CustomShuffleReaderExec =>
+      case p if ShimLoader.getSparkShims.isAqePlan(p)  =>
         // we do not yet fully support GPU-acceleration when AQE is enabled, so we skip checking
         // the plan in this case - https://github.com/NVIDIA/spark-rapids/issues/5
       case lts: LocalTableScanExec =>
@@ -435,6 +468,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
       case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
+      case p if ShimLoader.getSparkShims.skipAssertIsOnTheGpu(p) => () // Ignored
       case _ =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little
@@ -445,17 +479,18 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             !conf.testingAllowedNonGpu.exists(nonGpuClass =>
                 PlanUtils.sameClass(plan, nonGpuClass))) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
-            s"${plan.getClass}\n${plan}")
+            s"${plan.getClass}\n$plan")
         }
-        // filter out the output expressions since those are not GPU expressions
-        val planOutput = plan.output.toSet
-        // avoid checking expressions of GpuFileSourceScanExec since all expressions are
-        // processed by driver and not run on GPU.
-        if (!plan.isInstanceOf[GpuFileSourceScanExec]) {
-          plan.expressions.filter(_ match {
-            case a: Attribute => !planOutput.contains(a)
-            case _ => true
-          }).foreach(assertIsOnTheGpu(_, conf))
+        // Check child expressions if this is a GPU node
+        plan match {
+          case gpuExec: GpuExec =>
+            // filter out the output expressions since those are not GPU expressions
+            val planOutput = gpuExec.output.toSet
+            gpuExec.gpuExpressions.filter(_ match {
+                case a: Attribute => !planOutput.contains(a)
+                case _ => true
+            }).foreach(assertIsOnTheGpu(_, conf))
+          case _ =>
         }
     }
     plan.children.foreach(assertIsOnTheGpu(_, conf))
@@ -472,7 +507,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       }
       // to set to make uniq execs
       val execsFound = PlanUtils.findOperators(plan, planContainsInstanceOf).toSet
-      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass().getSimpleName))
+      val execsNotFound = validateExecs.diff(execsFound.map(_.getClass.getSimpleName))
       require(execsNotFound.isEmpty,
         s"Plan ${plan.toString()} does not contain the following execs: " +
         execsNotFound.mkString(","))
@@ -486,38 +521,41 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => plan
   }
 
-  override def apply(plan: SparkPlan): SparkPlan = {
+  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled) {
-      var updatedPlan = insertHashOptimizeSorts(plan)
-      updatedPlan = updateScansForInput(updatedPlan)
-      updatedPlan = insertColumnarFromGpu(updatedPlan)
-      updatedPlan = insertCoalesce(updatedPlan)
-      // only insert shuffle coalesces when using normal shuffle
-      if (!GpuShuffleEnv.isRapidsShuffleEnabled) {
-        updatedPlan = insertShuffleCoalesce(updatedPlan)
+      GpuOverrides.logDuration(rapidsConf.shouldExplain,
+        t => f"GPU plan transition optimization took $t%.2f ms") {
+        var updatedPlan = insertHashOptimizeSorts(plan)
+        updatedPlan = updateScansForInput(updatedPlan)
+        updatedPlan = insertColumnarFromGpu(updatedPlan)
+        updatedPlan = insertCoalesce(updatedPlan)
+        // only insert shuffle coalesces when using normal shuffle
+        if (!GpuShuffleEnv.shouldUseRapidsShuffle(rapidsConf)) {
+          updatedPlan = insertShuffleCoalesce(updatedPlan)
+        }
+        if (plan.conf.adaptiveExecutionEnabled) {
+          updatedPlan = optimizeAdaptiveTransitions(updatedPlan, None)
+        } else {
+          updatedPlan = optimizeGpuPlanTransitions(updatedPlan)
+        }
+        updatedPlan = optimizeCoalesce(updatedPlan)
+        if (rapidsConf.exportColumnarRdd) {
+          updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
+        }
+        if (rapidsConf.isTestEnabled) {
+          assertIsOnTheGpu(updatedPlan, rapidsConf)
+          // Generate the canonicalized plan to ensure no incompatibilities.
+          // The plan itself is not currently checked.
+          updatedPlan.canonicalized
+          validateExecsInGpuPlan(updatedPlan, rapidsConf)
+        }
+        updatedPlan
       }
-      if (plan.conf.adaptiveExecutionEnabled) {
-        updatedPlan = optimizeAdaptiveTransitions(updatedPlan, None)
-      } else {
-        updatedPlan = optimizeGpuPlanTransitions(updatedPlan)
-      }
-      updatedPlan = optimizeCoalesce(updatedPlan)
-      if (rapidsConf.exportColumnarRdd) {
-        updatedPlan = detectAndTagFinalColumnarOutput(updatedPlan)
-      }
-      if (rapidsConf.isTestEnabled) {
-        assertIsOnTheGpu(updatedPlan, rapidsConf)
-        // Generate the canonicalized plan to ensure no incompatibilities.
-        // The plan itself is not currently checked.
-        updatedPlan.canonicalized
-        validateExecsInGpuPlan(updatedPlan, rapidsConf)
-      }
-      updatedPlan
     } else {
       plan
     }
-  }
+  }(sparkPlan)
 }
 
 object GpuTransitionOverrides {
@@ -528,12 +566,32 @@ object GpuTransitionOverrides {
    */
   def getNonQueryStagePlan(plan: SparkPlan): SparkPlan = {
     plan match {
-      case BroadcastQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case BroadcastQueryStageExec(_, plan) => plan
-      case ShuffleQueryStageExec(_, ReusedExchangeExec(_, plan)) => plan
-      case ShuffleQueryStageExec(_, plan) => plan
+      case bqse: BroadcastQueryStageExec =>
+        if (bqse.plan.isInstanceOf[ReusedExchangeExec]) {
+          bqse.plan.asInstanceOf[ReusedExchangeExec].child
+        } else {
+          bqse.plan
+        }
+      case sqse: ShuffleQueryStageExec =>
+        if (sqse.plan.isInstanceOf[ReusedExchangeExec]) {
+          sqse.plan.asInstanceOf[ReusedExchangeExec].child
+        } else {
+          sqse.plan
+        }
       case _ => plan
     }
+  }
+
+  /**
+   * Check the Expression is or has Input File expressions.
+   * @param exec expression to check
+   * @return true or false
+   */
+  def checkHasInputFileExpressions(exec: Expression): Boolean = exec match {
+    case _: InputFileName => true
+    case _: InputFileBlockStart => true
+    case _: InputFileBlockLength => true
+    case e => e.children.exists(checkHasInputFileExpressions)
   }
 }
 
@@ -559,7 +617,7 @@ object GpuTransitionOverrides {
  *
  * @param child The plan to execute
  */
-case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode with GpuExec {
+case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -567,7 +625,7 @@ case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends UnaryExecNode 
   override def output: Seq[Attribute] = child.output
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = child match {
-    case GpuRowToColumnarExec(a: AdaptiveSparkPlanExec, _) =>
+    case GpuRowToColumnarExec(a: AdaptiveSparkPlanExec, _, _) =>
       val getFinalPhysicalPlan = getPrivateMethod("getFinalPhysicalPlan")
       val plan = getFinalPhysicalPlan.invoke(a)
       val rdd = plan match {

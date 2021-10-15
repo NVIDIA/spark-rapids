@@ -21,12 +21,12 @@ import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
 import scala.collection.mutable.ArrayBuffer
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import java.util
 import org.apache.commons.lang3.mutable.MutableLong
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.api.plugin.PluginContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsShuffleInternalManagerBase}
+import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
 import org.apache.spark.storage.BlockManagerId
 
 /**
@@ -78,7 +78,8 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
   private[this] var executors = new ArrayBuffer[ExecutorRegistration]()
 
   // A mapping of executor IDs to its registration, populated in `registerExecutor`
-  private[this] val executorRegistrations = new util.HashMap[BlockManagerId, ExecutorRegistration]
+  private[this] val executorRegistrations =
+    new java.util.HashMap[BlockManagerId, ExecutorRegistration]
 
   // Min-heap with the root node being the executor that least recently heartbeated
   private[this] val leastRecentHeartbeat =
@@ -235,11 +236,13 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
     }
   }
 
-  GpuShuffleEnv.mgr.foreach { mgr =>
-    if (mgr.isDriver) {
+  def registerShuffleHeartbeat(): Unit = {
+    val rapidsShuffleManager = SparkEnv.get.shuffleManager.asInstanceOf[Proxy].self
+        .asInstanceOf[RapidsShuffleInternalManagerBase]
+    if (rapidsShuffleManager.isDriver) {
       logDebug("Local mode detected. Skipping shuffle heartbeat registration.")
     } else {
-      executorService.submit(new InitializeShuffleManager(pluginContext, mgr))
+      executorService.submit(new InitializeShuffleManager(pluginContext, rapidsShuffleManager))
     }
   }
 

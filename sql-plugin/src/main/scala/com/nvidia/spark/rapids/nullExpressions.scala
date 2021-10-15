@@ -20,6 +20,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression, Predicate}
 import org.apache.spark.sql.types.{DataType, IntegerType}
@@ -39,8 +40,8 @@ object GpuNvl extends Arm {
   }
 }
 
-case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression with
-  ComplexTypeMergingExpression {
+case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression
+    with ShimExpression with ComplexTypeMergingExpression {
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     // runningResult has precedence over runningScalar
@@ -146,7 +147,7 @@ case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate
 case class GpuAtLeastNNonNulls(
     n: Int,
     exprs: Seq[Expression])
-  extends GpuExpression
+  extends GpuExpression with ShimExpression
   with Predicate {
   override def nullable: Boolean = false
   override def foldable: Boolean = exprs.forall(_.foldable)

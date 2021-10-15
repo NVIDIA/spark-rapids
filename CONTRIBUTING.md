@@ -39,6 +39,46 @@ mvn verify
 ```
 
 After a successful build the RAPIDS Accelerator jar will be in the `dist/target/` directory.
+This will build the plugin for a single version of Spark.  By default this is Apache Spark
+3.0.1. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
+to Maven. For instance to build Spark 3.1.1 you would use:
+
+```shell script
+mvn -Dbuildver=311 verify
+```
+You can find all available build versions in the top level pom.xml file. If you are building
+for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
+the version you want.
+
+To get an uber jar with more than 1 version you have to `mvn install` each version
+and then use one of the defined profiles in the dist module. See the next section
+for more details.
+
+### Building a Distribution for Multiple Versions of Spark
+
+By default the distribution jar only includes code for a single version of Spark. If you want
+to create a jar with multiple versions we currently have 4 options.
+
+1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
+2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
+3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
+4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
+
+You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
+
+There is a build script `build/buildall` to build everything with snapshots and this will have more options to build later.
+
+You can also install some manually and build a combined jar. For instance to build non-snapshot versions:
+
+```shell script
+mvn -Dbuildver=301 clean install -DskipTests
+mvn -Dbuildver=302 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=303 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=312 clean install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
+mvn -pl dist -PnoSnapshots package -DskipTests
+```
 
 ### Building against different CUDA Toolkit versions
 
@@ -46,6 +86,67 @@ You can build against different versions of the CUDA Toolkit by using one of the
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
 ## Code contributions
+
+### Source code layout
+
+Conventional code locations in Maven modules are found under `src/main/<language>`. In addition to
+that and in order to support multiple versions of Apache Spark with the minimum amount of source
+code we maintain Spark-version-specific locations within non-shim modules if necessary. This allows
+us to switch between incompatible parent classes inside without copying the shared code to
+dedicated shim modules.
+
+Thus, the conventional source code root directories `src/main/<language>` contain the files that
+are source-compatible with all supported Spark releases, both upstream and vendor-specific.
+
+The version-specific directory names have one of the following forms / use cases:
+- `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
+- `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
+   only beginning with version Spark 3.1.2, and + signifies there is no upper version boundary
+   among the supported versions
+- `src/main/302until312-all` contains code that applies to all shims between 3.0.2 *inclusive*,
+3.1.2 *exclusive*
+- `src/main/302to312-cdh` contains code that applies to Cloudera CDH shims between 3.0.2 *inclusive*,
+   3.1.2 *inclusive*
+
+
+### Setting up an Integrated Development Environment
+
+Our project currently uses `build-helper-maven-plugin` for shimming against conflicting definitions of superclasses 
+in upstream versions that cannot be resolved without significant code duplication otherwise. To this end different 
+source directories with differently implemented same-named classes are 
+[added](https://www.mojohaus.org/build-helper-maven-plugin/add-source-mojo.html) 
+for compilation depending on the targeted Spark version.
+
+This may require some modifications to IDEs' standard Maven import functionality.
+
+#### IntelliJ IDEA
+
+_Last tested with 2021.2.1 Community Edition_
+
+To start working with the project in IDEA is as easy as 
+[opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent) 
+[pom.xml](pom.xml). 
+
+In order to make sure that IDEA handles profile-specific source code roots within a single Maven module correctly,
+[unselect](https://www.jetbrains.com/help/idea/2021.2/maven-importing.html) "Keep source and test folders on reimport".
+
+If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
+Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2021.2/maven-projects-tool-window.html) and
+select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0, and click "Reload" 
+if not triggered automatically.
+
+There is a known issue with the shims/spark3xx submodules. After being enabled once, a module such as shims/spark312 
+may remain active in IDEA even though you explicitly disable the Maven profile `release312` in the Maven tool window.
+With an extra IDEA shim module loaded the IDEA internal build "Build->Build Project" is likely to fail 
+(whereas it has no adverse effect on Maven build). As a workaround, locate the pom.xml under the extraneous IDEA module,
+right-click on it and select "Maven->Ignore Projects".
+
+If you see Scala symbols unresolved (highlighted red) in IDEA please try the following steps to resolve it:
+- Make sure there are no relevant poms in "File->Settings->Build Tools->Maven->Ignored Files" 
+- Restart IDEA and click "Reload All Maven Projects" again 
+
+#### Other IDEs
+We welcome pull requests with tips how to setup your favorite IDE!
 
 ### Your first issue
 
@@ -186,6 +287,27 @@ Update copyright year....................................................Failed
 You can confirm that the update actually has happened by either inspecting its effect with
 `git diff` first or simply reexecuting `git commit` right away. The second time no file
 modification should be triggered by the copyright year update hook and the commit should succeed.
+
+### Pull request status checks
+A pull request should pass all status checks before merged.
+#### signoff check
+Please follow the steps in the [Sign your work](#sign-your-work) section,
+and make sure at least one commit in your pull request get signed-off.
+#### blossom-ci
+The check runs on NVIDIA self-hosted runner, a [project committer](.github/workflows/blossom-ci.yml#L36) can
+manually trigger it by commenting `build`. It includes following steps,
+1. Mergeable check
+2. Blackduck vulnerability scan
+3. Fetch merged code (merge the pull request HEAD into BASE branch, e.g. fea-001 into branch-x)
+4. Run `mvn verify` and unit tests for multiple Spark versions in parallel. 
+Ref: [spark-premerge-build.sh](jenkins/spark-premerge-build.sh)
+
+If it fails, you can click the `Details` link of this check, and go to `Upload log -> Jenkins log for pull request xxx (click here)` to
+find the uploaded log.
+
+Options:
+1. Skip tests run by adding `[skip ci]` to title, this should only be used for doc-only change
+2. Run build and tests in databricks runtimes by adding `[databricks]` to title, this would add around 30-40 minutes
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/main/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md

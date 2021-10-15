@@ -16,12 +16,17 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
+
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution}
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case object GpuSinglePartitioning extends GpuExpression with GpuPartitioning {
+case object GpuSinglePartitioning extends GpuExpression with ShimExpression
+    with GpuPartitioning {
   /**
    * Returns the result of evaluating this expression on the entire `ColumnarBatch`.
    * The result of calling this may be a single [[GpuColumnVector]] or a scalar value.
@@ -48,6 +53,11 @@ case object GpuSinglePartitioning extends GpuExpression with GpuPartitioning {
       }
     }
   }
+
+  // this override is required since `GpuSinglePartitioning` is used as a static class
+  // and the RAPIDS Shuffle Manager can be enabled and disabled dynamically
+  override def usesRapidsShuffle: Boolean =
+    GpuShuffleEnv.shouldUseRapidsShuffle(new RapidsConf(SQLConf.get))
 
   override def nullable: Boolean = false
 

@@ -25,16 +25,28 @@ then
     >&2 echo "SPARK_HOME IS NOT SET CANNOT RUN PYTHON INTEGRATION TESTS..."
 else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
+    # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
+    # which helps with spurious task failures as observed in our tests. If you are running
+    # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for
+    # more lineant configuration, else it will set them to 1 as spurious task failures are not expected
+    # for Spark 3.1.1+
+    VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|grep -v Scala|awk '/version\ [0-9.]+/{print $NF}'`
+    VERSION_STRING="${VERSION_STRING/-SNAPSHOT/}"
+    [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
+    [[ -z $SPARK_SHIM_VER ]] && { SPARK_SHIM_VER="spark${VERSION_STRING//./}"; }
+
+    echo "Detected Spark version $VERSION_STRING (shim version: $SPARK_SHIM_VER)"
+
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         CUDF_JARS=$(echo "$LOCAL_JAR_PATH"/cudf-*.jar)
         PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
-        TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*.jar)
+        TEST_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER*.jar)
         UDF_EXAMPLE_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-udf-examples*.jar)
     else
         CUDF_JARS=$(echo "$SCRIPTPATH"/target/dependency/cudf-*.jar)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
-        TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*.jar)
+        TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$SPARK_SHIM_VER*.jar)
         UDF_EXAMPLE_JARS=$(echo "$SCRIPTPATH"/../udf-examples/target/rapids-4-spark-udf-examples*.jar)
     fi
     ALL_JARS="$CUDF_JARS $PLUGIN_JARS $TEST_JARS $UDF_EXAMPLE_JARS"
@@ -90,7 +102,7 @@ else
         MEMORY_FRACTION=`python -c "print(1/($TEST_PARALLEL + 1))"`
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
-    RUN_DIR="$SCRIPTPATH"/target/run_dir
+    RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
@@ -117,14 +129,6 @@ else
     NUM_LOCAL_EXECS=${NUM_LOCAL_EXECS:-0}
     MB_PER_EXEC=${MB_PER_EXEC:-1024}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
-    # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
-    # which helps with spurious task failures as observed in our tests. If you are running
-    # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for
-    # more lineant configuration, else it will set them to 1 as spurious task failures are not expected
-    # for Spark 3.1.1+
-    VERSION_STRING=`$SPARK_HOME/bin/pyspark --version 2>&1|grep -v Scala|awk '/version\ [0-9.]+/{print $NF}'`
-    [[ -z $VERSION_STRING ]] && { echo "Unable to detect the Spark version at $SPARK_HOME"; exit 1; }
-    echo "Detected Spark version $VERSION_STRING"
 
     SPARK_TASK_MAXFAILURES=1
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4

@@ -33,7 +33,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataTypes, DateType, Decimal, DecimalType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, MapType, StructField, StructType, TimestampType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuParquetFileFormat {
@@ -87,6 +87,18 @@ object GpuParquetFileFormat {
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[DateType])
     }
 
+
+    ShimLoader.getSparkShims.int96ParquetRebaseWrite(sqlConf) match {
+      case "EXCEPTION" =>
+      case "CORRECTED" =>
+      case "LEGACY" =>
+        if (schemaHasTimestamps) {
+          meta.willNotWorkOnGpu("LEGACY rebase mode for int96 timestamps is not supported")
+        }
+      case other =>
+        meta.willNotWorkOnGpu(s"$other is not a supported rebase mode for int96")
+    }
+
     ShimLoader.getSparkShims.parquetRebaseWrite(sqlConf) match {
       case "EXCEPTION" => //Good
       case "CORRECTED" => //Good
@@ -105,29 +117,64 @@ object GpuParquetFileFormat {
     }
   }
 
-  def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions]
-  (builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
-   schema: StructType, writeInt96: Boolean): T = {
+  def parquetWriterOptionsFromField[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions](
+      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
+      dataType: DataType,
+      name: String,
+      writeInt96: Boolean,
+      nullable: Boolean): T = {
+    dataType match {
+      case dt: DecimalType =>
+        builder.withDecimalColumn(name, dt.precision, nullable)
+      case TimestampType =>
+        builder.withTimestampColumn(name, writeInt96, nullable)
+      case s: StructType =>
+        builder.withStructColumn(
+          parquetWriterOptionsFromSchema(
+            // we are setting this to nullable, in case the parent is a Map's key and wants to
+            // set this to false
+            structBuilder(name, nullable),
+            s,
+            writeInt96).build())
+      case a: ArrayType =>
+        builder.withListColumn(
+          parquetWriterOptionsFromField(
+            // we are setting this to nullable, in case the parent is a Map's key and wants to
+            // set this to false
+            listBuilder(name, nullable),
+            a.elementType,
+            name,
+            writeInt96,
+            true).build())
+      case m: MapType =>
+        builder.withMapColumn(
+          mapColumn(name,
+            parquetWriterOptionsFromField(
+              ParquetWriterOptions.builder(),
+              m.keyType,
+              "key",
+              writeInt96,
+              false).build().getChildColumnOptions()(0),
+            parquetWriterOptionsFromField(
+              ParquetWriterOptions.builder(),
+              m.valueType,
+              "value",
+              writeInt96,
+              nullable).build().getChildColumnOptions()(0)))
+      case _ =>
+        builder.withColumns(nullable, name)
+    }
+    builder.asInstanceOf[T]
+  }
+
+  def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions](
+      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
+      schema: StructType,
+      writeInt96: Boolean): T = {
     // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
     // setting if the output is nullable or not everywhere we have hard-coded nullable=true
     schema.foreach(field =>
-      field.dataType match {
-        case dt: DecimalType =>
-          builder.withDecimalColumn(field.name, dt.precision, true)
-        case TimestampType =>
-          builder.withTimestampColumn(field.name,
-            writeInt96, true)
-        case s: StructType =>
-          builder.withStructColumn(
-            parquetWriterOptionsFromSchema(structBuilder(field.name), s, writeInt96).build())
-        case a: ArrayType =>
-          builder.withListColumn(
-            parquetWriterOptionsFromSchema(listBuilder(field.name),
-              StructType(Array(StructField(field.name, a.elementType, true))), writeInt96)
-              .build())
-        case _ =>
-          builder.withColumns(true, field.name)
-      }
+      parquetWriterOptionsFromField(builder, field.dataType, field.name, writeInt96, true)
     )
     builder.asInstanceOf[T]
   }
@@ -167,8 +214,19 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
     val conf = ContextUtil.getConfiguration(job)
 
+    val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
     val dateTimeRebaseException = "EXCEPTION".equals(
-        sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
+      sparkSession.sqlContext.getConf(ShimLoader.getSparkShims.parquetRebaseWriteKey))
+    // prior to spark 311 int96 don't check for rebase exception
+    // https://github.com/apache/spark/blob/068465d016447ef0dbf7974b1a3f992040f4d64d/sql/core/src/
+    // main/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetWriteSupport.scala#L195
+    val hasSeparateInt96RebaseConf = ShimLoader.getSparkShims.hasSeparateINT96RebaseConf
+    val timestampRebaseException =
+      outputTimestampType.equals(ParquetOutputTimestampType.INT96) &&
+          "EXCEPTION".equals(sparkSession.sqlContext
+              .getConf(ShimLoader.getSparkShims.int96ParquetRebaseWriteKey)) &&
+          hasSeparateInt96RebaseConf ||
+          !outputTimestampType.equals(ParquetOutputTimestampType.INT96) && dateTimeRebaseException
 
     val committerClass =
       conf.getClass(
@@ -208,7 +266,6 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       SQLConf.PARQUET_WRITE_LEGACY_FORMAT.key,
       sparkSession.sessionState.conf.writeLegacyParquetFormat.toString)
 
-    val outputTimestampType = sparkSession.sessionState.conf.parquetOutputTimestampType
     if(!GpuParquetFileFormat.isOutputTimestampTypeSupported(outputTimestampType)) {
       val hasTimestamps = dataSchema.exists { field =>
         TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
@@ -248,7 +305,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           path: String,
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException, context)
+        new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException,
+          timestampRebaseException, context)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -262,18 +320,23 @@ class GpuParquetWriter(
     path: String,
     dataSchema: StructType,
     compressionType: CompressionType,
-    dateTimeRebaseException: Boolean,
+    dateRebaseException: Boolean,
+    timestampRebaseException: Boolean,
     context: TaskAttemptContext)
   extends ColumnarOutputWriter(path, context, dataSchema, "Parquet") {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 
   override def scanTableBeforeWrite(table: Table): Unit = {
-    if (dateTimeRebaseException) {
-      (0 until table.getNumberOfColumns).foreach { i =>
-        if (RebaseHelper.isDateTimeRebaseNeededWrite(table.getColumn(i))) {
-          throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
-        }
+    (0 until table.getNumberOfColumns).foreach { i =>
+      val col = table.getColumn(i)
+      // if col is a day
+      if (dateRebaseException && RebaseHelper.isDateRebaseNeededInWrite(col)) {
+        throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
+      }
+      // if col is a time
+      else if (timestampRebaseException && RebaseHelper.isTimeRebaseNeededInWrite(col)) {
+        throw DataSourceUtils.newRebaseExceptionInWrite("Parquet")
       }
     }
   }

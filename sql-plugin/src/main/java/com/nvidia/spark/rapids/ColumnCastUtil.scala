@@ -16,11 +16,13 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.Optional
+
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
-import ai.rapids.cudf.{ColumnVector, ColumnView}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 
-import org.apache.spark.sql.types.{ArrayType, DataType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, StructType, MapType, StructField}
 
 /**
  * This class casts a column to another column if the predicate passed resolves to true.
@@ -29,6 +31,105 @@ import org.apache.spark.sql.types.{ArrayType, DataType, StructType}
  * At this time this is strictly a place for casting methods
  */
 object ColumnCastUtil extends Arm {
+
+  /**
+   * Transforms a ColumnView into a new ColumnView using a `PartialFunction` or returns None
+   * indicating that no transformation happened (nothing matched). If the partial function matches
+   * it is assumed that this takes ownership of the returned view. A lot of caution needs to be
+   * taken when using this method because of ownership of the data. This will handle
+   * reference counting and return not just the updated ColumnView but also any views and or data
+   * that were generated along the way and need to be closed. This includes the returned view
+   * itself. So you should not explicitly close the returned view. It will be closed by closing
+   * everything in the returned collection of AutoCloseable values.
+   *
+   * @param cv the view to be updated
+   * @param convert the partial function used to convert the data. If this matches and returns
+   *                a updated view this function takes ownership of that view.
+   * @return None if there were no changes to the view or the updated view along with anything else
+   *         that needs to be closed.
+   */
+  def deepTransformView(cv: ColumnView)
+      (convert: PartialFunction[ColumnView, ColumnView]):
+  (Option[ColumnView], ArrayBuffer[AutoCloseable]) = {
+    closeOnExcept(ArrayBuffer.empty[AutoCloseable]) { needsClosing =>
+      val updated = convert.lift(cv)
+      needsClosing ++= updated
+
+      updated match {
+        case Some(newCv) =>
+          (Some(newCv), needsClosing)
+        case None =>
+          // Recurse down if needed and check children
+          cv.getType.getTypeId match {
+            case DType.DTypeEnum.STRUCT =>
+              withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
+                var childrenUpdated = false
+                val newChildren = ArrayBuffer.empty[ColumnView]
+                (0 until cv.getNumChildren).foreach { index =>
+                  val child = cv.getChildColumnView(index)
+                  tmpNeedsClosed += child
+                  val (updatedChild, needsClosingChild) = deepTransformView(child)(convert)
+                  needsClosing ++= needsClosingChild
+                  updatedChild match {
+                    case Some(newChild) =>
+                      newChildren += newChild
+                      childrenUpdated = true
+                    case None =>
+                      newChildren += child
+                  }
+                }
+                if (childrenUpdated) {
+                  withResource(cv.getValid) { valid =>
+                    val ret = new ColumnView(DType.STRUCT, cv.getRowCount,
+                      Optional.empty[java.lang.Long](), valid, null, newChildren.toArray)
+                    (Some(ret), needsClosing)
+                  }
+                } else {
+                  (None, needsClosing)
+                }
+              }
+            case DType.DTypeEnum.LIST =>
+              withResource(cv.getChildColumnView(0)) { dataView =>
+                val (updatedData, needsClosingData) = deepTransformView(dataView)(convert)
+                needsClosing ++= needsClosingData
+                updatedData match {
+                  case Some(updated) =>
+                    (Some(GpuListUtils.replaceListDataColumnAsView(cv, updated)), needsClosing)
+                  case None =>
+                    (None, needsClosing)
+                }
+              }
+
+            case _ =>
+              (None, needsClosing)
+          }
+      }
+    }
+  }
+
+  /**
+   * Transforms a ColumnVector into a new ColumnVector using a `PartialFunction`.
+   * If the partial function matches it is assumed that this takes ownership of the returned view.
+   * A lot of caution needs to be taken when using this method because of ownership of the data.
+   *
+   * @param cv the vector to be updated
+   * @param convert the partial function used to convert the data. If this matches and returns
+   *                a updated view this function takes ownership of that view.
+   * @return the updated vector
+   */
+  def deepTransform(cv: ColumnVector)
+      (convert: PartialFunction[ColumnView, ColumnView]): ColumnVector = {
+    val (retView, needsClosed) = deepTransformView(cv)(convert)
+    withResource(needsClosed) { _ =>
+      retView match {
+        case Some(updated) =>
+          // Don't need to close updated because it is covered by needsClosed
+          updated.copyToColumnVector()
+        case None =>
+          cv.incRefCount()
+      }
+    }
+  }
 
   /**
    * This method deep casts the input ColumnView to a new column if the predicate passed to this
@@ -89,6 +190,26 @@ object ColumnCastUtil extends Arm {
             newView
           } else {
             cv
+          }
+        case m: MapType =>
+          // map is list of structure
+          val struct = cv.getChildColumnView(0)
+          toClose += struct
+          
+          if(cv.getType != DType.LIST || struct.getType != DType.STRUCT) {
+            throw new IllegalStateException("Map should be List(Structure) in column view")
+          }
+
+          val newChild = convertTypeAToTypeB(struct,
+            StructType(Array(StructField("", m.keyType), StructField("", m.valueType))),
+            predicate, toClose)
+
+          if (struct == newChild) {
+            cv
+          } else {
+            val newView = cv.replaceListChild(newChild)
+            toClose += newView
+            newView
           }
         case _ =>
           if (predicate(dataType, cv)) {
