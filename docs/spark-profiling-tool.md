@@ -3,6 +3,8 @@ layout: page
 title: Spark Profiling tool
 nav_order: 9
 ---
+* TOC
+{:toc}
   
 # Spark Profiling tool
 
@@ -10,7 +12,7 @@ The Profiling tool analyzes both CPU or GPU generated event logs and generates i
 which can be used for debugging and profiling Apache Spark applications.
 The output information contains the Spark version, executor details, properties, etc.
 
-* How to use Profiling tool
+* [How to use Profiling tool](#How-to-use-the-Profiling-tool)
     * [Prerequisites](#Prerequisites)
     * [Step 1: Download the tools jar and Apache Spark 3 distribution](#Step1-Download-the-tools-jar-and-Apache-Spark-3-distribution)
     * [Step 2: How to run the Profiling tool](#Step2-How-to-run-the-Profiling-tool)

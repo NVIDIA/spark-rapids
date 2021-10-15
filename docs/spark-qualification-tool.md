@@ -3,6 +3,8 @@ layout: page
 title: Spark Qualification tool
 nav_order: 8
 ---
+* TOC
+{:toc}
 # Spark Qualification tool
 
 The Qualification tool analyzes event logs generated from CPU based Spark applications to determine 
