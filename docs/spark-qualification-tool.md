@@ -68,7 +68,7 @@ Sample: java -cp rapids-4-spark-tools_2.12-21.10.jar:$SPARK_HOME/jars/*
 Example running on files in HDFS: (include $HADOOP_CONF_DIR in classpath)
 
 ```bash
-Usage: java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
+Usage: java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain  /eventlogDir
 ```
 
