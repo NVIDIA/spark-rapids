@@ -10,12 +10,12 @@ Generated on 2021-10-15
 |[#3223](https://github.com/NVIDIA/spark-rapids/issues/3223)|[FEA] Rework the shim layer to robustly handle ABI and API incompatibilities across Spark releases|
 |[#13](https://github.com/NVIDIA/spark-rapids/issues/13)|[FEA] Percentile support|
 |[#3582](https://github.com/NVIDIA/spark-rapids/issues/3582)|[FEA] Verify unshimmed-base classes are identical across shims|
-|[#2741](https://github.com/NVIDIA/spark-rapids/issues/2741)|[FEA]Audit 3.2.0 -  Read parquet unsigned types that stored as int32 physical type in parquet|
+|[#2741](https://github.com/NVIDIA/spark-rapids/issues/2741)|[FEA] Audit 3.2.0 -  Read parquet unsigned types that stored as int32 physical type in parquet|
 |[#3606](https://github.com/NVIDIA/spark-rapids/issues/3606)|[FEA] Support approx_percentile on GPU with decimal type|
 |[#3552](https://github.com/NVIDIA/spark-rapids/issues/3552)|[FEA] extend allowed datatypes for add and multiply in ANSI mode |
 |[#3043](https://github.com/NVIDIA/spark-rapids/issues/3043)|[FEA] Qualification tool: Add support to filter specific configuration values|
 |[#3413](https://github.com/NVIDIA/spark-rapids/issues/3413)|[FEA] Add in support for transform_keys|
-|[#1925](https://github.com/NVIDIA/spark-rapids/issues/1925)|[FEA]  Add default parallelism configuration for Spark SQL queries|
+|[#1925](https://github.com/NVIDIA/spark-rapids/issues/1925)|[FEA] Add default parallelism configuration for Spark SQL queries|
 |[#3297](https://github.com/NVIDIA/spark-rapids/issues/3297)|[FEA] ORC reader supports reading Map columns.|
 |[#3367](https://github.com/NVIDIA/spark-rapids/issues/3367)|[FEA] Support GpuRowToColumnConverter on BinaryType|
 |[#3380](https://github.com/NVIDIA/spark-rapids/issues/3380)|[FEA] Support CollectList/CollectSet on nested input types in GroupBy aggregation|
