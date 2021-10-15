@@ -34,7 +34,7 @@ or can be found in the location specified by `spark.eventLog.dir`. See the
 more information.
 
 ### Step 1. Download the tools jar & Apache Spark 3 Distribution
-The Profiling tools require the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
+The Profiling tool requires the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, 
 you can download the Spark distribution to any machine and include the jars in the classpath.
 - Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.08.1/)
