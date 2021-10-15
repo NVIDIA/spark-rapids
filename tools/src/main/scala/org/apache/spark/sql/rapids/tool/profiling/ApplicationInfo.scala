@@ -273,11 +273,11 @@ class ApplicationInfo(
         checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetOrRDDPlan(node.desc)) {
           sqlIdToInfo.get(sqlID).foreach { sql =>
-            sql.hasDataset = true
+            sql.hasDatasetOrRDD = true
           }
           if (gpuMode) {
             val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc,
-              "Contains RDD/Dataset API")
+              "Contains Dataset or RDD")
             unsupportedSQLplan += thisPlan
           }
         }

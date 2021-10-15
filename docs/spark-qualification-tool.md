@@ -304,6 +304,9 @@ The score is based on the total time spent in tasks of SQL Dataframe operations.
 The tool also looks for read data formats and types that the plugin doesn't fully support and if it finds any,
 it will take away from the score. The parameter to control this negative impact of the
 score is  `-r, --read-score-percent` with the default value as 20(percent).
+Each application(event log) could have multiple SQL queries. If a SQL's plan has a Dataset API or RDD call
+inside of it, that SQL query is not categorized as a Dataframe SQL query. We are unable to determine how much
+of that query is made up of Dataset or RDD calls so the entire query task time is not included in the score.
 
 The idea behind this algorithm is that the longer the total task time doing SQL Dataframe operations
 the higher the score is and the more likely the plugin will be able to help accelerate that application.
