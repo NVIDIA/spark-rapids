@@ -22,8 +22,18 @@ set -ex
   echo "Skipping binary-dedupe. Unset SKIP_BINARY_DEDUPE to activate binary-dedupe"
   exit 0
 }
+BASH="bash --norc --noprofile -c"
+case $OSTYPE in
+  darwin*)
+    export SHASUM=shasum
+    ;;
+  *)
+    export SHASUM=sha1sum
+    ;;
+esac
 
 SPARK3XX_COMMON_TXT=$PWD/spark3xx-common.txt
+export DELETE_PATTERNS_TXT=$PWD/delete-patterns.txt
 export SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
 
 # This script de-duplicates .class files at the binary level.
@@ -41,29 +51,52 @@ export SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
 # - put the path starting with /spark3xy back together for the final list
 echo "Retrieving class files hashing to a single value"
 find . -path './parallel-world/spark*' -type f -name '*class' | \
-  xargs -L 1000 sha1sum -b | \
+  xargs -n 100 -P 6 "$SHASUM" -b | \
   awk -F/ '$1=$1' | \
   awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | tr -s ' ' | \
   sort -k3 -k2,2 -u | uniq -f 2 -c | grep '^\s\+1 .*' | \
   awk '{$1=""; $3=""; print $0 }' | tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
 
-remove_duplicates() {
-  set -x
+retain_single_copy() {
+  set -e
   class_resource=$1
-  shim=$(<<< "$class_resource" cut -d'/' -f 2)
-  class_file=$(<<< "$class_resource" cut -d'/' -f 3-)
-  class_dir=$(dirname "$class_file")
-  dest_dir="$SPARK3XX_COMMON_DIR/$class_dir"
-  mkdir -p "$dest_dir"
-  cp "./parallel-world/$shim/$class_file" "$dest_dir/"
-  find ./parallel-world -path './parallel-world/spark3*/'"$class_file" | xargs rm || \
-    exit 255
-}
-export -f remove_duplicates
+  # example input: /spark320/com/nvidia/spark/udf/Repr$UnknownCapturedArg$.class
 
-echo "Deleting duplicates of spark3xx-common classes"
+  # declare -p path_parts
+  IFS='/' <<< "$class_resource" read -ra path_parts
+  # > declare -p path_parts
+  # declare -a path_parts='([0]="" [1]="spark320" [2]="com" [3]="nvidia" [4]="spark" [5]="udf" [6]="Repr\$UnknownCapturedArg\$.class")'
+  shim=${path_parts[1]}
+
+  package_class_parts=(${path_parts[@]:2})
+
+  package_len=$((${#package_class_parts[@]} - 1))
+  package_parts=(${package_class_parts[@]::$package_len})
+  package_dir_with_spaces=${package_parts[*]}
+  # com/nvidia/spark/udf
+  package_dir=${package_dir_with_spaces// //}
+
+  package_class_with_spaces=${package_class_parts[*]}
+  # com/nvidia/spark/udf/Repr\$UnknownCapturedArg\$.class
+  package_class=${package_class_with_spaces// //}
+
+  dest_dir="$SPARK3XX_COMMON_DIR/$package_dir"
+
+  # avoid process fork if dir exists
+  [[ ! -d $dest_dir ]] && mkdir -p "$dest_dir"
+  echo '\./parallel-world/spark3.*/'"$package_class" >> "$DELETE_PATTERNS_TXT"
+  mv "./parallel-world/$shim/$package_class" "$dest_dir/" || exit 255
+}
+
+export -f retain_single_copy
+echo "Initializing empty $DELETE_PATTERNS_TXT"
+rm -f "$DELETE_PATTERNS_TXT"
+touch "$DELETE_PATTERNS_TXT"
+
+echo "Retaining a single copy of spark3xx-common classes"
 # https://stackoverflow.com/questions/11003418/calling-shell-functions-with-xargs
-xargs --arg-file="$SPARK3XX_COMMON_TXT" -P 6 -n 1 -I% bash -c 'remove_duplicates "$@"' _ %
+< "$SPARK3XX_COMMON_TXT" xargs -n 1 -P 6 -I% $BASH 'retain_single_copy "$@"' _ %
+find ./parallel-world -type f -name '*.class' | grep -f "$DELETE_PATTERNS_TXT" | xargs -n 100 rm
 
 mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
@@ -99,16 +132,22 @@ UNSHIMMED_LIST_TXT=unshimmed-result.txt
 find . -name '*.class' -not -path './parallel-world/spark*' | \
   cut -d/ -f 3- | sort > $UNSHIMMED_LIST_TXT
 
-for classFile in $(< $UNSHIMMED_LIST_TXT); do
-  DISTINCT_COPIES=$(find './parallel-world' -path "./*/$classFile" -exec sha1sum -b {} + |
-    cut -d' ' -f 1 | sort -u | wc -l)
+
+verify_same_sha_for_unshimmed() {
+  set -e
+  class_file=$1
+  DISTINCT_COPIES=$(find './parallel-world' -path "./*/$class_file" | \
+      xargs "$SHASUM" -b | cut -d' ' -f 1 | sort -u | wc -l)
+
   ((DISTINCT_COPIES == 1)) || {
     echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";
-    exit 2;
+    exit 255;
   }
-done
+}
+export -f verify_same_sha_for_unshimmed
+< "$UNSHIMMED_LIST_TXT" xargs -n 1 -I% $BASH 'verify_same_sha_for_unshimmed "$@"' _ %
 
 # Remove unshimmed classes from parallel worlds
 echo Removing duplicates of unshimmed classes
-xargs --arg-file="$UNSHIMMED_LIST_TXT" -P 6 -n 100 -I% \
+< "$UNSHIMMED_LIST_TXT" xargs -n 100 -I% \
   find . -path './parallel-world/spark*/%' | xargs rm || exit 255
