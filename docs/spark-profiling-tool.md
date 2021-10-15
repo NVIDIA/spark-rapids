@@ -5,15 +5,15 @@ nav_order: 8
 ---
 # Spark Profiling tool
 
-The profiling tool analyzes both CPU or GPU generated event logs and generates information 
+The Profiling tool analyzes both CPU or GPU generated event logs and generates information 
 which can be used for debugging and profiling Apache Spark applications.
 The output information contains the Spark version, executor details, properties, etc.
 
-* How to use profiling tool
+* How to use Profiling tool
     * [Prerequisites](#Prerequisites)
     * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step-1.-Download-the-tools-jar-&-Apache-Spark-3-Distribution)
-    * [Step 2: How to run the profiling tool](#Step-2.-How-to-Run-the-Profiling-tool)
-* [Understanding the profiling tool output](#Understanding-Profile-tool-Detailed-Output-and-Examples)
+    * [Step 2: How to run the Profiling tool](#Step-2.-How-to-Run-the-Profiling-tool)
+* [Understanding the Profiling tool output](#Understanding-Profile-tool-Detailed-Output-and-Examples)
 * [Profiling tool options](#Profiling-tool-options)
 * [Profiling tool metrics definitions](#Profiling-tool-metrics-definitions)
 
@@ -41,15 +41,17 @@ you can download the Spark distribution to any machine and include the jars in t
 If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#Optional:-Compiling-the-jars). 
 
 ### Step 2. How to Run the Profiling tool
-This tool extracts the Spark distribution if necessary and 
-parses the Spark CPU or GPU event log(s) and creates an output report.
+This tool parses the Spark CPU or GPU event log(s) and creates an output report.
+We need to extract the Spark distribution into a local directory if necessary.
+Either set `SPARK_HOME` to point to that directory or just put the path inside of the
+classpath `java -cp toolsJar:pathToSparkJars/*:...` when you run the Profiling tool.
 Acceptable input event log paths are files or directories containing spark events logs
 in the local filesystem, HDFS, S3 or mixed. 
 Please note, if processing a lot of event logs use combined or compare mode.
 Both these modes may need you to increase the java heap size using `-Xmx` option.
 For instance, to specify 30 GB heap size `java -Xmx30g`. 
 
-There are 3 modes of operation for the profiling tool:
+There are 3 modes of operation for the Profiling tool:
  1. Collection Mode: 
     Collection mode is the default mode when no other options are specified it simply collects information
     on each application individually and outputs a file per application
@@ -467,7 +469,7 @@ Failed jobs:
 ## Profiling tool options
   
 ```bash
-RAPIDS Accelerator for Apache Spark profiling tool
+RAPIDS Accelerator for Apache Spark Profiling tool
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]

@@ -5,7 +5,7 @@ nav_order: 9
 ---
 # Spark Qualification tool
 
-The qualification tool analyzes event logs generated from CPU based Spark applications to determine 
+The Qualification tool analyzes event logs generated from CPU based Spark applications to determine 
 if the RAPIDS Accelerator for Apache Spark might be a good fit for GPU acceleration.
 
 This tool is intended to give the users a starting point and does not guarantee the
@@ -17,7 +17,7 @@ This document covers below topics:
     * [Prerequisites](#Prerequisites)
     * [Step 1: Download the tools jar & Apache Spark 3 Distribution](#Step-1.-Download-the-tools-jar-&-Apache-Spark-3-Distribution)
     * [Step 2: Run the Qualification tool](#Step-2.-Run-the-Qualification-tool)
-* [Understanding the qualification tool output](#Understanding-the-Qualification-tool-Output)
+* [Understanding the Qualification tool output](#Understanding-the-Qualification-tool-Output)
 * [Qualification tool options](#Qualification-tool-options)
 * [Qualification tool score algorithm](#Qualification-tool-score-algorithm)
 * [How to compile the Qualification tool jar from the source](#Optional:-Compiling-the-jars)
@@ -47,7 +47,7 @@ any machine and include the jars in the classpath.
 1. Event logs stored on a local machine:
     - Extract the Spark distribution into a local directory if necessary.
     - Either set SPARK_HOME to point to that directory or just put the path inside of the classpath
-       `java -cp toolsJar:pathToSparkJars/*:...` when you run the qualification tool.
+       `java -cp toolsJar:pathToSparkJars/*:...` when you run the Qualification tool.
 
 This tool parses the Spark CPU event log(s) and creates an output report. Acceptable inputs are either individual or 
 multiple event logs files or directories containing spark event logs in the local filesystem, HDFS, S3 or mixed.
@@ -108,9 +108,11 @@ Sample output in text:
 
 In the above example, two application event logs were analyzed. “app-20210507174503-2538” is rated higher 
 than the “app-20210507174503-1704” because the score(in the csv output) for “app-20210507174503-2538”   
-is higher than  “app-20210507174503-1704”. Here the `Problematic Duration` is zero but the tool won't capture all UDFs 
-in the application.
-Note: Some of the UDFs can be handled with additional steps. 
+is higher than  “app-20210507174503-1704”. 
+Here the `Problematic Duration` is zero but please keep in mind that we are only able to detect certain issues. 
+This currently includes some UDFs, some decimal operations and nested complex types. 
+The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
+
 Please refer to [supported_ops.md](https://github.com/NVIDIA/spark-rapids/blob/branch-21.10/docs/supported_ops.md) 
 for more details on UDF.
 For decimals, the tool tries to parse for decimal operations but it may not capture all of the decimal operations
@@ -144,7 +146,7 @@ Here is a brief description of each of column that is in the CSV:
 10. SQL Duration with Potential Problems : Time duration of any SQL/DF operations that contains 
     operations we consider potentially problematic. 
 11. SQL Ids with Failures: SQL Ids of queries with failed jobs.
-12. Read Score Percent: The value of the parameter `--read-score-percent` when the qualification tool was run. Default is 20 percent. 
+12. Read Score Percent: The value of the parameter `--read-score-percent` when the Qualification tool was run. Default is 20 percent. 
 13. Read File Format Score: A score given based on whether the read file formats and types are supported.
 14. Unsupported Read File Formats and Types: Looks at the Read Schema and
     reports the file formats along with types which may not be fully supported.
@@ -168,7 +170,7 @@ Note that SQL queries that contain failed jobs are not included.
 java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
  com.nvidia.spark.rapids.tool.qualification.QualificationMain --help
 
-RAPIDS Accelerator for Apache Spark qualification tool
+RAPIDS Accelerator for Apache Spark Qualification tool
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
@@ -301,7 +303,7 @@ Note: The “regular expression” used by -a option is based on
 
 ## Qualification tool score algorithm
 
-In the qualification tool’s output, all applications are ranked based on a “score”. 
+In the Qualification tool’s output, all applications are ranked based on a “score”. 
 
 The score is based on the total time spent in tasks of SQL Dataframe operations.
 The tool also looks for read data formats and types that the plugin doesn't fully support and if it finds any,
