@@ -89,7 +89,7 @@ java -cp ~/rapids-4-spark-tools_2.12-21.<version>.jar:$SPARK_HOME/jars/*:$HADOOP
  com.nvidia.spark.rapids.tool.profiling.ProfileMain  /eventlogDir
 ```
 
-## Understanding Profile tool Detailed Output and Examples
+## Understanding Profiling tool Detailed Output and Examples
 The default output location is the current directory. 
 The output location can be changed using the `--output-directory` option.
 The output goes into a sub-directory named `rapids_4_spark_profile/` inside that output location.
