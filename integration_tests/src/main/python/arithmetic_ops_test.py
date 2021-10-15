@@ -285,17 +285,28 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_38_0, decimal_gen_38_10], ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + [decimal_gen_20_2, decimal_gen_30_2, decimal_gen_36_5, decimal_gen_38_0, decimal_gen_38_10], ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'),
             conf=allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('data_gen', [decimal_gen_36_neg5, decimal_gen_38_neg10], ids=idfn)
+def test_floor_ceil_overflow(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('floor(a)').collect(),
+        conf=allow_negative_scale_of_decimal_conf,
+        error_message="java.lang.ArithmeticException")
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('ceil(a)').collect(),
+        conf=allow_negative_scale_of_decimal_conf,
+        error_message="java.lang.ArithmeticException")
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_rint(data_gen):

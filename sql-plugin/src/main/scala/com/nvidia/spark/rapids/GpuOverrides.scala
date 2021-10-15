@@ -2706,9 +2706,10 @@ object GpuOverrides extends Logging {
     expr[SortArray](
       "Returns a sorted array with the input array and the ascending / descending order",
       ExprChecks.binaryProject(
-        TypeSig.ARRAY.nested(_gpuCommonTypes),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL),
         TypeSig.ARRAY.nested(TypeSig.all),
-        ("array", TypeSig.ARRAY.nested(_gpuCommonTypes),
+        ("array", TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ascendingOrder", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.lit(TypeEnum.BOOLEAN))),
       (sortExpression, conf, p, r) => new BinaryExprMeta[SortArray](sortExpression, conf, p, r) {
@@ -3086,12 +3087,12 @@ object GpuOverrides extends Logging {
       "Collect a list of non-unique elements, not supported in reduction",
       // GpuCollectList is not yet supported in Reduction context.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -3119,11 +3120,13 @@ object GpuOverrides extends Logging {
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-          TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+            TypeSig.NULL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-          TypeSig.STRUCT).nested(), TypeSig.all))),
+        Seq(ParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+              TypeSig.NULL + TypeSig.STRUCT).nested(),
+          TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)

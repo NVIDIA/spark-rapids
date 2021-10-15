@@ -192,7 +192,18 @@ case class GpuCeil(child: Expression) extends CudfUnaryMathExpression("CEIL") {
       case LongType =>
         // Long is a noop in spark, but for cudf it is not.
         input.getBase.incRefCount()
-      case _: DecimalType =>
+      case dt: DecimalType =>
+        val outputType = dataType.asInstanceOf[DecimalType]
+        // check for out of bound values when output precision is constrained by MAX_PRECISION
+        if (outputType.precision == DecimalType.MAX_PRECISION && dt.scale < 0) {
+          withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
+            withResource(outOfBounds.any()) { isAny =>
+              if (isAny.isValid && isAny.getBoolean) {
+                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+              }
+            }
+          }
+        }
         super.doColumnar(input)
     }
   }
@@ -256,7 +267,18 @@ case class GpuFloor(child: Expression) extends CudfUnaryMathExpression("FLOOR") 
       case LongType =>
         // Long is a noop in spark, but for cudf it is not.
         input.getBase.incRefCount()
-      case _: DecimalType =>
+      case dt: DecimalType =>
+        val outputType = dataType.asInstanceOf[DecimalType]
+        // check for out of bound values when output precision is constrained by MAX_PRECISION
+        if (outputType.precision == DecimalType.MAX_PRECISION && dt.scale < 0) {
+          withResource(DecimalUtil.outOfBounds(input.getBase, outputType)) { outOfBounds =>
+            withResource(outOfBounds.any()) { isAny =>
+              if (isAny.isValid && isAny.getBoolean) {
+                throw new ArithmeticException(s"Some data cannot be represented as $outputType")
+              }
+            }
+          }
+        }
         super.doColumnar(input)
     }
   }
