@@ -23,7 +23,7 @@ set -ex
   exit 0
 }
 BASH="bash --norc --noprofile -c"
-case $OSTYPE in
+case "$OSTYPE" in
   darwin*)
     export SHASUM=shasum
     ;;
@@ -32,9 +32,9 @@ case $OSTYPE in
     ;;
 esac
 
-SPARK3XX_COMMON_TXT=$PWD/spark3xx-common.txt
-export DELETE_PATTERNS_TXT=$PWD/delete-patterns.txt
-export SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
+SPARK3XX_COMMON_TXT="$PWD/spark3xx-common.txt"
+export DELETE_DUPLICATES_TXT="$PWD/delete-duplicates.txt"
+export SPARK3XX_COMMON_DIR="$PWD/spark3xx-common"
 
 # This script de-duplicates .class files at the binary level.
 # We could also diff classes using scalap / javap outputs.
@@ -51,7 +51,7 @@ export SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
 # - put the path starting with /spark3xy back together for the final list
 echo "Retrieving class files hashing to a single value"
 find . -path './parallel-world/spark*' -type f -name '*class' | \
-  xargs -n 100 -P 6 "$SHASUM" -b | \
+  xargs -n 100 -I% $BASH "$SHASUM"' -b "$@"' _ % | \
   awk -F/ '$1=$1' | \
   awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | tr -s ' ' | \
   sort -k3 -k2,2 -u | uniq -f 2 -c | grep '^\s\+1 .*' | \
@@ -59,44 +59,50 @@ find . -path './parallel-world/spark*' -type f -name '*class' | \
 
 retain_single_copy() {
   set -e
-  class_resource=$1
+  class_resource="$1"
   # example input: /spark320/com/nvidia/spark/udf/Repr$UnknownCapturedArg$.class
 
   # declare -p path_parts
   IFS='/' <<< "$class_resource" read -ra path_parts
   # > declare -p path_parts
   # declare -a path_parts='([0]="" [1]="spark320" [2]="com" [3]="nvidia" [4]="spark" [5]="udf" [6]="Repr\$UnknownCapturedArg\$.class")'
-  shim=${path_parts[1]}
+  shim="${path_parts[1]}"
 
   package_class_parts=(${path_parts[@]:2})
 
   package_len=$((${#package_class_parts[@]} - 1))
   package_parts=(${package_class_parts[@]::$package_len})
-  package_dir_with_spaces=${package_parts[*]}
+  package_dir_with_spaces="${package_parts[*]}"
   # com/nvidia/spark/udf
-  package_dir=${package_dir_with_spaces// //}
+  package_dir="${package_dir_with_spaces// //}"
 
-  package_class_with_spaces=${package_class_parts[*]}
+  package_class_with_spaces="${package_class_parts[*]}"
   # com/nvidia/spark/udf/Repr\$UnknownCapturedArg\$.class
-  package_class=${package_class_with_spaces// //}
+  package_class="${package_class_with_spaces// //}"
 
   dest_dir="$SPARK3XX_COMMON_DIR/$package_dir"
 
   # avoid process fork if dir exists
-  [[ ! -d $dest_dir ]] && mkdir -p "$dest_dir"
-  echo '\./parallel-world/spark3.*/'"$package_class" >> "$DELETE_PATTERNS_TXT"
-  mv "./parallel-world/$shim/$package_class" "$dest_dir/" || exit 255
+  [[ ! -d "$dest_dir" ]] && mkdir -p "$dest_dir"
+  # get the reference copy out of the way
+  mv "./parallel-world/$shim/$package_class" "$dest_dir/"
+  # expanding directories separately because full path
+  # glob is broken for class file name including the "$" character
+  for pw in ./parallel-world/spark3* ; do
+    delete_path="$pw/$package_class"
+    [[ -f "$delete_path" ]] && echo "$delete_path" || true
+  done >> "$DELETE_DUPLICATES_TXT" || exit 255
 }
 
 export -f retain_single_copy
-echo "Initializing empty $DELETE_PATTERNS_TXT"
-rm -f "$DELETE_PATTERNS_TXT"
-touch "$DELETE_PATTERNS_TXT"
+echo "Initializing empty $DELETE_DUPLICATES_TXT"
+rm -f "$DELETE_DUPLICATES_TXT"
+touch "$DELETE_DUPLICATES_TXT"
 
 echo "Retaining a single copy of spark3xx-common classes"
 # https://stackoverflow.com/questions/11003418/calling-shell-functions-with-xargs
-< "$SPARK3XX_COMMON_TXT" xargs -n 1 -P 6 -I% $BASH 'retain_single_copy "$@"' _ %
-find ./parallel-world -type f -name '*.class' | grep -f "$DELETE_PATTERNS_TXT" | xargs -n 100 rm
+< "$SPARK3XX_COMMON_TXT" xargs -n 1 -I% $BASH 'retain_single_copy "$@"' _ %
+< "$DELETE_DUPLICATES_TXT" xargs -n 100 -I% $BASH 'rm "$@"' _ %
 
 mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
@@ -130,12 +136,12 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 # Determine the list of unshimmed class files
 UNSHIMMED_LIST_TXT=unshimmed-result.txt
 find . -name '*.class' -not -path './parallel-world/spark*' | \
-  cut -d/ -f 3- | sort > $UNSHIMMED_LIST_TXT
+  cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
 
 
 verify_same_sha_for_unshimmed() {
   set -e
-  class_file=$1
+  class_file="$1"
   DISTINCT_COPIES=$(find './parallel-world' -path "./*/$class_file" | \
       xargs "$SHASUM" -b | cut -d' ' -f 1 | sort -u | wc -l)
 
@@ -148,6 +154,7 @@ export -f verify_same_sha_for_unshimmed
 < "$UNSHIMMED_LIST_TXT" xargs -n 1 -I% $BASH 'verify_same_sha_for_unshimmed "$@"' _ %
 
 # Remove unshimmed classes from parallel worlds
+# TODO rework with low priority, only a few classes.
 echo Removing duplicates of unshimmed classes
-< "$UNSHIMMED_LIST_TXT" xargs -n 100 -I% \
-  find . -path './parallel-world/spark*/%' | xargs rm || exit 255
+< "$UNSHIMMED_LIST_TXT" xargs -n 1 -I% \
+  find . -path './parallel-world/spark*/%' | xargs -n 1000 rm || exit 255
