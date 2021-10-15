@@ -112,16 +112,16 @@ build_single_shim() {
 
 export -f build_single_shim
 
-
 # Install all the versions for DIST_PROFILE
 
-# First loop over except for SPARK_SHIM_VERSIONS last skipping expensive plugins that
+# First build the aggregator module for all SPARK_SHIM_VERSIONS in parallel skipping expensive plugins that
 # - either deferred to 301 because the check is identical in all shim profiles such as scalastyle
 # - or deferred to 301 because we currently don't require it per shim such as javadoc generation
 # - or there is a dedicated step to run against a particular shim jar such as unit tests, in
 #   the near future we will run unit tests against a combined multi-shim jar to catch classloading
 #   regressions even before pytest-based integration_tests
 #
+# Then resume maven build from the dist module now that shims have been installed
 
 time (
   # printf a single buildver array element per line
