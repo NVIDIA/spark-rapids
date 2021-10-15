@@ -18,11 +18,9 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.AbstractIterator
 import scala.concurrent.Future
-
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
-
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
@@ -81,7 +79,7 @@ class GpuShuffleMeta(
   override def tagPlanForGpu(): Unit = {
     // when AQE is enabled and we are planning a new query stage, we need to look at meta-data
     // previously stored on the spark plan to determine whether this exchange can run on GPU
-    wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
+    recursivelyCheckTags()
 
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning
