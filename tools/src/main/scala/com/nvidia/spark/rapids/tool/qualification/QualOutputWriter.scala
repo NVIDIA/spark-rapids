@@ -94,32 +94,32 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean, printStdout
 }
 
 object QualOutputWriter {
-  val problemDurStr = "Problematic Duration"
-  val appIdStr = "App ID"
-  val appNameStr = "App Name"
-  val appDurStr = "App Duration"
-  val sqlDurStr = "SQL DF Duration"
-  val taskDurStr = "SQL Dataframe Task Duration"
-  val scoreStr = "Score"
-  val potProblemsStr = "Potential Problems"
-  val execCPUPercentStr = "Executor CPU Time Percent"
-  val appDurEstimatedStr = "App Duration Estimated"
-  val sqlDurPotProbsStr = "SQL Duration with Potential Problems"
-  val sqlIdsFailuresStr = "SQL Ids with Failures"
-  val readScorePercentStr = "Read Score Percent"
-  val readFileFormatScoreStr = "Read File Format Score"
-  val readFileFormatAndTypesStr = "Unsupported Read File Formats and Types"
-  val writeDataFormatStr = "Unsupported Write Data Format"
-  val complexTypesStr = "Complex Types"
-  val nestedTypesStr = "Unsupported Nested Types"
-  val readSchemaStr = "Read Schema"
-  val appDurStrSize = appDurStr.size
-  val sqlDurStrSize = sqlDurStr.size
-  val problemStrSize = problemDurStr.size
+  val PROBLEM_DUR_STR = "Problematic Duration"
+  val APP_ID_STR = "App ID"
+  val APP_NAME_STR = "App Name"
+  val APP_DUR_STR = "App Duration"
+  val SQL_DUR_STR = "SQL DF Duration"
+  val TASK_DUR_STR = "SQL Dataframe Task Duration"
+  val SCORE_STR = "Score"
+  val POT_PROBLEM_STR = "Potential Problems"
+  val EXEC_CPU_PERCENT_STR = "Executor CPU Time Percent"
+  val APP_DUR_ESTIMATED_STR = "App Duration Estimated"
+  val SQL_DUR_POT_PROBLEMS = "SQL Duration with Potential Problems"
+  val SQL_IDS_FAILURES_STR = "SQL Ids with Failures"
+  val READ_SCORE_PERCENT_STR = "Read Score Percent"
+  val READ_FILE_FORMAT_SCORE_STR = "Read File Format Score"
+  val READ_FILE_FORMAT_TYPES_STR = "Unsupported Read File Formats and Types"
+  val WRITE_DATA_FORMAT_STR = "Unsupported Write Data Format"
+  val COMPLEX_TYPES_STR = "Complex Types"
+  val NESTED_TYPES_STR = "Unsupported Nested Types"
+  val READ_SCHEMA_STR = "Read Schema"
+  val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
+  val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
+  val PROBLEM_DUR_SIZE: Int = PROBLEM_DUR_STR.size
 
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
-    getMaxSizeForHeader(sizes, QualOutputWriter.appIdStr)
+    getMaxSizeForHeader(sizes, QualOutputWriter.APP_ID_STR)
   }
 
   private def getMaxSizeForHeader(sizes: Seq[Int], headerTxtStr: String): Int = {
@@ -167,41 +167,45 @@ object QualOutputWriter {
 
   private def getSummaryHeaderStringsAndSizes(appIdMaxSize: Int): LinkedHashMap[String, Int] = {
     LinkedHashMap[String, Int](
-      appIdStr -> appIdMaxSize,
-      appDurStr -> appDurStrSize,
-      sqlDurStr -> sqlDurStrSize,
-      problemDurStr -> problemStrSize
+      APP_ID_STR -> appIdMaxSize,
+      APP_DUR_STR -> APP_DUR_STR_SIZE,
+      SQL_DUR_STR -> SQL_DUR_STR_SIZE,
+      PROBLEM_DUR_STR -> PROBLEM_DUR_SIZE
     )
+  }
+
+  private def stringIfempty(str: String): String = {
+    if (str.isEmpty) "\"\"" else str
   }
 
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
       reportReadSchema: Boolean): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
-      appNameStr -> getMaxSizeForHeader(appInfos.map(_.appName.size), appNameStr),
-      appIdStr -> QualOutputWriter.getAppIdSize(appInfos),
-      scoreStr -> getMaxSizeForHeader(appInfos.map(_.score.toString.size), scoreStr),
-      potProblemsStr -> getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), potProblemsStr),
-      sqlDurStr -> sqlDurStr.size,
-      taskDurStr -> taskDurStr.size,
-      appDurStr -> appDurStr.size,
-      execCPUPercentStr -> execCPUPercentStr.size,
-      appDurEstimatedStr -> appDurEstimatedStr.size,
-      sqlDurPotProbsStr -> sqlDurPotProbsStr.size,
-      sqlIdsFailuresStr -> getMaxSizeForHeader(appInfos.map(_.failedSQLIds.size),
-        sqlIdsFailuresStr),
-      readScorePercentStr -> readScorePercentStr.size,
-      readFileFormatScoreStr -> readFileFormatScoreStr.size,
-      readFileFormatAndTypesStr -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size),
-        readFileFormatAndTypesStr),
-      writeDataFormatStr -> getMaxSizeForHeader(appInfos.map(_.writeDataFormat.size),
-        writeDataFormatStr),
-      complexTypesStr -> getMaxSizeForHeader(appInfos.map(_.complexTypes.size), complexTypesStr),
-      nestedTypesStr -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
-        nestedTypesStr),
+      APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
+      APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
+      SCORE_STR -> getMaxSizeForHeader(appInfos.map(_.score.toString.size), SCORE_STR),
+      POT_PROBLEM_STR -> getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
+      SQL_DUR_STR -> SQL_DUR_STR.size,
+      TASK_DUR_STR -> TASK_DUR_STR.size,
+      APP_DUR_STR -> APP_DUR_STR.size,
+      EXEC_CPU_PERCENT_STR -> EXEC_CPU_PERCENT_STR.size,
+      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size,
+      SQL_DUR_POT_PROBLEMS -> SQL_DUR_POT_PROBLEMS.size,
+      SQL_IDS_FAILURES_STR -> getMaxSizeForHeader(appInfos.map(_.failedSQLIds.size),
+        SQL_IDS_FAILURES_STR),
+      READ_SCORE_PERCENT_STR -> READ_SCORE_PERCENT_STR.size,
+      READ_FILE_FORMAT_SCORE_STR -> READ_FILE_FORMAT_SCORE_STR.size,
+      READ_FILE_FORMAT_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size),
+        READ_FILE_FORMAT_TYPES_STR),
+      WRITE_DATA_FORMAT_STR -> getMaxSizeForHeader(appInfos.map(_.writeDataFormat.size),
+        WRITE_DATA_FORMAT_STR),
+      COMPLEX_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
+      NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
+        NESTED_TYPES_STR),
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
-        (readSchemaStr -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size), readSchemaStr))
+        (READ_SCHEMA_STR -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size), READ_SCHEMA_STR))
     }
     detailedHeadersAndFields
   }
@@ -214,13 +218,13 @@ object QualOutputWriter {
 
   def constructAppSummaryInfo(sumInfo: QualificationSummaryInfo,
       appIdMaxSize: Int, delimiter: String, prettyPrint: Boolean): String = {
-    val dataMap = ListBuffer[(String, Int)](
+    val data = ListBuffer[(String, Int)](
       sumInfo.appId -> appIdMaxSize,
-      sumInfo.appDuration.toString -> appDurStrSize,
-      sumInfo.sqlDataFrameDuration.toString -> sqlDurStrSize,
-      sumInfo.sqlDurationForProblematic.toString -> problemStrSize
+      sumInfo.appDuration.toString -> APP_DUR_STR_SIZE,
+      sumInfo.sqlDataFrameDuration.toString -> SQL_DUR_STR_SIZE,
+      sumInfo.sqlDurationForProblematic.toString -> PROBLEM_DUR_SIZE
     )
-    constructOutputRow(dataMap, delimiter, prettyPrint)
+    constructOutputRow(data, delimiter, prettyPrint)
   }
 
   def constructDetailedHeader(headersAndSizes: LinkedHashMap[String, Int],
@@ -246,35 +250,31 @@ object QualOutputWriter {
       val nestedComplexTypes = stringIfempty(appInfo.nestedComplexTypes)
       (readFileFormats, complexTypes, nestedComplexTypes)
     }
-    val dataMap = ListBuffer[(String, Int)](
-      stringIfempty(appInfo.appName) -> headersAndSizes(appNameStr),
-      stringIfempty(appInfo.appId) -> headersAndSizes(appIdStr),
-      appInfo.score.toString -> headersAndSizes(scoreStr),
-      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(potProblemsStr),
-      appInfo.sqlDataFrameDuration.toString -> headersAndSizes(sqlDurStr),
-      appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(taskDurStr),
-      appInfo.appDuration.toString -> headersAndSizes(appDurStr),
-      appInfo.executorCpuTimePercent.toString -> headersAndSizes(execCPUPercentStr),
-      appInfo.endDurationEstimated.toString -> headersAndSizes(appDurEstimatedStr),
-      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(sqlDurPotProbsStr),
-      stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(sqlIdsFailuresStr),
-      appInfo.readScorePercent.toString -> headersAndSizes(readScorePercentStr),
+    val data = ListBuffer[(String, Int)](
+      stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
+      stringIfempty(appInfo.appId) -> headersAndSizes(APP_ID_STR),
+      appInfo.score.toString -> headersAndSizes(SCORE_STR),
+      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(POT_PROBLEM_STR),
+      appInfo.sqlDataFrameDuration.toString -> headersAndSizes(SQL_DUR_STR),
+      appInfo.sqlDataframeTaskDuration.toString -> headersAndSizes(TASK_DUR_STR),
+      appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
+      appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
+      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
+      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(SQL_DUR_POT_PROBLEMS),
+      stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
+      appInfo.readScorePercent.toString -> headersAndSizes(READ_SCORE_PERCENT_STR),
       stringIfempty(appInfo.readFileFormatScore.toString) ->
-        headersAndSizes(readFileFormatScoreStr),
+        headersAndSizes(READ_FILE_FORMAT_SCORE_STR),
       stringIfempty(appInfo.readFileFormatAndTypesNotSupported) ->
-        headersAndSizes(readFileFormatAndTypesStr),
-      stringIfempty(appInfo.writeDataFormat) -> headersAndSizes(writeDataFormatStr),
-      complexTypes -> headersAndSizes(complexTypesStr),
-      nestedComplexTypes -> headersAndSizes(nestedTypesStr)
+        headersAndSizes(READ_FILE_FORMAT_TYPES_STR),
+      stringIfempty(appInfo.writeDataFormat) -> headersAndSizes(WRITE_DATA_FORMAT_STR),
+      complexTypes -> headersAndSizes(COMPLEX_TYPES_STR),
+      nestedComplexTypes -> headersAndSizes(NESTED_TYPES_STR)
     )
 
     if (reportReadSchema) {
-      dataMap += (readfileFormats -> headersAndSizes(readSchemaStr))
+      data += (readfileFormats -> headersAndSizes(READ_SCHEMA_STR))
     }
-    constructOutputRow(dataMap, delimiter, prettyPrint)
-  }
-
-  private def stringIfempty(str: String): String = {
-    if (str.isEmpty) "\"\"" else str
+    constructOutputRow(data, delimiter, prettyPrint)
   }
 }
