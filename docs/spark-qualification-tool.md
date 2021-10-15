@@ -1,7 +1,6 @@
 ---
 layout: page
 title: Spark Qualification tool
-parent: Additional Functionality
 nav_order: 9
 ---
 # Spark Qualification tool
