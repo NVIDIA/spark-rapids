@@ -277,7 +277,7 @@ class ApplicationInfo(
           }
           if (gpuMode) {
             val thisPlan = UnsupportedSQLPlan(sqlID, node.id, node.name, node.desc,
-              "Contains Dataset")
+              "Contains RDD/Dataset API")
             unsupportedSQLplan += thisPlan
           }
         }
