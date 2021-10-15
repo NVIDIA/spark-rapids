@@ -108,7 +108,7 @@ Here the `Problematic Duration` is zero but please keep in mind that we are only
 This currently includes some UDFs, some decimal operations and nested complex types. 
 The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
 
-Please refer to [supported_ops.md](https://github.com/NVIDIA/spark-rapids/blob/branch-21.10/docs/supported_ops.md) 
+Please refer to [supported_ops.md](./supported_ops.md) 
 for more details on UDF.
 For decimals, the tool tries to parse for decimal operations but it may not capture all of the decimal operations
 if they aren’t in the event logs.
