@@ -184,7 +184,8 @@ object QualOutputWriter {
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       SCORE_STR -> getMaxSizeForHeader(appInfos.map(_.score.toString.size), SCORE_STR),
-      POT_PROBLEM_STR -> getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
+      POT_PROBLEM_STR ->
+        getMaxSizeForHeader(appInfos.map(_.potentialProblems.size), POT_PROBLEM_STR),
       SQL_DUR_STR -> SQL_DUR_STR.size,
       TASK_DUR_STR -> TASK_DUR_STR.size,
       APP_DUR_STR -> APP_DUR_STR.size,
@@ -199,13 +200,15 @@ object QualOutputWriter {
         READ_FILE_FORMAT_TYPES_STR),
       WRITE_DATA_FORMAT_STR -> getMaxSizeForHeader(appInfos.map(_.writeDataFormat.size),
         WRITE_DATA_FORMAT_STR),
-      COMPLEX_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
+      COMPLEX_TYPES_STR ->
+        getMaxSizeForHeader(appInfos.map(_.complexTypes.size), COMPLEX_TYPES_STR),
       NESTED_TYPES_STR -> getMaxSizeForHeader(appInfos.map(_.nestedComplexTypes.size),
-        NESTED_TYPES_STR),
+        NESTED_TYPES_STR)
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
-        (READ_SCHEMA_STR -> getMaxSizeForHeader(appInfos.map(_.readFileFormats.size), READ_SCHEMA_STR))
+        (READ_SCHEMA_STR ->
+          getMaxSizeForHeader(appInfos.map(_.readFileFormats.size), READ_SCHEMA_STR))
     }
     detailedHeadersAndFields
   }
@@ -227,7 +230,8 @@ object QualOutputWriter {
     constructOutputRow(data, delimiter, prettyPrint)
   }
 
-  def constructDetailedHeader(headersAndSizes: LinkedHashMap[String, Int],
+  def constructDetailedHeader(
+      headersAndSizes: LinkedHashMap[String, Int],
       delimiter: String,
       prettyPrint: Boolean): String = {
     QualOutputWriter.constructOutputRowFromMap(headersAndSizes, delimiter, prettyPrint)
@@ -240,15 +244,15 @@ object QualOutputWriter {
       prettyPrint: Boolean,
       reportReadSchema: Boolean = false): String = {
     val (readfileFormats, complexTypes, nestedComplexTypes) = if (delimiter.equals(",")) {
-      val readFileFormats = stringIfempty(appInfo.readFileFormats.replace(",", ";"))
-      val complexTypes = stringIfempty(appInfo.complexTypes.replace(",", ";"))
-      val nestedComplexTypes = stringIfempty(appInfo.nestedComplexTypes.replace(",", ";"))
-      (readFileFormats, complexTypes, nestedComplexTypes)
+      val fileFormats = stringIfempty(appInfo.readFileFormats.replace(",", ";"))
+      val types = stringIfempty(appInfo.complexTypes.replace(",", ";"))
+      val nestedTypes = stringIfempty(appInfo.nestedComplexTypes.replace(",", ";"))
+      (fileFormats, types, nestedTypes)
     } else {
-      val readFileFormats = stringIfempty(appInfo.readFileFormats)
-      val complexTypes = stringIfempty(appInfo.complexTypes)
-      val nestedComplexTypes = stringIfempty(appInfo.nestedComplexTypes)
-      (readFileFormats, complexTypes, nestedComplexTypes)
+      val fileFormats = stringIfempty(appInfo.readFileFormats)
+      val types = stringIfempty(appInfo.complexTypes)
+      val nestedTypes = stringIfempty(appInfo.nestedComplexTypes)
+      (fileFormats, types, nestedTypes)
     }
     val data = ListBuffer[(String, Int)](
       stringIfempty(appInfo.appName) -> headersAndSizes(APP_NAME_STR),
