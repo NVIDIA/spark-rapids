@@ -605,7 +605,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           testData.write.json(outJsonFile.getCanonicalPath)
           testData.write.parquet(outParquetFile.getCanonicalPath)
           val df = spark.read.parquet(outParquetFile.getCanonicalPath)
-          val df2 = spark.read.parquet(outJsonFile.getCanonicalPath)
+          val df2 = spark.read.json(outJsonFile.getCanonicalPath)
           df.join(df2.select($"a" as "a2"), $"a" === $"a2")
         }
         val sumOut = qualApp.getSummary()
