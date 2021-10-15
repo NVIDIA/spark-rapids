@@ -70,7 +70,7 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark320Shims extends Spark32XShims {
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
