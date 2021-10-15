@@ -739,12 +739,16 @@ _gen_data_for_collect_list = [
     ('c_string', StringGen()),
     ('c_float', FloatGen()),
     ('c_double', DoubleGen()),
-    ('c_decimal', DecimalGen(precision=8, scale=3)),
+    ('c_decimal_32', DecimalGen(precision=8, scale=3)),
+    ('c_decimal_64', decimal_gen_12_2),
+    ('c_decimal_128', decimal_gen_36_5),
     ('c_struct', StructGen(children=[
         ['child_int', IntegerGen()],
         ['child_time', DateGen()],
         ['child_string', StringGen()],
-        ['child_decimal', DecimalGen(precision=8, scale=3)]])),
+        ['child_decimal_32', DecimalGen(precision=8, scale=3)],
+        ['child_decimal_64', decimal_gen_12_2],
+        ['child_decimal_128', decimal_gen_36_5]])),
     ('c_array', ArrayGen(int_gen)),
     ('c_map', simple_string_to_string_map_gen)]
 
@@ -777,8 +781,12 @@ def test_window_aggs_for_rows_collect_list():
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_float,
           collect_list(c_double) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_double,
-          collect_list(c_decimal) over
-            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal,
+          collect_list(c_decimal_32) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal_32,
+          collect_list(c_decimal_64) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal_64,
+          collect_list(c_decimal_128) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal_128,
           collect_list(c_struct) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct,
           collect_list(c_array) over
@@ -817,8 +825,12 @@ def test_running_window_function_exec_for_all_aggs():
             (partition by a order by b,c_int) as dense_rank_val,
           collect_list(c_float) over
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_float,
-          collect_list(c_decimal) over
-            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal,
+          collect_list(c_decimal_32) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal_32,
+          collect_list(c_decimal_64) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal_64,
+          collect_list(c_decimal_128) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal_128,
           collect_list(c_struct) over
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_struct
         from window_collect_table
@@ -839,7 +851,9 @@ _gen_data_for_collect_set = [
     ('c_string', RepeatSeqGen(StringGen(), length=15)),
     ('c_float', RepeatSeqGen(FloatGen(), length=15)),
     ('c_double', RepeatSeqGen(DoubleGen(), length=15)),
-    ('c_decimal', RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15)),
+    ('c_decimal_32', RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15)),
+    ('c_decimal_64', RepeatSeqGen(decimal_gen_12_2, length=15)),
+    ('c_decimal_128', RepeatSeqGen(decimal_gen_36_5, length=15)),
     # case to verify the NAN_UNEQUAL strategy
     ('c_fp_nan', RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5)),
 ]
@@ -863,7 +877,9 @@ def test_window_aggs_for_rows_collect_set():
             sort_array(cc_str),
             sort_array(cc_float),
             sort_array(cc_double),
-            sort_array(cc_decimal),
+            sort_array(cc_decimal_32),
+            sort_array(cc_decimal_64),
+            sort_array(cc_decimal_128),
             sort_array(cc_fp_nan)
         from (
             select a, b,
@@ -887,8 +903,12 @@ def test_window_aggs_for_rows_collect_set():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_float,
               collect_set(c_double) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_double,
-              collect_set(c_decimal) over
-                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal,
+              collect_set(c_decimal_32) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal_32,
+              collect_set(c_decimal_64) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal_64,
+              collect_set(c_decimal_128) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal_128,
               collect_set(c_fp_nan) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_fp_nan
             from window_collect_table
