@@ -17,7 +17,7 @@
 ###
 #
 # Arguments:
-#    CUDA_VER=11.0, 11.1 or 11.2.x
+#    CUDA_VER=11.0+
 #    CENTOS_VER=7 or 8
 #    CUDF_VER=<cudf-py version>
 #    URM_URL=<maven repo url>
@@ -32,7 +32,8 @@ ARG URM_URL
 
 # Install jdk-8, jdk-11, maven, docker image
 RUN yum update -y && \
-    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect
+    yum install epel-release -y && \
+    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect parallel
 
 # The default mvn verision is 3.0.5 on centos7 docker container.
 # The plugin: net.alchim31.maven requires a higher mvn version.

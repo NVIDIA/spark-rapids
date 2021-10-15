@@ -20,11 +20,12 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, NullPolicy, OrderByArg}
+import ai.rapids.cudf.{GroupByAggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
@@ -32,7 +33,6 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.UnaryExecNode
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.GpuAggregateExpression
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
@@ -121,7 +121,7 @@ class GroupingIterator(
           withResource(GpuColumnVector.from(projected)) { table =>
             table
               .groupBy(partitionIndices:_*)
-              .aggregate(Aggregation.count(NullPolicy.INCLUDE).onColumn(0))
+              .aggregate(GroupByAggregation.count(NullPolicy.INCLUDE).onColumn(0))
           }
         }
         val orderedTable = withResource(cntTable) { table =>
@@ -174,11 +174,12 @@ class GroupingIterator(
  * The base class of GpuWindowInPandasExec in different shim layers
  *
  */
-trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
+trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
 
   def windowExpression: Seq[Expression]
-  def partitionSpec: Seq[Expression]
-  def orderSpec: Seq[SortOrder]
+  def gpuPartitionSpec: Seq[Expression]
+  def cpuPartitionSpec: Seq[Expression]
+  def cpuOrderSpec: Seq[SortOrder]
 
   // Used to choose the default python modules
   // please refer to `GpuPythonHelper` for details.
@@ -187,19 +188,21 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
   // project the output from joined batch, you should close the joined batch if no longer needed.
   def projectResult(joinedBatch: ColumnarBatch): ColumnarBatch
 
+  override def gpuExpressions: Seq[Expression] = windowExpression ++ gpuPartitionSpec
+
   override def requiredChildDistribution: Seq[Distribution] = {
-    if (partitionSpec.isEmpty) {
+    if (cpuPartitionSpec.isEmpty) {
       // Only show warning when the number of bytes is larger than 100 MiB?
       logWarning("No Partition Defined for Window operation! Moving all data to a single "
         + "partition, this can cause serious performance degradation.")
       AllTuples :: Nil
     } else {
-      ClusteredDistribution(partitionSpec) :: Nil
+      ClusteredDistribution(cpuPartitionSpec) :: Nil
     }
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(partitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ orderSpec)
+    Seq(cpuPartitionSpec.map(ShimLoader.getSparkShims.sortOrder(_, Ascending)) ++ cpuOrderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -260,7 +263,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
           function match {
             case GpuAggregateExpression(_, _, _, _, _) => collect("AGGREGATE", frame, e)
             // GpuPythonUDF is a GpuAggregateWindowFunction, so it is covered here.
-            case _: GpuAggregateWindowFunction[_] => collect("AGGREGATE", frame, e)
+            case _: GpuAggregateWindowFunction => collect("AGGREGATE", frame, e)
             // OffsetWindowFunction is not supported yet, no harm to keep it here
             case _: OffsetWindowFunction => collect("OFFSET", frame, e)
             case f => sys.error(s"Unsupported window function: $f")
@@ -511,7 +514,7 @@ trait GpuWindowInPandasExecBase extends UnaryExecNode with GpuExec {
 
       val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(partitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
         numInputRows, numInputBatches, spillCallback)
       val pyInputIterator = groupedIterator.map { batch =>

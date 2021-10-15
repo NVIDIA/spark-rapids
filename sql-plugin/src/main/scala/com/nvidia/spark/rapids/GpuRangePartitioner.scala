@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 import scala.util.hashing.byteswap32
 
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
+
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -166,7 +168,7 @@ object GpuRangePartitioner {
 
 case class GpuRangePartitioner(
     rangeBounds: Array[InternalRow],
-    sorter: GpuSorter) extends GpuExpression with GpuPartitioning {
+    sorter: GpuSorter) extends GpuExpression with ShimExpression with GpuPartitioning {
 
   private lazy val converters = new GpuRowToColumnConverter(
     TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))

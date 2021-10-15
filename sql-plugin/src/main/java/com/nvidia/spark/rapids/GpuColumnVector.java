@@ -251,6 +251,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         children[i] = convertFrom(fields[i].dataType(), fields[i].nullable());
       }
       return new HostColumnVector.StructType(nullable, children);
+    } else if (spark instanceof BinaryType) {
+      return new HostColumnVector.ListType(nullable, convertFrom(DataTypes.ByteType, false));
     } else {
       // Only works for basic types
       return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
@@ -474,6 +476,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return DType.TIMESTAMP_MICROSECONDS;
     } else if (type instanceof StringType) {
       return DType.STRING;
+    } else if (type instanceof BinaryType) {
+      return DType.LIST;
     } else if (type instanceof NullType) {
       // INT8 is used for both in this case
       return DType.INT8;
@@ -544,6 +548,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static HostColumnVector[] emptyHostColumns(List<Attribute> format) {
     return emptyHostColumns(structFromAttributes(format));
+  }
+
+  /**
+   * Create empty host column vectors from the given format.  This should only be necessary
+   * when serializing an empty broadcast table.
+   */
+  public static HostColumnVector[] emptyHostColumns(DataType[] format) {
+    return emptyHostColumns(structFromTypes(format));
   }
 
   private static StructType structFromTypes(DataType[] format) {
@@ -695,7 +707,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   static boolean typeConversionAllowed(Table table, DataType[] colTypes, int startCol, int endCol) {
     final int numColumns = endCol - startCol;
-    assert numColumns == colTypes.length: "The number of columns and the number of types don't match";
+    assert numColumns == colTypes.length: "The number of columns and the number of types don't " +
+        "match. Expected " + colTypes.length + " but found " + numColumns + ". (" + table +
+        " columns " + startCol + " - " + endCol + " vs " +
+        Arrays.toString(colTypes) + ")";
     boolean ret = true;
     for (int colIndex = startCol; colIndex < endCol; colIndex++) {
       boolean t = typeConversionAllowed(table.getColumn(colIndex), colTypes[colIndex - startCol]);
@@ -858,8 +873,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   /**
    * Creates a cudf ColumnVector where the elements are filled with nulls.
-   *
-   * NOTE: Besides the non-nested types, the array type is supported.
    *
    * @param count the row number of the output column
    * @param sparkType the expected data type of the output column

@@ -22,7 +22,8 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOverWindow, DType, GroupByOptions, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanType, Table, WindowOptions}
+import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
+import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -30,10 +31,10 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedPreceding}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.GpuAggregateExpression
-import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, ShortType, StructType}
+import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, MapType, ShortType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -86,6 +87,11 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
   lazy val inputFields: Seq[BaseExprMeta[Attribute]] =
     windowExec.children.head.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+
+  override def namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] = Map(
+    "partitionSpec" -> partitionSpec
+  )
+
   override def tagPlanForGpu(): Unit = {
     // Implementation depends on receiving a `NamedExpression` wrapped WindowExpression.
     windowExpressions.map(meta => meta.wrapped)
@@ -93,15 +99,6 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         .foreach(_ => willNotWorkOnGpu("Unexpected query plan with Windowing functions; " +
             "cannot convert for GPU execution. " +
             "(Detail: WindowExpression not wrapped in `NamedExpression`.)"))
-    val unsupported = partitionSpec.map(_.wrapped.dataType).filter {
-      case _: StructType => true
-      case _: ArrayType => true
-      case _ => false
-    }.distinct
-
-    if (unsupported.nonEmpty) {
-      willNotWorkOnGpu(s"nested partition by keys are not supported $unsupported")
-    }
   }
 
   override def convertToGpu(): GpuExec = {
@@ -165,13 +162,13 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
         fixedUpWindowOps,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-        input)
+        input)(getPartitionSpecs, getOrderSpecs)
     } else {
       GpuWindowExec(
         fixedUpWindowOps,
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-        input)
+        input)(getPartitionSpecs, getOrderSpecs)
     }
 
     if (isPostNeeded) {
@@ -368,10 +365,12 @@ object GpuWindowExec extends Arm {
   }
 }
 
-trait GpuWindowBaseExec extends UnaryExecNode with GpuExec {
+trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
   val windowOps: Seq[NamedExpression]
-  val partitionSpec: Seq[Expression]
-  val orderSpec: Seq[SortOrder]
+  val gpuPartitionSpec: Seq[Expression]
+  val gpuOrderSpec: Seq[SortOrder]
+  val cpuPartitionSpec: Seq[Expression]
+  val cpuOrderSpec: Seq[SortOrder]
 
   import GpuMetric._
 
@@ -382,21 +381,26 @@ trait GpuWindowBaseExec extends UnaryExecNode with GpuExec {
   override def output: Seq[Attribute] = windowOps.map(_.toAttribute)
 
   override def requiredChildDistribution: Seq[Distribution] = {
-    if (partitionSpec.isEmpty) {
+    if (cpuPartitionSpec.isEmpty) {
       // Only show warning when the number of bytes is larger than 100 MiB?
       logWarning("No Partition Defined for Window operation! Moving all data to a single "
           + "partition, this can cause serious performance degradation.")
       AllTuples :: Nil
-    } else ClusteredDistribution(partitionSpec) :: Nil
+    } else ClusteredDistribution(cpuPartitionSpec) :: Nil
   }
 
-  lazy val partitionOrdering: Seq[SortOrder] = {
+  lazy val gpuPartitionOrdering: Seq[SortOrder] = {
     val shims = ShimLoader.getSparkShims
-    partitionSpec.map(shims.sortOrder(_, Ascending))
+    gpuPartitionSpec.map(shims.sortOrder(_, Ascending))
+  }
+
+  lazy val cpuPartitionOrdering: Seq[SortOrder] = {
+    val shims = ShimLoader.getSparkShims
+    cpuPartitionSpec.map(shims.sortOrder(_, Ascending))
   }
 
   override def requiredChildOrdering: Seq[Seq[SortOrder]] =
-    Seq(partitionOrdering ++ orderSpec)
+    Seq(cpuPartitionOrdering ++ cpuOrderSpec)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -412,7 +416,7 @@ trait GpuWindowBaseExec extends UnaryExecNode with GpuExec {
  * groups those two together so we can have a complete picture of how to perform these types of
  * aggregations.
  */
-case class AggAndReplace(agg: Aggregation, nullReplacePolicy: Option[ReplacePolicy])
+case class AggAndReplace[T](agg: T, nullReplacePolicy: Option[ReplacePolicy])
 
 /**
  * The class represents a window function and the locations of its deduped inputs after an initial
@@ -428,7 +432,7 @@ case class BoundGpuWindowFunction(
    * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
    *         for each value in `boundInputLocations` so that they can be zipped together.
    */
-  def scan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+  def scan(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
     aggFunc.scanAggregation(isRunningBatched)
   }
@@ -439,7 +443,7 @@ case class BoundGpuWindowFunction(
    * @return the sequence of aggregation operators to do. There will be one `AggAndReplace`
    *         for each value in `boundInputLocations` so that they can be zipped together.
    */
-  def groupByScan(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+  def groupByScan(isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
     val aggFunc = windowFunc.asInstanceOf[GpuRunningWindowFunction]
     aggFunc.groupByScanAggregation(isRunningBatched)
   }
@@ -458,8 +462,8 @@ case class BoundGpuWindowFunction(
   }
 
   def aggOverWindow(cb: ColumnarBatch,
-      windowOpts: WindowOptions): AggregationOverWindow[Nothing] = {
-    val aggFunc = windowFunc.asInstanceOf[GpuAggregateWindowFunction[_]]
+      windowOpts: WindowOptions): AggregationOverWindow = {
+    val aggFunc = windowFunc.asInstanceOf[GpuAggregateWindowFunction]
     val inputs = boundInputLocations.map { pos =>
       (cb.column(pos).asInstanceOf[GpuColumnVector].getBase, pos)
     }
@@ -480,7 +484,7 @@ object GroupedAggregations extends Arm {
       col: cudf.ColumnVector,
       dataType: DataType): GpuColumnVector = {
     dataType match {
-      case _: ArrayType | _: StructType =>
+      case _: ArrayType | _: StructType | _: MapType =>
         GpuColumnVector.from(col, dataType).incRefCount()
       case other =>
         val dtype = GpuColumnVector.getNonNestedRapidsType(other)
@@ -636,8 +640,7 @@ object GroupedAggregations extends Arm {
       var x = value.asInstanceOf[Long]
       if (x == Long.MinValue) x = Long.MaxValue
       ParsedBoundary(isUnbounded = false, Math.abs(x))
-    case anything => throw new UnsupportedOperationException("Unsupported window frame" +
-        s" expression $anything")
+    case anything => GpuWindowUtil.getRangeBoundaryValue(anything)
   }
 }
 
@@ -682,7 +685,7 @@ class GroupedAggregations extends Arm {
       partByPositions: Array[Int],
       inputCb: ColumnarBatch,
       outputColumns: Array[cudf.ColumnVector],
-      aggIt: (Table.GroupByOperation, Seq[AggregationOverWindow[Nothing]]) => Table): Unit = {
+      aggIt: (Table.GroupByOperation, Seq[AggregationOverWindow]) => Table): Unit = {
     data.foreach {
       case (frameSpec, functions) =>
         if (frameSpec.frameType == frameType) {
@@ -1339,10 +1342,13 @@ class GpuRunningWindowIterator(
 
 case class GpuRunningWindowExec(
     windowOps: Seq[NamedExpression],
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan
-) extends GpuWindowBaseExec {
+    gpuPartitionSpec: Seq[Expression],
+    gpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression],
+    override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
@@ -1350,8 +1356,8 @@ case class GpuRunningWindowExec(
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(orderSpec, child.output)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuRunningWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
@@ -1362,17 +1368,20 @@ case class GpuRunningWindowExec(
 
 case class GpuWindowExec(
     windowOps: Seq[NamedExpression],
-    partitionSpec: Seq[Expression],
-    orderSpec: Seq[SortOrder],
-    child: SparkPlan
-  ) extends GpuWindowBaseExec {
+    gpuPartitionSpec: Seq[Expression],
+    gpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression],
+    override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(outputBatching)
 
-  override def outputBatching: CoalesceGoal = if (partitionSpec.isEmpty) {
+  override def outputBatching: CoalesceGoal = if (gpuPartitionSpec.isEmpty) {
     RequireSingleBatch
   } else {
-    BatchedByKey(partitionOrdering)
+    BatchedByKey(gpuPartitionOrdering)(cpuPartitionOrdering)
   }
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -1381,8 +1390,8 @@ case class GpuWindowExec(
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(partitionSpec, child.output)
-    val boundOrderSpec = GpuBindReferences.bindReferences(orderSpec, child.output)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
 
     child.executeColumnar().mapPartitions { iter =>
         new GpuWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,

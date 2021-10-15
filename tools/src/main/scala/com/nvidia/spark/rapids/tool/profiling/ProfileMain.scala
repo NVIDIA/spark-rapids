@@ -16,15 +16,10 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import java.util.concurrent.TimeUnit
-
-import scala.collection.mutable.ArrayBuffer
-
-import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTextFileWriter}
+import com.nvidia.spark.rapids.tool.EventLogPathProcessor
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.rapids.tool.profiling._
 
 /**
  * A profiling tool to parse Spark Event Log
@@ -34,159 +29,32 @@ object ProfileMain extends Logging {
    * Entry point from spark-submit running this as the driver.
    */
   def main(args: Array[String]) {
-    val sparkSession = ProfileUtils.createSparkSession
-    val exitCode = mainInternal(sparkSession, new ProfileArgs(args))
+    val exitCode = mainInternal(new ProfileArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
   }
 
-  val SUBDIR = "rapids_4_spark_profile"
-
   /**
    * Entry point for tests
    */
-  def mainInternal(sparkSession: SparkSession, appArgs: ProfileArgs): Int = {
-
-    // This tool's output log file name
-    val logFileName = "rapids_4_spark_tools_output.log"
+  def mainInternal(appArgs: ProfileArgs): Int = {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
-    val outputDirectory = appArgs.outputDirectory().stripSuffix("/") +
-      s"/$SUBDIR"
-    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
+    val hadoopConf = new Configuration()
 
-    // Create the FileWriter and sparkSession used for ALL Applications.
-    val textFileWriter = new ToolTextFileWriter(outputDirectory, logFileName, "Profile summary")
-    try {
-      // Get the event logs required to process
-      val eventLogInfos = EventLogPathProcessor.processAllPaths(filterN.toOption,
-        matchEventLogs.toOption, eventlogPaths, sparkSession.sparkContext.hadoopConfiguration)
-      if (eventLogInfos.isEmpty) {
-        logWarning("No event logs to process after checking paths, exiting!")
-        return 0
-      }
-
-      // If compare mode is on, we need lots of memory to cache all applications then compare.
-      // Suggest only enable compare mode if there is no more than 10 applications as input.
-      if (appArgs.compare()) {
-        // Create an Array of Applications(with an index starting from 1)
-        val (apps, errorCode) = ApplicationInfo.createApps(eventLogInfos,
-          numOutputRows, sparkSession)
-        if (errorCode > 0) {
-          logError(s"Error parsing one of the event logs")
-          return 1
-        }
-
-        if (apps.isEmpty) {
-          logInfo("No application to process. Exiting")
-          return 0
-        }
-        processApps(apps, printPlans = false)
-        // Show the application Id <-> appIndex mapping.
-        apps.foreach(EventLogPathProcessor.logApplicationInfo(_))
-      } else {
-        var index: Int = 1
-        eventLogInfos.foreach { log =>
-          // Only process 1 app at a time.
-          val (apps, errorCode) = ApplicationInfo.createApps(ArrayBuffer(log), numOutputRows,
-            sparkSession, startIndex = index)
-          index += 1
-          if (errorCode > 0) {
-            logError(s"Error parsing ${log.eventLog}")
-            return 1
-          }
-          if (apps.isEmpty) {
-            logInfo("No application to process. Exiting")
-            return 0
-          }
-          // This is a bit odd that we process apps individual right now due to
-          // memory concerns. So the aggregation functions only aggregate single
-          // application not across applications.
-          processApps(apps, appArgs.printPlans())
-          apps.foreach(_.dropAllTempViews())
-        }
-      }
-    } finally {
-      textFileWriter.close()
+    // Get the event logs required to process
+    val (eventLogFsFiltered, _) = EventLogPathProcessor.processAllPaths(filterN.toOption,
+      matchEventLogs.toOption, eventlogPaths, hadoopConf)
+    if (eventLogFsFiltered.isEmpty) {
+      logWarning("No event logs to process after checking paths, exiting!")
+      return 0
     }
-
-    /**
-     * Function to process ApplicationInfo. If it is in compare mode, then all the eventlogs are
-     * evaluated at once and the output is one row per application. Else each eventlog is parsed one
-     * at a time.
-     */
-    def processApps(apps: Seq[ApplicationInfo], printPlans: Boolean): Unit = {
-      if (appArgs.compare()) { // Compare Applications
-
-        textFileWriter.write("### A. Compare Information Collected ###")
-        val compare = new CompareApplications(apps, Some(textFileWriter))
-        compare.compareAppInfo()
-        compare.compareDataSourceInfo(sparkSession, numOutputRows)
-        compare.compareExecutorInfo()
-        compare.findMatchingStages()
-        compare.compareJobInfo()
-        compare.compareRapidsProperties()
-      } else {
-        val collect = new CollectInformation(apps, Some(textFileWriter))
-        textFileWriter.write("### A. Information Collected ###")
-        collect.printAppInfo()
-        collect.printDataSourceInfo(sparkSession, numOutputRows)
-        collect.printExecutorInfo()
-        collect.printJobInfo()
-        collect.printRapidsProperties()
-        collect.printRapidsJAR()
-        collect.printSQLPlanMetrics()
-        if (printPlans) {
-          collect.printSQLPlans(outputDirectory)
-        }
-      }
-
-      textFileWriter.write("\n### B. Analysis ###\n")
-      val analysis = new Analysis(apps, Some(textFileWriter))
-      analysis.jobAndStageMetricsAggregation()
-      val sqlAggMetricsDF = analysis.sqlMetricsAggregation()
-      sqlAggMetricsDF.createOrReplaceTempView("sqlAggMetricsDF")
-      analysis.sqlMetricsAggregationDurationAndCpuTime()
-      analysis.shuffleSkewCheck()
-
-      textFileWriter.write("\n### C. Health Check###\n")
-      val healthCheck=new HealthCheck(apps, textFileWriter)
-      healthCheck.listFailedJobsStagesTasks()
-      healthCheck.listRemovedBlockManager()
-      healthCheck.listRemovedExecutors()
-      healthCheck.listPossibleUnsupportedSQLPlan()
-
-      if (appArgs.generateDot()) {
-        if (appArgs.compare()) {
-          logWarning("Dot graph does not compare apps")
-        }
-        apps.foreach { app =>
-          val start = System.nanoTime()
-          GenerateDot(app, outputDirectory)
-          val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-          textFileWriter.write(s"Generated DOT graphs for app ${app.appId} " +
-              s"to $outputDirectory in $duration second(s)\n")
-        }
-      }
-
-      if (appArgs.generateTimeline()) {
-        if (appArgs.compare()) {
-          logWarning("Timeline graph does not compare apps")
-        }
-        apps.foreach { app =>
-          val start = System.nanoTime()
-          GenerateTimeline.generateFor(app, outputDirectory)
-          val duration = TimeUnit.SECONDS.convert(System.nanoTime() - start, TimeUnit.NANOSECONDS)
-          textFileWriter.write(s"Generated timeline graphs for app ${app.appId} " +
-              s"to $outputDirectory in $duration second(s)\n")
-        }
-      }
-    }
-
+    val profiler = new Profiler(hadoopConf, appArgs)
+    profiler.profile(eventLogFsFiltered)
     0
   }
 }

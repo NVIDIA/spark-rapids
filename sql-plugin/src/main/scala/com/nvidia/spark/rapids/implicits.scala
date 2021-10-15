@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 import scala.collection.{mutable, SeqLike}
 import scala.collection.generic.CanBuildFrom
 import scala.reflect.ClassTag
@@ -47,14 +46,16 @@ object RapidsPluginImplicits {
      * @param e Exception which we don't want to suppress
      */
     def safeClose(e: Throwable = null): Unit = {
-      if (e != null) {
-        try {
+      if (autoCloseable != null) {
+        if (e != null) {
+          try {
+            autoCloseable.close()
+          } catch {
+            case suppressed: Throwable => e.addSuppressed(suppressed)
+          }
+        } else {
           autoCloseable.close()
-        } catch {
-          case suppressed: Throwable => e.addSuppressed(suppressed)
         }
-      } else {
-        autoCloseable.close()
       }
     }
   }

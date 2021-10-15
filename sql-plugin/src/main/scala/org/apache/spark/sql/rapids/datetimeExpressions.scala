@@ -18,11 +18,14 @@ package org.apache.spark.sql.rapids
 
 import java.util.concurrent.TimeUnit
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, ShimLoader}
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimBinaryExpression
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
@@ -35,7 +38,7 @@ trait GpuDateUnaryExpression extends GpuUnaryExpression with ImplicitCastInputTy
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 }
 
 trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpression
@@ -44,7 +47,7 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
 
   override def dataType: DataType = IntegerType
 
-  override def outputTypeOverride = DType.INT32
+  override def outputTypeOverride: DType = DType.INT32
 
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
@@ -119,8 +122,11 @@ abstract class GpuTimeMath(
     start: Expression,
     interval: Expression,
     timeZoneId: Option[String] = None)
-   extends BinaryExpression with GpuExpression with TimeZoneAwareExpression with ExpectsInputTypes
-   with Serializable {
+   extends ShimBinaryExpression
+       with GpuExpression
+       with TimeZoneAwareExpression
+       with ExpectsInputTypes
+       with Serializable {
 
   def this(start: Expression, interval: Expression) = this(start, interval, None)
 
@@ -171,20 +177,6 @@ abstract class GpuTimeMath(
   }
 
   def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector
-}
-
-case class GpuTimeAdd(start: Expression,
-                      interval: Expression,
-                      timeZoneId: Option[String] = None)
-  extends GpuTimeMath(start, interval, timeZoneId) {
-
-  override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression = {
-    copy(timeZoneId = Option(timeZoneId))
-  }
-
-  override def intervalMath(us_s: Scalar, us: ColumnView): ColumnVector = {
-    us.add(us_s)
-  }
 }
 
 case class GpuTimeSub(start: Expression,
@@ -388,10 +380,17 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
    parent: Option[RapidsMeta[_, _, _]],
    rule: DataFromReplacementRule)
   extends BinaryExprMeta[A](expr, conf, parent, rule) {
+
+  def shouldFallbackOnAnsiTimestamp: Boolean
+
   var sparkFormat: String = _
   var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
     checkTimeZoneId(expr.timeZoneId)
+
+    if (shouldFallbackOnAnsiTimestamp) {
+      willNotWorkOnGpu("ANSI mode is not supported")
+    }
 
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
@@ -459,81 +458,50 @@ object GpuToTimestamp extends Arm {
   // We are compatible with Spark for these formats when the timeParserPolicy is CORRECTED
   // or EXCEPTION. It is possible that other formats may be supported but these are the only
   // ones that we have tests for.
-  val CORRECTED_COMPATIBLE_FORMATS = Seq(
-    "yyyy-MM-dd",
-    "yyyy-MM",
-    "yyyy/MM/dd",
-    "yyyy/MM",
-    "dd/MM/yyyy",
-    "yyyy-MM-dd HH:mm:ss",
-    "MM-dd",
-    "MM/dd",
-    "dd-MM",
-    "dd/MM"
+  val CORRECTED_COMPATIBLE_FORMATS = Map(
+    "yyyy-MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{4}-\d{2}-\d{2}\Z"),
+    "yyyy/MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{4}/\d{1,2}/\d{1,2}\Z"),
+    "yyyy-MM" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{4}-\d{2}\Z"),
+    "yyyy/MM" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{4}/\d{2}\Z"),
+    "dd/MM/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{2}/\d{2}/\d{4}\Z"),
+    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta('-', isTimestamp = true,
+      raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\Z"),
+    "MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{2}-\d{2}\Z"),
+    "MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{2}/\d{2}\Z"),
+    "dd-MM" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{2}-\d{2}\Z"),
+    "dd/MM" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{2}/\d{2}\Z")
   )
 
   // We are compatible with Spark for these formats when the timeParserPolicy is LEGACY. It
   // is possible that other formats may be supported but these are the only ones that we have
   // tests for.
   val LEGACY_COMPATIBLE_FORMATS = Map(
-    "yyyy-MM-dd" -> LegacyParseFormat('-', isTimestamp = false,
-      raw"\A\d{4}-\d{2}-\d{2}(\D|\s|\Z)"),
-    "yyyy/MM/dd" -> LegacyParseFormat('/', isTimestamp = false,
-      raw"\A\d{4}/\d{2}/\d{2}(\D|\s|\Z)"),
-    "dd-MM-yyyy" -> LegacyParseFormat('-', isTimestamp = false,
-      raw"\A\d{2}-\d{2}-\d{4}(\D|\s|\Z)"),
-    "dd/MM/yyyy" -> LegacyParseFormat('/', isTimestamp = false,
-      raw"\A\d{2}/\d{2}/\d{4}(\D|\s|\Z)"),
-    "yyyy-MM-dd HH:mm:ss" -> LegacyParseFormat('-', isTimestamp = true,
-      raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)"),
-    "yyyy/MM/dd HH:mm:ss" -> LegacyParseFormat('/', isTimestamp = true,
-      raw"\A\d{4}/\d{2}/\d{2}[ T]\d{2}:\d{2}:\d{2}(\D|\s|\Z)")
+    "yyyy-MM-dd" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{4}-\d{1,2}-\d{1,2}(\D|\s|\Z)"),
+    "yyyy/MM/dd" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{4}/\d{1,2}/\d{1,2}(\D|\s|\Z)"),
+    "dd-MM-yyyy" -> ParseFormatMeta('-', isTimestamp = false,
+      raw"\A\d{1,2}-\d{1,2}-\d{4}(\D|\s|\Z)"),
+    "dd/MM/yyyy" -> ParseFormatMeta('/', isTimestamp = false,
+      raw"\A\d{1,2}/\d{1,2}/\d{4}(\D|\s|\Z)"),
+    "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta('-', isTimestamp = true,
+      raw"\A\d{4}-\d{1,2}-\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)"),
+    "yyyy/MM/dd HH:mm:ss" -> ParseFormatMeta('/', isTimestamp = true,
+      raw"\A\d{4}/\d{1,2}/\d{1,2}[ T]\d{1,2}:\d{1,2}:\d{1,2}(\D|\s|\Z)")
   )
 
   /** remove whitespace before month and day */
   val REMOVE_WHITESPACE_FROM_MONTH_DAY: RegexReplace =
     RegexReplace(raw"(\A\d+)-([ \t]*)(\d+)-([ \t]*)(\d+)", raw"\1-\3-\5")
-
-  /** Regex rule to replace "yyyy-m-" with "yyyy-mm-" */
-  val FIX_SINGLE_DIGIT_MONTH: RegexReplace =
-    RegexReplace(raw"(\A\d+)-(\d{1}-)", raw"\1-0\2")
-
-  /** Regex rule to replace "yyyy-mm-d" with "yyyy-mm-dd" */
-  val FIX_SINGLE_DIGIT_DAY: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2})-(\d{1})([\D\s]|\Z)", raw"\1-0\2\3")
-
-  /** Regex rule to replace "yyyy-mm-dd[ T]h:" with "yyyy-mm-dd hh:" */
-  val FIX_SINGLE_DIGIT_HOUR: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2})[ T](\d{1}:)", raw"\1 0\2")
-
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh:m:" with "yyyy-mm-dd[ T]hh:mm:" */
-  val FIX_SINGLE_DIGIT_MINUTE: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}):(\d{1}:)", raw"\1:0\2")
-
-  /** Regex rule to replace "yyyy-mm-dd[ T]hh:mm:s" with "yyyy-mm-dd[ T]hh:mm:ss" */
-  val FIX_SINGLE_DIGIT_SECOND: RegexReplace =
-    RegexReplace(raw"(\A\d+-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{1})([\D\s]|\Z)", raw"\1:0\2\3")
-
-  /** Convert dates to standard format */
-  val FIX_DATES = Seq(
-    REMOVE_WHITESPACE_FROM_MONTH_DAY,
-    FIX_SINGLE_DIGIT_MONTH,
-    FIX_SINGLE_DIGIT_DAY)
-
-  /** Convert timestamps to standard format */
-  val FIX_TIMESTAMPS = Seq(
-    FIX_SINGLE_DIGIT_HOUR,
-    FIX_SINGLE_DIGIT_MINUTE,
-    FIX_SINGLE_DIGIT_SECOND
-  )
-
-  def daysScalarSeconds(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_SECONDS, DateUtils.specialDatesSeconds(name))
-  }
-
-  def daysScalarMicros(name: String): Scalar = {
-    Scalar.timestampFromLong(DType.TIMESTAMP_MICROSECONDS, DateUtils.specialDatesMicros(name))
-  }
 
   def daysEqual(col: ColumnVector, name: String): ColumnVector = {
     withResource(Scalar.fromString(name)) { scalarName =>
@@ -541,26 +509,42 @@ object GpuToTimestamp extends Arm {
     }
   }
 
-  def isTimestamp(col: ColumnVector, sparkFormat: String, strfFormat: String) : ColumnVector = {
-    if (CORRECTED_COMPATIBLE_FORMATS.contains(sparkFormat)) {
-      // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
-      // and ToUnixTime and will support parsing a subset of a string so we check the length of
-      // the string as well which works well for fixed-length formats but if/when we want to
-      // support variable-length formats (such as timestamps with milliseconds) then we will need
-      // to use regex instead.
-      withResource(col.getCharLengths) { actualLen =>
-        withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
-          withResource(actualLen.equalTo(expectedLen)) { lengthOk =>
-            withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
-              isTimestamp.and(lengthOk)
-            }
+  /**
+   * Replace special date strings such as "now" with timestampDays. This method does not
+   * close the `stringVector`.
+   */
+  def replaceSpecialDates(
+      stringVector: ColumnVector,
+      chronoVector: ColumnVector,
+      specialDates: Map[String, () => Scalar]): ColumnVector = {
+    specialDates.foldLeft(chronoVector) { case (buffer, (name, scalarBuilder)) =>
+      withResource(buffer) { bufVector =>
+        withResource(daysEqual(stringVector, name)) { isMatch =>
+          withResource(scalarBuilder()) { scalar =>
+            isMatch.ifElse(scalar, bufVector)
           }
         }
       }
-    } else {
-      // this is the incompatibleDateFormats case where we do not guarantee compatibility with
-      // Spark and assume that all non-null inputs are valid
-      ColumnVector.fromScalar(Scalar.fromBool(true), col.getRowCount.toInt)
+    }
+  }
+
+  def isTimestamp(col: ColumnVector, sparkFormat: String, strfFormat: String) : ColumnVector = {
+    CORRECTED_COMPATIBLE_FORMATS.get(sparkFormat) match {
+      case Some(fmt) =>
+        // the cuDF `is_timestamp` function is less restrictive than Spark's behavior for UnixTime
+        // and ToUnixTime and will support parsing a subset of a string so we check the length of
+        // the string as well which works well for fixed-length formats but if/when we want to
+        // support variable-length formats (such as timestamps with milliseconds) then we will need
+        // to use regex instead.
+        withResource(col.matchesRe(fmt.validRegex)) { matches =>
+          withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
+            isTimestamp.and(matches)
+          }
+        }
+      case _ =>
+        // this is the incompatibleDateFormats case where we do not guarantee compatibility with
+        // Spark and assume that all non-null inputs are valid
+        ColumnVector.fromScalar(Scalar.fromBool(true), col.getRowCount.toInt)
     }
   }
 
@@ -568,50 +552,27 @@ object GpuToTimestamp extends Arm {
       lhs: GpuColumnVector,
       sparkFormat: String,
       strfFormat: String,
-      dtype: DType,
-      daysScalar: String => Scalar,
-      asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
+      dtype: DType): ColumnVector = {
+
+    // `tsVector` will be closed in replaceSpecialDates
+    val tsVector = withResource(isTimestamp(lhs.getBase, sparkFormat, strfFormat)) { isTs =>
+      withResource(Scalar.fromNull(dtype)) { nullValue =>
+        withResource(lhs.getBase.asTimestamp(dtype, strfFormat)) { tsVec =>
+          isTs.ifElse(tsVec, nullValue)
+        }
+      }
+    }
 
     // in addition to date/timestamp strings, we also need to check for special dates and null
     // values, since anything else is invalid and should throw an error or be converted to null
     // depending on the policy
-    withResource(isTimestamp(lhs.getBase, sparkFormat, strfFormat)) { isTimestamp =>
-      withResource(daysEqual(lhs.getBase, DateUtils.EPOCH)) { isEpoch =>
-        withResource(daysEqual(lhs.getBase, DateUtils.NOW)) { isNow =>
-          withResource(daysEqual(lhs.getBase, DateUtils.TODAY)) { isToday =>
-            withResource(daysEqual(lhs.getBase, DateUtils.YESTERDAY)) { isYesterday =>
-              withResource(daysEqual(lhs.getBase, DateUtils.TOMORROW)) { isTomorrow =>
-                withResource(lhs.getBase.isNull) { _ =>
-                  withResource(Scalar.fromNull(dtype)) { nullValue =>
-                    withResource(asTimestamp(lhs.getBase, strfFormat)) { converted =>
-                      withResource(daysScalar(DateUtils.EPOCH)) { epoch =>
-                        withResource(daysScalar(DateUtils.NOW)) { now =>
-                          withResource(daysScalar(DateUtils.TODAY)) { today =>
-                            withResource(daysScalar(DateUtils.YESTERDAY)) { yesterday =>
-                              withResource(daysScalar(DateUtils.TOMORROW)) { tomorrow =>
-                                withResource(isTomorrow.ifElse(tomorrow, nullValue)) { a =>
-                                  withResource(isYesterday.ifElse(yesterday, a)) { b =>
-                                    withResource(isToday.ifElse(today, b)) { c =>
-                                      withResource(isNow.ifElse(now, c)) { d =>
-                                        withResource(isEpoch.ifElse(epoch, d)) { e =>
-                                          isTimestamp.ifElse(converted, e)
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+    closeOnExcept(tsVector) { tsVector =>
+      DateUtils.fetchSpecialDates(dtype) match {
+        case specialDates if specialDates.nonEmpty =>
+          // `tsVector` will be closed in replaceSpecialDates
+          replaceSpecialDates(lhs.getBase, tsVector, specialDates)
+        case _ =>
+          tsVector
       }
     }
   }
@@ -630,13 +591,7 @@ object GpuToTimestamp extends Arm {
     val format = LEGACY_COMPATIBLE_FORMATS.getOrElse(sparkFormat,
       throw new IllegalStateException(s"Unsupported format $sparkFormat"))
 
-    // optimization to apply only the necessary rules depending on whether we are
-    // parsing to a date or timestamp
-    val regexReplaceRules = if (format.isTimestamp) {
-      FIX_DATES ++ FIX_TIMESTAMPS
-    } else {
-      FIX_DATES
-    }
+    val regexReplaceRules = Seq(REMOVE_WHITESPACE_FROM_MONTH_DAY)
 
     // we support date formats using either `-` or `/` to separate year, month, and day and the
     // regex rules are written with '-' so we need to replace '-' with '/' here as necessary
@@ -704,7 +659,7 @@ object GpuToTimestamp extends Arm {
 
 }
 
-case class LegacyParseFormat(separator: Char, isTimestamp: Boolean, validRegex: String)
+case class ParseFormatMeta(separator: Char, isTimestamp: Boolean, validRegex: String)
 
 case class RegexReplace(search: String, replace: String)
 
@@ -756,9 +711,7 @@ abstract class GpuToTimestamp
           lhs,
           sparkFormat,
           strfFormat,
-          DType.TIMESTAMP_MICROSECONDS,
-          daysScalarMicros,
-          (col, strfFormat) => col.asTimestampMicroseconds(strfFormat))
+          DType.TIMESTAMP_MICROSECONDS)
       }
     } else { // Timestamp or DateType
       lhs.getBase.asTimestampMicroseconds()
@@ -807,9 +760,7 @@ abstract class GpuToTimestampImproved extends GpuToTimestamp {
           lhs,
           sparkFormat,
           strfFormat,
-          DType.TIMESTAMP_SECONDS,
-          daysScalarSeconds,
-          (col, strfFormat) => col.asTimestampSeconds(strfFormat))
+          DType.TIMESTAMP_SECONDS)
       }
     } else if (lhs.dataType() == DateType){
       lhs.getBase.asTimestampSeconds()

@@ -171,8 +171,11 @@ object GpuDeviceManager extends Logging {
     // Align workaround for https://github.com/rapidsai/rmm/issues/527
     def truncateToAlignment(x: Long): Long = x & ~511L
 
-    var initialAllocation = truncateToAlignment((conf.rmmAllocFraction * info.free).toLong)
     val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
+    val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
+    val reserveAmount = conf.rmmAllocReserve
+    var initialAllocation = truncateToAlignment(
+      (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
     if (initialAllocation < minAllocation) {
       throw new IllegalArgumentException(s"The initial allocation of " +
         s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
@@ -181,7 +184,6 @@ object GpuDeviceManager extends Logging {
         s"${RapidsConf.RMM_ALLOC_MIN_FRACTION} (=${conf.rmmAllocMinFraction}) " +
         s"and ${toMB(info.total)} MB total memory)")
     }
-    val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
     if (maxAllocation < initialAllocation) {
       throw new IllegalArgumentException(s"The initial allocation of " +
         s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
@@ -190,7 +192,6 @@ object GpuDeviceManager extends Logging {
         s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocMaxFraction}) " +
         s"and ${toMB(info.total)} MB total memory)")
     }
-    val reserveAmount = conf.rmmAllocReserve
     if (reserveAmount >= maxAllocation) {
       throw new IllegalArgumentException(s"RMM reserve memory (${toMB(reserveAmount)} MB) " +
           s"larger than maximum pool size (${toMB(maxAllocation)} MB). Check the settings for " +
@@ -232,6 +233,9 @@ object GpuDeviceManager extends Logging {
           case c if "arena".equalsIgnoreCase(c) =>
             features += "ARENA"
             init | RmmAllocationMode.ARENA
+          case c if "async".equalsIgnoreCase(c) =>
+            features += "ASYNC"
+            init | RmmAllocationMode.CUDA_ASYNC
           case c if "none".equalsIgnoreCase(c) =>
             // Pooling is disabled.
             init

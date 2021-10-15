@@ -42,7 +42,7 @@ case class GpuScalaUDF(
 object GpuScalaUDF {
   def exprMeta: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
     "User Defined Function, support requires the UDF to implement a RAPIDS accelerated interface",
-    ExprChecks.projectNotLambda(
+    ExprChecks.projectOnly(
       udfTypeSig,
       TypeSig.all,
       repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
@@ -68,9 +68,9 @@ object GpuScalaUDF {
     })
 
   /**
-   * Determine if the UDF function implements the [[RapidsUDF]] interface, returning the instance
-   * if it does. The lambda wrapper that Spark applies to Java UDFs will be inspected if necessary
-   * to locate the user's UDF instance.
+   * Determine if the UDF function implements the [[com.nvidia.spark.RapidsUDF]] interface,
+   * returning the instance if it does. The lambda wrapper that Spark applies to Java UDFs will be
+   * inspected if necessary to locate the user's UDF instance.
    */
   def getRapidsUDFInstance(function: AnyRef): Option[RapidsUDF] = {
     function match {

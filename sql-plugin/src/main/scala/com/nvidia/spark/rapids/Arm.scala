@@ -27,7 +27,7 @@ trait Arm {
     try {
       block(r)
     } finally {
-      r.close()
+      r.safeClose()
     }
   }
 
@@ -36,7 +36,7 @@ trait Arm {
     try {
       block(r)
     } finally {
-      r.foreach(_.close())
+      r.foreach(_.safeClose())
     }
   }
 
@@ -73,9 +73,9 @@ trait Arm {
       block(r)
     } finally {
       r match {
-        case c: AutoCloseable => c.close()
-        case scala.util.Left(c: AutoCloseable) => c.close()
-        case scala.util.Right(c: AutoCloseable) => c.close()
+        case c: AutoCloseable => c.safeClose()
+        case scala.util.Left(c: AutoCloseable) => c.safeClose()
+        case scala.util.Right(c: AutoCloseable) => c.safeClose()
         case _ => //NOOP
       }
     }
@@ -125,6 +125,16 @@ trait Arm {
     }
   }
 
+  /** Executes the provided code block, closing the resources only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V](r: Option[T])(block: Option[T] => V): V = {
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        r.foreach(_.safeClose(t))
+        throw t
+    }
+  }
 
   /** Executes the provided code block, freeing the RapidsBuffer only if an exception occurs */
   def freeOnExcept[T <: RapidsBuffer, V](r: T)(block: T => V): V = {
@@ -133,7 +143,9 @@ trait Arm {
     } catch {
       case t: Throwable =>
         try {
-          r.free()
+          if (r != null) {
+            r.free()
+          }
         } catch {
           case e: Throwable =>
             t.addSuppressed(e)

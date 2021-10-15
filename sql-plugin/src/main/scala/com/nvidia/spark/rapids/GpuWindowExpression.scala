@@ -21,9 +21,9 @@ import java.util.concurrent.TimeUnit
 import scala.language.{existentials, implicitConversions}
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation, AggregationOnColumn, BinaryOp, ColumnVector, DType, RollingAggregation, Scalar}
-import ai.rapids.cudf.Aggregation.{LagAggregation, LeadAggregation}
+import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr
+import com.nvidia.spark.rapids.shims.v2.{GpuWindowUtil, ShimExpression}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.{GpuAggregateExpression, GpuCreateNamedStruct
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
 
-class GpuWindowExpressionMeta(
+abstract class GpuWindowExpressionMetaBase(
     windowExpression: WindowExpression,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
@@ -45,7 +45,6 @@ class GpuWindowExpressionMeta(
       literal.dataType match {
         case IntegerType =>
           literal.value.asInstanceOf[Int]
-          literal.value.asInstanceOf[Int]
         case t =>
           willNotWorkOnGpu(s"unsupported window boundary type $t")
           -1
@@ -56,6 +55,12 @@ class GpuWindowExpressionMeta(
     case _ =>
       willNotWorkOnGpu("unsupported window boundary type")
       -1
+  }
+
+  /** Tag if RangeFrame expression is supported */
+  def tagOtherTypesForRangeFrame(bounds: Expression): Unit = {
+    willNotWorkOnGpu(s"the type of boundary is not supported in a window range" +
+      s" function, found $bounds")
   }
 
   override def tagExprForGpu(): Unit = {
@@ -73,7 +78,7 @@ class GpuWindowExpressionMeta(
             val lower = getAndCheckRowBoundaryValue(spec.lower)
             val upper = getAndCheckRowBoundaryValue(spec.upper)
             windowFunction match {
-              case Lead(_, _, _) | Lag(_, _, _) => // ignored we are good
+              case _: Lead | _: Lag => // ignored we are good
               case _ =>
                 // need to be sure that the lower/upper are acceptable
                 if (lower > 0) {
@@ -143,9 +148,7 @@ class GpuWindowExpressionMeta(
                     willNotWorkOnGpu("interval months isn't supported")
                   }
                 case UnboundedFollowing | UnboundedPreceding | CurrentRow =>
-                case anythings =>
-                  willNotWorkOnGpu(s"the type of boundary is not supported in a window range" +
-                  s" function, found $anythings")
+                case anythings => tagOtherTypesForRangeFrame(anythings)
               }
             }
         }
@@ -165,7 +168,7 @@ class GpuWindowExpressionMeta(
 }
 
 case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindowSpecDefinition)
-  extends GpuUnevaluable {
+  extends GpuUnevaluable with ShimExpression {
 
   override def children: Seq[Expression] = windowFunction :: windowSpec :: Nil
 
@@ -189,7 +192,7 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
   }
 
   private val windowFrameSpec = windowSpec.frameSpecification.asInstanceOf[GpuSpecifiedWindowFrame]
-  lazy val wrappedWindowFunc = windowFunction match {
+  lazy val wrappedWindowFunc: GpuWindowFunction = windowFunction match {
     case func: GpuWindowFunction => func
     case agg: GpuAggregateExpression => agg.aggregateFunction match {
       case func: GpuWindowFunction => func
@@ -232,7 +235,7 @@ case class GpuWindowExpression(windowFunction: Expression, windowSpec: GpuWindow
         r.groupByScanInputProjection(isRunningBatched)
       }
     } else {
-      wrappedWindowFunc.asInstanceOf[GpuAggregateWindowFunction[_]].windowInputProjection
+      wrappedWindowFunc.asInstanceOf[GpuAggregateWindowFunction].windowInputProjection
     }
   }
 }
@@ -274,7 +277,7 @@ case class GpuWindowSpecDefinition(
     partitionSpec: Seq[Expression],
     orderSpec: Seq[SortOrder],
     frameSpecification: GpuWindowFrame)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression with ShimExpression with GpuUnevaluable {
 
   override def children: Seq[Expression] = partitionSpec ++ orderSpec :+ frameSpecification
 
@@ -330,14 +333,12 @@ case class GpuWindowSpecDefinition(
     elements.mkString("(", " ", ")")
   }
 
-  private def isValidFrameType(ft: DataType): Boolean = (orderSpec.head.dataType, ft) match {
-    case (DateType, IntegerType) => true
-    case (TimestampType, CalendarIntervalType) => true
-    case (a, b) => a == b
+  private def isValidFrameType(ft: DataType): Boolean = {
+    GpuWindowUtil.isValidRangeFrameType(orderSpec.head.dataType, ft)
   }
 }
 
-class GpuSpecifiedWindowFrameMeta(
+abstract class GpuSpecifiedWindowFrameMetaBase(
     windowFrame: SpecifiedWindowFrame,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_,_,_]],
@@ -346,6 +347,15 @@ class GpuSpecifiedWindowFrameMeta(
 
   // SpecifiedWindowFrame has no associated dataType.
   override val ignoreUnsetDataTypes: Boolean = true
+
+  /**
+   * Tag RangeFrame for other types and get the value
+   */
+  def getAndTagOtherTypesForRangeFrame(bounds : Expression, isLower : Boolean): Long = {
+    willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
+      s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
+    if (isLower) -1 else 1 // not check again
+  }
 
   override def tagExprForGpu(): Unit = {
     if (windowFrame.frameType.equals(RangeFrame)) {
@@ -383,10 +393,7 @@ class GpuSpecifiedWindowFrameMeta(
                   s"and $ci is too large to fit")
                 if (isLower) -1 else 1 // not check again
             }
-          case _ =>
-            willNotWorkOnGpu(s"Bounds for Range-based window frames must be specified in Integral" +
-            s" type (Boolean exclusive) or CalendarInterval. Found ${bounds.dataType}")
-            if (isLower) -1 else 1 // not check again
+          case _ => getAndTagOtherTypesForRangeFrame(bounds, isLower)
         }
 
         if (isLower && value > 0) {
@@ -452,7 +459,7 @@ class GpuSpecifiedWindowFrameMeta(
   }
 }
 
-trait GpuWindowFrame extends GpuExpression with GpuUnevaluable {
+trait GpuWindowFrame extends GpuExpression with GpuUnevaluable with ShimExpression {
   override def children: Seq[Expression] = Nil
 
   override def dataType: DataType = {
@@ -575,7 +582,7 @@ case class GpuSpecifiedWindowFrame(
 }
 
 case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
-  extends GpuExpression with GpuUnevaluable {
+  extends GpuExpression with ShimExpression with GpuUnevaluable {
   override def children : Seq[Expression] = Nil
   override def dataType: DataType = NullType
   override def foldable: Boolean = false
@@ -609,7 +616,7 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 
 // This is here for now just to tag an expression as being a GpuWindowFunction and match
 // Spark. This may expand in the future if other types of window functions show up.
-trait GpuWindowFunction extends GpuUnevaluable
+trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
 
 /**
  * GPU Counterpart of `AggregateWindowFunction`.
@@ -618,8 +625,7 @@ trait GpuWindowFunction extends GpuUnevaluable
  * in a single pass, where all of the data is available so instead we have out own set of
  * expressions.
  */
-trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
-    extends GpuWindowFunction {
+trait GpuAggregateWindowFunction extends GpuWindowFunction {
   /**
    * Using child references, define the shape of the vectors sent to the window operations
    */
@@ -631,7 +637,7 @@ trait GpuAggregateWindowFunction[T <: Aggregation with RollingAggregation[T]]
    * returned by [[windowInputProjection]].  The index is the index into the Table for the
    * corresponding ColumnVector. Some aggregations need extra values.
    */
-  def windowAggregation(inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[T]
+  def windowAggregation(inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn
 }
 
 /**
@@ -660,7 +666,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
    * @param isRunningBatched is this for a batched running window that will use a fixer or not?
    * @return the aggregations to perform as a group by scan.
    */
-  def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace]
+  def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]]
 
   /**
    * Should a group by scan be run or not. This should never return false unless this is also an
@@ -684,7 +690,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
    * @param isRunningBatched is this for a batched running window that will use a fixer or not?
    * @return the aggregations to perform as a group by scan.
    */
-  def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace]
+  def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]]
 
   /**
    * Should a group by scan be run or not. This should never return false unless this is also an
@@ -1174,7 +1180,7 @@ object DenseRankFixer extends Arm {
  * @note this is a running window only operator.
  */
 case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
-    with GpuBatchedRunningWindowWithFixer {
+    with GpuBatchedRunningWindowWithFixer with ShimExpression {
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
 
@@ -1202,20 +1208,29 @@ case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
     }
   }
 
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] = {
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
     if (isRunningBatched) {
       // We are computing both rank and row number so we can fix it up at the end
-      Seq(AggAndReplace(Aggregation.rank(), None), AggAndReplace(Aggregation.sum(), None))
+      Seq(AggAndReplace(GroupByScanAggregation.rank(), None),
+        AggAndReplace(GroupByScanAggregation.sum(), None))
     } else {
       // Not batched just do the rank
-      Seq(AggAndReplace(Aggregation.rank(), None))
+      Seq(AggAndReplace(GroupByScanAggregation.rank(), None))
     }
   }
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    groupByScanAggregation(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
+    if (isRunningBatched) {
+      // We are computing both rank and row number so we can fix it up at the end
+      Seq(AggAndReplace(ScanAggregation.rank(), None), AggAndReplace(ScanAggregation.sum(), None))
+    } else {
+      // Not batched just do the rank
+      Seq(AggAndReplace(ScanAggregation.rank(), None))
+    }
+  }
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
     if (isRunningBatched) {
@@ -1260,14 +1275,15 @@ case class GpuDenseRank(children: Seq[Expression]) extends GpuRunningWindowFunct
     }
   }
 
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    Seq(AggAndReplace(Aggregation.denseRank(), None))
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+    Seq(AggAndReplace(GroupByScanAggregation.denseRank(), None))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
 
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    groupByScanAggregation(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.denseRank(), None))
 
   override def newFixer(): BatchedRunningWindowFixer = new DenseRankFixer()
 }
@@ -1292,64 +1308,19 @@ case object GpuRowNumber extends GpuRunningWindowFunction
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     Seq(GpuLiteral(1, IntegerType))
 
-  override def groupByScanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    Seq(AggAndReplace(Aggregation.sum(), None))
+  override def groupByScanAggregation(
+      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
+    Seq(AggAndReplace(GroupByScanAggregation.sum(), None))
 
   // For regular scans cudf does not support ROW_NUMBER, nor does it support COUNT_ALL
   // so we will do a SUM on a column of 1s
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace] =
-    groupByScanAggregation(isRunningBatched)
+  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
+    Seq(AggAndReplace(ScanAggregation.sum(), None))
 }
 
-abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
-    expr: INPUT,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends ExprMeta[INPUT](expr, conf, parent, rule) {
-  lazy val input: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.input, conf, Some(this))
-  lazy val offset: BaseExprMeta[_] = {
-    expr match {
-      case Lead(_,_,_) => // Supported.
-      case Lag(_,_,_) =>  // Supported.
-      case other =>
-        throw new IllegalStateException(
-          s"Only LEAD/LAG offset window functions are supported. Found: $other")
-    }
-
-    val literalOffset = GpuOverrides.extractLit(expr.offset) match {
-      case Some(Literal(offset: Int, IntegerType)) =>
-        Literal(offset, IntegerType)
-      case _ =>
-        throw new IllegalStateException(
-          s"Only integer literal offsets are supported for LEAD/LAG. Found: ${expr.offset}")
-    }
-
-    GpuOverrides.wrapExpr(literalOffset, conf, Some(this))
-  }
-  lazy val default: BaseExprMeta[_] = GpuOverrides.wrapExpr(expr.default, conf, Some(this))
-
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq(input, offset, default)
-
-  override def tagExprForGpu(): Unit = {
-    expr match {
-      case Lead(_,_,_) => // Supported.
-      case Lag(_,_,_) =>  // Supported.
-      case other =>
-        willNotWorkOnGpu( s"Only LEAD/LAG offset window functions are supported. Found: $other")
-    }
-
-    if (GpuOverrides.extractLit(expr.offset).isEmpty) { // Not a literal offset.
-      willNotWorkOnGpu(
-        s"Only integer literal offsets are supported for LEAD/LAG. Found: ${expr.offset}")
-    }
-  }
-}
-
-trait GpuOffsetWindowFunction[T <: Aggregation with RollingAggregation[T]]
-    extends GpuAggregateWindowFunction[T] {
+trait GpuOffsetWindowFunction extends GpuAggregateWindowFunction {
   protected val input: Expression
   protected val offset: Expression
   protected val default: Expression
@@ -1371,31 +1342,31 @@ trait GpuOffsetWindowFunction[T <: Aggregation with RollingAggregation[T]]
 }
 
 case class GpuLead(input: Expression, offset: Expression, default: Expression)
-    extends GpuOffsetWindowFunction[LeadAggregation] {
+    extends GpuOffsetWindowFunction {
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[LeadAggregation] = {
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
     val in = inputs.toArray
     if (in.length > 1) {
       // Has a default
-      Aggregation.lead(parsedOffset, in(1)._1).onColumn(in.head._2)
+      RollingAggregation.lead(parsedOffset, in(1)._1).onColumn(in.head._2)
     } else {
-      Aggregation.lead(parsedOffset).onColumn(in.head._2)
+      RollingAggregation.lead(parsedOffset).onColumn(in.head._2)
     }
   }
 }
 
 case class GpuLag(input: Expression, offset: Expression, default: Expression)
-    extends GpuOffsetWindowFunction[LagAggregation] {
+    extends GpuOffsetWindowFunction {
 
   override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): AggregationOnColumn[LagAggregation] = {
+      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
     val in = inputs.toArray
     if (in.length > 1) {
       // Has a default
-      Aggregation.lag(parsedOffset, in(1)._1).onColumn(in.head._2)
+      RollingAggregation.lag(parsedOffset, in(1)._1).onColumn(in.head._2)
     } else {
-      Aggregation.lag(parsedOffset).onColumn(in.head._2)
+      RollingAggregation.lag(parsedOffset).onColumn(in.head._2)
     }
   }
 }

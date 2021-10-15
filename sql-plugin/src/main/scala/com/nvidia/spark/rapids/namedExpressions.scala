@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.Objects
 
 import ai.rapids.cudf.ColumnVector
+import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
@@ -108,4 +109,9 @@ case class GpuAlias(child: Expression, name: String)(
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     throw new IllegalStateException("GpuAlias should never have doColumnar called")
+
+  override def convertToAst(numLeftTableColumns: Int): ast.AstExpression = child match {
+    case e: GpuExpression => e.convertToAst(numLeftTableColumns)
+    case e => throw new IllegalStateException(s"Attempt to convert $e to AST")
+  }
 }

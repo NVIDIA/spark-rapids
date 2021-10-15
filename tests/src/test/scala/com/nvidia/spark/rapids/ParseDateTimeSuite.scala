@@ -26,7 +26,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuToTimestamp.{FIX_DATES, FIX_SINGLE_DIGIT_DAY, FIX_SINGLE_DIGIT_HOUR, FIX_SINGLE_DIGIT_MINUTE, FIX_SINGLE_DIGIT_MONTH, FIX_SINGLE_DIGIT_SECOND, FIX_TIMESTAMPS, REMOVE_WHITESPACE_FROM_MONTH_DAY}
+import org.apache.spark.sql.rapids.GpuToTimestamp.REMOVE_WHITESPACE_FROM_MONTH_DAY
 import org.apache.spark.sql.rapids.RegexReplace
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
@@ -56,6 +56,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
           "ProjectExec,Alias,Cast,GetTimestamp,UnixTimestamp,Literal,ShuffleExchangeExec")) {
     df => df.withColumn("c1", to_date(col("c0"), "dd/MM/yy"))
   }
+
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
@@ -112,8 +113,10 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
   testSparkResultsAreEqual("to_date default pattern",
-      datesAsStrings,
-      CORRECTED_TIME_PARSER_POLICY) {
+    datesAsStrings,
+    CORRECTED_TIME_PARSER_POLICY
+        // All of the dates being parsed are valid for all of the versions of Spark supported.
+        .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")) {
     df => df.withColumn("c1", to_date(col("c0")))
   }
 
@@ -228,11 +231,14 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
           .repartition(2)
           .withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd HH:mm:ss"))
     }
-    val startTimeSeconds = System.currentTimeMillis()/1000L
+    val startTimeSeconds = System.currentTimeMillis() / 1000L
     val cpuNowSeconds = withCpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
     val gpuNowSeconds = withGpuSparkSession(now).collect().head.toSeq(1).asInstanceOf[Long]
-    assert(cpuNowSeconds >= startTimeSeconds)
-    assert(gpuNowSeconds >= startTimeSeconds)
+    // For Spark 3.2+, "now" will NOT be parsed as the current time
+    if (!VersionUtils.isSpark320OrLater) {
+      assert(cpuNowSeconds >= startTimeSeconds)
+      assert(gpuNowSeconds >= startTimeSeconds)
+    }
     // CPU ran first so cannot have a greater value than the GPU run (but could be the same second)
     assert(cpuNowSeconds <= gpuNowSeconds)
   }
@@ -243,118 +249,22 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     Seq("1-1-1", "1-1-1", "1-1-1", null))
   }
 
-  test("Regex: Fix single digit month") {
-    testRegex(FIX_SINGLE_DIGIT_MONTH,
-      Seq("1-2-3", "1111-2-3", "2000-7-7\n9\t8568:\n", null),
-      Seq("1-02-3", "1111-02-3", "2000-07-7\n9\t8568:\n", null))
-  }
+  test("literals: ensure time literals are correct") {
+    val conf = new SparkConf()
+    val df = withGpuSparkSession(spark => {
+      spark.sql("SELECT current_date(), current_timestamp(), now() FROM RANGE(1, 10)")
+    }, conf)
 
-  test("Regex: Fix single digit day followed by non digit char") {
-    // single digit day followed by non digit
-    testRegex(FIX_SINGLE_DIGIT_DAY,
-      Seq("1111-02-3 ", "1111-02-3:", "2000-03-192", "2000-07-7\n9\t8568:\n", null),
-      Seq("1111-02-03 ", "1111-02-03:", "2000-03-192", "2000-07-07\n9\t8568:\n", null))
-  }
+    val times = df.collect()
+    val systemCurrentTime = System.currentTimeMillis()
+    val res = times.forall(time => {
+      val diffDate = systemCurrentTime - time.getDate(0).getTime()
+      val diffTimestamp = systemCurrentTime - time.getTimestamp(1).getTime()
+      val diffNow = systemCurrentTime - time.getTimestamp(2).getTime()
+      diffDate.abs <= 8.64E7 & diffTimestamp.abs <= 1000 & diffNow.abs <= 1000
+    })
 
-  test("Regex: Fix single digit day at end of string") {
-    // single digit day at end of string
-    testRegex(FIX_SINGLE_DIGIT_DAY,
-      Seq("1-02-3", "1111-02-3", "1111-02-03", "2000-03-192", null),
-      Seq("1-02-03", "1111-02-03", "1111-02-03", "2000-03-192", null))
-  }
-
-  test("Regex: Fix single digit hour 1") {
-    // single digit hour with space separating date and time
-    testRegex(FIX_SINGLE_DIGIT_HOUR,
-      Seq("2001-12-31 1:2:3", "2001-12-31 1:22:33", null),
-      Seq("2001-12-31 01:2:3", "2001-12-31 01:22:33", null))
-  }
-
-  test("Regex: Fix single digit hour 2") {
-    // single digit hour with 'T' separating date and time
-    // note that the T gets replaced with whitespace in this case
-    testRegex(FIX_SINGLE_DIGIT_HOUR,
-      Seq("2001-12-31T1:2:3", "2001-12-31T1:22:33", null),
-      Seq("2001-12-31 01:2:3", "2001-12-31 01:22:33", null))
-  }
-
-  test("Regex: Fix single digit minute") {
-    // single digit minute at end of string
-    testRegex(FIX_SINGLE_DIGIT_MINUTE,
-      Seq("2001-12-31 01:2:3", "2001-12-31 01:22:33", null),
-      Seq("2001-12-31 01:02:3", "2001-12-31 01:22:33", null))
-  }
-
-  test("Regex: Fix single digit second followed by non digit") {
-    // single digit second followed by non digit
-    testRegex(FIX_SINGLE_DIGIT_SECOND,
-      Seq("2001-12-31 01:02:3:", "2001-12-31 01:22:33:", "2001-12-31 01:02:3 ", null),
-      Seq("2001-12-31 01:02:03:", "2001-12-31 01:22:33:", "2001-12-31 01:02:03 ", null))
-  }
-
-  test("Regex: Fix single digit second at end of string") {
-    // single digit day at end of string
-    testRegex(FIX_SINGLE_DIGIT_SECOND,
-      Seq("2001-12-31 01:02:3", "2001-12-31 01:22:33", null),
-      Seq("2001-12-31 01:02:03", "2001-12-31 01:22:33", null))
-  }
-
-  test("Regex: Apply all date rules") {
-    // end to end test of all date rules being applied in sequence
-    val testPairs = Seq(
-      ("2001- 1-1", "2001-01-01"),
-      ("2001-1- 1", "2001-01-01"),
-      ("2001- 1- 1", "2001-01-01"),
-      ("1999-12-31", "1999-12-31"),
-      ("1999-2-31", "1999-02-31"),
-      ("1999-2-3:", "1999-02-03:"),
-      ("1999-2-3", "1999-02-03"),
-      ("1999-2-3 1:2:3.4", "1999-02-03 1:2:3.4"),
-      ("1999-2-3T1:2:3.4", "1999-02-03T1:2:3.4")
-    )
-    val values = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(values: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        val actual = FIX_DATES.foldLeft(v.incRefCount())((a, b) => {
-          withResource(a) {
-            _.stringReplaceWithBackrefs(b.search, b.replace)
-          }
-        })
-        withResource(actual) { _ =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
-    }
-  }
-
-  test("Regex: Apply all date and timestamp rules") {
-    // end to end test of all date and timestamp rules being applied in sequence
-    val testPairs = Seq(
-      ("2001- 1-1", "2001-01-01"),
-      ("2001-1- 1", "2001-01-01"),
-      ("2001- 1- 1", "2001-01-01"),
-      ("1999-12-31", "1999-12-31"),
-      ("1999-2-31", "1999-02-31"),
-      ("1999-2-3:", "1999-02-03:"),
-      ("1999-2-3", "1999-02-03"),
-      ("1999-2-3 1:2:3.4", "1999-02-03 01:02:03.4"),
-      ("1999-2-3T1:2:3.4", "1999-02-03 01:02:03.4")
-    )
-    val values = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(values: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        val actual = (FIX_DATES ++ FIX_TIMESTAMPS).foldLeft(v.incRefCount())((a, b) => {
-          withResource(a) {
-            _.stringReplaceWithBackrefs(b.search, b.replace)
-          }
-        })
-        withResource(actual) { _ =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
-    }
+    assert(res)
   }
 
   private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {
@@ -503,4 +413,3 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   )
 
 }
-

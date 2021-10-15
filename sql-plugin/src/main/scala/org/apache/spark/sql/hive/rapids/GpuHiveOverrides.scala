@@ -48,7 +48,7 @@ object GpuHiveOverrides {
     Seq(
       GpuOverrides.expr[HiveSimpleUDF](
         "Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface",
-        ExprChecks.projectNotLambda(
+        ExprChecks.projectOnly(
           udfTypeSig,
           TypeSig.all,
           repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
@@ -76,7 +76,7 @@ object GpuHiveOverrides {
       GpuOverrides.expr[HiveGenericUDF](
         "Hive Generic UDF, support requires the UDF to implement a " +
             "RAPIDS accelerated interface",
-        ExprChecks.projectNotLambda(
+        ExprChecks.projectOnly(
           udfTypeSig,
           TypeSig.all,
           repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),

@@ -16,21 +16,22 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.FullOuter
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, HashClusteredDistribution}
-import org.apache.spark.sql.execution.BinaryExecNode
 import org.apache.spark.sql.rapids.execution.GpuHashJoin
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuShuffledHashJoinBase(
-    leftKeys: Seq[Expression],
-    rightKeys: Seq[Expression],
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
-    val isSkewJoin: Boolean) extends BinaryExecNode with GpuHashJoin {
+    val isSkewJoin: Boolean,
+    cpuLeftKeys: Seq[Expression],
+    cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
@@ -41,11 +42,10 @@ abstract class GpuShuffledHashJoinBase(
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
-    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME)) ++ spillMetrics
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   override def requiredChildDistribution: Seq[Distribution] =
-    HashClusteredDistribution(leftKeys) :: HashClusteredDistribution(rightKeys) :: Nil
+    HashClusteredDistribution(cpuLeftKeys) :: HashClusteredDistribution(cpuRightKeys) :: Nil
 
   override protected def doExecute(): RDD[InternalRow] = {
     throw new UnsupportedOperationException(
@@ -66,7 +66,6 @@ abstract class GpuShuffledHashJoinBase(
     val buildTime = gpuLongMetric(BUILD_TIME)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
-    val filterTime = gpuLongMetric(FILTER_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
@@ -86,7 +85,7 @@ abstract class GpuShuffledHashJoinBase(
 
           doJoin(builtBatch, streamIter, targetSize, spillCallback,
             numOutputRows, joinOutputRows, numOutputBatches,
-            streamTime, joinTime, filterTime, totalTime)
+            streamTime, joinTime, totalTime)
         }
       }
     }

@@ -20,6 +20,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.DecimalUtil.createCudfDecimal
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -27,7 +28,33 @@ import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
+object GpuAnsi extends Arm {
+  def needBasicOpOverflowCheck(dt: DataType): Boolean =
+    dt.isInstanceOf[IntegralType]
+
+  def minValueScalar(dt: DataType): Scalar = dt match {
+    case ByteType => Scalar.fromByte(Byte.MinValue)
+    case ShortType => Scalar.fromShort(Short.MinValue)
+    case IntegerType => Scalar.fromInt(Int.MinValue)
+    case LongType => Scalar.fromLong(Long.MinValue)
+    case other =>
+      throw new IllegalArgumentException(s"$other does not need an ANSI check for this operator")
+  }
+
+  def assertMinValueOverflow(cv: GpuColumnVector, op: String): Unit = {
+    withResource(minValueScalar(cv.dataType())) { minVal =>
+      withResource(cv.getBase.equalToNullAware(minVal)) { isMinVal =>
+        withResource(isMinVal.any()) { anyFound =>
+          if (anyFound.isValid && anyFound.getBoolean) {
+            throw new ArithmeticException(s"One or more rows overflow for $op operation.")
+          }
+        }
+      }
+    }
+  }
+}
+
+case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection.NumericAndInterval)
 
@@ -38,6 +65,10 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
   override def sql: String = s"(- ${child.sql})"
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Because of 2s compliment we need to only worry about the min value for integer types.
+      GpuAnsi.assertMinValueOverflow(input, "minus")
+    }
     dataType match {
       case dt: DecimalType =>
         val scale = dt.scale
@@ -56,6 +87,17 @@ case class GpuUnaryMinus(child: Expression) extends GpuUnaryExpression
         }
     }
   }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    val literalZero = dataType match {
+      case LongType => ast.Literal.ofLong(0)
+      case FloatType => ast.Literal.ofFloat(0)
+      case DoubleType => ast.Literal.ofDouble(0)
+      case IntegerType => ast.Literal.ofInt(0)
+    }
+    new ast.BinaryOperation(ast.BinaryOperator.SUB, literalZero,
+      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+  }
 }
 
 case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
@@ -69,15 +111,27 @@ case class GpuUnaryPositive(child: Expression) extends GpuUnaryExpression
   override def sql: String = s"(+ ${child.sql})"
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = input.getBase.incRefCount()
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)
+  }
 }
 
-case class GpuAbs(child: Expression) extends CudfUnaryExpression
+case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpression
     with ExpectsInputTypes with NullIntolerant {
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
   override def dataType: DataType = child.dataType
 
   override def unaryOp: UnaryOp = UnaryOp.ABS
+
+  override def doColumnar(input: GpuColumnVector) : ColumnVector = {
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Because of 2s compliment we need to only worry about the min value for integer types.
+      GpuAnsi.assertMinValueOverflow(input, "abs")
+    }
+    super.doColumnar(input)
+  }
 }
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
@@ -86,20 +140,85 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
-case class GpuAdd(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuAdd(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    val ret = super.doColumnar(lhs, rhs)
+    // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Check overflow. It is true when both arguments have the opposite sign of the result.
+      // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
+      closeOnExcept(ret) { r =>
+        val signCV = withResource(r.bitXor(lhs)) { lXor =>
+          withResource(r.bitXor(rhs)) { rXor =>
+            lXor.bitAnd(rXor)
+          }
+        }
+        val signDiffCV = withResource(signCV) { sign =>
+          withResource(Scalar.fromInt(0)) { zero =>
+            sign.lessThan(zero)
+          }
+        }
+        withResource(signDiffCV) { signDiff =>
+          withResource(signDiff.any()) { any =>
+            if (any.isValid && any.getBoolean) {
+              throw new ArithmeticException("One or more rows overflow for Add operation.")
+            }
+          }
+        }
+      }
+    }
+    ret
+  }
 }
 
-case class GpuSubtract(left: Expression, right: Expression) extends CudfBinaryArithmetic {
+case class GpuSubtract(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends CudfBinaryArithmetic {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    val ret = super.doColumnar(lhs, rhs)
+    // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
+    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Check overflow. It is true if the arguments have different signs and
+      // the sign of the result is different from the sign of x.
+      // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
+      closeOnExcept(ret) { r =>
+        val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
+          withResource(lhs.bitXor(r)) { xrXor =>
+            xyXor.bitAnd(xrXor)
+          }
+        }
+        val signDiffCV = withResource(signCV) { sign =>
+          withResource(Scalar.fromInt(0)) { zero =>
+            sign.lessThan(zero)
+          }
+        }
+        withResource(signDiffCV) { signDiff =>
+          withResource(signDiff.any()) { any =>
+            if (any.isValid && any.getBoolean) {
+              throw new ArithmeticException("One or more rows overflow for Subtract operation.")
+            }
+          }
+        }
+      }
+    }
+    ret
+  }
 }
 
 object GpuMultiplyUtil {
@@ -210,7 +329,7 @@ case class GpuMultiply(
   }
 }
 
-object GpuDivModLike {
+object GpuDivModLike extends Arm {
   def replaceZeroWithNull(v: GpuColumnVector): ColumnVector = {
     var zeroScalar: Scalar = null
     var nullScalar: Scalar = null
@@ -266,6 +385,54 @@ object GpuDivModLike {
       case t => throw new IllegalArgumentException(s"Unexpected type: $t")
     }
   }
+
+  /**
+   * This is for the case as below.
+   *
+   *   left : [1,  2,  Long.MinValue,  3, Long.MinValue]
+   *   right: [2, -1,             -1, -1,             6]
+   *
+   * The 3rd row (Long.MinValue, -1) will cause an overflow of the integral division.
+   */
+  def isDivOverflow(left: GpuColumnVector, right: GpuColumnVector): Boolean = {
+    left.dataType() match {
+      case LongType =>
+        withResource(Scalar.fromLong(Long.MinValue)) { minLong =>
+          withResource(left.getBase.equalTo(minLong)) { eqToMinLong =>
+            withResource(Scalar.fromInt(-1)) { minusOne =>
+              withResource(right.getBase.equalTo(minusOne)) { eqToMinusOne =>
+                withResource(eqToMinLong.and(eqToMinusOne)) { overFlowVector =>
+                  withResource(overFlowVector.any()) { isOverFlow =>
+                    isOverFlow.isValid && isOverFlow.getBoolean
+                  }
+                }
+              }
+            }
+          }
+        }
+      case _ => false
+    }
+  }
+
+  def isDivOverflow(left: GpuColumnVector, right: GpuScalar): Boolean = {
+    left.dataType() match {
+      case LongType =>
+        (right.isValid && right.getValue == -1) && {
+          withResource(Scalar.fromLong(Long.MinValue)) { minLong =>
+            left.getBase.contains(minLong)
+          }
+        }
+      case _ => false
+    }
+  }
+
+  def isDivOverflow(left: GpuScalar, right: GpuColumnVector): Boolean = {
+    (left.isValid && left.getValue == Long.MinValue) && {
+      withResource(Scalar.fromInt(-1)) { minusOne =>
+        right.getBase.contains(minusOne)
+      }
+    }
+  }
 }
 
 trait GpuDivModLike extends CudfBinaryArithmetic {
@@ -274,10 +441,17 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
 
   override def nullable: Boolean = true
 
+  // Whether we should check overflow or not in ANSI mode.
+  protected def checkDivideOverflow: Boolean = false
+
   import GpuDivModLike._
 
   private def divByZeroError(): Nothing = {
     throw new ArithmeticException("divide by zero")
+  }
+
+  private def divOverflowError(): Nothing = {
+    throw new ArithmeticException("Overflow in integral divide.")
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
@@ -285,11 +459,16 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
       withResource(makeZeroScalar(rhs.getBase.getType)) { zeroScalar =>
         if (rhs.getBase.contains(zeroScalar)) {
           divByZeroError()
-        } else {
-          super.doColumnar(lhs, rhs)
         }
+        if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+          divOverflowError()
+        }
+        super.doColumnar(lhs, rhs)
       }
     } else {
+      if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+        divOverflowError()
+      }
       withResource(replaceZeroWithNull(rhs)) { replaced =>
         super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
       }
@@ -297,6 +476,9 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+      divOverflowError()
+    }
     withResource(replaceZeroWithNull(rhs)) { replaced =>
       super.doColumnar(lhs, GpuColumnVector.from(replaced, rhs.dataType))
     }
@@ -312,6 +494,9 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
         }
       }
     } else {
+      if (checkDivideOverflow && isDivOverflow(lhs, rhs)) {
+        divOverflowError()
+      }
       super.doColumnar(lhs, rhs)
     }
   }
@@ -444,6 +629,14 @@ case class GpuDivide(left: Expression, right: Expression,
 case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
+  lazy val failOnOverflow: Boolean =
+    ShimLoader.getSparkShims.shouldFailDivOverflow
+
+  override def checkDivideOverflow: Boolean = left.dataType match {
+    case LongType if failOnOverflow => true
+    case _ => false
+  }
+
   override def dataType: DataType = LongType
   override def outputTypeOverride: DType = DType.INT64
   // CUDF does not support casting output implicitly for decimal binary ops, so we work around
@@ -476,7 +669,9 @@ case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLike {
   override def dataType: DataType = left.dataType
 }
 
-trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression {
+trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression
+  with ShimExpression {
+
   override def nullable: Boolean = children.forall(_.nullable)
   override def foldable: Boolean = children.forall(_.foldable)
 

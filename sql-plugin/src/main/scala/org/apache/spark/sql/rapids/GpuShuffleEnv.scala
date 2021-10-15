@@ -29,7 +29,7 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   private lazy val conf = SparkEnv.get.conf
 
-  lazy val isRapidsShuffleConfigured: Boolean = {
+  private lazy val isRapidsShuffleConfigured: Boolean = {
     conf.contains("spark.shuffle.manager") &&
       conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
@@ -63,46 +63,75 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 }
 
 object GpuShuffleEnv extends Logging {
-  def shutdown() = {
-    mgr.foreach(_.stop())
-    mgr = None
-  }
-
-  val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
-
-  var mgr: Option[RapidsShuffleInternalManagerBase] = None
+  val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
+  val RAPIDS_SHUFFLE_INTERNAL: String = ShimLoader.getRapidsShuffleInternalClass
 
   @volatile private var env: GpuShuffleEnv = _
+
+  def shutdown() = {
+    // check for nulls in tests
+    Option(SparkEnv.get)
+      .map(_.shuffleManager)
+      .collect { case sm: VisibleShuffleManager => sm }
+      .foreach(_.stop())
+
+    // when we shut down, make sure we clear `env`, as the convention is that
+    // `GpuShuffleEnv.init` will be called to re-establish it
+    env = null
+  }
 
   //
   // Functions below get called from the driver or executors
   //
 
-  def isRapidsShuffleEnabled: Boolean = {
-    val isRapidsManager = mgr.isDefined
-    val externalShuffle = SparkEnv.get.blockManager.externalShuffleServiceEnabled
-    isRapidsManager && !externalShuffle
+  def isExternalShuffleEnabled: Boolean = {
+    SparkEnv.get.blockManager.externalShuffleServiceEnabled
   }
 
-  def setRapidsShuffleManager(
-    managerOpt: Option[RapidsShuffleInternalManagerBase] = None): Unit = {
-    if (managerOpt.isDefined) {
-      val manager = managerOpt.get
-      if (manager.getClass.getCanonicalName != GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS) {
-        throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
-          s"${manager.getClass.getCanonicalName} != ${GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS}). " +
-          s"Check that configuration setting spark.shuffle.manager is correct for the Spark " +
-          s"version being used.")
-      }
-      logInfo("RapidsShuffleManager is initialized")
+  //
+  // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
+  // this forces the initialization when we know we are ready in the driver and executor.
+  //
+  def initShuffleManager(): Unit = {
+    SparkEnv.get.shuffleManager match {
+      case visibleMgr: VisibleShuffleManager =>
+        visibleMgr.initialize
+      case _ =>
+        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
     }
-    mgr = managerOpt
+  }
+
+  def isRapidsShuffleAvailable: Boolean = {
+    // the driver has `mgr` defined when this is checked
+    val sparkEnv = SparkEnv.get
+    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[VisibleShuffleManager]
+    if (isRapidsManager) {
+      validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
+    }
+    // executors have `env` defined when this is checked
+    // in tests
+    val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
+    (isConfiguredInEnv || isRapidsManager) && !isExternalShuffleEnabled
+  }
+
+  def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {
+    conf.shuffleManagerEnabled && isRapidsShuffleAvailable
   }
 
   def getCatalog: ShuffleBufferCatalog = if (env == null) {
     null
   } else {
     env.getCatalog
+  }
+
+  private def validateRapidsShuffleManager(shuffManagerClassName: String): Unit = {
+    val shuffleManagerStr = ShimLoader.getRapidsShuffleManagerClass
+    if (shuffManagerClassName != shuffleManagerStr) {
+      throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
+          s"${shuffManagerClassName} != $shuffleManagerStr). " +
+          s"Check that configuration setting spark.shuffle.manager is correct for the Spark " +
+          s"version being used.")
+    }
   }
 
   //

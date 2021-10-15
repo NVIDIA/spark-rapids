@@ -19,13 +19,17 @@
 # Build the image for rapids-plugin development environment
 #
 # Arguments:
-#       CUDA_VER=11.0, 11.1 or 11.2.x
+#       CUDA_VER=11.0+
 #       UBUNTU_VER=18.04 or 20.04
 ###
 
 ARG CUDA_VER=11.0
 ARG UBUNTU_VER=18.04
+ARG UCX_VER=1.11.2
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
+ARG CUDA_VER
+ARG UBUNTU_VER
+ARG UCX_VER
 
 # Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
@@ -40,6 +44,13 @@ RUN python3.8 -m easy_install pip
 RUN update-java-alternatives --set /usr/lib/jvm/java-1.8.0-openjdk-amd64
 
 RUN ln -s /usr/bin/python3.8 /usr/bin/python
-RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit
+RUN python -m pip install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pre-commit pytest-order
 
-RUN apt install -y inetutils-ping expect
+# libnuma1 and libgomp1 are required by ucx packaging
+RUN apt install -y inetutils-ping expect wget libnuma1 libgomp1
+
+RUN mkdir -p /tmp/ucx && \
+    cd /tmp/ucx && \
+    wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-v${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5.x-cuda${CUDA_VER}.deb && \
+    dpkg -i *.deb && \
+    rm -rf /tmp/ucx

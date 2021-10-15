@@ -14,8 +14,9 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
+from marks import allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_311
@@ -40,8 +41,7 @@ def test_single_orderby(data_gen, order):
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'])
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
-    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
-        marks=pytest.mark.xfail(reason='second-level structs are not supported')),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
     pytest.param(ArrayGen(string_gen),
         marks=pytest.mark.xfail(reason="arrays are not supported")),
     pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
@@ -68,6 +68,24 @@ def test_single_nested_orderby_plain(data_gen, order, shuffle_parts, stable_sort
                 }
             })
 
+# only default null ordering for direction is supported for nested types
+@allow_non_gpu('SortExec', 'ShuffleExchangeExec', 'RangePartitioning', 'SortOrder')
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
+], ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc_nulls_last()),
+    pytest.param(f.col('a').desc_nulls_first()),
+], ids=idfn)
+def test_single_nested_orderby_fallback_for_nullorder(data_gen, order):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            "SortExec",
+            conf = {
+                **allow_negative_scale_of_decimal_conf,
+            })
+
 # SPARK CPU itself has issue with negative scale for take ordered and project
 orderable_without_neg_decimal = [n for n in (orderable_gens + orderable_not_null_gen) if not (isinstance(n, DecimalGen) and n.scale < 0)]
 @pytest.mark.parametrize('data_gen', orderable_without_neg_decimal, ids=idfn)
@@ -76,28 +94,32 @@ def test_single_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100))
 
-@pytest.mark.parametrize('data_gen', [
-    pytest.param(all_basic_struct_gen),
-    pytest.param(StructGen([['child0', all_basic_struct_gen]]),
-                 marks=pytest.mark.xfail(reason='second-level structs are not supported')),
-    pytest.param(ArrayGen(string_gen),
-                 marks=pytest.mark.xfail(reason="arrays are not supported")),
-    pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
-                 marks=pytest.mark.xfail(reason="maps are not supported")),
-], ids=idfn)
-@pytest.mark.parametrize('order', [
-    pytest.param(f.col('a').asc()),
-    pytest.param(f.col('a').asc_nulls_first()),
-    pytest.param(f.col('a').asc_nulls_last(),
-                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
-    pytest.param(f.col('a').desc()),
-    pytest.param(f.col('a').desc_nulls_first(),
-                 marks=pytest.mark.xfail(reason='opposite null order not supported')),
-    pytest.param(f.col('a').desc_nulls_last()),
+@pytest.mark.parametrize('order,data_gen', [
+    pytest.param(f.col('a').asc(), all_basic_struct_gen),
+    pytest.param(f.col('a').asc_nulls_first(), all_basic_struct_gen),
+    pytest.param(f.col('a').desc(), all_basic_struct_gen),
+    pytest.param(f.col('a').desc_nulls_last(), all_basic_struct_gen)
 ], ids=idfn)
 def test_single_nested_orderby_with_limit(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100),
+        conf = {
+            'spark.rapids.allowCpuRangePartitioning': False
+        })
+
+@allow_non_gpu('TakeOrderedAndProjectExec', 'SortOrder')
+@pytest.mark.parametrize('order,data_gen', [
+    pytest.param(f.col('a').asc_nulls_last(), all_basic_struct_gen),
+    pytest.param(f.col('a').desc_nulls_first(), all_basic_struct_gen),
+    pytest.param(f.col('a').asc(), ArrayGen(string_gen)),
+    pytest.param(f.col('a').asc_nulls_last(), ArrayGen(string_gen)),
+    pytest.param(f.col('a').desc(), ArrayGen(string_gen)),
+    pytest.param(f.col('a').desc_nulls_first(), ArrayGen(string_gen))
+], ids=idfn)
+def test_single_nested_orderby_with_limit_fallback(data_gen, order):
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, data_gen).orderBy(order).limit(100),
+        "TakeOrderedAndProjectExec",
         conf = {
             'spark.rapids.allowCpuRangePartitioning': False
         })
@@ -110,7 +132,10 @@ def test_single_sort_in_part(data_gen, order):
         lambda spark : unary_op_df(spark, data_gen, num_slices=12).sortWithinPartitions(order),
         conf = allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+    pytest.param(all_basic_struct_gen),
+    pytest.param(StructGen([['child0', all_basic_struct_gen]])),
+], ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
     pytest.param(f.col('a').asc_nulls_first()),
@@ -194,7 +219,7 @@ def test_single_orderby_with_skew(data_gen):
 
 
 # We are not trying all possibilities, just doing a few with numbers so the query works.
-@pytest.mark.parametrize('data_gen', [all_basic_struct_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [all_basic_struct_gen, StructGen([['child0', all_basic_struct_gen]])], ids=idfn)
 @pytest.mark.parametrize('stable_sort', ['STABLE', 'OUTOFCORE'], ids=idfn)
 def test_single_nested_orderby_with_skew(data_gen, stable_sort):
     sort_conf = {'spark.rapids.sql.stableSort.enabled': stable_sort == 'STABLE'}
@@ -234,7 +259,9 @@ def test_large_orderby(data_gen, stable_sort):
     timestamp_gen,
     decimal_gen_default,
     StructGen([('child1', byte_gen)]),
+    simple_string_to_string_map_gen,
     ArrayGen(byte_gen, max_length=5)], ids=idfn)
+@pytest.mark.order(2)
 def test_large_orderby_nested_ridealong(data_gen):
     # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
     #  results, especially on distributed clusters.
@@ -242,3 +269,20 @@ def test_large_orderby_nested_ridealong(data_gen):
             lambda spark : two_col_df(spark, LongRangeGen(), data_gen, length=1024*127)\
                     .orderBy(f.col('a').desc()),
             conf = {'spark.rapids.sql.batchSizeBytes': '16384'})
+
+@pytest.mark.parametrize('data_gen', [byte_gen,
+    string_gen,
+    float_gen,
+    date_gen,
+    timestamp_gen,
+    decimal_gen_default,
+    StructGen([('child1', byte_gen)]),
+    simple_string_to_string_map_gen,
+    ArrayGen(byte_gen, max_length=5)], ids=idfn)
+@pytest.mark.order(2)
+def test_orderby_nested_ridealong_limit(data_gen):
+    # We use a LongRangeGen to avoid duplicate keys that can cause ambiguity in the sort
+    #  results, especially on distributed clusters.
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, LongRangeGen(), data_gen)\
+                    .orderBy(f.col('a').desc()).limit(100))

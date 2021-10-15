@@ -21,15 +21,17 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
 import com.nvidia.spark.rapids.RapidsBuffer.SpillCallback
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.v2.ShimBinaryExecNode
 
 import org.apache.spark.{Dependency, NarrowDependency, Partition, SparkContext, TaskContext}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.execution.{BinaryExecNode, ExplainUtils, SparkPlan}
+import org.apache.spark.sql.catalyst.plans.Cross
+import org.apache.spark.sql.execution.{ExplainUtils, SparkPlan}
 import org.apache.spark.sql.rapids.execution.GpuBroadcastNestedLoopJoinExecBase
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -111,14 +113,15 @@ class GpuCartesianPartition(
 
 class GpuCartesianRDD(
     sc: SparkContext,
-    boundCondition: Option[Expression],
+    boundCondition: Option[GpuExpression],
+    numFirstTableColumns: Int,
+    streamAttributes: Seq[Attribute],
     spillCallback: SpillCallback,
     targetSize: Long,
     joinTime: GpuMetric,
     joinOutputRows: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    filterTime: GpuMetric,
     totalTime: GpuMetric,
     var rdd1: RDD[GpuSerializableBatch],
     var rdd2: RDD[GpuSerializableBatch])
@@ -183,10 +186,14 @@ class GpuCartesianRDD(
         spillBatchBuffer.toIterator.map(LazySpillableColumnarBatch.spillOnly)
       }
 
-      GpuBroadcastNestedLoopJoinExecBase.innerLikeJoin(
-        batch, streamIterator, targetSize, GpuBuildLeft, boundCondition,
-        numOutputRows, joinOutputRows, numOutputBatches,
-        joinTime, filterTime, totalTime)
+      GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
+        Cross, GpuBuildLeft, numFirstTableColumns, batch, streamIterator, streamAttributes,
+        targetSize, boundCondition, spillCallback,
+        numOutputRows = numOutputRows,
+        joinOutputRows = joinOutputRows,
+        numOutputBatches = numOutputBatches,
+        joinTime = joinTime,
+        totalTime = totalTime)
     }
   }
 
@@ -210,7 +217,7 @@ case class GpuCartesianProductExec(
     left: SparkPlan,
     right: SparkPlan,
     condition: Option[Expression],
-    targetSizeBytes: Long) extends BinaryExecNode with GpuExec {
+    targetSizeBytes: Long) extends ShimBinaryExecNode with GpuExec {
 
   import GpuMetric._
 
@@ -229,8 +236,7 @@ case class GpuCartesianProductExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     TOTAL_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_TOTAL_TIME),
     JOIN_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
-    FILTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_FILTER_TIME)) ++ spillMetrics
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
@@ -240,17 +246,14 @@ case class GpuCartesianProductExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-    val filterTime = gpuLongMetric(FILTER_TIME)
     val totalTime = gpuLongMetric(TOTAL_TIME)
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
 
-    if (output.isEmpty) {
+    if (output.isEmpty && boundCondition.isEmpty) {
       // special case for crossJoin.count.  Doing it this way
       // because it is more readable then trying to fit it into the
       // existing join code.
-      assert(boundCondition.isEmpty)
-
       def getRowCountAndClose(cb: ColumnarBatch): Long = {
         val ret = cb.numRows()
         cb.close()
@@ -270,16 +273,18 @@ case class GpuCartesianProductExec(
         numOutputBatches)
     } else {
       val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+      val numFirstTableColumns = left.output.size
 
       new GpuCartesianRDD(sparkContext,
         boundCondition,
+        numFirstTableColumns,
+        right.output,
         spillCallback,
         targetSizeBytes,
         joinTime,
         joinOutputRows,
         numOutputRows,
         numOutputBatches,
-        filterTime,
         totalTime,
         left.executeColumnar().map(cb => new GpuSerializableBatch(cb)),
         right.executeColumnar().map(cb => new GpuSerializableBatch(cb)))
