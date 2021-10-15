@@ -625,12 +625,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val headersDetailed = rowsDetailedOut(0).split(":")
         val valuesDetailed = rowsDetailedOut(1).split(":")
         // Read File Format Score
-        assert(headersDetailed(11).contains("Read File Format Score"))
-        assert(valuesDetailed(11).toDouble == 50.0)
-        assert(headersDetailed(12).contains("Read File Formats"))
-        assert(valuesDetailed(12).contains("JSON"))
-        assert(headersDetailed(16).contains("Read Schema"))
-        assert(valuesDetailed(12).contains("json") && valuesDetailed(12).contains("parquet"))
+        assert(headersDetailed(12).contains("Read File Format Score"))
+        assert(valuesDetailed(12).toDouble == 50.0)
+        assert(headersDetailed(13).contains("Read File Formats"))
+        assert(valuesDetailed(13).contains("JSON"))
+        assert(headersDetailed(17).contains("Read Schema"))
+        assert(valuesDetailed(17).contains("json") && valuesDetailed(17).contains("parquet"))
       }
     }
   }
