@@ -18,27 +18,30 @@
 # This script generates the commits that went in Apache Spark for audit.
 # Audit is required to evaluate if the code needs to be updated based
 # on new commits merged in Apache Spark. This currently audits changes for
-# Spark branch-3.2
+# Spark master branch by default. The script can be run for different branches by providing
+# the argument -b along with the branch name.
 # Arguments:
 #   lastcommit - File which contains the latest commit hash when this script ran last.
 #   basebranch - branch in Apache Spark for which commits needs to be audited.
-#                Currently it's Apache Spark's branch-3.2.
+#                Currently it's Apache Spark's master branch(Spark-3.3-SNAPSHOT).
 #   tag        - tag until which the commits are audited 
 
 
 set -ex
 ABSOLUTE_PATH=$(cd $(dirname $0) && pwd)
 lastcommit=""
-basebranch="branch-3.2"
-tag="v3.1.1-rc3"
+basebranch="master"
+tag="branch-3.2"
+commonancestor=""
 REF=${REF:-"main"}
 REF=main
-while getopts v:b:t: flag
+while getopts v:b:t:c: flag
 do
   case "${flag}" in
       v) lastcommit=${OPTARG};;
       b) basebranch=${OPTARG};;
       t) tag=${OPTARG};;
+      c) commonancestor=${OPTARG};;
   esac
 done
 
@@ -69,43 +72,49 @@ if [ -f "$lastcommit" ]; then
         echo "No commit update"
     fi
 else
-    ## Below sequence of commands were used to get the initial list of commits to audit branch-3.2-SNAPSHOT(which is currently `master` branch)
-    ## It filters out all the commits that were audited until 3.1.1-rc3.
-    ## There wasn't easy way to get the list of commits to audit for branch-3.2-SNAPSHOT.
+    ## Below sequence of commands were used to get the initial list of commits to audit branch-3.3-SNAPSHOT(which is currently `master` branch)
+    ## It filters out all the commits that were audited until branch-3.2
+    ## There wasn't easy way to get the list of commits to audit for branch-3.3-SNAPSHOT.
     ## Spark release works in this way -  Once the release branch is cut, PR's are merged into master and then cherry-picked to release branches.
     ## This causes different commit ids for the same PR in different branches(master & release branch).
-    ## We need to find the common parent before branch-3.1 was cut. In this case commit id 990bee9c58e is the one.
-    ## So we get all commits from master and branch-3.1 until the common parent commit and then filter it based on commit header message i.e
-    ## if the commit header is same, it means it is cherry-picked to branch-3.1(implying that commit is already audited).
+    ## We need to find the common parent before branch-3.2 was cut. In this case commit id 79a6e00b7621bb is the one.
+    ## So we get all commits from master and branch-3.2 until the common parent commit and then filter it based on commit header message i.e
+    ## if the commit header is same, it means it is cherry-picked to branch-3.2(implying that commit is already audited).
     echo "file $lastcommit not found"
     cd ${SPARK_TREE}
 
-    ## Get all the commits from TOT tagv3.1.1-rc3 to 990bee9c58e
+    # if common ancestor is not provided, then provide the default commit id.
+    if [ -z "$commonancestor" ]; then
+        commonancestor="79a6e00b7621bb"
+    fi
+
+    ## Get all the commits from TOT branch-3.2 to common ancestor
     git checkout $tag
-    git log --oneline HEAD...990bee9c58e -- sql/core/src/main sql/catalyst/src/main  > b3.1.1.log
+    git log --oneline HEAD...$commonancestor -- sql/core/src/main sql/catalyst/src/main  > previousVersion.log
 
-    ## Get all the commits from TOT master to 990bee9c58e
+    ## Get all the commits from TOT master to common ancestor
     git checkout $basebranch
-    git log --oneline HEAD...990bee9c58e -- sql/core/src/main sql/catalyst/src/main  > b3.2.log
+    git log --oneline HEAD...$commonancestor -- sql/core/src/main sql/catalyst/src/main  > currentVersion.log
 
-    ## Below steps filter commit header messages, sorts and saves only uniq commits that needs to be audited in commits.to.audit.3.2 file
-    cat b3.1.1.log | awk '{$1 = "";print $0}' > b3.1.1.filter.log
-    cat b3.2.log | awk '{$1 = "";print $0}' > b3.2.filter.log
-    cat b3.2.filter.log b3.1.1.filter.log | sort | uniq -c | sort  | awk '/^[[:space:]]*1/{$1 = "";print $0}' > uniqcommits.log
-    cat b3.1.1.filter.log | sort > b3.1.1.filter.sorted.log
-    cat b3.2.filter.log | sort > b3.2.filter.sorted.log
+    ## Below steps filter commit header messages, sorts and saves only uniq commits that needs to be audited in commits.to.audit.3.3 file
+    cat previousVersion.log | awk '{$1 = "";print $0}' > previousVersion.filter.log
+    cat currentVersion.log | awk '{$1 = "";print $0}' > currentVersion.filter.log
+    cat currentVersion.filter.log previousVersion.filter.log | sort | uniq -c | sort | awk '{$1=$1;print}' > uniqsort.log
+    cat uniqsort.log | awk '/^1/{$1 = "";print $0}' > uniqcommits.log
+    cat previousVersion.filter.log | sort > previousVersion.filter.sorted.log
+    cat currentVersion.filter.log | sort > currentVersion.filter.sorted.log
     cat uniqcommits.log | sort > uniqcommits.sorted.log
-    comm -12 b3.1.1.filter.sorted.log uniqcommits.sorted.log | wc -l
-    comm -12 b3.2.filter.sorted.log uniqcommits.sorted.log > commits.to.audit.3.2
-    sed -i 's/\[/\\[/g' commits.to.audit.3.2
-    sed -i 's/\]/\\]/g' commits.to.audit.3.2
+    comm -12 previousVersion.filter.sorted.log uniqcommits.sorted.log | wc -l
+    comm -12 currentVersion.filter.sorted.log uniqcommits.sorted.log > commits.to.audit.currentVersion
+    sed -i 's/\[/\\[/g' commits.to.audit.currentVersion
+    sed -i 's/\]/\\]/g' commits.to.audit.currentVersion
 
-    filename=commits.to.audit.3.2
+    filename=commits.to.audit.currentVersion
     while read -r line; do
       echo "1"
       git log --grep="$line" --pretty="%h %s" >> ${COMMIT_DIFF_LOG}
     done < $filename
-    git log HEAD -n 1 --pretty="%h" > $lastcommit
+    git log HEAD -n 1 --pretty="%h"
 fi
 cd ${ABSOLUTE_PATH}/../ 
 . scripts/prioritize-commits.sh
