@@ -46,7 +46,7 @@ esac
 done
 
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
-MODULE_OPT=[[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
+[[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
 case $DIST_PROFILE in
 
