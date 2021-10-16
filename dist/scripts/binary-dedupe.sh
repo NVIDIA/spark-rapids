@@ -60,7 +60,8 @@ time < tmp-sha1-class.txt awk -F/ '$1=$1' | \
 time sort -k3 -k2,2 -u tmp-shim-sha-package-class.txt | \
   uniq -f 2 -c > tmp-count-shim-sha-package-class.txt
 
-time < tmp-count-shim-sha-package-class.txt awk '{$1=""; $3=""; print $0 }' | \
+time  grep '^\s\+1 .*' tmp-count-shim-sha-package-class.txt | \
+  awk '{$1=""; $3=""; print $0 }' | \
   tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
 
 retain_single_copy() {
