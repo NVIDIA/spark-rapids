@@ -44,18 +44,24 @@ export SPARK3XX_COMMON_DIR="$PWD/spark3xx-common"
 
 # The following pipeline determines identical classes across shims in this build.
 # - checksum all class files
-# - move the varying-prefix shim3xy to the left so it can be easily skipped for uniq and sort
+# - move the varying-prefix spark3xy to the left so it can be easily skipped for uniq and sort
 # - sort by path, secondary sort by checksum, print one line per group
 # - produce uniq count for paths
 # - filter the paths with count=1, the class files without diverging checksums
 # - put the path starting with /spark3xy back together for the final list
 echo "Retrieving class files hashing to a single value"
-find . -path './parallel-world/spark*' -type f -name '*class' | \
-  xargs -I% $BASH "$SHASUM"' "$@"' _ % | \
-  awk -F/ '$1=$1' | \
-  awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | tr -s ' ' | \
-  sort -k3 -k2,2 -u | uniq -f 2 -c | grep '^\s\+1 .*' | \
-  awk '{$1=""; $3=""; print $0 }' | tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
+time find . -path './parallel-world/spark*' -type f -name '*.class' | \
+  xargs $SHASUM > tmp-sha1-class.txt
+
+time < tmp-sha1-class.txt awk -F/ '$1=$1' | \
+  awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
+  tr -s  ' ' > tmp-shim-sha-package-class.txt
+
+time sort -k3 -k2,2 -u tmp-shim-sha-package-class.txt | \
+  uniq -f 2 -c > tmp-count-shim-sha-package-class.txt
+
+time < tmp-count-shim-sha-package-class.txt awk '{$1=""; $3=""; print $0 }' | \
+  tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
 
 retain_single_copy() {
   set -e
@@ -85,7 +91,7 @@ retain_single_copy() {
   # avoid process fork if dir exists
   [[ ! -d "$dest_dir" ]] && mkdir -p "$dest_dir"
   # get the reference copy out of the way
-  mv "./parallel-world/$shim/$package_class" "$dest_dir/"
+  cp "./parallel-world/$shim/$package_class" "$dest_dir/"
   # expanding directories separately because full path
   # glob is broken for class file name including the "$" character
   for pw in ./parallel-world/spark3* ; do
@@ -100,9 +106,8 @@ rm -f "$DELETE_DUPLICATES_TXT"
 touch "$DELETE_DUPLICATES_TXT"
 
 echo "Retaining a single copy of spark3xx-common classes"
-# https://stackoverflow.com/questions/11003418/calling-shell-functions-with-xargs
-< "$SPARK3XX_COMMON_TXT" xargs -n 1 -I% $BASH 'retain_single_copy "$@"' _ %
-< "$DELETE_DUPLICATES_TXT" xargs -I% $BASH 'rm "$@"' _ %
+time < "$SPARK3XX_COMMON_TXT" xargs -n 1 -I% $BASH 'retain_single_copy "$@"' _ %
+time < "$DELETE_DUPLICATES_TXT" xargs rm
 
 mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
@@ -140,10 +145,10 @@ find . -name '*.class' -not -path './parallel-world/spark*' | \
 
 
 verify_same_sha_for_unshimmed() {
-  set -e
+  set -ex
   class_file="$1"
-  DISTINCT_COPIES=$(find './parallel-world' -path "./*/$class_file" | \
-      xargs -I% $BASH "$SHASUM"'  "$@"' _ % | cut -d' ' -f 1 | sort -u | wc -l)
+  DISTINCT_COPIES=$(find ./parallel-world/spark3* -path "*/$class_file" | \
+      xargs $SHASUM | cut -d' ' -f 1 | sort -u | wc -l)
 
   ((DISTINCT_COPIES == 1)) || {
     echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";

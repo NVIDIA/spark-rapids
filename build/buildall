@@ -17,16 +17,36 @@
 
 set -ex
 
-case $1 in
+while [[ "$1" != "" ]] ; do
+
+case "$1" in
 
 --h|-h)
-  echo "buildall [noSnapshots (default) | snapshots | minimumFeatureVersionMix | <buildver> (e.g. 320) ]"
+  echo "buildall [-profile=(noSnapshots (default) | snapshots | minimumFeatureVersionMix | <buildver> (e.g. 320))]"
   exit 0
+  ;;
+
+-p=*|--profile=*)
+  DIST_PROFILE="${1#*=}"
+  shift
+  ;;
+
+-m=*|--module=*)
+  MODULE="${1#*=}"
+  shift
+  ;;
+
+*)
+  echo >&2 "Unknown arg: $1"
+  exit 1
   ;;
 
 esac
 
-DIST_PROFILE=${1:-"noSnapshots"}
+done
+
+DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+MODULE_OPT=[[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
 case $DIST_PROFILE in
 
@@ -76,7 +96,7 @@ case $DIST_PROFILE in
 
 esac
 
-[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE"
+[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE" || MVN_PROFILE_OPT=""
 
 # First element in SPARK_SHIM_VERSIONS to do most of the checks
 export BASE_VER=${SPARK_SHIM_VERSIONS[0]}
@@ -129,5 +149,5 @@ time (
     xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
     bash -c 'build_single_shim "$@"' _ %
   echo "Resuming from dist build only using $BASE_VER"
-  mvn -U -Dbuildver="$BASE_VER" install --resume-from dist -DskipTests $MVN_PROFILE_OPT
+  mvn -U install --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT -Dbuildver="$BASE_VER" -DskipTests
 )
