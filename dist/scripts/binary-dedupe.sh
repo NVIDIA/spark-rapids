@@ -146,12 +146,12 @@ find . -name '*.class' -not -path './parallel-world/spark*' | \
 
 
 verify_same_sha_for_unshimmed() {
-  set -ex
+  set -e
   class_file="$1"
   DISTINCT_COPIES=$(find ./parallel-world/spark3* -path "*/$class_file" | \
       xargs $SHASUM | cut -d' ' -f 1 | sort -u | wc -l)
 
-  ((DISTINCT_COPIES == 1)) || {
+  ((DISTINCT_COPIES <= 1)) || {
     echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";
     exit 255;
   }
