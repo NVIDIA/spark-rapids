@@ -55,22 +55,30 @@ echo "Retrieving class files hashing to a single value ..."
 
 
 echo "$((++STEP))/ SHA1 of all classes > tmp-sha1-class.txt"
-time find ./parallel-world/spark3* -type f -name '*.class' | \
-  xargs $SHASUM > tmp-sha1-class.txt
+time (
+  find ./parallel-world/spark3* -type f -name '*.class' | \
+    xargs $SHASUM > tmp-sha1-class.txt
+) 2>&1
 
 echo "$((++STEP))/ make shim column 1 > tmp-shim-sha-package-class.txt"
-time < tmp-sha1-class.txt awk -F/ '$1=$1' | \
-  awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
-  tr -s  ' ' > tmp-shim-sha-package-class.txt
+time (
+  < tmp-sha1-class.txt awk -F/ '$1=$1' | \
+    awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
+    tr -s  ' ' > tmp-shim-sha-package-class.txt
+) 2>&1
 
 echo "$((++STEP))/ sort by path, sha1; output first from each group > tmp-count-shim-sha-package-class.txt"
-time sort -k3 -k2,2 -u tmp-shim-sha-package-class.txt | \
-  uniq -f 2 -c > tmp-count-shim-sha-package-class.txt
+time (
+  sort -k3 -k2,2 -u tmp-shim-sha-package-class.txt | \
+    uniq -f 2 -c > tmp-count-shim-sha-package-class.txt
+) 2>&1
 
 echo "$((++STEP))/ class files with unique sha1 > $SPARK3XX_COMMON_TXT"
-time  grep '^\s\+1 .*' tmp-count-shim-sha-package-class.txt | \
-  awk '{$1=""; $3=""; print $0 }' | \
-  tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
+time (
+  grep '^\s\+1 .*' tmp-count-shim-sha-package-class.txt | \
+    awk '{$1=""; $3=""; print $0 }' | \
+    tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
+) 2>&1
 
 function retain_single_copy() {
   set -e
@@ -114,7 +122,7 @@ time (
   while read spark_common_class; do
     retain_single_copy "$spark_common_class"
   done < "$SPARK3XX_COMMON_TXT"
-)
+) 2>&1
 
 echo "$((++STEP))/ rsyncing common classes to $SPARK3XX_COMMON_DIR"
 time (
@@ -126,10 +134,8 @@ time (
     # use rsync to reduce process forking
     rsync --files-from="$copy_list" ./parallel-world/"$shim" "$SPARK3XX_COMMON_DIR"
   done
-)
+) 2>&1
 
-echo "$((++STEP))/ deleting all class files listed in $DELETE_DUPLICATES_TXT"
-time < "$DELETE_DUPLICATES_TXT" xargs rm
 mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
 # TODO further dedupe by FEATURE version lines:
@@ -165,7 +171,7 @@ UNSHIMMED_LIST_TXT=unshimmed-result.txt
 time (
   find . -name '*.class' -not -path './parallel-world/spark3*' | \
     cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
-)
+) 2>&1
 
 
 function verify_same_sha_for_unshimmed() {
@@ -203,14 +209,22 @@ time (
   while read unshimmed_class; do
     verify_same_sha_for_unshimmed "$unshimmed_class"
   done < "$UNSHIMMED_LIST_TXT"
-)
+) 2>&1
 
 # Remove unshimmed classes from parallel worlds
 # TODO rework with low priority, only a few classes.
 echo "$((++STEP))/ removing duplicates of unshimmed classes"
+
 time (
+  set -x
   while read unshimmed_class; do
-    find ./parallel-world/spark3* -path "*/$unshimmed_class" | xargs rm
+    for pw in ./parallel-world/spark3* ; do
+      unshimmed_path="$pw/$unshimmed_class"
+      [[ -f "$unshimmed_path" ]] && echo "$unshimmed_path" || true
+    done >> "$DELETE_DUPLICATES_TXT"
   done < "$UNSHIMMED_LIST_TXT"
-)
+) 2>&1
+
+echo "$((++STEP))/ deleting all class files listed in $DELETE_DUPLICATES_TXT"
+time (< "$DELETE_DUPLICATES_TXT" sort -u | xargs rm) 2>&1
 
