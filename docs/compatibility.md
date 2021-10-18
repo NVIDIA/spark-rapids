@@ -577,6 +577,9 @@ this expression is disabled by default. It can be enabled setting `spark.rapids.
 A summary of known issues is shown below but this is not intended to be a comprehensive list. We recommend that you
 do your own testing to verify whether the GPU implementation of `RLike` is suitable for your use case.
 
+We plan on improving the RLike functionality over time to make it more compatible with Spark so this feature should
+be used at your own risk with the expectation that the behavior will change in future releases.
+
 ### Multi-line handling
 
 The GPU implementation of RLike supports `^` and `$` to represent the start and end of lines within a string but
@@ -588,6 +591,8 @@ Spark uses `^` and `$` to refer to the start and end of the entire string (equiv
 | `A$`    | `A\nB` | No Match     | Match        |
 | `^B`    | `A\nB` | No Match     | Match        |
 | `B$`    | `A\nB` | Match        | Match        |
+
+As a workaround, `\A` and `\Z` can be used instead of `^` and `$`.
 
 ### Null character in input
 
