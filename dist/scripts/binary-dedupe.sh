@@ -227,4 +227,4 @@ echo "$((++STEP))/ deleting all class files listed in $DELETE_DUPLICATES_TXT"
 time (< "$DELETE_DUPLICATES_TXT" sort -u | xargs rm) 2>&1
 
 end_time=$(date +%s)
-echo "binary-dedupe completed in $((end_time - start_time))"
+echo "binary-dedupe completed in $((end_time - start_time)) seconds"
