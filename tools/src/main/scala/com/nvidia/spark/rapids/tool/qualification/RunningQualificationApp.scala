@@ -91,11 +91,11 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
     appInfo match {
       case Some(info) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val textHeaderStr = QualOutputWriter.constructSummaryHeader(appIdMaxSize, delimiter,
+        val headerStr = QualOutputWriter.constructSummaryHeader(appIdMaxSize, delimiter,
           prettyPrint)
-        val textAppStr = QualOutputWriter.constructAppSummaryInfo(info, appIdMaxSize,
+        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info, appIdMaxSize,
           delimiter, prettyPrint)
-        textHeaderStr + textAppStr
+        headerStr + appInfoStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
         ""
@@ -116,11 +116,11 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
       case Some(info) =>
         val headersAndSizes =
           QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info),reportReadSchema )
-        val textHeaderStr = QualOutputWriter.constructDetailedHeader(headersAndSizes,
+        val headerStr = QualOutputWriter.constructDetailedHeader(headersAndSizes,
           delimiter, prettyPrint)
-        val textAppStr = QualOutputWriter.constructAppDetailedInfo(info, headersAndSizes, delimiter,
+        val appInfoStr = QualOutputWriter.constructAppDetailedInfo(info, headersAndSizes, delimiter,
           prettyPrint, reportReadSchema)
-        textHeaderStr + textAppStr
+        headerStr + appInfoStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
         ""
