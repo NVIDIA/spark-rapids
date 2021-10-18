@@ -27,8 +27,8 @@ from pyspark.sql.functions import array_contains, col, first, isnan, lit, elemen
 # negative indexes for all array gens. When that happens
 # test_nested_array_index should go away and this should test with
 # array_gens_sample instead
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-def test_array_index(data_gen):
+@pytest.mark.parametrize('data_gen', single_level_array_gens + single_array_gens_sample_with_decimal128, ids=idfn)
+def test_array_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'a[0]',
@@ -42,7 +42,7 @@ def test_array_index(data_gen):
 # Once we support arrays as literals then we can support a[null] for
 # all array gens. See test_array_index for more info
 @pytest.mark.parametrize('data_gen', nested_array_gens_sample, ids=idfn)
-def test_nested_array_index(data_gen):
+def test_nested_array_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'a[0]',
@@ -170,7 +170,7 @@ def test_array_element_at_all_null_ansi_not_fail(data_gen):
                                'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
 
-@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', array_gens_sample_with_decimal128, ids=idfn)
 def test_array_transform(data_gen):
     def do_it(spark):
         columns = ['a', 'b',

@@ -908,6 +908,7 @@ date_n_time_gens = [date_gen, timestamp_gen]
 boolean_gens = [boolean_gen]
 
 single_level_array_gens = [ArrayGen(sub_gen) for sub_gen in all_basic_gens + decimal_gens]
+single_array_gens_sample_with_decimal128 = [ArrayGen(sub_gen) for sub_gen in decimal_128_gens]
 
 single_level_array_gens_no_null = [ArrayGen(sub_gen) for sub_gen in all_basic_gens_no_null + decimal_gens_no_neg]
 
@@ -925,8 +926,7 @@ nested_array_gens_sample = [ArrayGen(ArrayGen(short_gen, max_length=10), max_len
 
 # Some array gens, but not all because of nesting
 array_gens_sample = single_level_array_gens + nested_array_gens_sample
-array_gens_sample_with_decimal128 = single_level_array_gens + nested_array_gens_sample +\
-                                    [ArrayGen(sub_gen) for sub_gen in decimal_128_gens]
+array_gens_sample_with_decimal128 = single_level_array_gens + nested_array_gens_sample + single_array_gens_sample_with_decimal128
 
 # all of the basic types in a single struct
 all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
@@ -944,6 +944,9 @@ simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable
         StringGen(), max_length=10)
 
 all_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen]] + [simple_string_to_string_map_gen]
+decimal_64_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for gen in [DecimalGen(7, 3, nullable=False), DecimalGen(12, 2, nullable=False), DecimalGen(18, -3, nullable=False)]]
+decimal_128_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for gen in [DecimalGen(20, 2, nullable=False), DecimalGen(36, 5, nullable=False), DecimalGen(38, 38, nullable=False),
+                                                                                       DecimalGen(36, -5, nullable=False)]]
 
 # Some map gens, but not all because of nesting
 map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),

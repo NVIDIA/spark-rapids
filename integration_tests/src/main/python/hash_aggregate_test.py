@@ -439,6 +439,8 @@ _repeat_agg_column_for_collect_op = [
     RepeatSeqGen(FloatGen(), length=15),
     RepeatSeqGen(DoubleGen(), length=15),
     RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15),
+    RepeatSeqGen(decimal_gen_12_2, length=15),
+    RepeatSeqGen(decimal_gen_36_5, length=15),
     # case to verify the NAN_UNEQUAL strategy
     RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5),
 ]

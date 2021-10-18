@@ -2536,10 +2536,10 @@ object GpuOverrides extends Logging {
       "Gets the field at `ordinal` in the Array",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-            TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
+            TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
         TypeSig.all,
         ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP),
+            TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
       (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r)),
@@ -2715,9 +2715,10 @@ object GpuOverrides extends Logging {
     expr[SortArray](
       "Returns a sorted array with the input array and the ascending / descending order",
       ExprChecks.binaryProject(
-        TypeSig.ARRAY.nested(_gpuCommonTypes),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL),
         TypeSig.ARRAY.nested(TypeSig.all),
-        ("array", TypeSig.ARRAY.nested(_gpuCommonTypes),
+        ("array", TypeSig.ARRAY.nested(
+          TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL),
             TypeSig.ARRAY.nested(TypeSig.all)),
         ("ascendingOrder", TypeSig.lit(TypeEnum.BOOLEAN), TypeSig.lit(TypeEnum.BOOLEAN))),
       (sortExpression, conf, p, r) => new BinaryExprMeta[SortArray](sortExpression, conf, p, r) {
@@ -2757,15 +2758,15 @@ object GpuOverrides extends Logging {
     expr[LambdaFunction](
       "Holds a higher order SQL function",
       ExprChecks.projectOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("function",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.ARRAY +
               TypeSig.STRUCT + TypeSig.MAP).nested(),
           TypeSig.all)),
         Some(RepeatingParamCheck("arguments",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.ARRAY +
               TypeSig.STRUCT + TypeSig.MAP).nested(),
           TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[LambdaFunction](in, conf, p, r) {
@@ -2780,7 +2781,7 @@ object GpuOverrides extends Logging {
     expr[NamedLambdaVariable](
       "A parameter to a higher order SQL function",
       ExprChecks.projectOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL + TypeSig.ARRAY +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all),
       (in, conf, p, r) => new ExprMeta[NamedLambdaVariable](in, conf, p, r) {
@@ -2791,16 +2792,16 @@ object GpuOverrides extends Logging {
     expr[ArrayTransform](
       "Transform elements in an array using the transform function. This is similar to a `map` " +
           "in functional programming",
-      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
-          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.commonCudfTypes +
+        TypeSig.DECIMAL_128_FULL + TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(
           ParamCheck("argument",
-            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
           ParamCheck("function",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
             TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[ArrayTransform](in, conf, p, r) {
@@ -2810,17 +2811,17 @@ object GpuOverrides extends Logging {
       }),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
-      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
         Seq(
           ParamCheck("argument",
-            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
             TypeSig.MAP.nested(TypeSig.all)),
           ParamCheck("function",
             // We need to be able to check for duplicate keys (equality)
-            TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL,
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL,
             TypeSig.all - TypeSig.MAP.nested()))),
       (in, conf, p, r) => new ExprMeta[TransformKeys](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2837,16 +2838,16 @@ object GpuOverrides extends Logging {
       }),
     expr[TransformValues](
       "Transform values in a map using a transform function",
-      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+      ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
         Seq(
           ParamCheck("argument",
-            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
             TypeSig.MAP.nested(TypeSig.all)),
           ParamCheck("function",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
             TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[TransformValues](in, conf, p, r) {
@@ -3096,12 +3097,12 @@ object GpuOverrides extends Logging {
       "Collect a list of non-unique elements, not supported in reduction",
       // GpuCollectList is not yet supported in Reduction context.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectList](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -3129,11 +3130,13 @@ object GpuOverrides extends Logging {
       // Compared to CollectList, StructType is NOT in GpuCollectSet because underlying
       // method drop_list_duplicates doesn't support nested types.
       ExprChecks.aggNotReduction(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-          TypeSig.STRUCT),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+            TypeSig.NULL + TypeSig.STRUCT),
         TypeSig.ARRAY.nested(TypeSig.all),
-        Seq(ParamCheck("input", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-          TypeSig.STRUCT).nested(), TypeSig.all))),
+        Seq(ParamCheck("input",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+              TypeSig.NULL + TypeSig.STRUCT).nested(),
+          TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
@@ -3257,7 +3260,7 @@ object GpuOverrides extends Logging {
     expr[ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL,
         Nil, None),
       (a, conf, p, r) => new ExprMeta[ScalarSubquery](a, conf, p, r) {

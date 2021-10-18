@@ -306,10 +306,10 @@ abstract class SparkBaseShims extends Spark30XShims {
     "Gets the field at `ordinal` in the Array",
     ExprChecks.binaryProject(
       (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-        TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
+        TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
       TypeSig.all,
       ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP),
+        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
         TypeSig.ARRAY.nested(TypeSig.all)),
       ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
     (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
