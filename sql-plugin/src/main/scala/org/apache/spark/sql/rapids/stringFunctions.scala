@@ -777,7 +777,8 @@ case class GpuRLike(left: Expression, right: Expression)
     val pattern = if (rhs.isValid) {
       rhs.getValue.asInstanceOf[UTF8String].toString
     } else {
-      null
+      throw new IllegalStateException("Really should not be here, " +
+        "Cannot have an invalid scalar value as right side operand in RLike")
     }
     lhs.getBase.containsRe(pattern)
   }
