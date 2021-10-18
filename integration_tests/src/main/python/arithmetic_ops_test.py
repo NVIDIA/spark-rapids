@@ -151,13 +151,15 @@ def test_division_fallback_on_decimal(data_gen):
                 f.col('a') / f.col('b')),
             'Divide')
 
-@pytest.mark.parametrize('lhs', [DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(4, 1)], ids=idfn)
+@approximate_float # we should get the perfectly correct answer for floats except when casting a deciml to a float in some corner cases.
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, float_gen, DecimalGen(4, 1), DecimalGen(5, 0), DecimalGen(5, 1), DecimalGen(10, 5)], ids=idfn)
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, float_gen, DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
 def test_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a') / f.col('b')),
-            conf=allow_negative_scale_of_decimal_conf)
+            conf=copy_and_update(allow_negative_scale_of_decimal_conf,
+                {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}))
 
 @pytest.mark.parametrize('data_gen', integral_gens +  [decimal_gen_default, decimal_gen_scale_precision,
         decimal_gen_same_scale_precision, decimal_gen_64bit, decimal_gen_18_3, decimal_gen_30_2,

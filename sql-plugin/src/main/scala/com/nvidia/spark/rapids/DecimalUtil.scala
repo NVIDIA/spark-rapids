@@ -213,4 +213,16 @@ object DecimalUtil extends Arm {
       case t => t.defaultSize
     }
   }
+
+
+  /**
+   * Get the number of decimal places needed to hold the integral type held by this column
+   */
+  def getPrecisionForIntegralType(input: DType): Int = input match {
+    case DType.INT8 =>  3 // -128 to 127
+    case DType.INT16 => 5 // -32768 to 32767
+    case DType.INT32 => 10 // -2147483648 to 2147483647
+    case DType.INT64 => 19 // -9223372036854775808 to 9223372036854775807
+    case t => throw new IllegalArgumentException(s"Unsupported type $t")
+  }
 }
