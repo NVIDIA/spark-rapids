@@ -3733,7 +3733,7 @@ object GpuOverrides extends Logging {
     val conf = new RapidsConf(plan.conf)
     val updatedPlan = prepareExplainOnly(plan)
     // Here we look for subqueries to pull out and do the explain separately on them.
-    val subQueryExprs = getSubQueryFromPlan(plan)
+    val subQueryExprs = getSubQueriesFromPlan(plan)
     val preparedSubPlans = subQueryExprs.map(_.plan).map(prepareExplainOnly(_))
     val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf, explain))
     val topPlanExplain = explainSinglePlan(updatedPlan, conf, explain)
@@ -3764,8 +3764,8 @@ object GpuOverrides extends Logging {
     childExprs ++ res
   }
 
-  private def getSubQueryFromPlan(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
-    val childPlans = plan.children.flatMap(getSubQueryFromPlan(_))
+  private def getSubQueriesFromPlan(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
+    val childPlans = plan.children.flatMap(getSubQueriesFromPlan(_))
     val pSubs = plan.expressions.flatMap {
       getSubqueryExpressions(_)
     }
