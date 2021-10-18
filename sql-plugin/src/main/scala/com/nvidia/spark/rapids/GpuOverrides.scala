@@ -3051,6 +3051,7 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.LONG, TypeSig.LONG,
         TypeSig.DECIMAL_64, TypeSig.DECIMAL_128_FULL),
       (a, conf, p, r) => new UnaryExprMeta[UnscaledValue](a, conf, p, r) {
+        override val isFoldableNonLitAllowed: Boolean = true
         override def convertToGpu(child: Expression): GpuExpression = GpuUnscaledValue(child)
       }),
     expr[MakeDecimal](
