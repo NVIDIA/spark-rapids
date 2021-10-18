@@ -36,7 +36,7 @@ object ExplainPlan {
    * }}}
    *
    * @param df The Spark DataFrame to get the query plan from
-   * @param explain If ALL returns all the data, otherwise just returns what does not
+   * @param explain If ALL returns all the explain data, otherwise just returns what does not
    *                work on the GPU. Default is ALL.
    * @return String containing the explained plan.
    */
