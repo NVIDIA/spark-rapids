@@ -76,7 +76,7 @@ any machine and include the jars in the classpath.
     Note, on an HDFS cluster, the default filesystem is likely HDFS for both the input and output
     so if you want to point to the local filesystem be sure to include file: in the path.
 
-## Qualification tool options
+### Qualification tool options
   Note: `--help` should be before the trailing event logs.
 
 ```bash
@@ -214,7 +214,7 @@ java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CO
 Note: The “regular expression” used by -a option is based on
 [java.util.regex.Pattern](https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html).
 
-## The Qualification tool Output
+### The Qualification tool Output
 After the above command is executed, the summary report goes to STDOUT and by default it outputs 2 files 
 under `./rapids_4_spark_qualification_output/` that contain the processed applications.
 The output will go into your default filesystem and it supports both local filesystem and HDFS. 
