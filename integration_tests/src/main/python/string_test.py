@@ -468,7 +468,7 @@ def test_rlike_escape():
                 'a rlike "a[\\\\-]"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF supports multiline but Spark does not')
+@pytest.mark.xfail(reason='cuDF supports multiline by default but Spark does not - https://github.com/rapidsai/cudf/issues/9439')
 def test_rlike_multi_line():
     gen = mk_str_gen('[abc]\n[def]')
     assert_gpu_and_cpu_are_equal_collect(
@@ -479,7 +479,7 @@ def test_rlike_multi_line():
                 'a rlike "e$"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF has stricter requirements around escaping')
+@pytest.mark.xfail(reason='cuDF has stricter requirements around escaping - https://github.com/rapidsai/cudf/issues/9434')
 def test_rlike_missing_escape():
     gen = mk_str_gen('a[\\-\\+]')
     assert_gpu_and_cpu_are_equal_collect(
@@ -487,7 +487,7 @@ def test_rlike_missing_escape():
                 'a rlike "a[-]"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF does not support qualifier with nothing to repeat')
+@pytest.mark.xfail(reason='cuDF does not support qualifier with nothing to repeat - https://github.com/rapidsai/cudf/issues/9434')
 def test_rlike_nothing_to_repeat():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
