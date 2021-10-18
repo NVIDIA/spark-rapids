@@ -332,7 +332,7 @@ class EventsProcessor() extends EventProcessorBase with  Logging {
       event.time,
       None,
       None,
-      hasDataset = false,
+      hasDatasetOrRDD = false,
       ""
     )
     app.sqlIdToInfo.put(event.executionId, sqlExecution)
