@@ -354,7 +354,7 @@ stage. Jobs and SQL are not color coordinated.
 #### B. Analysis
 - Job + Stage level aggregated task metrics
 - SQL level aggregated task metrics
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent
+- SQL duration, application during, if it contains Dataset or RDD operation, potential problems, executor CPU time percent
 - Shuffle Skew Check: (When task's Shuffle Read Size > 3 * Avg Stage-level size)
 
 Below we will aggregate the task level metrics at different levels 
@@ -382,15 +382,15 @@ SQL level aggregated task metrics:
 |1       |application_1111111111111_0001|0    |show at <console>:11|1111    |222222  |6666666        |55555555       |55.55           |0                   |13333333    |111111      |999         |3333.3      |6666666            |55555                         |66666                      |11111111           |0                    |111111111111       |11111111111          |111111       |0                     |0                      |0                        |888888888              |8                          |11111         |11111               |99999                    |11111111111          |2222222                   |222222222222          |0                           |222222222222         |444444444444       |5555555              |444444          |
 ```
 
-- SQL duration, application during, if it contains a Dataset operation, potential problems, executor CPU time percent: 
+- SQL duration, application during, if it contains Dataset or RDD operation, potential problems, executor CPU time percent:
 
 ```
 SQL Duration and Executor CPU Time Percent
-+--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
-|appIndex|App ID                        |sqlID|SQL Duration|Contains Dataset Op|App Duration|Potential Problems|Executor CPU Time Percent|
-+--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
-|1       |application_1603128018386_7759|0    |11042       |false              |119990      |null              |68.48                    |
-+--------+------------------------------+-----+------------+-------------------+------------+------------------+-------------------------+
++--------+------------------------------+-----+------------+--------------------------+------------+------------------+-------------------------+
+|appIndex|App ID                        |sqlID|SQL Duration|Contains Dataset or RDD Op|App Duration|Potential Problems|Executor CPU Time Percent|
++--------+------------------------------+-----+------------+--------------------------+------------+------------------+-------------------------+
+|1       |application_1603128018386_7759|0    |11042       |false                     |119990      |null              |68.48                    |
++--------+------------------------------+-----+------------+--------------------------+------------+------------------+-------------------------+
 ```
 
 - Shuffle Skew Check: 
