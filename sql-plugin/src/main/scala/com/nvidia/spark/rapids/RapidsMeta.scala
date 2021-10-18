@@ -629,7 +629,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
   def recursivelyCheckTags() {
     wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
-    childPlans.foreach(_.recursivelyCheckTags)
+    childPlans.foreach(_.recursivelyCheckTags())
   }
 
   /**
