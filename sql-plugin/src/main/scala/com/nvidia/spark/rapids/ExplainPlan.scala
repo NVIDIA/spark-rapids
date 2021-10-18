@@ -35,6 +35,12 @@ object ExplainPlan {
    *   com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df)
    * }}}
    *
+   * From Python Spark:
+   *
+   * {{{
+   *   sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df._jdf, "ALL")
+   * }}}
+   *
    * @param df The Spark DataFrame to get the query plan from
    * @param explain If ALL returns all the explain data, otherwise just returns what does not
    *                work on the GPU. Default is ALL.
