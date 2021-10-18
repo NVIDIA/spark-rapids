@@ -612,11 +612,11 @@ The GPU implementation of RLike has stricter requirements around escaping specia
 | `a[-+]`   | `a-`   | Match        | No Match     |
 | `a[\-\+]` | `a-`   | Match        | Match        |
 
-### Miscellaneous
+### Empty groups
 
-Here are some other edge cases where results do not match between CPU and GPU.
+The GPU implementation of RLike does not support empty groups correctly.
 
 | Pattern   | Input  | Spark on CPU | Spark on GPU |
 |-----------|--------|--------------|--------------|
-| `z()?1+`  | `a12b` | No Match     | Match        |
-| `z()*1+`  | `a12b` | No Match     | Match        |
+| `z()?`    | `a`    | No Match     | Match        |
+| `z()*`    | `a`    | No Match     | Match        |
