@@ -35,7 +35,7 @@ object ExplainPlan {
    *   com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df)
    * }}}
    *
-   * From Python Spark:
+   * Calling from PySpark:
    *
    * {{{
    *   sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df._jdf, "ALL")
