@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import pytest
-import random
 
 from data_gen import *
 from marks import *
@@ -73,5 +72,4 @@ def test_explain_udf():
         assert "will run on GPU" not in not_on_gpu_str
 
     with_cpu_session(do_join_explain)
-
 
