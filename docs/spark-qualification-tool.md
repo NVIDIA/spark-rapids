@@ -6,7 +6,7 @@ nav_order: 8
 
 # Spark Qualification tool
 
-The Qualification tool analyzes event logs generated from CPU based Spark applications to determine 
+The Qualification tool analyzes Spark events generated from CPU based Spark applications to determine 
 if the RAPIDS Accelerator for Apache Spark might be a good fit for GPU acceleration.
 
 This tool is intended to give the users a starting point and does not guarantee the
@@ -19,8 +19,14 @@ This document covers below topics:
 
 ## How to use the Qualification tool
 
+The Qualification tool can be run in two different ways. One is to run it as a standalone tool on the
+Spark event logs after the application(s) have run and other is to be integrated into a running Spark
+application.
+
+## Running the Qualification tool standalone on Spark event logs
+
 ### Prerequisites
-- Java 8 or above, Spark 3.0.1+ jars
+- Java 8 or above, Spark 3.0.1+ jars.
 - Spark event log(s) from Spark 2.0 or above version. Supports both rolled and compressed event logs 
   with `.lz4`, `.lzf`, `.snappy` and `.zstd` suffixes as well as Databricks-specific rolled and compressed(.gz) event logs.
 - The tool does not support nested directories.
@@ -69,6 +75,55 @@ any machine and include the jars in the classpath.
     
     Note, on an HDFS cluster, the default filesystem is likely HDFS for both the input and output
     so if you want to point to the local filesystem be sure to include file: in the path.
+
+## Running the Qualification tool inside a running Spark application
+
+### Prerequisites
+- Java 8 or above, Spark 3.0.1+ 
+
+### Download the tools jar
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/21.10.0/)
+
+### Modify your application code to call the api's
+
+Currently only Scala api's are supported.
+ 
+Create the `RunningQualicationApp`:
+```
+val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp()
+```
+
+Get the event listener from it and install it as a Spark listener:
+```
+val listener = qualApp.getEventListener
+spark.sparkContext.addSparkListener(listener)
+```
+
+Run your queries and then get the summary or detailed output to see the results.
+```
+// run your sql queries ...
+val summaryOutput = qualApp.getSummary()
+val detailedOutput = qualApp.getDetailed()
+// print the output somewhere for user to see
+```
+
+If you need to specify the tools jar as a maven dependency to compile the Spark application:
+```
+<dependency>
+   <groupId>com.nvidia</groupId>
+   <artifactId>rapids-4-spark-tools_2.12</artifactId>
+   <version>${version}</version>
+</dependency>
+```
+
+### Run the Spark application
+- Run your Spark application and include the tools jar you downloaded with the spark '--jars' options and
+view the output wherever you had it printed.
+
+For example, if running the spark-shell:
+```
+$SPARK_HOME/bin/spark-shell --jars rapids-4-spark-tools_2.12-<version>.jar
+```
 
 ## Understanding the Qualification tool Output
 After the above command is executed, the summary report goes to STDOUT and by default it outputs 2 files 
