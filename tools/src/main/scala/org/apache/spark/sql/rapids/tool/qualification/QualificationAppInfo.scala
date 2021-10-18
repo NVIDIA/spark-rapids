@@ -29,7 +29,7 @@ import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
-class QualAppInfo(
+class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
     hadoopConf: Option[Configuration] = None,
     pluginTypeChecker: Option[PluginTypeChecker],
@@ -62,8 +62,17 @@ class QualAppInfo(
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
 
-  private lazy val eventProcessor =  new QualEventProcessor(this)
+  private lazy val eventProcessor =  new QualificationEventProcessor(this)
 
+  /**
+   * Get the event listener the qualification tool uses to process Spark events.
+   * Install this listener in Spark.
+   *
+   * {{{
+   *   spark.sparkContext.addSparkListener(listener)
+   * }}}
+   * @return SparkListener
+   */
   def getEventListener: SparkListener = {
     eventProcessor
   }
@@ -187,7 +196,7 @@ class QualAppInfo(
       s"${ds.format.toLowerCase()}[${ds.schema}]"
     }.mkString(":")
   }
-  
+
   // For the read score we look at all the read formats and datatypes for each
   // format and for each read give it a value 0.0 - 1.0 depending on whether
   // the format is supported and if the data types are supported. We then sum
@@ -212,15 +221,20 @@ class QualAppInfo(
     }.getOrElse(1.0)
   }
 
-  def reportComplexTypes: (String, String) = {
+  private def reportComplexTypes: (String, String) = {
     if (dataSourceInfo.size != 0) {
       val schema = dataSourceInfo.map { ds => ds.schema }
-      QualAppInfo.parseReadSchemaForNestedTypes(schema)
+      QualificationAppInfo.parseReadSchemaForNestedTypes(schema)
     } else {
       ("", "")
     }
   }
 
+  /**
+   * Aggregate and process the application after reading the events.
+   * @return Option of QualificationSummaryInfo, Some if we were able to process the application
+   *         otherwise None.
+   */
   def aggregateStats(): Option[QualificationSummaryInfo] = {
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
@@ -253,7 +267,7 @@ class QualAppInfo(
     }
   }
 
-  def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
+  private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
     val allnodes = planGraph.allNodes
@@ -275,7 +289,7 @@ class QualAppInfo(
     }
   }
 
-  def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
+  private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
     // Filter unsupported write data format
     val unSupportedWriteFormat = pluginTypeChecker.map { checker =>
       checker.isWriteFormatsupported(writeFormat)
@@ -331,14 +345,14 @@ case class QualificationSummaryInfo(
     complexTypes: String,
     nestedComplexTypes: String)
 
-object QualAppInfo extends Logging {
+object QualificationAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
       hadoopConf: Configuration,
       pluginTypeChecker: Option[PluginTypeChecker],
-      readScorePercent: Int): Option[QualAppInfo] = {
+      readScorePercent: Int): Option[QualificationAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
+        val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
           readScorePercent)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
@@ -357,7 +371,8 @@ object QualAppInfo extends Logging {
     app
   }
 
-  def parseReadSchemaForNestedTypes(schema: ArrayBuffer[String]): (String, String) = {
+  private[qualification] def parseReadSchemaForNestedTypes(
+      schema: ArrayBuffer[String]): (String, String) = {
     val tempStringBuilder = new StringBuilder()
     val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
     var angleBracketsCount = 0

@@ -55,7 +55,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  *                         apply to the score. Default is 20 percent.
  */
 class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_READ_SCORE_PERCENT)
-  extends QualAppInfo(None, None, Some(new PluginTypeChecker()), readScorePercent) {
+  extends QualificationAppInfo(None, None, Some(new PluginTypeChecker()), readScorePercent) {
 
   // since application is running, try to initialize current state
   private def initApp(): Unit = {
@@ -84,6 +84,7 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
    * @param delimiter The delimiter separating fields of the summary report.
    * @param prettyPrint Whether to including the separate at start and end and
    *                    add spacing so the data rows align with column headings.
+   * @return String of containing the summary report.
    */
   def getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String = {
     val appInfo = super.aggregateStats()
@@ -106,6 +107,7 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
    * @param delimiter The delimiter separating fields of the summary report.
    * @param prettyPrint Whether to including the separate at start and end and
    *                    add spacing so the data rows align with column headings.
+   * @return String of containing the detailed report.
    */
   def getDetailed(delimiter: String = "|", prettyPrint: Boolean = true,
       reportReadSchema: Boolean = false): String = {
