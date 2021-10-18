@@ -254,13 +254,29 @@ spark.sparkContext.addSparkListener(listener)
 ```
 
 Run your queries and then get the summary or detailed output to see the results.
+The summary output api:
+```
+getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String
+```
+
+The detailed output api:
+```
+getDetailed(delimiter: String = "|", prettyPrint: Boolean = true, reportReadSchema: Boolean = false): String
+```
+
+Example:
 ```
 // run your sql queries ...
+
 // To get the summary output:
 val summaryOutput = qualApp.getSummary()
+
 // To get the detailed output:
 val detailedOutput = qualApp.getDetailed()
+
 // print the output somewhere for user to see
+println(summaryOutput)
+println(detailedOutput)
 ```
 
 If you need to specify the tools jar as a maven dependency to compile the Spark application:
