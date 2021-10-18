@@ -3733,7 +3733,7 @@ object GpuOverrides extends Logging {
     val conf = new RapidsConf(plan.conf)
     val updatedPlan = prepareExplainOnly(plan)
     // Here we look for subqueries to pull out and do the explain separately on them.
-    val subQueryExprs = getSubQueryPlans(plan)
+    val subQueryExprs = getSubQueryFromPlan(plan)
     val preparedSubPlans = subQueryExprs.map(_.plan).map(prepareExplainOnly(_))
     val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf, explain))
     val topPlanExplain = explainSinglePlan(updatedPlan, conf, explain)
@@ -3755,8 +3755,8 @@ object GpuOverrides extends Logging {
     }
   }
 
-  private def findSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
-    val childExprs = e.children.flatMap(findSubqueryExpressions(_))
+  private def getSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
+    val childExprs = e.children.flatMap(getSubqueryExpressions(_))
     val res = e match {
       case sq: ExecSubqueryExpression => Seq(sq)
       case _ => Seq.empty
@@ -3764,12 +3764,10 @@ object GpuOverrides extends Logging {
     childExprs ++ res
   }
 
-  private def getSubQueryPlans(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
-    // strip out things that would have been added after our GPU plugin would have
-    // processed the plan
-    val childPlans = plan.children.flatMap(getSubQueryPlans(_))
+  private def getSubQueryFromPlan(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
+    val childPlans = plan.children.flatMap(getSubQueryFromPlan(_))
     val pSubs = plan.expressions.flatMap {
-      findSubqueryExpressions(_)
+      getSubqueryExpressions(_)
     }
     childPlans ++ pSubs
   }
