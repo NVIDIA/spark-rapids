@@ -46,9 +46,9 @@ import org.apache.spark.sql.rapids.tool.qualification._
  *
  * Run your queries and then get the summary or detailed output to see the results.
  * {{{
- *   // run your sql queries
- *   val summaryOutput = qualApp.getTextSummary()
- *   val detailedOutput = qualApp.getTextDetailed()
+ *   // run your sql queries ...
+ *   val summaryOutput = qualApp.getSummary()
+ *   val detailedOutput = qualApp.getDetailed()
  * }}}
  *
  * @param readScorePercent The percent the read format and datatypes
@@ -79,6 +79,12 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
 
   initApp()
 
+  /**
+   * Get the summary report for qualification.
+   * @param delimiter The delimiter separating fields of the summary report.
+   * @param prettyPrint Whether to including the separate at start and end and
+   *                    add spacing so the data rows align with column headings.
+   */
   def getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
@@ -95,6 +101,12 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
     }
   }
 
+  /**
+   * Get the detailed report for qualification.
+   * @param delimiter The delimiter separating fields of the summary report.
+   * @param prettyPrint Whether to including the separate at start and end and
+   *                    add spacing so the data rows align with column headings.
+   */
   def getDetailed(delimiter: String = "|", prettyPrint: Boolean = true,
       reportReadSchema: Boolean = false): String = {
     val appInfo = super.aggregateStats()

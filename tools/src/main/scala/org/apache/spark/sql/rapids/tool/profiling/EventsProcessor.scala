@@ -32,7 +32,7 @@ import org.apache.spark.sql.rapids.tool.EventProcessorBase
  * This class is to process all events and do validation in the end.
  */
 class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[ApplicationInfo](app)
-  with  Logging {
+  with Logging {
 
   override def doSparkListenerResourceProfileAddedReflect(
       app: ApplicationInfo,
