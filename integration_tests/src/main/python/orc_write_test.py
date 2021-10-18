@@ -36,11 +36,9 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
     ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
-                                         StringGen(), max_length=40)
-orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f(), max_length=40) for f in [
-    BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen]]
-
-orc_write_time_map_gens = [MapGen(f(nullable=False), f(), max_length=40) for f in [
+                                         StringGen(), max_length=5)
+orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f(), max_length=5) for f in [
+    BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
     lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
     lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable)]]
 
@@ -48,7 +46,6 @@ orc_write_gens_list = [orc_write_basic_gens,
         orc_write_struct_gens_sample,
         orc_write_array_gens_sample,
         orc_write_basic_map_gens,
-        orc_write_time_map_gens,
         pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/139')),
         pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/140'))]
 
