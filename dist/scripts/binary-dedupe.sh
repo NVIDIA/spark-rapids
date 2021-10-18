@@ -18,6 +18,8 @@
 # PWD should be dist/target
 set -e
 
+start_time=$(date +%s)
+
 [[ "${SKIP_BINARY_DEDUPE:-0}" == "1" ]] && {
   echo "Skipping binary-dedupe. Unset SKIP_BINARY_DEDUPE to activate binary-dedupe"
   exit 0
@@ -94,9 +96,6 @@ function retain_single_copy() {
 
   package_len=$((${#package_class_parts[@]} - 1))
   package_parts=(${package_class_parts[@]::$package_len})
-  package_dir_with_spaces="${package_parts[*]}"
-  # com/nvidia/spark/udf
-  package_dir="${package_dir_with_spaces// //}"
 
   package_class_with_spaces="${package_class_parts[*]}"
   # com/nvidia/spark/udf/Repr\$UnknownCapturedArg\$.class
@@ -216,7 +215,6 @@ time (
 echo "$((++STEP))/ removing duplicates of unshimmed classes"
 
 time (
-  set -x
   while read unshimmed_class; do
     for pw in ./parallel-world/spark3* ; do
       unshimmed_path="$pw/$unshimmed_class"
@@ -228,3 +226,5 @@ time (
 echo "$((++STEP))/ deleting all class files listed in $DELETE_DUPLICATES_TXT"
 time (< "$DELETE_DUPLICATES_TXT" sort -u | xargs rm) 2>&1
 
+end_time=$(date +%s)
+echo "binary-dedupe completed in $((end_time - start_time))"
