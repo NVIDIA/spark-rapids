@@ -371,7 +371,7 @@ object QualificationAppInfo extends Logging {
     app
   }
 
-  private[qualification] def parseReadSchemaForNestedTypes(
+  def parseReadSchemaForNestedTypes(
       schema: ArrayBuffer[String]): (String, String) = {
     val tempStringBuilder = new StringBuilder()
     val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
