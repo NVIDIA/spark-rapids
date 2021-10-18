@@ -29,21 +29,18 @@ nav_order: 2
   `spark.sql.inMemoryColumnarStorage.enableVectorizedReader` will not be honored as the GPU
   data is always read in as columnar. If `spark.rapids.sql.enabled` is set to false
   the cached objects will still be compressed on the CPU as a part of the caching process.
-  
-  Please note that ParquetCachedBatchSerializer doesn't support negative decimal scale, so if 
-  `spark.sql.legacy.allowNegativeScaleOfDecimal` is set to true ParquetCachedBatchSerializer
-  should not be used.  Using the serializer with negative decimal scales will generate
-  an error at runtime.
 
   To use this serializer please run Spark with the following conf.
+
   ```
-  spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer"
+  spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer
   ```
 
  
 ##          Supported Types                       
  
- All types are supported on the CPU, on the GPU, ArrayType, MapType and BinaryType are not
- supported. If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall 
+ All types are supported on the CPU.
+ On the GPU, MapType and BinaryType are not supported. 
+ If an unsupported type is encountered the Rapids Accelerator for Apache Spark will fall 
  back to using the CPU for caching. 
 

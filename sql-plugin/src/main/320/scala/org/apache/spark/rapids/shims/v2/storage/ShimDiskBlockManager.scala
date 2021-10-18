@@ -14,22 +14,17 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark320
+package org.apache.spark.rapids.shims.v2.storage
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.storage.DiskBlockManager
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 2, 0)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
 
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
-  }
-
-  def buildShim: SparkShims = {
-    new Spark320Shims()
-  }
-}
+class ShimDiskBlockManager(
+  conf: SparkConf,
+  deleteFilesOnStop: Boolean) extends DiskBlockManager(
+    conf,
+    deleteFilesOnStop,
+    TrampolineUtil.isDriver(conf)
+  )

@@ -24,7 +24,7 @@ set -ex
 }
 
 SPARK3XX_COMMON_TXT=$PWD/spark3xx-common.txt
-SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
+export SPARK3XX_COMMON_DIR=$PWD/spark3xx-common
 
 # This script de-duplicates .class files at the binary level.
 # We could also diff classes using scalap / javap outputs.
@@ -47,16 +47,23 @@ find . -path './parallel-world/spark*' -type f -name '*class' | \
   sort -k3 -k2,2 -u | uniq -f 2 -c | grep '^\s\+1 .*' | \
   awk '{$1=""; $3=""; print $0 }' | tr -s ' ' | sed 's/\ /\//g' > "$SPARK3XX_COMMON_TXT"
 
+remove_duplicates() {
+  set -x
+  class_resource=$1
+  shim=$(<<< "$class_resource" cut -d'/' -f 2)
+  class_file=$(<<< "$class_resource" cut -d'/' -f 3-)
+  class_dir=$(dirname "$class_file")
+  dest_dir="$SPARK3XX_COMMON_DIR/$class_dir"
+  mkdir -p "$dest_dir"
+  cp "./parallel-world/$shim/$class_file" "$dest_dir/"
+  find ./parallel-world -path './parallel-world/spark3*/'"$class_file" | xargs rm || \
+    exit 255
+}
+export -f remove_duplicates
+
 echo "Deleting duplicates of spark3xx-common classes"
-xargs --arg-file="$SPARK3XX_COMMON_TXT" -P 6 -n 1 -I% bash -c "
-    shim=\$(echo '%' | cut -d'/' -f 2)
-    class_file=\$(echo '%' | cut -d'/' -f 3-)
-    class_dir=\$(dirname \$class_file)
-    dest_dir=$SPARK3XX_COMMON_DIR/\$class_dir
-    mkdir -p \$dest_dir && \
-      cp ./parallel-world/\$shim\/\$class_file \$dest_dir/ && \
-      find ./parallel-world -path './parallel-world/spark3*/'\$class_file -exec rm {} + || exit 255
-  "
+# https://stackoverflow.com/questions/11003418/calling-shell-functions-with-xargs
+xargs --arg-file="$SPARK3XX_COMMON_TXT" -P 6 -n 1 -I% bash -c 'remove_duplicates "$@"' _ %
 
 mv "$SPARK3XX_COMMON_DIR" parallel-world/
 
@@ -74,7 +81,7 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 # and count the number of distinct checksums. There are two representative cases
 # 1) The class is contributed to the unshimmed location via the unshimmed-from-each-spark3xx list. These are classes
 #    carrying the shim classifier in their package name such as
-#    com.nvidia.spark.rapids.spark312.RapidsShuffleManager. They are by unique by construction,
+#    com.nvidia.spark.rapids.spark312.RapidsShuffleManager. They are unique by construction,
 #    and will have zero copies in any non-spark312 shims. Although such classes are currently excluded from
 #    being copied to the /spark312 Parallel World we keep the algorithm below general without assuming this.
 #
@@ -102,5 +109,6 @@ for classFile in $(< $UNSHIMMED_LIST_TXT); do
 done
 
 # Remove unshimmed classes from parallel worlds
+echo Removing duplicates of unshimmed classes
 xargs --arg-file="$UNSHIMMED_LIST_TXT" -P 6 -n 100 -I% \
-  find . -path './parallel-world/spark*/%' -exec rm {} +
+  find . -path './parallel-world/spark*/%' | xargs rm || exit 255

@@ -112,10 +112,11 @@ abstract class AppBase(
     logInfo(s"Total number of events parsed: $totalNumEvents for ${eventlog.toString}")
   }
 
-  protected def isDataSetPlan(desc: String): Boolean = {
+  protected def isDataSetOrRDDPlan(desc: String): Boolean = {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => true
       case a if a.endsWith(".apply") => true
+      case r if r.matches(".*SerializeFromObject.*") => true
       case _ => false
     }
   }

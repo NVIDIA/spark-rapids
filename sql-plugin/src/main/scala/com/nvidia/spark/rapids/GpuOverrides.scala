@@ -852,7 +852,8 @@ object GpuOverrides extends Logging {
     (OrcFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64 +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
-      cudfWrite = TypeSig.commonCudfTypes,
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          TypeSig.STRUCT).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
@@ -3112,8 +3113,10 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[StddevPop](a, conf, p, r) {
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuStddevPop(childExprs.head)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+          GpuStddevPop(childExprs.head, !legacyStatisticalAggregate)
+        }
       }),
     expr[StddevSamp](
       "Aggregation computing sample standard deviation",
@@ -3121,8 +3124,10 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuStddevSamp(childExprs.head)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+          GpuStddevSamp(childExprs.head, !legacyStatisticalAggregate)
+        }
       }),
     expr[VariancePop](
       "Aggregation computing population variance",
@@ -3130,8 +3135,10 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[VariancePop](a, conf, p, r) {
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuVariancePop(childExprs.head)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+          GpuVariancePop(childExprs.head, !legacyStatisticalAggregate)
+        }
       }),
     expr[VarianceSamp](
       "Aggregation computing sample variance",
@@ -3139,8 +3146,10 @@ object GpuOverrides extends Logging {
         TypeSig.DOUBLE, TypeSig.DOUBLE,
         Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
       (a, conf, p, r) => new AggExprMeta[VarianceSamp](a, conf, p, r) {
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuVarianceSamp(childExprs.head)
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+          GpuVarianceSamp(childExprs.head, !legacyStatisticalAggregate)
+        }
       }),
     expr[ApproximatePercentile](
       "Approximate percentile",
@@ -3423,16 +3432,20 @@ object GpuOverrides extends Logging {
             if (takeExec.child.outputPartitioning.numPartitions == 1) {
               GpuTopN(takeExec.limit, so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                childPlans.head.convertIfNeeded())
+                childPlans.head.convertIfNeeded())(takeExec.sortOrder)
             } else {
-              GpuTopN(takeExec.limit,
+              GpuTopN(
+                takeExec.limit,
                 so,
                 projectList.map(_.convertToGpu().asInstanceOf[NamedExpression]),
-                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(GpuSinglePartitioning,
-                  GpuTopN(takeExec.limit,
+                ShimLoader.getSparkShims.getGpuShuffleExchangeExec(
+                  GpuSinglePartitioning,
+                  GpuTopN(
+                    takeExec.limit,
                     so,
                     takeExec.child.output,
-                    childPlans.head.convertIfNeeded())))
+                    childPlans.head.convertIfNeeded())(takeExec.sortOrder),
+                  SinglePartition))(takeExec.sortOrder)
             }
           }
         }),

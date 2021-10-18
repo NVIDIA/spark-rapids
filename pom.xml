@@ -664,7 +664,7 @@
         <spark311cdh.version>3.1.1.3.1.7270.0-253</spark311cdh.version>
         <spark312.version>3.1.2</spark312.version>
         <spark313.version>3.1.3-SNAPSHOT</spark313.version>
-        <spark320.version>3.2.1-SNAPSHOT</spark320.version>
+        <spark320.version>3.2.0</spark320.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
@@ -676,6 +676,7 @@
         <protobuf.java.version>2.5.0</protobuf.java.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
+        <target.classifier>${spark.version.classifier}</target.classifier>
     </properties>
 
     <dependencyManagement>
@@ -832,6 +833,7 @@
     </dependencyManagement>
 
     <build>
+        <directory>${project.basedir}/target/${target.classifier}</directory>
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -1084,6 +1086,32 @@
                                     <arg line="--xmlEncoding ${project.reporting.outputEncoding}"/>
                                     <arg line="${scalastyle.dirs}"/>
                                 </java>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>clean-all-modules</id>
+                        <phase>clean</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <skip>${maven.cleanall.skip}</skip>
+                            <target>
+                                <dirset dir="${project.basedir}" includes="**/target" id="target.dirs.for.clean"/>
+                                <pathconvert property="target.dirs.str" pathsep=" ">
+                                    <sort>
+                                        <dirset refid="target.dirs.for.clean"/>
+                                        <!-- remove subdirs first if we have something like target/somedir/target -->
+                                        <reverse xmlns="antlib:org.apache.tools.ant.types.resources.comparators">
+                                            <name/>
+                                        </reverse>
+                                    </sort>
+                                </pathconvert>
+                                <echo>Cleaning build directories of all modules ${target.dirs.str}</echo>
+                                <!-- workaround ant delete does not work with dirset -->
+                                <exec dir="${project.basedir}" executable="rm">
+                                    <arg value="-r"/>
+                                    <arg line="${target.dirs.str}"/>
+                                </exec>
                             </target>
                         </configuration>
                     </execution>

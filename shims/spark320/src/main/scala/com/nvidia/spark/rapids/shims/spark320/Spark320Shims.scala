@@ -70,7 +70,7 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark320Shims extends Spark32XShims {
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
@@ -476,9 +476,10 @@ class Spark320Shims extends Spark32XShims {
             GpuWindowInPandasExec(
               windowExpressions.map(_.convertToGpu()),
               partitionSpec.map(_.convertToGpu()),
-              orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
+              // leave ordering expression on the CPU, it's not used for GPU computation
+              winPy.orderSpec,
               childPlans.head.convertIfNeeded()
-            )
+            )(winPy.partitionSpec)
           }
         }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[FileSourceScanExec](
@@ -788,11 +789,12 @@ class Spark320Shims extends Spark32XShims {
   }
 
   override def getGpuShuffleExchangeExec(
-      outputPartitioning: Partitioning,
+      gpuOutputPartitioning: GpuPartitioning,
       child: SparkPlan,
+      cpuOutputPartitioning: Partitioning,
       cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
     val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
-    GpuShuffleExchangeExec(outputPartitioning, child, shuffleOrigin)
+    GpuShuffleExchangeExec(gpuOutputPartitioning, child, shuffleOrigin)(cpuOutputPartitioning)
   }
 
   override def getGpuShuffleExchangeExec(
@@ -1002,8 +1004,6 @@ class Spark320Shims extends Spark32XShims {
       new KryoJavaSerializer())
   }
 
-  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
-    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
-    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
-  }
+  override def getLegacyStatisticalAggregate(): Boolean =
+    SQLConf.get.legacyStatisticalAggregate
 }
