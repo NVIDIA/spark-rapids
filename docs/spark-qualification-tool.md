@@ -254,6 +254,8 @@ spark.sparkContext.addSparkListener(listener)
 ```
 
 Run your queries and then get the summary or detailed output to see the results.
+See the javadoc for the api's for more details.
+
 The summary output api:
 ```
 getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String
