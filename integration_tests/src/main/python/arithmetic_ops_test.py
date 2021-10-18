@@ -67,7 +67,7 @@ def test_addition_ansi_no_overflow(data_gen):
                 f.col('a') + f.col('b')),
             conf={'spark.sql.ansi.enabled': 'true'})
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_subtraction(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -719,7 +719,7 @@ _data_type_expr_for_add_overflow = [
     ([1.7976931348623157E308],  DoubleType(), 'a + a'),
     ([-1.7976931348623157E308], DoubleType(), 'a + a')]
 
-@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow)
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow, ids=idfn)
 def test_add_overflow_with_ansi_enabled(data, tp, expr):
     ansi_conf = {'spark.sql.ansi.enabled': 'true'}
     if isinstance(tp, IntegralType):
@@ -739,9 +739,12 @@ _data_type_expr_for_sub_overflow = [
     ([-2147483648], IntegerType(), 'a - 1'),
     ([-9223372036854775808], LongType(), 'a - 1L'),
     ([-3.4028235E38], FloatType(), 'a - cast(1.0 as float)'),
-    ([-1.7976931348623157E308], DoubleType(), 'a - 1.0')]
+    ([-1.7976931348623157E308], DoubleType(), 'a - 1.0'),
+    ([Decimal('-' + '9' * 38)], DecimalType(38,0), 'a - 1'),
+    ([Decimal('-' + '9' * 38)], DecimalType(38,0), 'a - (-a)')
+    ]
 
-@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_sub_overflow)
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_sub_overflow, ids=idfn)
 def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
     ansi_conf = {'spark.sql.ansi.enabled': 'true'}
     if isinstance(tp, IntegralType):
@@ -749,6 +752,11 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
             lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
             conf=ansi_conf,
             error_message='overflow')
+    elif isinstance(tp, DecimalType):
+        assert_gpu_and_cpu_error(
+            lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
+            conf=ansi_conf,
+            error_message='')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_overflow_df(spark, data, tp, expr),
@@ -758,9 +766,8 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
 @pytest.mark.parametrize('data,tp,expr', [
     # The GPU falls back to the CPU for Add/Subtract output precision of 38, because it cannot tell what the
     # real input types were to know if it can do it without overflow issues.
-    ([Decimal('9999.99')], DecimalType(37,2), 'a + a'),
-    ([Decimal('9999.99')], DecimalType(37,2), 'a - 1')])
-@pytest.mark.parametrize('ansi_enabled', ['false','true'])
+    ([Decimal('9999.99')], DecimalType(37,2), 'a + a')], ids=idfn)
+@pytest.mark.parametrize('ansi_enabled', ['false','true'], ids=idfn)
 def test_overflow_fallback_for_decimal(data, tp, expr, ansi_enabled):
     assert_gpu_fallback_collect(
         lambda spark: _get_overflow_df(spark, data, tp, expr),

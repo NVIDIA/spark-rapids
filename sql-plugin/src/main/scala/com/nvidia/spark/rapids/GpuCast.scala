@@ -1191,7 +1191,7 @@ object GpuCast extends Arm {
     }
   }
 
-  private def checkNFixDecimalBounds(
+  def checkNFixDecimalBounds(
       input: ColumnView,
       to: DecimalType,
       ansiMode: Boolean): ColumnVector = {

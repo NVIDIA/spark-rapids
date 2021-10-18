@@ -22,10 +22,13 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
 
 /**
- * A GPU substitution of CheckOverflow. This cannot match the Spark CheckOverflow 100% because
- * Spark will calculate values in BigDecimal and then see if there was an overflow. This assumes
- * that we will fall back to the CPU in any case where a real overflow could happen, although
- * there are some corner cases where it would be good for us to still check.
+ * A GPU substitution for CheckOverflow. This cannot match the Spark CheckOverflow 100% because
+ * Spark will calculate values in BigDecimal with unbounded precision and then see if there was an
+ * overflow. This will check bounds, but can only detect that an overflow happened if the result is
+ * outside the bounds of what the Spark type supports, but did not yet overflow the bounds for what
+ * the CUDF type supports. For most operations when this is a possibility for the given precision
+ * then the operator should fall back to the CPU, or have alternative ways of checking for overflow
+ * prior to this being called.
  */
 case class GpuCheckOverflow(child: Expression,
     dataType: DecimalType,
@@ -41,7 +44,7 @@ case class GpuCheckOverflow(child: Expression,
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val base = input.getBase
-    if (resultDType.equals(base.getType)) {
+    val rounded = if (resultDType.equals(base.getType)) {
       base.incRefCount()
     } else {
       withResource(DecimalUtil.round(base, dataType.scale, cudf.RoundMode.HALF_UP)) { rounded =>
@@ -51,6 +54,9 @@ case class GpuCheckOverflow(child: Expression,
           rounded.incRefCount()
         }
       }
+    }
+    withResource(rounded) { rounded =>
+      GpuCast.checkNFixDecimalBounds(rounded, dataType, !nullOnOverflow)
     }
   }
 }

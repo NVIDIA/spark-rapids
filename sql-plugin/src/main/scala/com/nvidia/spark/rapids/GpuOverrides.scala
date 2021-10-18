@@ -1776,21 +1776,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Subtract](a, conf, p, r) {
         private val ansiEnabled = SQLConf.get.ansiEnabled
 
-        override def tagExprForGpu(): Unit = {
-          // In a binary op like this the LHS and RHS types are the same. In the case of Subtract
-          // the output type is also the same as the LHS, because Spark has already cast the values
-          // to the same type. For Decimal this means the complicated formula to determine the
-          // new precision and scale. Because we cannot do overflow detection in the same way as
-          // Spark we fall back to the CPU any time it look like there might be an overflow
-          // possible
-          a.dataType match {
-            case dt: DecimalType if dt.precision >= DecimalType.MAX_PRECISION =>
-              willNotWorkOnGpu(s"Because of limitations in overflow checking the " +
-                  s"precision ${dt.precision} too large to be sure that no overflow will happen.")
-            case _ => //NOOP
-          }
-        }
-
         override def tagSelfForAst(): Unit = {
           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
             willNotWorkInAst("AST Subtraction does not support ANSI mode.")
