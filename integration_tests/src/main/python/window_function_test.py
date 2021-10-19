@@ -423,7 +423,9 @@ def test_running_float_sum_no_part(batch_size):
 # if the order-by column is the same then we can get different results for say a running sum. Here we are going
 # to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
-@pytest.mark.parametrize('data_gen', all_basic_gens_no_nans + [decimal_gen_scale_precision], ids=meta_idfn('data:'))
+@pytest.mark.parametrize('data_gen',
+                         all_basic_gens_no_nans + [decimal_gen_scale_precision, decimal_gen_38_10],
+                         ids=meta_idfn('data:'))
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -449,6 +451,7 @@ def test_window_running_rank_no_part(data_gen):
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
+# TODO: add test data on DECIMAL_128 after we support DECIMAL_128 as PartitionSpec
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_scale_precision], ids=idfn)
 def test_window_running_rank(data_gen):

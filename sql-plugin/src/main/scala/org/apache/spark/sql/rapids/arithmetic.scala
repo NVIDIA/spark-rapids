@@ -156,33 +156,85 @@ case class GpuAdd(
 
   override def binaryOp: BinaryOp = BinaryOp.ADD
 
-  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
-    val ret = super.doColumnar(lhs, rhs)
-    // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
-    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
-      // Check overflow. It is true when both arguments have the opposite sign of the result.
-      // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
-      closeOnExcept(ret) { r =>
-        val signCV = withResource(r.bitXor(lhs)) { lXor =>
-          withResource(r.bitXor(rhs)) { rXor =>
-            lXor.bitAnd(rXor)
-          }
-        }
-        val signDiffCV = withResource(signCV) { sign =>
-          withResource(Scalar.fromInt(0)) { zero =>
-            sign.lessThan(zero)
-          }
-        }
-        withResource(signDiffCV) { signDiff =>
-          withResource(signDiff.any()) { any =>
-            if (any.isValid && any.getBoolean) {
-              throw new ArithmeticException("One or more rows overflow for Add operation.")
-            }
-          }
+  private[this] def basicOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): Unit = {
+    // Check overflow. It is true when both arguments have the opposite sign of the result.
+    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
+    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
+      withResource(ret.bitXor(rhs)) { rXor =>
+        lXor.bitAnd(rXor)
+      }
+    }
+    val signDiffCV = withResource(signCV) { sign =>
+      withResource(Scalar.fromInt(0)) { zero =>
+        sign.lessThan(zero)
+      }
+    }
+    withResource(signDiffCV) { signDiff =>
+      withResource(signDiff.any()) { any =>
+        if (any.isValid && any.getBoolean) {
+          throw new ArithmeticException("One or more rows overflow for Add operation.")
         }
       }
     }
-    ret
+  }
+
+  private[this] def decimalOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): ColumnVector = {
+    // We need a special overflow check for decimal because CUDF does not support INT128 so we
+    // cannot reuse the same code for the other types.
+    // Overflow happens if the arguments have the same signs and it is different from the sign of
+    // the result
+    val numRows = ret.getRowCount.toInt
+    val zero = BigDecimal(0)
+    val overflow = withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignSame = withResource(DecimalUtil.lessThan(lhs, zero, numRows)) { lhsLz =>
+        lhsLz.equalTo(rhsLz)
+      }
+      withResource(argsSignSame) { argsSignSame =>
+        val resultAndRhsDifferentSign =
+          withResource(DecimalUtil.lessThan(ret, zero)) { resultLz =>
+            rhsLz.notEqualTo(resultLz)
+          }
+        withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
+          resultAndRhsDifferentSign.and(argsSignSame)
+        }
+      }
+    }
+    withResource(overflow) { overflow =>
+      if (failOnError) {
+        withResource(overflow.any()) { any =>
+          if (any.isValid && any.getBoolean) {
+            throw new ArithmeticException("One or more rows overflow for Add operation.")
+          }
+        }
+        ret.incRefCount()
+      } else {
+        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          overflow.ifElse(nullVal, ret)
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    val ret = super.doColumnar(lhs, rhs)
+    withResource(ret) { ret =>
+      // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
+      if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+        basicOpOverflowCheck(lhs, rhs, ret)
+      }
+
+      if (dataType.isInstanceOf[DecimalType]) {
+        decimalOpOverflowCheck(lhs, rhs, ret)
+      } else {
+        ret.incRefCount()
+      }
+    }
   }
 }
 
@@ -196,34 +248,87 @@ case class GpuSubtract(
 
   override def binaryOp: BinaryOp = BinaryOp.SUB
 
-  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
-    val ret = super.doColumnar(lhs, rhs)
-    // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
-    if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
-      // Check overflow. It is true if the arguments have different signs and
-      // the sign of the result is different from the sign of x.
-      // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
-      closeOnExcept(ret) { r =>
-        val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
-          withResource(lhs.bitXor(r)) { xrXor =>
-            xyXor.bitAnd(xrXor)
-          }
-        }
-        val signDiffCV = withResource(signCV) { sign =>
-          withResource(Scalar.fromInt(0)) { zero =>
-            sign.lessThan(zero)
-          }
-        }
-        withResource(signDiffCV) { signDiff =>
-          withResource(signDiff.any()) { any =>
-            if (any.isValid && any.getBoolean) {
-              throw new ArithmeticException("One or more rows overflow for Subtract operation.")
-            }
-          }
+  private[this] def basicOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): Unit = {
+    // Check overflow. It is true if the arguments have different signs and
+    // the sign of the result is different from the sign of x.
+    // Which is equal to "((x ^ y) & (x ^ r)) < 0" in the form of arithmetic.
+
+    val signCV = withResource(lhs.bitXor(rhs)) { xyXor =>
+      withResource(lhs.bitXor(ret)) { xrXor =>
+        xyXor.bitAnd(xrXor)
+      }
+    }
+    val signDiffCV = withResource(signCV) { sign =>
+      withResource(Scalar.fromInt(0)) { zero =>
+        sign.lessThan(zero)
+      }
+    }
+    withResource(signDiffCV) { signDiff =>
+      withResource(signDiff.any()) { any =>
+        if (any.isValid && any.getBoolean) {
+          throw new ArithmeticException("One or more rows overflow for Subtract operation.")
         }
       }
     }
-    ret
+  }
+
+  private[this] def decimalOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): ColumnVector = {
+    // We need a special overflow check for decimal because CUDF does not support INT128 so we
+    // cannot reuse the same code for the other types.
+    // Overflow happens if the arguments have different signs and the sign of the result is
+    // different from the sign of subtractend (RHS).
+    val numRows = ret.getRowCount.toInt
+    val zero = BigDecimal(0)
+    val overflow = withResource(DecimalUtil.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignDifferent = withResource(DecimalUtil.lessThan(lhs, zero, numRows)) { lhsLz =>
+        lhsLz.notEqualTo(rhsLz)
+      }
+      withResource(argsSignDifferent) { argsSignDifferent =>
+        val resultAndSubtrahendSameSign =
+          withResource(DecimalUtil.lessThan(ret, zero)) { resultLz =>
+            rhsLz.equalTo(resultLz)
+          }
+        withResource(resultAndSubtrahendSameSign) { resultAndSubtrahendSameSign =>
+          resultAndSubtrahendSameSign.and(argsSignDifferent)
+        }
+      }
+    }
+    withResource(overflow) { overflow =>
+      if (failOnError) {
+        withResource(overflow.any()) { any =>
+          if (any.isValid && any.getBoolean) {
+            throw new ArithmeticException("One or more rows overflow for Subtract operation.")
+          }
+        }
+        ret.incRefCount()
+      } else {
+        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          overflow.ifElse(nullVal, ret)
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
+    val ret = super.doColumnar(lhs, rhs)
+    withResource(ret) { ret =>
+      // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
+      if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+        basicOpOverflowCheck(lhs, rhs, ret)
+      }
+
+      if (dataType.isInstanceOf[DecimalType]) {
+        decimalOpOverflowCheck(lhs, rhs, ret)
+      } else {
+        ret.incRefCount()
+      }
+    }
   }
 }
 

@@ -137,6 +137,23 @@ object DecimalUtil extends Arm {
     }
   }
 
+  def lessThan(lhs: cudf.BinaryOperable, rhs: BigDecimal, numRows: Int): cudf.ColumnVector =
+    lhs match {
+      case cv: cudf.ColumnVector =>
+        lessThan(cv, rhs)
+      case s: cudf.Scalar =>
+        if (s.isValid) {
+          val isLess = (s.getBigDecimal.compareTo(rhs) < 0)
+          withResource(cudf.Scalar.fromBool(isLess)) { n =>
+            cudf.ColumnVector.fromScalar(n, numRows)
+          }
+        } else {
+          withResource(cudf.Scalar.fromNull(DType.BOOL8)) { n =>
+            cudf.ColumnVector.fromScalar(n, numRows)
+          }
+        }
+    }
+
   /**
    * Because CUDF can have issues with comparing decimal values that have different precision
    * and scale accurately it takes some special steps to do this. This handles the corner cases
