@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.QueryStageExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -624,6 +625,16 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
           .getTagValue(GpuOverrides.preRowToColProjection).foreach { r2c =>
         wrapped.setTagValue(GpuOverrides.preRowToColProjection, r2c)
       }
+    }
+  }
+
+  def recursivelyCheckTags() {
+    if (wrapped.isInstanceOf[QueryStageExec] ||
+      ShimLoader.getSparkShims.isCustomReaderExec(wrapped)) {
+      // stop recursion once we hit an already-executed query stage or a reader for it
+    } else {
+      wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
+      childPlans.foreach(_.recursivelyCheckTags())
     }
   }
 
