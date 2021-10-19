@@ -3605,6 +3605,12 @@ object GpuOverrides extends Logging {
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
     ),
+    exec[SampleExec](
+      "The backend for the sample operator",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+        TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+      (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
+    ),
     ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
