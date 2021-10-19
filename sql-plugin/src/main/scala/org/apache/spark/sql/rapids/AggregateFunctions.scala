@@ -243,7 +243,7 @@ abstract case class CudfAggregate(ref: Expression) extends GpuUnevaluable with S
 
 class CudfCount(ref: Expression) extends CudfAggregate(ref) {
   override val updateReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar = {
-    // Return the value as an it to match what the group by aggregation does.
+    // Return the value as an int to match what the group by aggregation does.
     (col: cudf.ColumnVector) => cudf.Scalar.fromInt((col.getRowCount - col.getNullCount).toInt)
   }
   override val mergeReductionAggregateInternal: cudf.ColumnVector => cudf.Scalar =
