@@ -133,19 +133,21 @@ class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long,
       maxBatchMemorySize)
     val inputBuffers: Array[BaseDeviceMemoryBuffer] = tables.map { table =>
       val buffer = table.getBuffer
-      // cudf compressor will try to close this batch but this interface does not close inputs
+      // cudf compressor guarantees that close will be called for 'inputBuffers' and will not throw
+      // before doing so, but this interface does not close inputs so we need to increment the ref
+      // count.
       buffer.incRefCount()
       buffer
     }
     closeOnExcept(batchCompressor.compress(inputBuffers, stream)) { compressedBuffers =>
       withResource(new NvtxRange("lz4 post process", NvtxColor.YELLOW)) { _ =>
-        require(compressedBuffers.length == tables.length)
-        compressedBuffers.zipWithIndex.map { case (buffer, i) =>
-          val contigTable = tables(i)
+        require(compressedBuffers.length == tables.length,
+          s"expected ${tables.length} buffers, but compress() returned ${compressedBuffers.length}")
+        compressedBuffers.zip(tables).map { case (buffer, table) =>
           val compressedSize = buffer.getLength
           val meta = MetaUtils.buildTableMeta(
             None,
-            contigTable,
+            table,
             CodecType.NVCOMP_LZ4,
             compressedSize)
           CompressedTable(compressedSize, meta, buffer)
@@ -164,7 +166,9 @@ class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long,
       inputBuffers: Array[BaseDeviceMemoryBuffer],
       bufferMetas: Array[BufferMeta],
       stream: Cuda.Stream): Array[DeviceMemoryBuffer] = {
-    require(inputBuffers.length == bufferMetas.length)
+    require(inputBuffers.length == bufferMetas.length,
+      s"number of input buffers (${inputBuffers.length}) does not equal number of metadata " +
+          s"buffers (${bufferMetas.length}")
     val outputBuffers = allocateOutputBuffers(inputBuffers, bufferMetas)
     BatchedLZ4Decompressor.decompressAsync(
       codecConfigs.lz4ChunkSize,
@@ -179,7 +183,9 @@ class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long,
       bufferMetas: Array[BufferMeta]): Array[DeviceMemoryBuffer] = {
     withResource(new NvtxRange("alloc output bufs", NvtxColor.YELLOW)) { _ =>
       bufferMetas.zip(inputBuffers).safeMap { case (meta, input) =>
-        // cudf decompressor will try to close inputs but this interface does not close inputs
+        // cudf decompressor guarantees that close will be called for 'inputBuffers' and will not
+        // throw before doing so, but this interface does not close inputs so we need to increment
+        // the ref count.
         input.incRefCount()
         DeviceMemoryBuffer.allocate(meta.uncompressedSize())
       }
