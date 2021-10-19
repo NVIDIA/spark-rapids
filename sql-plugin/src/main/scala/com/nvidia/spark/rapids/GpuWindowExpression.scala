@@ -619,6 +619,14 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
 
 /**
+ * This is a special window function that simply replaces itself with one or more
+ * window functions and other expressions that can be executed.
+ */
+trait GpuReplaceWindowFunction extends GpuWindowFunction {
+  def windowReplacement(spec: GpuWindowSpecDefinition): Expression
+}
+
+/**
  * GPU Counterpart of `AggregateWindowFunction`.
  * On the CPU this would extend `DeclarativeAggregate` and use the provided methods
  * to build up the expressions need to produce a result. For window operations we do it

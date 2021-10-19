@@ -39,6 +39,11 @@ trait GpuAggregateFunction extends GpuExpression
   // the update/merge expressions
   val inputProjection: Seq[Expression]
 
+  def filteredInputProjection(filter: Expression): Seq[Expression] =
+    inputProjection.map { ip =>
+      GpuIf(filter, ip, GpuLiteral(null, ip.dataType))
+    }
+
   /** An aggregate function is not foldable. */
   final override def foldable: Boolean = false
 
@@ -108,23 +113,8 @@ trait GpuAggregateFunction extends GpuExpression
 
 case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: Expression)
     extends GpuAggregateFunction {
-  override val inputProjection: Seq[Expression] = {
-    val caseWhenExpressions = aggregateFunction.inputProjection.map { ip =>
-      // special case average with null result from the filter as expected values should be
-      // (0.0,0) for (sum, count)
-      val initialValue: Expression =
-        aggregateFunction match {
-          case _ : GpuAverage => ip.dataType match {
-            case doubleType: DoubleType => GpuLiteral(0D, doubleType)
-            case _ : LongType => GpuLiteral(0L, LongType)
-          }
-          case _ => GpuLiteral(null, ip.dataType)
-        }
-      val filterConditional = GpuCaseWhen(Seq((filter, ip)))
-      GpuCaseWhen(Seq((GpuIsNotNull(filterConditional), filterConditional)), Some(initialValue))
-    }
-    caseWhenExpressions
-  }
+  override val inputProjection: Seq[Expression] = aggregateFunction.filteredInputProjection(filter)
+
   /** Attributes of fields in aggBufferSchema. */
   override def aggBufferAttributes: Seq[AttributeReference] =
     aggregateFunction.aggBufferAttributes
@@ -134,14 +124,10 @@ case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: E
 
   override def children: Seq[Expression] = Seq(aggregateFunction, filter)
 
-  override val initialValues: Seq[Expression] =
-    aggregateFunction.initialValues
-  override val updateExpressions: Seq[Expression] =
-    aggregateFunction.updateExpressions
-  override val mergeExpressions: Seq[Expression] =
-    aggregateFunction.mergeExpressions
-  override val evaluateExpression: Expression =
-    aggregateFunction.evaluateExpression
+  override val initialValues: Seq[Expression] = aggregateFunction.initialValues
+  override val updateExpressions: Seq[Expression] = aggregateFunction.updateExpressions
+  override val mergeExpressions: Seq[Expression] = aggregateFunction.mergeExpressions
+  override val evaluateExpression: Expression = aggregateFunction.evaluateExpression
 
   override lazy val preUpdate: Seq[Expression] = aggregateFunction.preUpdate
   override lazy val postUpdate: Seq[Expression] = aggregateFunction.postUpdate
@@ -150,6 +136,9 @@ case class WrappedAggFunction(aggregateFunction: GpuAggregateFunction, filter: E
   override lazy val preMerge: Seq[Expression] = aggregateFunction.preMerge
   override lazy val postMerge: Seq[Expression] = aggregateFunction.postMerge
   override lazy val postMergeAttr: Seq[AttributeReference] = aggregateFunction.postMergeAttr
+
+  override def mergeBufferAttributes: Seq[AttributeReference] =
+    aggregateFunction.mergeBufferAttributes
 }
 
 case class GpuAggregateExpression(origAggregateFunction: GpuAggregateFunction,
@@ -645,13 +634,14 @@ case class GpuCheckOverflowAfterSum(
   override def children: Seq[Expression] = Seq(data, isEmpty)
 }
 
-case class GpuSum(child: Expression, resultType: DataType)
+case class GpuSum(child: Expression,
+    resultType: DataType,
+    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
   extends GpuAggregateFunction with ImplicitCastInputTypes
       with GpuBatchedRunningWindowWithFixer
       with GpuAggregateWindowFunction
       with GpuRunningWindowFunction {
 
-  private lazy val isAnsi = SQLConf.get.ansiEnabled
   private lazy val cudfSum = AttributeReference("sum", resultType)()
   private lazy val isEmpty = AttributeReference("isEmpty", BooleanType, nullable = false)()
   private lazy val isOverflow = AttributeReference("isOverflow", BooleanType, nullable = false)()
@@ -683,7 +673,7 @@ case class GpuSum(child: Expression, resultType: DataType)
   }
 
   override lazy val postUpdate: Seq[Expression] = resultType match {
-    case dt: DecimalType => Seq(GpuCheckOverflow(cudfSum, dt, !isAnsi), isEmpty)
+    case dt: DecimalType => Seq(GpuCheckOverflow(cudfSum, dt, !failOnErrorOverride), isEmpty)
     case _ => aggBufferAttributes
   }
 
@@ -715,7 +705,7 @@ case class GpuSum(child: Expression, resultType: DataType)
 
   override lazy val evaluateExpression: Expression = resultType match {
     case dt: DecimalType =>
-      GpuCheckOverflowAfterSum(cudfSum, isEmpty, dt, !isAnsi)
+      GpuCheckOverflowAfterSum(cudfSum, isEmpty, dt, !failOnErrorOverride)
     case _ => cudfSum
   }
 
@@ -755,13 +745,13 @@ case class GpuSum(child: Expression, resultType: DataType)
   override def windowOutput(result: ColumnVector): ColumnVector = resultType match {
     case dt: DecimalType =>
       // Check for overflow
-      GpuCast.checkNFixDecimalBounds(result, dt, isAnsi)
+      GpuCast.checkNFixDecimalBounds(result, dt, failOnErrorOverride)
     case _ => result.incRefCount()
   }
 
   // RUNNING WINDOW
   override def newFixer(): BatchedRunningWindowFixer =
-    new SumBinaryFixer(resultType, isAnsi)
+    new SumBinaryFixer(resultType, failOnErrorOverride)
 
   override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     windowInputProjection
@@ -782,7 +772,7 @@ case class GpuSum(child: Expression, resultType: DataType)
     resultType match {
       case dt: DecimalType if !isRunningBatched =>
         // Check for overflow
-        GpuCast.checkNFixDecimalBounds(cols.head, dt, isAnsi)
+        GpuCast.checkNFixDecimalBounds(cols.head, dt, failOnErrorOverride)
       case _ => cols.head.incRefCount()
     }
   }
@@ -960,72 +950,134 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
 }
 
 case class GpuAverage(child: Expression) extends GpuAggregateFunction
-    with GpuAggregateWindowFunction {
+    with GpuReplaceWindowFunction {
   // averages are either Decimal or Double. We don't support decimal yet, so making this double.
-  private lazy val cudfSum = AttributeReference("sum", DoubleType)()
+  private lazy val cudfSum = AttributeReference("sum", sumDataType)()
   private lazy val cudfCount = AttributeReference("count", LongType)()
+  // Used in the merge phase for Decimal
+  private lazy val isOverflow = AttributeReference("isOverflow", BooleanType, nullable = false)()
 
-  private def toDoubleLit(v: Any): GpuLiteral = {
-    val litVal = v match {
-      case null => null
-      case l: Long => l.toDouble
-      case i: Int => i.toDouble
-      case f: Float => f.toDouble
-      case s: Short => s.toDouble
-      case b: Byte => b.toDouble
-      case d: Double => d
-      case _ => throw new IllegalArgumentException("function average requires numeric type")
-    }
-    GpuLiteral(litVal, DoubleType)
+  override lazy val inputProjection: Seq[Expression] = {
+    // Replace the nulls with 0s in the SUM column because Spark does not protect against
+    // nulls in the merge phase. It does this to be able to detect overflow errors in
+    // decimal aggregations.  The null gets inserted back in with evaluateExpression where
+    // a divide by 0 gets replaced with a null.
+    val castedForSum = GpuCoalesce(Seq(
+      GpuCast(child, sumDataType),
+      GpuLiteral.default(sumDataType)))
+    val forCount = GpuCast(GpuIsNotNull(child), LongType)
+    Seq(castedForSum, forCount)
   }
 
-  override lazy val inputProjection: Seq[Expression] = Seq(
-    child match {
-      case literal: GpuLiteral => toDoubleLit(literal.value)
-      case _ => GpuCoalesce(Seq(GpuCast(child, DoubleType), GpuLiteral(0D, DoubleType)))
-    },
-    child match {
-      case literal : GpuLiteral => GpuLiteral(if (literal.value != null) 1L else 0L, LongType)
-      case _ =>
-        // takes any column and turns it into 1 for non null, and 0 for null
-        // a sum of this == the count
-        GpuCast(GpuIsNotNull(child), LongType)
-    })
-  override lazy val mergeExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum),
-    new CudfSum(cudfCount))
+  override def filteredInputProjection(filter: Expression): Seq[Expression] = {
+    val projections = inputProjection
+    val origSum = projections.head
+    val origCount = projections(1)
+    Seq(
+      GpuIf(filter, origSum, GpuLiteral.default(origSum.dataType)),
+      GpuIf(filter, origCount, GpuLiteral.default(origCount.dataType)))
+  }
+
   // The count input projection will need to be collected as a sum (of counts) instead of
-  // counts (of counts) as the GpuIsNotNull o/p is casted to count=0 for null and 1 otherwise, and
-  // the total count can be correctly evaluated only by summing them. eg. avg(col(null, 27))
-  // should be 27, with count column projection as (0, 1) and total count for dividing the
-  // average = (0 + 1) and not 2 which is the rowcount of the projected column.
-  override lazy val updateExpressions: Seq[Expression] = Seq(new CudfSum(cudfSum),
-    new CudfSum(cudfCount))
+  // counts (of input column) as the GpuIsNotNull o/p is casted to count=0 for null and 1
+  // otherwise, and the total count can be correctly evaluated only by summing them. eg.
+  // avg(col(null, 27)) should be 27, with count column projection as (0, 1) and total count
+  // for dividing the average = (0 + 1) and not 2 which is the rowcount of the projected column.
+  override lazy val updateExpressions: Seq[Expression] =
+  Seq(new CudfSum(cudfSum), new CudfSum(cudfCount))
+
+  override lazy val postUpdate: Seq[Expression] = sumDataType match {
+    case dt: DecimalType => Seq(GpuCheckOverflow(cudfSum, dt, nullOnOverflow = true), cudfCount)
+    case _ => aggBufferAttributes
+  }
+
+  // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
+  // Cudf does not have such an aggregation, so for merge we have to work around that with an extra
+  // isOverflow column.  We only do this for Decimal because that is the only one that can have a
+  // null inserted as a part of overflow checks. Spark does this for all overflow columns.
+  override lazy val preMerge: Seq[Expression] = resultType match {
+    case _: DecimalType => Seq(cudfSum, cudfCount, GpuIsNull(cudfSum))
+    case _ => aggBufferAttributes
+  }
+
+  override def mergeBufferAttributes: Seq[AttributeReference] = postMergeAttr
+
+  override lazy val mergeExpressions: Seq[Expression] = resultType match {
+    case _: DecimalType =>
+      Seq(new CudfSum(cudfSum), new CudfSum(cudfCount), new CudfMax(isOverflow))
+    case _ => Seq(new CudfSum(cudfSum), new CudfSum(cudfCount))
+  }
+
+  override lazy val postMergeAttr: Seq[AttributeReference] = resultType match {
+    case _: DecimalType => cudfSum :: cudfCount :: isOverflow :: Nil
+    case _ => aggBufferAttributes
+  }
+
+  override lazy val postMerge: Seq[Expression] = sumDataType match {
+    case dt: DecimalType =>
+      Seq(GpuCheckOverflow(
+        GpuIf(isOverflow, GpuLiteral.create(null, sumDataType), cudfSum),
+        dt, nullOnOverflow = true),
+        cudfCount)
+    case _ => aggBufferAttributes
+  }
 
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
-  override lazy val evaluateExpression: Expression = GpuDivide(
-    GpuCast(cudfSum, DoubleType),
-    GpuCast(cudfCount, DoubleType), failOnErrorOverride = false)
+  override lazy val evaluateExpression: Expression = dataType match {
+    case dt: DecimalType =>
+      GpuDecimalDivide(cudfSum, cudfCount, dt, failOnError = false)
+    case _ =>
+      GpuDivide(
+        cudfSum,
+        GpuCast(cudfCount, DoubleType), failOnErrorOverride = false)
+  }
 
   override lazy val initialValues: Seq[GpuLiteral] = Seq(
-    GpuLiteral(0.0, DoubleType),
+    GpuLiteral.default(sumDataType),
     GpuLiteral(0L, LongType))
 
   override lazy val aggBufferAttributes: Seq[AttributeReference] = cudfSum :: cudfCount :: Nil
 
+  // Window
+  // Replace average with SUM/COUNT. This lets us run average in running window mode without
+  // recreating everything that would have to go into doing the SUM and the COUNT here.
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    val count = GpuWindowExpression(GpuCount(Seq(child)), spec)
+
+    dataType match {
+      case dt: DecimalType =>
+        val sum = GpuWindowExpression(GpuSum(child, sumDataType, failOnErrorOverride = false), spec)
+        GpuDecimalDivide(sum, count, dt, failOnError = false)
+      case _ =>
+        val sum = GpuWindowExpression(
+          GpuSum(GpuCast(child, DoubleType), DoubleType, failOnErrorOverride = false), spec)
+        GpuDivide(sum, GpuCast(count, DoubleType), failOnErrorOverride = false)
+    }
+  }
+
   // Copied from Average
-  override def prettyName: String = "gpuavg"
-  override def nullable: Boolean = true
-  override def dataType: DataType = DoubleType // we don't support Decimal
+  override def prettyName: String = "avg"
   override def children: Seq[Expression] = child :: Nil
+
   override def checkInputDataTypes(): TypeCheckResult =
     TypeUtils.checkForNumericExpr(child.dataType, "function gpu average")
 
-  override val windowInputProjection: Seq[Expression] = Seq(children.head)
-  override def windowAggregation(
-      inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
-    RollingAggregation.mean().onColumn(inputs.head._2)
+  override def nullable: Boolean = true
+
+  override def dataType: DataType = resultType
+
+  private lazy val resultType = child.dataType match {
+    case DecimalType.Fixed(p, s) =>
+      DecimalType.bounded(p + 4, s + 4)
+    case _ => DoubleType
+  }
+
+  lazy val sumDataType = child.dataType match {
+    case _ @ DecimalType.Fixed(p, s) => DecimalType.bounded(p + 10, s)
+    case _ => DoubleType
+  }
 }
 
 /*

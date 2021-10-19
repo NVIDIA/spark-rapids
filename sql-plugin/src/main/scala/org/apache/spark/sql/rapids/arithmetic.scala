@@ -142,8 +142,6 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
   override def dataType: DataType = left.dataType
-
-  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
 case class GpuAdd(

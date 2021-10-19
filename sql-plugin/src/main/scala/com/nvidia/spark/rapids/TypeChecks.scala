@@ -546,6 +546,9 @@ object TypeSig {
   def psNote(dataType: TypeEnum.Value, note: String): TypeSig =
     TypeSig.none.withPsNote(dataType, note)
 
+  def decimal(maxPrecision: Int): TypeSig =
+    new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), maxPrecision)
+
   /**
    * All types nested and not nested
    */
@@ -569,16 +572,15 @@ object TypeSig {
   val DATE: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.DATE))
   val TIMESTAMP: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.TIMESTAMP))
   val STRING: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.STRING))
-  val DECIMAL_64: TypeSig =
-    new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), DType.DECIMAL64_MAX_PRECISION)
+  val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
 
   /**
    * Full support for 128 bit DECIMAL. In the future we expect to have other types with
    * slightly less than full DECIMAL support. This are things like math operations where
    * we cannot replicate the overflow behavior of Spark. These will be added when needed.
    */
-  val DECIMAL_128_FULL: TypeSig =
-    new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), DecimalType.MAX_PRECISION)
+  val DECIMAL_128_FULL: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
+
   val NULL: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.NULL))
   val BINARY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.BINARY))
   val CALENDAR: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.CALENDAR))
