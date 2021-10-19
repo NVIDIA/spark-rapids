@@ -107,7 +107,7 @@ trait TableCompressionCodec {
 /**
  * A small case class used to carry codec-specific settings.
  */
-case class TableCompressionCodecConfig(lz4ChunkSize: Int)
+case class TableCompressionCodecConfig(lz4ChunkSize: Long)
 
 object TableCompressionCodec {
   private val codecNameToId = Map(
