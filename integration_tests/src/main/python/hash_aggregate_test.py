@@ -1187,31 +1187,6 @@ def test_hash_groupby_approx_percentile_double_scalar(aqe_enabled):
                                      ('v', DoubleGen())], length=100),
         0.05, conf)
 
-@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
-@allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
-    'ApproximatePercentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
-def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
-    conf = copy_and_update(_approx_percentile_conf, {
-        'spark.sql.adaptive.enabled': aqe_enabled,
-        'spark.rapids.sql.explain': 'ALL'
-    })
-
-    def create_and_show_df(spark):
-        df = gen_df(spark, [('k', StringGen(nullable=False)),
-                            ('v', DoubleGen())], length=100)
-        df.createOrReplaceTempView("t")
-        df2 = spark.sql("SELECT k, approx_percentile(v, array(0.1, 0.2)) from t group by k")
-
-        # the "show" introduces a `CAST(approx_percentile(...) AS string)` on the final aggregate and this is
-        # not supported on GPU so falls back to CPU and the purpose of this test is to make sure that the
-        # partial aggregate also falls back to CPU
-        df2.show()
-
-        return df2
-
-    run_with_cpu_and_gpu(create_and_show_df, 'COLLECT', conf)
-
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
 # compute approximate percentiles on CPU and GPU and assert that the GPU numbers are accurate within some percentage
