@@ -19,7 +19,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, DType, GatherMap, HostMemoryBuffer, NvtxColor}
 import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuMetric, NvtxWithMetrics}
-import org.apache.commons.math3.distribution.PoissonDistribution
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.random.PoissonSampler
@@ -27,11 +26,6 @@ import org.apache.spark.util.random.PoissonSampler
 class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
                         numOutputRows: GpuMetric, numOutputBatches: GpuMetric, opTime: GpuMetric)
   extends PoissonSampler[ColumnarBatch](fraction, useGapSamplingIfPossible) with Arm {
-
-  private val rng = new PoissonDistribution(if (fraction > 0.0) fraction else 1.0)
-  override def setSeed(seed: Long): Unit = {
-    rng.reseedRandomGenerator(seed)
-  }
 
   override def clone: PoissonSampler[ColumnarBatch] =
     new GpuPoissonSampler(fraction, useGapSamplingIfPossible,
@@ -81,7 +75,8 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
   private def sample(numRows: Int): ArrayBuffer[Int] = {
     val buf = new ArrayBuffer[Int]
     for (rowIdx <- 0 until numRows) {
-      val rowCount = rng.sample()
+      // invoke PoissonSampler sample
+      val rowCount = super.sample()
       if (rowCount > 0) {
         numOutputRows += rowCount
         for (_ <- 0 until rowCount) {
