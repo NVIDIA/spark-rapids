@@ -1572,6 +1572,12 @@
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
             <build>
                 <plugins>
                     <plugin>
@@ -1840,6 +1846,12 @@
                         <groupId>org.apache.spark</groupId>
                         <artifactId>spark-hive_${scala.binary.version}</artifactId>
                         <version>${spark.version}</version>
+                        <exclusions>
+                            <exclusion>
+                                <groupId>org.apache.curator</groupId>
+                                <artifactId>curator-recipes</artifactId>
+                            </exclusion>
+                        </exclusions>
                     </dependency>
                 </dependencies>
             </plugin>
