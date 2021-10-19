@@ -46,6 +46,24 @@ def test_explain_join(spark_tmp_path, data_gen):
 
     with_cpu_session(do_join_explain)
 
+def test_explain_set_config():
+    conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
+            'spark.rapids.sql.castStringToTimestamp.enabled': 'true'}
+
+    def do_explain(spark):
+        df = unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType()))
+        # a bit brittle if these get turned on by default
+        spark.conf.set('spark.rapids.sql.hasExtendedYearValues', 'false')
+        spark.conf.set('spark.rapids.sql.castStringToTimestamp.enabled', 'true')
+        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df._jdf, "ALL")
+        print(explain_str)
+        assert "timestamp) will run on GPU" in explain_str
+        spark.conf.set('spark.rapids.sql.castStringToTimestamp.enabled', 'false')
+        explain_str_cast_off = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df._jdf, "ALL")
+        print(explain_str_cast_off)
+        assert "timestamp) cannot run on GPU" in explain_str_cast_off
+
+    with_cpu_session(do_explain)
 
 def test_explain_udf():
     slen = udf(lambda s: len(s), IntegerType())
@@ -60,7 +78,7 @@ def test_explain_udf():
         if x is not None:
             return x + 1
 
-    def do_join_explain(spark):
+    def do_explain(spark):
         df = spark.createDataFrame([(1, "John Doe", 21)], ("id", "name", "age"))
         df2 = df.select(slen("name").alias("slen(name)"), to_upper("name"), add_one("age"))
         explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df2._jdf, "ALL")
@@ -71,5 +89,5 @@ def test_explain_udf():
         assert udf_str_not in not_on_gpu_str
         assert "will run on GPU" not in not_on_gpu_str
 
-    with_cpu_session(do_join_explain)
+    with_cpu_session(do_explain)
 
