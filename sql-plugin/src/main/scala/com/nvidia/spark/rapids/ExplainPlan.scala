@@ -32,13 +32,13 @@ object ExplainPlan {
    * in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
    *
    * {{{
-   *   com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df)
+   *   com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df)
    * }}}
    *
    * Calling from PySpark:
    *
    * {{{
-   *   sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df._jdf, "ALL")
+   *   sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
    * }}}
    *
    * @param df The Spark DataFrame to get the query plan from
@@ -46,10 +46,10 @@ object ExplainPlan {
    *                work on the GPU. Default is ALL.
    * @return String containing the explained plan.
    */
-  def explainPotentialGPUPlan(df: DataFrame, explain: String = "ALL"): String = {
+  def explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL"): String = {
     val gpuOverrideClass = ShimLoader.loadGpuOverrides()
     val explainMethod = gpuOverrideClass
-      .getDeclaredMethod("explainPotentialGPUPlan", classOf[DataFrame], classOf[String])
+      .getDeclaredMethod("explainPotentialGpuPlan", classOf[DataFrame], classOf[String])
     explainMethod.invoke(null, df, explain).asInstanceOf[String]
   }
 }

@@ -39,7 +39,7 @@ def test_explain_join(spark_tmp_path, data_gen):
         df1 = spark.read.parquet(data_path1)
         df2 = spark.read.parquet(data_path2)
         df3 = df1.join(df2, df1.a == df2.r_a, "inner")
-        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df3._jdf, "ALL")
+        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df3._jdf, "ALL")
         remove_isnotnull = explain_str.replace("isnotnull", "")
         # everything should be on GPU
         assert "not" not in remove_isnotnull
@@ -55,11 +55,11 @@ def test_explain_set_config():
         # a bit brittle if these get turned on by default
         spark.conf.set('spark.rapids.sql.hasExtendedYearValues', 'false')
         spark.conf.set('spark.rapids.sql.castStringToTimestamp.enabled', 'true')
-        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df._jdf, "ALL")
+        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
         print(explain_str)
         assert "timestamp) will run on GPU" in explain_str
         spark.conf.set('spark.rapids.sql.castStringToTimestamp.enabled', 'false')
-        explain_str_cast_off = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df._jdf, "ALL")
+        explain_str_cast_off = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
         print(explain_str_cast_off)
         assert "timestamp) cannot run on GPU" in explain_str_cast_off
 
@@ -81,11 +81,11 @@ def test_explain_udf():
     def do_explain(spark):
         df = spark.createDataFrame([(1, "John Doe", 21)], ("id", "name", "age"))
         df2 = df.select(slen("name").alias("slen(name)"), to_upper("name"), add_one("age"))
-        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df2._jdf, "ALL")
+        explain_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df2._jdf, "ALL")
         # udf shouldn't be on GPU
         udf_str_not = 'cannot run on GPU because no GPU enabled version of operator class org.apache.spark.sql.execution.python.BatchEvalPythonExec'
         assert udf_str_not in explain_str
-        not_on_gpu_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df2._jdf, "NOT")
+        not_on_gpu_str = spark.sparkContext._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df2._jdf, "NOT")
         assert udf_str_not in not_on_gpu_str
         assert "will run on GPU" not in not_on_gpu_str
 

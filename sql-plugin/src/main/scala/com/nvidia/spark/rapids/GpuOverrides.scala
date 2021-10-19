@@ -3728,7 +3728,7 @@ object GpuOverrides extends Logging {
   }
 
   // Only run the explain and don't actually convert or run on GPU.
-  def explainPotentialGPUPlan(df: DataFrame, explain: String): String = {
+  def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     val plan = df.queryExecution.executedPlan
     val conf = new RapidsConf(plan.conf)
     val updatedPlan = prepareExplainOnly(plan)
@@ -3765,10 +3765,8 @@ object GpuOverrides extends Logging {
   }
 
   private def getSubQueriesFromPlan(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
-    val childPlans = plan.children.flatMap(getSubQueriesFromPlan(_))
-    val pSubs = plan.expressions.flatMap {
-      getSubqueryExpressions(_)
-    }
+    val childPlans = plan.children.flatMap(getSubQueriesFromPlan)
+    val pSubs = plan.expressions.flatMap(getSubqueryExpressions)
     childPlans ++ pSubs
   }
 
