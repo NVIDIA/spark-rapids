@@ -32,13 +32,13 @@ object ExplainPlan {
    * in the classpath but the RAPIDS Accelerator for Apache Spark should be disabled.
    *
    * {{{
-   *   com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df)
+   *   val output = com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df)
    * }}}
    *
    * Calling from PySpark:
    *
    * {{{
-   *   sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
+   *   output = sc._jvm.com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(df._jdf, "ALL")
    * }}}
    *
    * @param df The Spark DataFrame to get the query plan from
