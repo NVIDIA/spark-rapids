@@ -19,24 +19,326 @@ package org.apache.spark.sql.rapids
 import java.lang.invoke.SerializedLambda
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, GpuUserDefinedFunction, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta, RapidsUserDefinedFunction, RepeatingParamCheck, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF}
+import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
+import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 
 case class GpuScalaUDF(
-    function: RapidsUDF,
+    rapidsFunc: Option[RapidsUDF],
+    sparkFunc: AnyRef,
     dataType: DataType,
     children: Seq[Expression],
+    inputEncoders: Seq[Option[ExpressionEncoder[_]]],
+    outputEncoder: Option[ExpressionEncoder[_]],
     udfName: Option[String],
     nullable: Boolean,
-    udfDeterministic: Boolean) extends GpuUserDefinedFunction {
+    udfDeterministic: Boolean) extends RapidsUserDefinedFunction {
   override def toString: String = s"${udfName.getOrElse("UDF")}(${children.mkString(", ")})"
 
   /** name of the UDF function */
   override val name: String = udfName.getOrElse("???")
+
+  /** The input `row` consists of only child columns. */
+  override def evaluateRow(childrenRow: InternalRow): Any =
+    catalystConverter(wrappedFunc(childrenRow))
+
+  /**
+   * Unfortunately we need to copy the following code from Spark for input/output type
+   * conversions between Scala type and Catalyst type.
+   *
+   * == Copy begin ==
+   */
+
+  /**
+   * The analyzer should be aware of Scala primitive types so as to make the
+   * UDF return null if there is any null input value of these types. On the
+   * other hand, Java UDFs can only have boxed types, thus this will return
+   * Nil(has same effect with all false) and analyzer will skip null-handling
+   * on them.
+   */
+  lazy val inputPrimitives: Seq[Boolean] = {
+    inputEncoders.map { encoderOpt =>
+      // It's possible that some of the inputs don't have a specific encoder(e.g. `Any`)
+      encoderOpt.exists { encoder =>
+        if (encoder.isSerializedAsStruct) {
+          // struct type is not primitive
+          false
+        } else {
+          // `nullable` is false iff the type is primitive
+          !encoder.schema.head.nullable
+        }
+      }
+    }
+  }
+
+  /**
+   * Create the converter which converts the catalyst data type to the scala data type.
+   * We use `CatalystTypeConverters` to create the converter for:
+   *   - UDF which doesn't provide inputEncoders, e.g., untyped Scala UDF and Java UDF
+   *   - type which isn't supported by `ExpressionEncoder`, e.g., Any
+   *   - primitive types, in order to use `identity` for better performance
+   * For other cases like case class, Option[T], we use `ExpressionEncoder` instead since
+   * `CatalystTypeConverters` doesn't support these data types.
+   *
+   * @param i the index of the child
+   * @param dataType the output data type of the i-th child
+   * @return the converter and a boolean value to indicate whether the converter is
+   *         created by using `ExpressionEncoder`.
+   */
+  private def scalaConverter(i: Int, dataType: DataType): (Any => Any, Boolean) = {
+    val useEncoder =
+      !(inputEncoders.isEmpty || // for untyped Scala UDF and Java UDF
+        inputEncoders(i).isEmpty || // for types aren't supported by encoder, e.g. Any
+        inputPrimitives(i)) // for primitive types
+
+    // FIXME Getting the errors as below when using encoders, so disable it now.
+    // "catalyst.analysis.UnresolvedException: Invalid call to nullable on unresolved object"
+    if (false /* useEncoder */) {
+      val enc = inputEncoders(i).get
+      val fromRow = enc.createDeserializer()
+      val converter = if (enc.isSerializedAsStructForTopLevel) {
+        row: Any => fromRow(row.asInstanceOf[InternalRow])
+      } else {
+        val inputRow = new GenericInternalRow(1)
+        value: Any => inputRow.update(0, value); fromRow(inputRow)
+      }
+      (converter, true)
+    } else { // use CatalystTypeConverters
+      (CatalystTypeConverters.createToScalaConverter(dataType), false)
+    }
+  }
+
+  /**
+   * Create the converter which converts the scala data type to the catalyst data type for
+   * the return data type of udf function. We'd use `ExpressionEncoder` to create the
+   * converter for typed ScalaUDF only, since its the only case where we know the type tag
+   * of the return data type of udf function.
+   */
+  private def catalystConverter: Any => Any = outputEncoder.map { enc =>
+    val toRow = enc.createSerializer().asInstanceOf[Any => Any]
+    if (enc.isSerializedAsStructForTopLevel) {
+      value: Any =>
+        if (value == null) null else toRow(value).asInstanceOf[InternalRow]
+    } else {
+      value: Any =>
+        if (value == null) null else toRow(value).asInstanceOf[InternalRow].get(0, dataType)
+    }
+  }.getOrElse(CatalystTypeConverters.createToCatalystConverter(dataType))
+  /** == Copy end == */
+
+  /** Some refactor to simplify the Spark code of executing the function */
+
+  private lazy val childScalaConverters: Seq[Any => Any] =
+    children.zipWithIndex.map { case (child, i) => scalaConverter(i, child.dataType)._1 }
+
+  // scalastyle:off line.size.limit
+  /**
+   * Spark Scala UDF supports at most 22 parameters.
+   */
+  private lazy val wrappedFunc: InternalRow => Any = {
+    lazy val argsParser = (row: InternalRow) => {
+      children.zipWithIndex.map { case (child, i) =>
+        val arg = if (row.isNullAt(i)) null else row.get(i, child.dataType)
+        childScalaConverters(i)(arg)
+      }
+    }
+    children.size match {
+      case 0 =>
+        val f = sparkFunc.asInstanceOf[() => Any]
+        (row: InternalRow) => f()
+      case 1 =>
+        val f = sparkFunc.asInstanceOf[(Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head)
+        }
+      case 2 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1))
+        }
+      case 3 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2))
+        }
+      case 4 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3))
+        }
+      case 5 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4))
+        }
+      case 6 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5))
+        }
+      case 7 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6))
+        }
+      case 8 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7))
+        }
+      case 9 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8))
+        }
+      case 10 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9))
+        }
+      case 11 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10))
+        }
+      case 12 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11))
+        }
+      case 13 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12))
+        }
+      case 14 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13))
+        }
+      case 15 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14))
+        }
+      case 16 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14), args(15))
+        }
+      case 17 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16))
+        }
+      case 18 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
+            args(17))
+        }
+      case 19 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
+            args(17), args(18))
+        }
+      case 20 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
+            args(17), args(18), args(19))
+        }
+      case 21 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
+            args(17), args(18), args(19), args(20))
+        }
+      case 22 =>
+        val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
+        (row: InternalRow) => {
+          val args = argsParser(row)
+          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
+            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
+            args(17), args(18), args(19), args(20), args(21))
+        }
+    }
+  } // end of wrappedFunc
+  // scalastyle:on line.size.limit
+
+}
+
+abstract class BaseScalaUDFMeta(
+    expr: ScalaUDF,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule) extends ExprMeta(expr, conf, parent, rule) {
+
+  protected def outputEncoder: Option[ExpressionEncoder[_]]
+
+  lazy val opRapidsFunc = GpuScalaUDF.getRapidsUDFInstance(expr.function)
+
+  override def tagExprForGpu(): Unit = {
+    if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
+      val udfName = expr.udfName.getOrElse("UDF")
+      val udfClass = expr.function.getClass
+      willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
+        s"a GPU implementation, nor the conf `${RapidsConf.CPU_BASED_UDF_ENABLED.key}` " +
+        s"is enabled")
+    }
+  }
+
+  override def convertToGpu(): GpuExpression = {
+    GpuScalaUDF(
+      opRapidsFunc,
+      expr.function,
+      expr.dataType,
+      childExprs.map(_.convertToGpu()),
+      expr.inputEncoders,
+      outputEncoder,
+      expr.udfName,
+      expr.nullable,
+      expr.udfDeterministic)
+  }
 }
 
 object GpuScalaUDF {
@@ -46,26 +348,11 @@ object GpuScalaUDF {
       udfTypeSig,
       TypeSig.all,
       repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
-    (a, conf, p, r) => new ExprMeta[ScalaUDF](a, conf, p, r) {
-      override def tagExprForGpu(): Unit = {
-        if (getRapidsUDFInstance(a.function).isEmpty) {
-          val udfName = a.udfName.getOrElse("UDF")
-          val udfClass = a.function.getClass
-          willNotWorkOnGpu(s"$udfName implemented by $udfClass does not provide " +
-              "a GPU implementation")
-        }
-      }
-
-      override def convertToGpu(): GpuExpression = {
-        GpuScalaUDF(
-          getRapidsUDFInstance(a.function).get,
-          a.dataType,
-          childExprs.map(_.convertToGpu()),
-          a.udfName,
-          a.nullable,
-          a.udfDeterministic)
-      }
+    (a, conf, p, r) => new BaseScalaUDFMeta(a, conf, p, r) {
+      override protected def outputEncoder: Option[ExpressionEncoder[_]] = None
     })
+
+  def exprMeta30X: ExprRule[ScalaUDF] = exprMeta
 
   /**
    * Determine if the UDF function implements the [[com.nvidia.spark.RapidsUDF]] interface,

@@ -95,7 +95,7 @@ object GpuScalar extends Arm with Logging {
    * 'validateLiteralValue' in Spark.
    */
   /** Converts a decimal, `dec` should not be null. */
-  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
+  private[rapids] def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
     if (dec.scale > dt.scale) {
       throw new IllegalArgumentException(s"Unexpected decimals rounding.")
     }
@@ -118,8 +118,8 @@ object GpuScalar extends Arm with Logging {
     }
   }
 
-  /** Converts an element for nested lists */
-  private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
+  /** Converts an element from Catalyst type to cuDF type */
+  private[rapids] def convertElementTo(element: Any, elemType: DataType): Any = elemType match {
     case _ if element == null => null
     case StringType => element.asInstanceOf[UTF8String].getBytes
     case dt: DecimalType => convertDecimalTo(element.asInstanceOf[Decimal], dt) match {

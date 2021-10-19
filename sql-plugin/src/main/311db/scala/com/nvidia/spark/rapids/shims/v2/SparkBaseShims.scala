@@ -367,6 +367,15 @@ abstract class SparkBaseShims extends Spark30XShims {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
+      }),
+    GpuOverrides.expr[ScalaUDF](
+      "User Defined Function, support requires the UDF to implement a RAPIDS accelerated interface",
+      ExprChecks.projectOnly(
+        udfTypeSig,
+        TypeSig.all,
+        repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
+      (a, conf, p, r) => new BaseScalaUDFMeta(a, conf, p, r) {
+        override protected def outputEncoder: Option[ExpressionEncoder[_]] = a.outputEncoder
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
