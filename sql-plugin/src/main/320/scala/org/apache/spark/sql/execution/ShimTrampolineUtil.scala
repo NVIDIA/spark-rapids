@@ -20,5 +20,6 @@ import org.apache.spark.sql.types.{DataType, StructType}
 
 object ShimTrampolineUtil {
 
-  def unionLikeMerge(left: DataType, right: DataType): DataType = StructType.unionLikeMerge(left, right)
+  def unionLikeMerge(left: DataType, right: DataType): DataType =
+    StructType.unionLikeMerge(left, right)
 }
