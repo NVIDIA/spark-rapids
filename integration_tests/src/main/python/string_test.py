@@ -461,6 +461,18 @@ def test_rlike():
                 'a rlike "a[bc]d"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
+@pytest.mark.xfail(reason='cuDF does not match anything after a null character - https://github.com/rapidsai/cudf/issues/6196')
+def test_rlike_embedded_null():
+    gen = mk_str_gen('[abcd]{1,3}')\
+            .with_special_case('\u0000aaa')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a{2}"',
+                'a rlike "a{1,3}"',
+                'a rlike "a{1,}"',
+                'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
 def test_rlike_escape():
     gen = mk_str_gen('[ab]{0,2}[\\-\\+]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
