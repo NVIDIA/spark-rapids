@@ -115,8 +115,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000),
-        hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
       index += 1
     }
@@ -180,7 +179,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
       index += 1
     }
@@ -204,7 +203,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
-        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+        apps += new ApplicationInfo(hadoopConf,
           EventLogPathProcessor.getEventLogInfo(path,
             sparkSession.sparkContext.hadoopConfiguration).head._1, index)
         index += 1
@@ -224,7 +223,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
-        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+        apps += new ApplicationInfo(hadoopConf,
           EventLogPathProcessor.getEventLogInfo(path,
             sparkSession.sparkContext.hadoopConfiguration).head._1, index)
         index += 1
@@ -259,7 +258,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       var index: Int = 1
       val eventlogPaths = appArgs.eventlog()
       for (path <- eventlogPaths) {
-        apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+        apps += new ApplicationInfo(hadoopConf,
           EventLogPathProcessor.getEventLogInfo(path,
             sparkSession.sparkContext.hadoopConfiguration).head._1, index)
         index += 1
@@ -297,7 +296,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
@@ -324,7 +323,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
@@ -354,7 +353,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
@@ -480,7 +479,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path,
           sparkSession.sparkContext.hadoopConfiguration).head._1, index)
       index += 1
@@ -506,7 +505,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
       index += 1
     }
@@ -526,7 +525,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     var index: Int = 1
     val eventlogPaths = appArgs.eventlog()
     for (path <- eventlogPaths) {
-      apps += new ApplicationInfo(appArgs.numOutputRows.getOrElse(1000), hadoopConf,
+      apps += new ApplicationInfo(hadoopConf,
         EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
       index += 1
     }
