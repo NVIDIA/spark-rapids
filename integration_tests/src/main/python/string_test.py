@@ -461,7 +461,6 @@ def test_rlike():
                 'a rlike "a[bc]d"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF does not match anything after a null character - https://github.com/rapidsai/cudf/issues/6196')
 def test_rlike_embedded_null():
     gen = mk_str_gen('[abcd]{1,3}')\
             .with_special_case('\u0000aaa')
