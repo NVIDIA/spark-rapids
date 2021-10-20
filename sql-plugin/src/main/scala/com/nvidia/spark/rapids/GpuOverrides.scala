@@ -853,6 +853,7 @@ object GpuOverrides extends Logging {
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64 +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          // Note Map is not put into nested, now CUDF only support single level map
           TypeSig.STRUCT + TypeSig.DECIMAL_64).nested() + TypeSig.MAP,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
