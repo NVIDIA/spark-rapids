@@ -451,7 +451,7 @@ def test_like_complex_escape():
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
-@pytest.mark.xfail(reason='Fails on Azure Databricks 7.3 - https://github.com/NVIDIA/spark-rapids/issues/3866')
+@pytest.mark.xfail(is_databricks_runtime(), reason='Fails on Azure Databricks 7.3 - https://github.com/NVIDIA/spark-rapids/issues/3866')
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -470,7 +470,7 @@ def test_rlike_escape():
                 'a rlike "a[\\\\-]"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(is_databricks_runtime(), reason='cuDF supports multiline by default but Spark does not - https://github.com/rapidsai/cudf/issues/9439')
+@pytest.mark.xfail(reason='cuDF supports multiline by default but Spark does not - https://github.com/rapidsai/cudf/issues/9439')
 def test_rlike_multi_line():
     gen = mk_str_gen('[abc]\n[def]')
     assert_gpu_and_cpu_are_equal_collect(
