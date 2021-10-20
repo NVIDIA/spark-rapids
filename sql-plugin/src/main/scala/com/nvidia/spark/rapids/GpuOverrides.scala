@@ -3787,6 +3787,12 @@ object GpuOverrides extends Logging {
   }
 }
 
+class ExplainPlanImpl extends ExplainPlanBase {
+  override def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
+    GpuOverrides.explainPotentialGpuPlan(df, explain)
+  }
+}
+
 // work around any GpuOverride failures
 object GpuOverrideUtil extends Logging {
   def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>

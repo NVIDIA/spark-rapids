@@ -15,7 +15,15 @@
  */
 package com.nvidia.spark.rapids
 
+import scala.util.control.NonFatal
+
 import org.apache.spark.sql.DataFrame
+
+// Base trait visible publicly outside of parallel world packaging.
+// It can't be named the same as ExplainPlan object to allow calling from PySpark.
+trait ExplainPlanBase {
+  def explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL"): String
+}
 
 object ExplainPlan {
   /**
@@ -45,11 +53,22 @@ object ExplainPlan {
    * @param explain If ALL returns all the explain data, otherwise just returns what does not
    *                work on the GPU. Default is ALL.
    * @return String containing the explained plan.
+   * @throws IllegalArgumentException if an argument is invalid or it is unable to determine the
+   *         Spark version
+   * @throws IllegalStateException if the plugin gets into an invalid state while trying
+   *         to process the plan or there is an unexepected exception.
    */
+  @throws[IllegalArgumentException]
+  @throws[IllegalStateException]
   def explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL"): String = {
-    val gpuOverrideClass = ShimLoader.loadGpuOverrides()
-    val explainMethod = gpuOverrideClass
-      .getDeclaredMethod("explainPotentialGpuPlan", classOf[DataFrame], classOf[String])
-    explainMethod.invoke(null, df, explain).asInstanceOf[String]
+    try {
+      ShimLoader.newExplainPlan.explainPotentialGpuPlan(df, explain)
+    } catch {
+      case ia: IllegalArgumentException => throw ia
+      case is: IllegalStateException => throw is
+      case NonFatal(e) =>
+        val msg = "Unexpected exception trying to run explain on the plan!"
+        throw new IllegalStateException(msg, e)
+    }
   }
 }

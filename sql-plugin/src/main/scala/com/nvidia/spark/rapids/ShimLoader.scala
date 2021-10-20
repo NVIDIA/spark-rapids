@@ -427,7 +427,7 @@ object ShimLoader extends Logging {
     loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
 
-  def loadGpuOverrides(): Class[_] = {
-    ShimLoader.loadClass("com.nvidia.spark.rapids.GpuOverrides")
+  def newExplainPlan(): ExplainPlanBase = {
+    ShimLoader.newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
 }
