@@ -82,9 +82,9 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
   /**
    * Get the summary report for qualification.
    * @param delimiter The delimiter separating fields of the summary report.
-   * @param prettyPrint Whether to including the separate at start and end and
+   * @param prettyPrint Whether to include the delimiter at start and end and
    *                    add spacing so the data rows align with column headings.
-   * @return String of containing the summary report.
+   * @return String containing the summary report.
    */
   def getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String = {
     val appInfo = super.aggregateStats()
@@ -105,9 +105,9 @@ class RunningQualificationApp(readScorePercent: Int = QualificationArgs.DEFAULT_
   /**
    * Get the detailed report for qualification.
    * @param delimiter The delimiter separating fields of the summary report.
-   * @param prettyPrint Whether to including the separate at start and end and
+   * @param prettyPrint Whether to include the delimiter at start and end and
    *                    add spacing so the data rows align with column headings.
-   * @return String of containing the detailed report.
+   * @return String containing the detailed report.
    */
   def getDetailed(delimiter: String = "|", prettyPrint: Boolean = true,
       reportReadSchema: Boolean = false): String = {

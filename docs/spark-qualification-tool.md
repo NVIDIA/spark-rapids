@@ -254,15 +254,28 @@ spark.sparkContext.addSparkListener(listener)
 ```
 
 Run your queries and then get the summary or detailed output to see the results.
-See the javadoc for the api's for more details.
 
 The summary output api:
 ```
+/**
+ * Get the summary report for qualification.
+ * @param delimiter The delimiter separating fields of the summary report.
+ * @param prettyPrint Whether to including the separate at start and end and
+ *                    add spacing so the data rows align with column headings.
+ * @return String of containing the summary report.
+ */
 getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String
 ```
 
 The detailed output api:
 ```
+/**
+ * Get the detailed report for qualification.
+ * @param delimiter The delimiter separating fields of the summary report.
+ * @param prettyPrint Whether to including the separate at start and end and
+ *                    add spacing so the data rows align with column headings.
+ * @return String of containing the detailed report.
+ */
 getDetailed(delimiter: String = "|", prettyPrint: Boolean = true, reportReadSchema: Boolean = false): String
 ```
 
@@ -300,7 +313,7 @@ $SPARK_HOME/bin/spark-shell --jars rapids-4-spark-tools_2.12-<version>.jar
 ```
 
 ## Understanding the Qualification tool Output
-It ummary report outputs the following information:
+Its summary report outputs the following information:
 1. Application ID 
 2. Application duration
 3. SQL/DF duration 
