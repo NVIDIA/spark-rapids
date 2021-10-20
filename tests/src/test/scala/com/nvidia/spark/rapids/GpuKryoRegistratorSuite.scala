@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.scalatest.{BeforeAndAfter, FunSuite}
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, SparkEnv}
+import org.apache.spark.serializer.KryoSerializer
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class GpuKryoRegistratorSuite extends FunSuite with BeforeAndAfter {
@@ -41,13 +42,18 @@ class GpuKryoRegistratorSuite extends FunSuite with BeforeAndAfter {
 
     TestUtils.withGpuSparkSession(conf) { spark =>
       import spark.implicits._
-      val leftDf = Seq (
+      val matched = SparkEnv.get.serializer match {
+        case _: KryoSerializer => true
+        case _ => false
+      }
+      assert(matched, "KryoSerializer is not found")
+      val leftDf = Seq(
         (3, "history"),
         (2, "math"),
         (5, "history"),
         (4, "math")).toDF("std_id", "dept_name")
 
-      val rightDf = Seq (
+      val rightDf = Seq(
         ("piano", 3),
         ("math", 1),
         ("guitar", 3)).toDF("dept_name", "std_id")
