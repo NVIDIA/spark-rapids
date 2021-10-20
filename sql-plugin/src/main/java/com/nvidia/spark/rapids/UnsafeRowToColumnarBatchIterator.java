@@ -169,12 +169,12 @@ public abstract class UnsafeRowToColumnarBatchIterator implements Iterator<Colum
          // We are branching over the output.length to know which kernel to call.
          // If output.length < 100 we call the fixed-width optimized version, otherwise the
          // generic one
-         Table tab = isOptimizedForFixedWidth ?
+         Table tab = //isOptimizedForFixedWidth ?
              // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means
              // at most 184 double/long values. We are branching over the output.length to know
              // which kernel to call. If output.length < 100 we call the fixed-width optimized
              // version, otherwise the generic one
-             Table.convertFromRowsFixedWidthOptimized(cv, rapidsTypes) :
+//             Table.convertFromRowsFixedWidthOptimized(cv, rapidsTypes) :
              Table.convertFromRows(cv, rapidsTypes)) {
       return GpuColumnVector.from(tab, outputTypes);
     }

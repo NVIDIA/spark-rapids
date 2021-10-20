@@ -115,11 +115,10 @@ class AcceleratedColumnarToRowIterator(
           // until we have tested it more. We branching over the output.length to know which kernel
           // to call. If output.length < 100 we call the fixed-width optimized version, otherwise
           // the generic one
-          withResource(if (isFixedWidthOptimized) {
-            table.convertToRowsFixedWidthOptimized()
-          } else {
-            table.convertToRows()
-          }) { rowsCvList =>
+          withResource( //          if (isFixedWidthOptimized) {
+//            table.convertToRowsFixedWidthOptimized()
+//          } else {
+            table.convertToRows()) { rowsCvList =>
             rowsCvList.foreach { rowsCv =>
               pendingCvs += rowsCv.copyToHost()
             }
@@ -350,7 +349,7 @@ object GpuColumnarToRowExecParent {
         // We are being conservative by only allowing 100M columns until we feel the need to
         // increase this number
         output.length <= 100000000) {
-      (batches: Iterator[ColumnarBatch]) => {
+      batches: Iterator[ColumnarBatch] => {
         // UnsafeProjection is not serializable so do it on the executor side
         val toUnsafe = UnsafeProjection.create(output, output)
         new AcceleratedColumnarToRowIterator(output, batches, numInputBatches, numOutputRows,
