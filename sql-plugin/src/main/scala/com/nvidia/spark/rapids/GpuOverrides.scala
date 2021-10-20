@@ -853,7 +853,7 @@ object GpuOverrides extends Logging {
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64 +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT).nested(),
+          TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
@@ -2983,6 +2983,14 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
       }),
+    expr[RLike](
+      "RLike",
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("str", TypeSig.STRING, TypeSig.STRING),
+        ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+      (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
+      "The GPU implementation of rlike is not " +
+      "compatible with Apache Spark. See the compatibility guide for more information."),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
@@ -3604,6 +3612,12 @@ object GpuOverrides extends Logging {
             InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64, TypeSig.all))),
       (windowOp, conf, p, r) =>
         new GpuWindowExecMeta(windowOp, conf, p, r)
+    ),
+    exec[SampleExec](
+      "The backend for the sample operator",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+        TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+      (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
     ),
     ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](

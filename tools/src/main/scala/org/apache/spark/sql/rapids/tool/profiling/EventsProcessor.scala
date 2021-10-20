@@ -264,7 +264,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
       event.time,
       None,
       None,
-      hasDataset = false,
+      hasDatasetOrRDD = false,
       ""
     )
     app.sqlIdToInfo.put(event.executionId, sqlExecution)

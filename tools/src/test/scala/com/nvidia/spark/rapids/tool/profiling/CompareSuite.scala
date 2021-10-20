@@ -45,10 +45,10 @@ class CompareSuite extends FunSuite {
     val compare = new CompareApplications(apps)
     val (matchingSqlIdsRet, matchingStageIdsRet) = compare.findMatchingStages()
     // none match
-    assert(matchingSqlIdsRet.size === 29)
+    assert(matchingSqlIdsRet.size === 32)
     assert(matchingSqlIdsRet.head.outputHeaders.size == 2)
     assert(matchingSqlIdsRet.head.rows.size == 2)
-    assert(matchingStageIdsRet.size === 73)
+    assert(matchingStageIdsRet.size === 75)
     assert(matchingStageIdsRet.head.outputHeaders.size == 2)
     assert(matchingStageIdsRet.head.rows.size == 2)
   }

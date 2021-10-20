@@ -78,12 +78,7 @@ class RapidsHostMemoryStore(
       val (hostBuffer, isPinned) = allocateHostBuffer(other.size)
       try {
         otherBuffer match {
-          case devBuffer: DeviceMemoryBuffer =>
-            if (stream != null) {
-              hostBuffer.copyFromDeviceBuffer(devBuffer, stream)
-            } else {
-              hostBuffer.copyFromDeviceBuffer(devBuffer)
-            }
+          case devBuffer: DeviceMemoryBuffer => hostBuffer.copyFromDeviceBuffer(devBuffer, stream)
           case _ => throw new IllegalStateException("copying from buffer without device memory")
         }
       } catch {

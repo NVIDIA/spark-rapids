@@ -115,10 +115,11 @@ abstract class AppBase(
     }
   }
 
-  protected def isDataSetPlan(desc: String): Boolean = {
+  protected def isDataSetOrRDDPlan(desc: String): Boolean = {
     desc match {
       case l if l.matches(".*\\$Lambda\\$.*") => true
       case a if a.endsWith(".apply") => true
+      case r if r.matches(".*SerializeFromObject.*") => true
       case _ => false
     }
   }
