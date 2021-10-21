@@ -28,6 +28,13 @@ in these scenarios:
   - GPU-to-GPU: Shuffle blocks that were able to fit in GPU memory.
   - Host-to-GPU and Disk-to-GPU: Shuffle blocks that spilled to host (or disk) but will be manifested 
   in the GPU in the downstream Spark task.
+
+The RAPIDS Shuffle Manager uses the `spark.shuffle.manager` plugin interface in Spark and it relies
+on fast connections between executors, where shuffle data is kept in a cache backed by GPU, host, or disk. 
+As such, it doesn't implement functionality to interact with the External Shuffle Service (ESS). 
+To enable the RAPIDS Shuffle Manager, users need to disable ESS using `spark.shuffle.service.enabled=false`. 
+Note that Spark's Dynamic Allocation feature requires ESS to be configured, and must also be 
+disabled with `spark.dynamicAllocation.enabled=false`.
   
 ### System Setup
 
@@ -36,7 +43,7 @@ be installed on the host and inside Docker containers (if not baremetal). A host
 requirements, like the MLNX_OFED driver and `nv_peer_mem` kernel module. 
 
 The minimum UCX requirement for the RAPIDS Shuffle Manager is 
-[UCX 1.11.0](https://github.com/openucx/ucx/releases/tag/v1.11.0).
+[UCX 1.11.2](https://github.com/openucx/ucx/releases/tag/v1.11.2).
 
 #### Baremetal
 
@@ -66,9 +73,9 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    further.
     
 2. Fetch and install the UCX package for your OS from:
-   [UCX 1.11.0](https://github.com/openucx/ucx/releases/tag/v1.11.0).
+    [UCX 1.11.2](https://github.com/openucx/ucx/releases/tag/v1.11.2).
 
-   NOTE: Please install the artifact with the newest CUDA 11.x version (for UCX 1.11.0 please
+   NOTE: Please install the artifact with the newest CUDA 11.x version (for UCX 1.11.2 please
    pick CUDA 11.2) as CUDA 11 introduced [CUDA Enhanced Compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases). 
    Starting with UCX 1.12, UCX will stop publishing individual artifacts for each minor version of CUDA.
    
@@ -78,35 +85,35 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
    RDMA packages have extra requirements that should be satisfied by MLNX_OFED.
    
 ##### CentOS UCX RPM
-The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.11.0
+The UCX packages for CentOS 7 and 8 are divided into different RPMs. For example, UCX 1.11.2
 available at
-https://github.com/openucx/ucx/releases/download/v1.11.0/ucx-v1.11.0-centos7-mofed5.x-cuda11.2.tar.bz2
+https://github.com/openucx/ucx/releases/download/v1.11.2/ucx-v1.11.2-centos7-mofed5.x-cuda11.2.tar.bz2
 contains:
 
 ```
-ucx-devel-1.11.0-1.el7.x86_64.rpm   
-ucx-debuginfo-1.11.0-1.el7.x86_64.rpm
-ucx-1.11.0-1.el7.x86_64.rpm         
-ucx-cuda-1.11.0-1.el7.x86_64.rpm
-ucx-rdmacm-1.11.0-1.el7.x86_64.rpm  
-ucx-cma-1.11.0-1.el7.x86_64.rpm
-ucx-ib-1.11.0-1.el7.x86_64.rpm
+ucx-devel-1.11.2-1.el7.x86_64.rpm   
+ucx-debuginfo-1.11.2-1.el7.x86_64.rpm
+ucx-1.11.2-1.el7.x86_64.rpm         
+ucx-cuda-1.11.2-1.el7.x86_64.rpm
+ucx-rdmacm-1.11.2-1.el7.x86_64.rpm  
+ucx-cma-1.11.2-1.el7.x86_64.rpm
+ucx-ib-1.11.2-1.el7.x86_64.rpm
 ```
 
 For a setup without RoCE or Infiniband networking, the only packages required are: 
 
 ```
-ucx-1.11.0-1.el7.x86_64.rpm
-ucx-cuda-1.11.0-1.el7.x86_64.rpm
+ucx-1.11.2-1.el7.x86_64.rpm
+ucx-cuda-1.11.2-1.el7.x86_64.rpm
 ```
 
 If accelerated networking is available, the package list is: 
 
 ```
-ucx-1.11.0-1.el7.x86_64.rpm
-ucx-cuda-1.11.0-1.el7.x86_64.rpm
-ucx-rdmacm-1.11.0-1.el7.x86_64.rpm
-ucx-ib-1.11.0-1.el7.x86_64.rpm
+ucx-1.11.2-1.el7.x86_64.rpm
+ucx-cuda-1.11.2-1.el7.x86_64.rpm
+ucx-rdmacm-1.11.2-1.el7.x86_64.rpm
+ucx-ib-1.11.2-1.el7.x86_64.rpm
 ```
 
 ---
@@ -145,7 +152,7 @@ system if you have RDMA capable hardware.
 Within the Docker container we need to install UCX and its requirements. These are Dockerfile
 examples for Ubuntu 18.04:
 
-The following are examples of Docker containers with UCX 1.11.0 and cuda-11.2 support.
+The following are examples of Docker containers with UCX 1.11.2 and cuda-11.2 support.
 
 | OS Type | RDMA | Dockerfile |
 | ------- | ---- | ---------- |
@@ -281,7 +288,6 @@ In this section, we are using a docker container built using the sample dockerfi
     | Spark Shim | spark.shuffle.manager value                              |
     | -----------| -------------------------------------------------------- |
     | 3.0.1      | com.nvidia.spark.rapids.spark301.RapidsShuffleManager    |
-    | 3.0.1 EMR  | com.nvidia.spark.rapids.spark301emr.RapidsShuffleManager |
     | 3.0.2      | com.nvidia.spark.rapids.spark302.RapidsShuffleManager    |
     | 3.0.3      | com.nvidia.spark.rapids.spark303.RapidsShuffleManager    |
     | 3.0.4      | com.nvidia.spark.rapids.spark304.RapidsShuffleManager    |
@@ -290,7 +296,7 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
     | 3.1.3      | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
 
-2. Settings for UCX 1.11.0+:
+2. Settings for UCX 1.11.2+:
 
     Minimum configuration:
 
@@ -325,6 +331,9 @@ Apache Spark 3.1.3 is: `com.nvidia.spark.rapids.spark313.RapidsShuffleManager`.
 
 Please note `LD_LIBRARY_PATH` should optionally be set if the UCX library is installed in a
 non-standard location.
+
+With the RAPIDS Shuffle Manager configured, the setting `spark.rapids.shuffle.enabled` (default on) 
+can be used to enable or disable the usage of RAPIDS Shuffle Manager during your application. 
 
 #### UCX Environment Variables
 - `UCX_TLS`: 
