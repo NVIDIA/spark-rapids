@@ -24,7 +24,7 @@ function bloopInstall() {
   time (
     for bv in 301 302 302 304 311 312 313 320; do
       bloop_config_dir=".bloop$bv"
-      mvn -U generate-sources ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall \
+      mvn -U generate-sources ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl dist -am \
         -Dbuildver="$bv" \
         -Dbloop.configDirectory="$bloop_config_dir" \
         -DskipTests \
