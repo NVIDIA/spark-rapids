@@ -143,11 +143,16 @@ export -f build_single_shim
 #
 # Then resume maven build from the dist module now that shims have been installed
 
+# don't regenerate config markdowns unless 301 is included
+SKIP_UPDATE_CONFIG=$( [[ "$BASE_VER" == "301" ]] && echo false || echo true )
 time (
   # printf a single buildver array element per line
   printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
     xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
     bash -c 'build_single_shim "$@"' _ %
   echo "Resuming from dist build only using $BASE_VER"
-  mvn -U install --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT -Dbuildver="$BASE_VER" -DskipTests
+  mvn -U install --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT \
+    -Dbuildver="$BASE_VER" \
+    -DskipTests \
+    -Dmaven.updateconfig.skip="$SKIP_UPDATE_CONFIG"
 )
