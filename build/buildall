@@ -15,14 +15,20 @@
 # limitations under the License.
 #
 
-set -ex
+set -e
 
 while [[ "$1" != "" ]] ; do
 
 case "$1" in
 
 --help|-h)
-  echo "buildall [-profile=(noSnapshots (default) | snapshots | minimumFeatureVersionMix | <buildver> (e.g. 320))]"
+  echo "Usage: buildall [OPTION]"
+  echo "Options:"
+  echo "   --profile=DIST_PROFILE   profile for the dist module, default: noSnapshots,"
+  echo "                            also supported: snapshots, minimumFeatureVersionMix"
+  echo "   --profile=BUILDVER       builds a single Spark shim, e.g. --profile=320"
+  echo "   --module=MODULE          after finishing parallel builds, resume from dist and build up"
+  echo "                            up to MODULE, e.g., integration_tests"
   exit 0
   ;;
 
@@ -44,6 +50,9 @@ case "$1" in
 esac
 
 done
+
+# TODO create a switch for debug
+set -x
 
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
