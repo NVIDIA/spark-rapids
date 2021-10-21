@@ -49,7 +49,7 @@ def test_row_conversions_fixed_width():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
-def test_row_conversions_fixe_width_wide():
+def test_row_conversions_fixed_width_wide():
     gens = [["a{}".format(i), ByteGen(nullable=True)] for i in range(10)] + \
            [["b{}".format(i), ShortGen(nullable=True)] for i in range(10)] + \
            [["c{}".format(i), IntegerGen(nullable=True)] for i in range(10)] + \
