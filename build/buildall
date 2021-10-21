@@ -17,10 +17,43 @@
 
 set -ex
 
+
+
+function bloopInstall() {
+  mkdir $PWD/.bloop
+  time (
+    for bv in 301 302 302 304 311 312 313 320; do
+      bloop_config_dir=".bloop$bv"
+      mvn -U generate-sources ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall \
+        -Dbuildver="$bv" \
+        -Dbloop.configDirectory="$bloop_config_dir" \
+        -DskipTests \
+        -Dskip \
+        -Dmaven.javadoc.skip \
+        -Dmaven.scalastyle.skip=true \
+        -Dmaven.updateconfig.skip=true
+
+      specifier="spark$bv"
+
+      for bloop_json in $(echo $bloop_config_dir/*.json); do
+        IFS="/" <<< "$bloop_json" read -ra bloop_json_parts
+        file="${bloop_json_parts[1]}"
+        project="${file%.json}-$specifier"
+        < $bloop_json jq --arg specifier "$specifier" '.project.out=.project.out + "/" + $specifier | .project.name=.project.name + "-" + $specifier' > .bloop/$project.json
+      done
+    done
+  )
+}
+
 case $1 in
 
 --h|-h)
   echo "buildall [noSnapshots (default) | snapshots | minimumFeatureVersionMix | <buildver> (e.g. 320) ]"
+  exit 0
+  ;;
+
+--bloopInstall|-bi)
+  bloopInstall
   exit 0
   ;;
 
