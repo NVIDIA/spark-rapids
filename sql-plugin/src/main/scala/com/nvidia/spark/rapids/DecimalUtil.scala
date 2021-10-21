@@ -30,14 +30,19 @@ object DecimalUtil extends Arm {
   def createCudfDecimal(precision: Int, scale: Int): DType = {
     if (precision <= DType.DECIMAL32_MAX_PRECISION) {
       DType.create(DType.DTypeEnum.DECIMAL32, -scale)
-    } else {
+    } else if (precision <= DType.DECIMAL64_MAX_PRECISION) {
       DType.create(DType.DTypeEnum.DECIMAL64, -scale)
+    } else if (precision <= DType.DECIMAL128_MAX_PRECISION) {
+      DType.create(DType.DTypeEnum.DECIMAL128, -scale)
+    } else {
+      throw new IllegalArgumentException(s"precision overflow: $precision")
     }
   }
 
   def getMaxPrecision(dt: DType): Int = dt.getTypeId match {
     case DType.DTypeEnum.DECIMAL32 => DType.DECIMAL32_MAX_PRECISION
     case DType.DTypeEnum.DECIMAL64 => DType.DECIMAL64_MAX_PRECISION
+    case _ if dt.isDecimalType => DType.DECIMAL128_MAX_PRECISION
     case _ => throw new IllegalArgumentException(s"not a decimal type: $dt")
   }
 
@@ -54,6 +59,43 @@ object DecimalUtil extends Arm {
     val toUpperBound = BigDecimal(boundStr)
     val toLowerBound = BigDecimal("-" + boundStr)
     (toLowerBound, toUpperBound)
+  }
+
+  /**
+   * CUDF can have overflow issues when rounding values. This works around those issues for you.
+   * @param input the input data to round.
+   * @param decimalPlaces the decimal places to round to
+   * @param mode the rounding mode
+   * @return the rounded data.
+   */
+  def round(input: cudf.ColumnView,
+      decimalPlaces: Int,
+      mode: cudf.RoundMode): cudf.ColumnVector = {
+    assert(input.getType.isDecimalType)
+    val cudfInputScale = input.getType.getScale
+    if (cudfInputScale >= -decimalPlaces) {
+      // No issues with overflow for these cases, so just do it.
+      input.round(decimalPlaces, mode)
+    } else {
+      // We actually will need to round because we will be losing some information during the round
+      // The DECIMAL type we use needs to be able to hold
+      // `std::pow(10, std::abs(decimal_places + input.type().scale()));`
+      // in it without overflowing.
+      val scaleMovement = Math.abs(decimalPlaces + cudfInputScale)
+      val maxInputPrecision = getMaxPrecision(input.getType)
+      if (scaleMovement > maxInputPrecision) {
+        // This is going to overflow unless we do something else first. But for round to work all
+        // we actually need is 1 decimal place more than the target decimalPlaces, so we can cast
+        // to this first (which will truncate the extra information), and then round to the desired
+        // result
+        val intermediateDType = DType.create(input.getType.getTypeId, (-decimalPlaces) + 1)
+        withResource(input.castTo(intermediateDType)) { truncated =>
+          truncated.round(decimalPlaces, mode)
+        }
+      } else {
+        input.round(decimalPlaces, mode)
+      }
+    }
   }
 
   /**
@@ -94,6 +136,23 @@ object DecimalUtil extends Arm {
       }
     }
   }
+
+  def lessThan(lhs: cudf.BinaryOperable, rhs: BigDecimal, numRows: Int): cudf.ColumnVector =
+    lhs match {
+      case cv: cudf.ColumnVector =>
+        lessThan(cv, rhs)
+      case s: cudf.Scalar =>
+        if (s.isValid) {
+          val isLess = (s.getBigDecimal.compareTo(rhs) < 0)
+          withResource(cudf.Scalar.fromBool(isLess)) { n =>
+            cudf.ColumnVector.fromScalar(n, numRows)
+          }
+        } else {
+          withResource(cudf.Scalar.fromNull(DType.BOOL8)) { n =>
+            cudf.ColumnVector.fromScalar(n, numRows)
+          }
+        }
+    }
 
   /**
    * Because CUDF can have issues with comparing decimal values that have different precision

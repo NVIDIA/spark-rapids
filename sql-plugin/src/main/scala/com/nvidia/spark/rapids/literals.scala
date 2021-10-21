@@ -17,8 +17,9 @@
 package com.nvidia.spark.rapids
 
 import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
-import java.util.{List => JList, Objects}
+import java.math.BigInteger
 import java.util
+import java.util.{List => JList, Objects}
 import javax.xml.bind.DatatypeConverter
 
 import scala.collection.JavaConverters._
@@ -86,7 +87,7 @@ object GpuScalar extends Arm with Logging {
       new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
   }
 
-  /**
+  /*
    * The "convertXXXTo" functions are used to convert the data from Catalyst type
    * to the Java type required by the `ColumnVector.fromXXX` family.
    *
@@ -94,8 +95,9 @@ object GpuScalar extends Arm with Logging {
    * The mapping from DataType to Catalyst data type can be found in the function
    * 'validateLiteralValue' in Spark.
    */
+
   /** Converts a decimal, `dec` should not be null. */
-  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
+  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Any = {
     if (dec.scale > dt.scale) {
       throw new IllegalArgumentException(s"Unexpected decimals rounding.")
     }
@@ -103,9 +105,11 @@ object GpuScalar extends Arm with Logging {
       throw new IllegalArgumentException(s"Cannot change precision to $dt for decimal: $dec")
     }
     if (DecimalType.is32BitDecimalType(dt)) {
-      Left(dec.toUnscaledLong.toInt)
+      dec.toUnscaledLong.toInt
+    } else if (DecimalType.is64BitDecimalType(dt)) {
+      dec.toUnscaledLong
     } else {
-      Right(dec.toUnscaledLong)
+      dec.toBigDecimal.bigDecimal.unscaledValue()
     }
   }
 
@@ -123,8 +127,9 @@ object GpuScalar extends Arm with Logging {
     case _ if element == null => null
     case StringType => element.asInstanceOf[UTF8String].getBytes
     case dt: DecimalType => convertDecimalTo(element.asInstanceOf[Decimal], dt) match {
-      case Left(i) => i
-      case Right(l) => l
+      case element: Int => element
+      case element: Long => element
+      case element: BigInteger => element
     }
     case ArrayType(eType, _) =>
       val data = getArrayData(element.asInstanceOf[ArrayData], eType)
@@ -179,15 +184,22 @@ object GpuScalar extends Arm with Logging {
         if (DecimalType.is32BitDecimalType(dt)) {
           val rows = decs.map {
             case null => null
-            case d => convertDecimalTo(d, dt).left.get
+            case d => convertDecimalTo(d, dt)
           }
-          ColumnVector.decimalFromBoxedInts(-dt.scale, rows: _*)
-        } else {
+          ColumnVector.decimalFromBoxedInts(-dt.scale,
+            rows.asInstanceOf[Seq[java.lang.Integer]]: _*)
+        } else if (DecimalType.is64BitDecimalType(dt)){
           val rows = decs.map {
             case null => null
-            case d => convertDecimalTo(d, dt).right.get
+            case d => convertDecimalTo(d, dt)
           }
-          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows: _*)
+          ColumnVector.decimalFromBoxedLongs(-dt.scale, rows.asInstanceOf[Seq[java.lang.Long]]: _*)
+        }  else {
+          val rows = decs.map {
+            case null => null
+            case d => convertDecimalTo(d, dt)
+          }
+          ColumnVector.decimalFromBigInt(-dt.scale, rows.asInstanceOf[Seq[BigInteger]]: _*)
         }
       case ArrayType(_, _) =>
         val colType = resolveElementType(elementType)
@@ -247,8 +259,10 @@ object GpuScalar extends Arm with Logging {
           s" for DecimalType, expecting Decimal, Int, Long, Double, String, or BigDecimal.")
       }
       convertDecimalTo(dec, decType) match {
-        case Left(i) => Scalar.fromDecimal(-decType.scale, i)
-        case Right(l) => Scalar.fromDecimal(-decType.scale, l)
+        case element: Int => Scalar.fromDecimal(-decType.scale, element)
+        case element: Long => Scalar.fromDecimal(-decType.scale, element)
+        case element: BigInteger => Scalar.fromDecimal(-decType.scale, element)
+        case _ => throw new IllegalArgumentException(s"Expecting Long, Int or BigInteger")
       }
     case LongType => v match {
       case l: Long => Scalar.fromLong(l)

@@ -28,7 +28,7 @@ pytestmark = pytest.mark.premerge_ci_1
 basic_struct_gen = StructGen([
     ['child' + str(ind), sub_gen]
     for ind, sub_gen in enumerate([StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
-                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default])],
+                                   BooleanGen(), DateGen(), TimestampGen(), null_gen, decimal_gen_default] + decimal_128_gens_no_neg)],
     nullable=False)
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
@@ -209,7 +209,7 @@ def test_transform_values(data_gen):
             conf=allow_negative_scale_of_decimal_conf)
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 def test_transform_keys(data_gen):
     # The processing here is very limited, because we need to be sure we do not create duplicate keys.
     # This can happen because of integer overflow, round off errors in floating point, etc. So for now

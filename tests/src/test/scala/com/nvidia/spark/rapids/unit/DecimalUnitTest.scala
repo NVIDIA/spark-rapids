@@ -106,12 +106,6 @@ class DecimalUnitTest extends GpuUnitTests {
         }
       }
     }
-    // assertion error throws because of precision overflow
-    assertThrows[IllegalArgumentException] {
-      withResource(ColumnVector.decimalFromLongs(0, 1L)) { dcv =>
-        GpuColumnVector.from(dcv, DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, 0))
-      }
-    }
     withResource(ColumnVector.decimalFromInts(0, 1)) { dcv =>
       GpuColumnVector.from(dcv, DecimalType(1, 0))
     }
@@ -161,7 +155,7 @@ class DecimalUnitTest extends GpuUnitTests {
     // inconvertible because of precision overflow
     val wrp = GpuOverrides.wrapExpr(Literal(Decimal(12345L), DecimalType(38, 10)), rapidsConf, None)
     wrp.tagForGpu()
-    assertResult(false)(wrp.canExprTreeBeReplaced)
+    assertResult(true)(wrp.canExprTreeBeReplaced)
   }
 
   test("test Alias with decimal") {
