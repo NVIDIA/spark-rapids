@@ -15,29 +15,48 @@
  */
 package com.nvidia.spark.rapids
 
+import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, DecimalType, LongType}
 
 /**
- * A GPU substitution of CheckOverflow, does not actually check for overflow because
- * the precision checks for 64-bit support prevent the need for that.
+ * A GPU substitution for CheckOverflow. This cannot match the Spark CheckOverflow 100% because
+ * Spark will calculate values in BigDecimal with unbounded precision and then see if there was an
+ * overflow. This will check bounds, but can only detect that an overflow happened if the result is
+ * outside the bounds of what the Spark type supports, but did not yet overflow the bounds for what
+ * the CUDF type supports. For most operations when this is a possibility for the given precision
+ * then the operator should fall back to the CPU, or have alternative ways of checking for overflow
+ * prior to this being called.
  */
 case class GpuCheckOverflow(child: Expression,
     dataType: DecimalType,
     nullOnOverflow: Boolean) extends GpuUnaryExpression {
+  private[this] val expectedCudfScale = -dataType.scale
+  private[this] lazy val resultDType = if (dataType.precision > DType.DECIMAL64_MAX_PRECISION) {
+    DType.create(DType.DTypeEnum.DECIMAL128, expectedCudfScale)
+  } else if (dataType.precision > DType.DECIMAL32_MAX_PRECISION) {
+    DType.create(DType.DTypeEnum.DECIMAL64, expectedCudfScale)
+  } else {
+    DType.create(DType.DTypeEnum.DECIMAL32, expectedCudfScale)
+  }
+
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val base = input.getBase
-    val foundCudfScale = base.getType.getScale
-    val expectedCudfScale = -dataType.scale
-    if (foundCudfScale == expectedCudfScale) {
+    val rounded = if (resultDType.equals(base.getType)) {
       base.incRefCount()
-    } else if (-foundCudfScale < -expectedCudfScale) {
-      base.castTo(DType.create(DType.DTypeEnum.DECIMAL64, expectedCudfScale))
     } else {
-      // need to round off
-      base.round(-expectedCudfScale, ai.rapids.cudf.RoundMode.HALF_UP)
+      withResource(DecimalUtil.round(base, dataType.scale, cudf.RoundMode.HALF_UP)) { rounded =>
+        if (resultDType.getTypeId != base.getType.getTypeId) {
+          rounded.castTo(resultDType)
+        } else {
+          rounded.incRefCount()
+        }
+      }
+    }
+    withResource(rounded) { rounded =>
+      GpuCast.checkNFixDecimalBounds(rounded, dataType, !nullOnOverflow)
     }
   }
 }

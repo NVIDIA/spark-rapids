@@ -23,11 +23,6 @@ from pyspark.sql.window import Window
 import pyspark.sql.functions as f
 from spark_session import is_before_spark_320
 
-def meta_idfn(meta):
-    def tmp(something):
-        return meta + idfn(something)
-    return tmp
-
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', IntegerGen()),
@@ -127,16 +122,97 @@ running_part_and_order_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[
 
 lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
         boolean_gen, timestamp_gen, string_gen, DecimalGen(precision=18, scale=3),
+        DecimalGen(38, 4),
         StructGen(children=[
             ['child_int', IntegerGen()],
             ['child_time', DateGen()],
             ['child_string', StringGen()]
         ])]
 
-
 all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen, 
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_count_window(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' count(c) over '
+        '   (partition by a order by b asc '
+        '      rows between 2 preceding and 10 following) as count_c_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
+def test_decimal128_count_window_no_part(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' count(b) over '
+        '   (order by a asc '
+        '      rows between 2 preceding and 10 following) as count_b_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_sum_window(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(c) over '
+        '   (partition by a order by b asc '
+        '      rows between 2 preceding and 10 following) as sum_c_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_sum_window_no_part(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
+        '      rows between 2 preceding and 10 following) as sum_b_asc '
+        'from window_agg_table',
+        conf = allow_negative_scale_of_decimal_conf)
+
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_running_sum_window(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(c) over '
+        '   (partition by a order by b asc '
+        '      rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_c_asc '
+        'from window_agg_table',
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+            {'spark.rapids.sql.batchSizeBytes': '100'}))
+
+@ignore_order
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+def test_decimal_running_sum_window_no_part(data_gen):
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
+        'window_agg_table',
+        'select '
+        ' sum(b) over '
+        '   (order by a asc '
+        '      rows between UNBOUNDED PRECEDING AND CURRENT ROW) as sum_b_asc '
+        'from window_agg_table',
+        conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+            {'spark.rapids.sql.batchSizeBytes': '100'}))
 
 @pytest.mark.xfail(reason="[UNSUPPORTED] Ranges over order by byte column overflow "
                           "(https://github.com/NVIDIA/spark-rapids/pull/2020#issuecomment-838127070)")
@@ -347,7 +423,9 @@ def test_running_float_sum_no_part(batch_size):
 # if the order-by column is the same then we can get different results for say a running sum. Here we are going
 # to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
-@pytest.mark.parametrize('data_gen', all_basic_gens_no_nans + [decimal_gen_scale_precision], ids=meta_idfn('data:'))
+@pytest.mark.parametrize('data_gen',
+                         all_basic_gens_no_nans + [decimal_gen_scale_precision, decimal_gen_38_10],
+                         ids=meta_idfn('data:'))
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -373,6 +451,7 @@ def test_window_running_rank_no_part(data_gen):
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
+# TODO: add test data on DECIMAL_128 after we support DECIMAL_128 as PartitionSpec
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_scale_precision], ids=idfn)
 def test_window_running_rank(data_gen):
@@ -718,12 +797,16 @@ _gen_data_for_collect_list = [
     ('c_string', StringGen()),
     ('c_float', FloatGen()),
     ('c_double', DoubleGen()),
-    ('c_decimal', DecimalGen(precision=8, scale=3)),
+    ('c_decimal_32', DecimalGen(precision=8, scale=3)),
+    ('c_decimal_64', decimal_gen_12_2),
+    ('c_decimal_128', decimal_gen_36_5),
     ('c_struct', StructGen(children=[
         ['child_int', IntegerGen()],
         ['child_time', DateGen()],
         ['child_string', StringGen()],
-        ['child_decimal', DecimalGen(precision=8, scale=3)]])),
+        ['child_decimal_32', DecimalGen(precision=8, scale=3)],
+        ['child_decimal_64', decimal_gen_12_2],
+        ['child_decimal_128', decimal_gen_36_5]])),
     ('c_array', ArrayGen(int_gen)),
     ('c_map', simple_string_to_string_map_gen)]
 
@@ -756,8 +839,12 @@ def test_window_aggs_for_rows_collect_list():
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_float,
           collect_list(c_double) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_double,
-          collect_list(c_decimal) over
-            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal,
+          collect_list(c_decimal_32) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal_32,
+          collect_list(c_decimal_64) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal_64,
+          collect_list(c_decimal_128) over
+            (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_decimal_128,
           collect_list(c_struct) over
             (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as collect_struct,
           collect_list(c_array) over
@@ -796,8 +883,12 @@ def test_running_window_function_exec_for_all_aggs():
             (partition by a order by b,c_int) as dense_rank_val,
           collect_list(c_float) over
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_float,
-          collect_list(c_decimal) over
-            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal,
+          collect_list(c_decimal_32) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal_32,
+          collect_list(c_decimal_64) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal_64,
+          collect_list(c_decimal_128) over
+            (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_decimal_128,
           collect_list(c_struct) over
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_struct
         from window_collect_table
@@ -818,7 +909,9 @@ _gen_data_for_collect_set = [
     ('c_string', RepeatSeqGen(StringGen(), length=15)),
     ('c_float', RepeatSeqGen(FloatGen(), length=15)),
     ('c_double', RepeatSeqGen(DoubleGen(), length=15)),
-    ('c_decimal', RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15)),
+    ('c_decimal_32', RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15)),
+    ('c_decimal_64', RepeatSeqGen(decimal_gen_12_2, length=15)),
+    ('c_decimal_128', RepeatSeqGen(decimal_gen_36_5, length=15)),
     # case to verify the NAN_UNEQUAL strategy
     ('c_fp_nan', RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5)),
 ]
@@ -842,7 +935,9 @@ def test_window_aggs_for_rows_collect_set():
             sort_array(cc_str),
             sort_array(cc_float),
             sort_array(cc_double),
-            sort_array(cc_decimal),
+            sort_array(cc_decimal_32),
+            sort_array(cc_decimal_64),
+            sort_array(cc_decimal_128),
             sort_array(cc_fp_nan)
         from (
             select a, b,
@@ -866,8 +961,12 @@ def test_window_aggs_for_rows_collect_set():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_float,
               collect_set(c_double) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_double,
-              collect_set(c_decimal) over
-                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal,
+              collect_set(c_decimal_32) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal_32,
+              collect_set(c_decimal_64) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal_64,
+              collect_set(c_decimal_128) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_decimal_128,
               collect_set(c_fp_nan) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_fp_nan
             from window_collect_table
