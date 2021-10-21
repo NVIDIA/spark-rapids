@@ -39,7 +39,7 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
 orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
     lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
-    lambda nullable=True: DateGen(start=date(1900, 1, 1), nullable=nullable)]]
+    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable)]]
 
 orc_write_gens_list = [orc_write_basic_gens,
         orc_write_struct_gens_sample,
@@ -47,6 +47,16 @@ orc_write_gens_list = [orc_write_basic_gens,
         orc_write_basic_map_gens,
         pytest.param([date_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/139')),
         pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/140'))]
+
+from asserts import with_cpu_session
+@pytest.mark.parametrize('orc_gens', [orc_write_basic_map_gens], ids=idfn)
+def test_my_debug(spark_tmp_path, orc_gens):
+    print("############# my_debug #########")
+    data_path = spark_tmp_path + '/ORC_DATA/my-debug'
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).coalesce(1).write.orc(data_path)
+    )
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
