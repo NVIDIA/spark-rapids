@@ -440,9 +440,13 @@ _repeat_agg_column_for_collect_op = [
     RepeatSeqGen(DoubleGen(), length=15),
     RepeatSeqGen(DecimalGen(precision=8, scale=3), length=15),
     RepeatSeqGen(decimal_gen_12_2, length=15),
-    RepeatSeqGen(decimal_gen_36_5, length=15),
     # case to verify the NAN_UNEQUAL strategy
     RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5),
+]
+
+_full_repeat_agg_column_for_collect_op = [
+    RepeatSeqGen(decimal_gen_36_5, length=15),
+    RepeatSeqGen(decimal_gen_38_10, length=15)
 ]
 
 _gen_data_for_collect_op = [[
@@ -450,12 +454,17 @@ _gen_data_for_collect_op = [[
     ('b', value_gen),
     ('c', LongRangeGen())] for value_gen in _repeat_agg_column_for_collect_op]
 
+_full_gen_data_for_collect_op = _gen_data_for_collect_op + [[
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', value_gen),
+    ('c', LongRangeGen())] for value_gen in _full_repeat_agg_column_for_collect_op]
+
 _repeat_agg_column_for_collect_list_op = [
         RepeatSeqGen(ArrayGen(int_gen), length=15),
         RepeatSeqGen(all_basic_struct_gen, length=15),
         RepeatSeqGen(simple_string_to_string_map_gen, length=15)]
 
-_gen_data_for_collect_list_op = _gen_data_for_collect_op + [[
+_gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_list_op]
 
@@ -522,7 +531,7 @@ def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_collect_set(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -556,7 +565,7 @@ def test_hash_groupby_collect_set_on_nested_type_for_unique_group_by(data_gen):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_collect_with_single_distinct(data_gen):
     # test collect_ops with other distinct aggregations
     assert_gpu_and_cpu_are_equal_collect(
@@ -618,7 +627,7 @@ _replace_modes_non_distinct = [
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
                'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
                'AggregateExpression')
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
@@ -666,7 +675,7 @@ _replace_modes_single_distinct = [
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
                'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
                'AggregateExpression')
-@pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
+@pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
