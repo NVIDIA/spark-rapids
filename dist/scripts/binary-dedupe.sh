@@ -24,7 +24,6 @@ start_time=$(date +%s)
   echo "Skipping binary-dedupe. Unset SKIP_BINARY_DEDUPE to activate binary-dedupe"
   exit 0
 }
-BASH="bash --norc --noprofile -c"
 case "$OSTYPE" in
   darwin*)
     export SHASUM="shasum -b"
@@ -165,8 +164,8 @@ mv "$SPARK3XX_COMMON_DIR" parallel-world/
 #  until bitwise-identity of each unshimmed class is restored.
 
 # Determine the list of unshimmed class files
-echo "$((++STEP))/ creating sorted list of unshimmed classes > $UNSHIMMED_LIST_TXT"
 UNSHIMMED_LIST_TXT=unshimmed-result.txt
+echo "$((++STEP))/ creating sorted list of unshimmed classes > $UNSHIMMED_LIST_TXT"
 time (
   find . -name '*.class' -not -path './parallel-world/spark3*' | \
     cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
@@ -193,14 +192,6 @@ function verify_same_sha_for_unshimmed() {
       exit 255
     fi
   fi
-
-  # DISTINCT_COPIES=$(find ./parallel-world/spark3* -path "*/$class_file" | \
-  #     xargs $SHASUM | cut -d' ' -f 1 | sort -u | wc -l)
-
-  # ((DISTINCT_COPIES <= 1)) || {
-  #   echo >&2 "$classFile is not bitwise-identical, found $DISTINCT_COPIES distincts";
-  #   exit 255;
-  # }
 }
 
 echo "$((++STEP))/ verifying unshimmed classes have unique sha1 across shims"

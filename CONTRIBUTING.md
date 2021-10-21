@@ -66,8 +66,6 @@ to create a jar with multiple versions we currently have 4 options.
 
 You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
 
-There is a build script `build/buildall` to build everything with snapshots and this will have more options to build later.
-
 You can also install some manually and build a combined jar. For instance to build non-snapshot versions:
 
 ```shell script
@@ -79,10 +77,25 @@ mvn -Dbuildver=312 clean install -Drat.skip=true -DskipTests
 mvn -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
+#### Building with buildall script
+
+There is a build script `build/buildall` that automates the local build process. Use
+`./buid/buildall --help` for up-to-date use information.
+
+By defualt, it builds everying that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
+- `snapshots`
+- `minimumFeatureVersionMix` that currently includes 302, 311cdh, 312, 320 is recommended for catching incompatibilites already the local development cycle
+
+For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `-Dbuildver=320` for Spark 3.2.0
+
+The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
+
+By default, `buildall` builds up to 4 shims in parallel using `xargs -P <n>`. This can be adjusted by
+specifying the environment variable `BUILD_PARALLEL=<n>`.
 
 ### Building against different CUDA Toolkit versions
 
-You can build against different versions of the CUDA Toolkit by using one of the following profiles:
+You can build against different versions of the CUDA Toolkit by using qone of the following profiles:
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
 ## Code contributions

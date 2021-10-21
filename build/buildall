@@ -21,7 +21,7 @@ while [[ "$1" != "" ]] ; do
 
 case "$1" in
 
---h|-h)
+--help|-h)
   echo "buildall [-profile=(noSnapshots (default) | snapshots | minimumFeatureVersionMix | <buildver> (e.g. 320))]"
   exit 0
   ;;
