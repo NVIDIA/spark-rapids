@@ -26,9 +26,8 @@ import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthInter
 object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
 
   override def isSupported(
-      check: TypeEnum.ValueSet,
-      dataType: DataType,
-      allowDecimal: Boolean): Boolean = {
+    check: TypeEnum.ValueSet,
+    dataType: DataType): Boolean = {
     dataType match {
       case _: DayTimeIntervalType => check.contains(TypeEnum.DAYTIME)
       case _: YearMonthIntervalType => check.contains(TypeEnum.YEARMONTH)
@@ -39,10 +38,9 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
   override def getAllSupportedTypes(): TypeEnum.ValueSet = TypeEnum.values
 
   override def reasonNotSupported(
-      check: TypeEnum.ValueSet,
-      dataType: DataType,
-      allowDecimal: Boolean,
-      notSupportedReason: Seq[String]): Seq[String] = {
+    check: TypeEnum.ValueSet,
+    dataType: DataType,
+    notSupportedReason: Seq[String]): Seq[String] = {
     dataType match {
       case _: DayTimeIntervalType =>
         if (check.contains(TypeEnum.DAYTIME)) Seq.empty else notSupportedReason

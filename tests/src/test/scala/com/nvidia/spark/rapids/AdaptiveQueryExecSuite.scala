@@ -400,7 +400,6 @@ class AdaptiveQueryExecSuite
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
-        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
@@ -438,7 +437,6 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
-      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
@@ -470,7 +468,6 @@ class AdaptiveQueryExecSuite
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
       .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
-      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
 

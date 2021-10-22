@@ -123,24 +123,9 @@ class DecimalUnitTest extends GpuUnitTests {
     }
   }
 
-  private val rapidsConf = new RapidsConf(Map[String, String](
-    RapidsConf.DECIMAL_TYPE_ENABLED.key -> "true"
-  ))
+  private val rapidsConf = new RapidsConf(Map[String, String]())
 
   private val lit = Literal(dec32Data(0), DecimalType(dec32Data(0).precision, dec32Data(0).scale))
-
-  test("decimals are off by default") {
-    // decimals should be disabled by default
-    val rapidsConfDefault = new RapidsConf(Map[String, String]())
-    val wrapperLit = GpuOverrides.wrapExpr(lit, rapidsConfDefault, None)
-    wrapperLit.tagForGpu()
-    assertResult(false)(wrapperLit.canExprTreeBeReplaced)
-
-    // use the tests' rapidsConf, which enables decimals
-    val wrapperLitSupported = GpuOverrides.wrapExpr(lit, rapidsConf, None)
-    wrapperLitSupported.tagForGpu()
-    assertResult(true)(wrapperLitSupported.canExprTreeBeReplaced)
-  }
 
   test("test Literal with decimal") {
     val wrapperLit = GpuOverrides.wrapExpr(lit, rapidsConf, None)
@@ -258,7 +243,7 @@ class DecimalUnitTest extends GpuUnitTests {
   }
 
   test("test type checking of Scans") {
-    val conf = new SparkConf().set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+    val conf = new SparkConf()
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "BatchScanExec,ColumnarToRowExec,FileSourceScanExec")
     val decimalCsvStruct = StructType(Array(
       StructField("c_0", DecimalType(18, 0), true),
