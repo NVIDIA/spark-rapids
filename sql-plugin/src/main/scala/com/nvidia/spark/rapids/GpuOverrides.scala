@@ -940,24 +940,25 @@ object GpuOverrides extends Logging {
             // Spark knows it fits in the final desired result.
             // Here we try to strip out the extra casts, etc to get to as close to the original
             // query as possible. This lets us then calculate what CUDF needs to get the correct
-            // answer, which in some cases is a lot smaller. Our GpuDecimalDivide handles the
-            // overflow checking/etc.
+            // answer, which in some cases is a lot smaller.
             case _: Divide =>
               val intermediatePrecision =
                 GpuDecimalDivide.nonRoundedIntermediateArgPrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
 
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                binExpr.willNotWorkOnGpu("The intermediate precision of the " +
-                    s"divide is too large to be supported on the GPU $intermediatePrecision")
+                binExpr.willNotWorkOnGpu(s"The intermediate precision of $intermediatePrecision " +
+                    s"that is required to guarantee no overflow issues for this divide is too " +
+                    s"large to be supported on the GPU")
               }
             case _: Multiply =>
               val intermediatePrecision =
                 GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                binExpr.willNotWorkOnGpu("The intermediate precision of the " +
-                    s"multiply is too large to be supported on the GPU $intermediatePrecision")
+                binExpr.willNotWorkOnGpu(s"The intermediate precision of $intermediatePrecision " +
+                    s"that is required to guarantee no overflow issues for this multiply is too " +
+                    s"large to be supported on the GPU")
               }
             case _ => // NOOP
           }

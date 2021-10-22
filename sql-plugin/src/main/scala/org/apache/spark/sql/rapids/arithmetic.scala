@@ -656,6 +656,11 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
   }
 }
 
+/**
+ * A version of Divide specifically for DecimalType that does not force the left and right to be
+ * the same type. This lets us calculate the correct result on a wider range of values without
+ * the need for unbounded precision in the processing.
+ */
 case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
@@ -667,12 +672,23 @@ case class GpuDecimalDivide(
 
   override def sql: String = s"(${left.sql} / ${right.sql})"
 
+
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
+  // This is the type that the LHS will be cast to. The precision will match the precision of
+  // the intermediate rhs (to make CUDF happy doing the divide), but the scale will be shifted
+  // enough so CUDF produces the desired output scale
   private[this] lazy val intermediateLhsType =
     GpuDecimalDivide.intermediateLhsType(lhsType, rhsType, dataType)
+  // This is the type that the RHS will be cast to. The precision will match the precision of the
+  // intermediate lhs (to make CUDF happy doing the divide), but the scale will be the same
+  // as the input RHS scale.
   private[this] lazy val intermediateRhsType =
     GpuDecimalDivide.intermediateRhsType(lhsType, rhsType, dataType)
+
+  // This is the data type that CUDF will return as the output of the divide. It should be
+  // very close to outputType, but with the scale increased by 1 so that we can round the result
+  // and produce the same answer as Spark.
   private[this] lazy val intermediateResultType =
     GpuDecimalDivide.intermediateResultType(dataType)
 
@@ -706,6 +722,10 @@ case class GpuDecimalDivide(
       }
     }
     withResource(ret) { ret =>
+      // Here we cast the output of CUDF to the final result. This will handle overflow checks
+      // to see if the divide is too large to fit in the expected type. This should never happen
+      // in the common case with us. It will also handle rounding the result to the final scale
+      // to match what Spark does.
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
         ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
         dataType)

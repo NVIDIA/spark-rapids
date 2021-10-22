@@ -228,10 +228,10 @@ object DecimalUtil extends Arm {
   def asDecimalType(t: DataType): DecimalType = t match {
     case dt: DecimalType => dt
     case ByteType | ShortType | IntegerType | LongType =>
-      val prec = getPrecisionForIntegralType(GpuColumnVector.getNonNestedRapidsType(t))
+      val prec = DecimalUtil.getPrecisionForIntegralType(GpuColumnVector.getNonNestedRapidsType(t))
       DecimalType(prec, 0)
     case _ =>
-      // Decimals are promoted to doubles/floats instead of the other way around...
-      throw new IllegalArgumentException(s"Type $t is not supported.")
+      throw new IllegalArgumentException(
+        s"Internal Error: type $t cannot automatically be cast to a supported DecimalType")
   }
 }
