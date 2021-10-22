@@ -20,13 +20,13 @@ import java.math.BigInteger
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.DecimalUtil.createCudfDecimal
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.TypeUtils
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -332,109 +332,149 @@ case class GpuSubtract(
   }
 }
 
-object GpuMultiplyUtil {
-  def decimalPrecision(l: DecimalType, r: DecimalType): Int =
-    l.precision + r.precision + 1
+case class GpuDecimalMultiply(
+    left: Expression,
+    right: Expression,
+    dataType: DecimalType,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends
+    ShimExpression with GpuExpression {
 
-  def decimalDataType(l: DecimalType, r: DecimalType): DecimalType = {
-    val p = decimalPrecision(l, r)
-    val s = l.scale + r.scale
-    DecimalType(p, s)
+  override def toString: String = s"($left * $right)"
+
+  override def sql: String = s"(${left.sql} * ${right.sql})"
+
+  private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
+  private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
+  private[this] lazy val (intermediateLhsType, intermediateRhsType) =
+    GpuDecimalMultiply.intermediateLhsRhsTypes(lhsType, rhsType, dataType)
+  private[this] lazy val intermediateResultType =
+    GpuDecimalMultiply.intermediateResultType(lhsType, rhsType, dataType)
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
+        legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+    }
+    val ret = withResource(castLhs) { castLhs =>
+      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+        GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType, ansiMode = failOnError,
+          legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+      }
+      withResource(castRhs) { castRhs =>
+        castLhs.mul(castRhs, GpuColumnVector.getNonNestedRapidsType(intermediateResultType))
+      }
+    }
+    withResource(ret) { ret =>
+      GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
+        ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
+        dataType)
+    }
+  }
+
+  override def nullable: Boolean = left.nullable || right.nullable
+
+  override def children: Seq[Expression] = Seq(left, right)
+}
+
+object GpuDecimalMultiply {
+  // For Spark the final desired output is
+  // new_scale = lhs.scale + rhs.scale
+  // new_precision = lhs.precision + rhs.precision + 1
+  // But Spark will round the final result, so we need at least one more
+  // decimal place on the scale to be able to do the rounding too.
+
+  // In CUDF the output scale is the same lhs.scale + rhs.scale, but because we need one more
+  // we will need to increase the scale for either the lhs or the rhs so it works. We will pick
+  // the one with the smallest precision to do it, because it minimises the chance of requiring a
+  // larger data type to do the multiply.
+
+  /**
+   * Get the scales that are needed for the lhs and rhs to produce the desired result.
+   */
+  def lhsRhsNeededScales(
+      lhs: DecimalType,
+      rhs: DecimalType,
+      outputType: DecimalType): (Int, Int) = {
+    val cudfIntermediateScale = lhs.scale + rhs.scale
+    val requiredIntermediateScale = outputType.scale + 1
+    if (requiredIntermediateScale > cudfIntermediateScale) {
+      // In practice this should only ever be 1, but just to be cautious...
+      val neededScaleDiff = requiredIntermediateScale - cudfIntermediateScale
+      // So we need to add some to the LHS and some to the RHS.
+      var addToLhs = 0
+      var addToRhs = 0
+      // We start by trying
+      // to bring them both to the same precision.
+      val precisionDiff = lhs.precision - rhs.precision
+      if (precisionDiff > 0) {
+        addToRhs = math.min(precisionDiff, neededScaleDiff)
+      } else {
+        addToLhs = math.min(math.abs(precisionDiff), neededScaleDiff)
+      }
+      val stillNeeded = neededScaleDiff - (addToLhs + addToRhs)
+      if (stillNeeded > 0) {
+        // We need to split it between the two
+        val l = stillNeeded/2
+        val r = stillNeeded - l
+        addToLhs += l
+        addToRhs += r
+      }
+      (lhs.scale + addToLhs, rhs.scale + addToRhs)
+    } else {
+      (lhs.scale, rhs.scale)
+    }
+  }
+
+  def nonRoundedIntermediatePrecision(
+      l: DecimalType,
+      r: DecimalType,
+      outputType: DecimalType): Int = {
+    // CUDF ignores the precision, except for the underlying device type, so in general we
+    // need to find the largest precision needed between the LHS, RHS, and intermediate output
+    // In practice this should probably always be outputType.precision + 1, but just to be
+    // cautions we calculate it all out.
+    val (lhsScale, rhsScale) = lhsRhsNeededScales(l, r, outputType)
+    val lhsPrecision = l.precision - l.scale + lhsScale
+    val rhsPrecision = r.precision - r.scale + rhsScale
+    // we add 1 to the output precision so we can round the final result to match Spark
+    math.max(math.max(lhsPrecision, rhsPrecision), outputType.precision + 1)
+  }
+
+  def intermediatePrecision(lhs: DecimalType, rhs: DecimalType, outputType: DecimalType): Int =
+    math.min(
+      nonRoundedIntermediatePrecision(lhs, rhs, outputType),
+      DType.DECIMAL128_MAX_PRECISION)
+
+  def intermediateLhsRhsTypes(
+      lhs: DecimalType,
+      rhs: DecimalType,
+      outputType: DecimalType): (DecimalType, DecimalType) = {
+    val precision = intermediatePrecision(lhs, rhs, outputType)
+    val (lhsScale, rhsScale) = lhsRhsNeededScales(lhs, rhs, outputType)
+    (DecimalType(precision, lhsScale), DecimalType(precision, rhsScale))
+  }
+
+  def intermediateResultType(
+      lhs: DecimalType,
+      rhs: DecimalType,
+      outputType: DecimalType): DecimalType = {
+    val precision = intermediatePrecision(lhs, rhs, outputType)
+    DecimalType(precision,
+      math.min(outputType.scale + 1, DType.DECIMAL128_MAX_PRECISION))
   }
 }
 
 case class GpuMultiply(
     left: Expression,
     right: Expression) extends CudfBinaryArithmetic {
+  assert(!left.dataType.isInstanceOf[DecimalType],
+    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
+
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "*"
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
-
-  // Override the output type as a special case for decimal
-  override def dataType: DataType = (left.dataType, right.dataType) match {
-    case (l: DecimalType, r: DecimalType) =>  GpuMultiplyUtil.decimalDataType(l, r)
-    case _ => super.dataType
-  }
-
-  @transient private[this] lazy val decimalResultDType =
-    createCudfDecimal(dataType.asInstanceOf[DecimalType])
-  @transient private[this] lazy val decimalInputDType =
-    createCudfDecimal(left.dataType.asInstanceOf[DecimalType])
-  @transient private[this] lazy val decimalUpcastType =
-    DType.create(decimalResultDType.getTypeId, decimalInputDType.getScale)
-  @transient private[this] lazy val sparkDecimalUpcastType = decimalResultDType.getTypeId match {
-    case DType.DTypeEnum.DECIMAL64 =>
-      DecimalType(DType.DECIMAL32_MAX_PRECISION + 1, -decimalInputDType.getScale)
-    case DType.DTypeEnum.DECIMAL128 =>
-      DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, -decimalInputDType.getScale)
-    case id =>
-      throw new IllegalArgumentException(s"Unexpected type found $id")
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    if (left.dataType.isInstanceOf[DecimalType] &&
-        decimalResultDType.getTypeId != decimalInputDType.getTypeId) {
-      // need to upcast inputs so we don't possibly overflow.
-      withResource(lhs.getBase.castTo(decimalUpcastType)) { decimalLhs =>
-        withResource(rhs.getBase.castTo(decimalUpcastType)) { decimalRhs =>
-          val tmp = decimalLhs.mul(decimalRhs, decimalResultDType)
-          if (tmp.getType != decimalResultDType) {
-            withResource(tmp) { tmp =>
-              tmp.castTo(decimalResultDType)
-            }
-          } else {
-            tmp
-          }
-        }
-      }
-    } else {
-      super.doColumnar(lhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    if (left.dataType.isInstanceOf[DecimalType] &&
-        decimalResultDType.getTypeId != decimalInputDType.getTypeId) {
-      // need to upcast inputs so we don't possibly overflow.
-      withResource(lhs.getBase.castTo(decimalUpcastType)) { decimalLhs =>
-        withResource(GpuScalar.from(rhs.getValue, sparkDecimalUpcastType)) { decimalRhs =>
-          val tmp = decimalLhs.mul(decimalRhs, decimalResultDType)
-          if (tmp.getType != decimalResultDType) {
-            withResource(tmp) { tmp =>
-              tmp.castTo(decimalResultDType)
-            }
-          } else {
-            tmp
-          }
-        }
-      }
-    } else {
-      super.doColumnar(lhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    if (left.dataType.isInstanceOf[DecimalType] &&
-        decimalResultDType.getTypeId != decimalInputDType.getTypeId) {
-      // need to upcast inputs so we don't possibly overflow.
-      withResource(GpuScalar.from(lhs.getValue, sparkDecimalUpcastType)) { decimalLhs =>
-        withResource(rhs.getBase.castTo(decimalUpcastType)) { decimalRhs =>
-          val tmp = decimalLhs.mul(decimalRhs, decimalResultDType)
-          if (tmp.getType != decimalResultDType) {
-            withResource(tmp) { tmp =>
-              tmp.castTo(decimalResultDType)
-            }
-          } else {
-            tmp
-          }
-        }
-      }
-    } else {
-      super.doColumnar(lhs, rhs)
-    }
-  }
 }
 
 object GpuDivModLike extends Arm {
@@ -627,8 +667,8 @@ case class GpuDecimalDivide(
 
   override def sql: String = s"(${left.sql} / ${right.sql})"
 
-  private[this] lazy val lhsType: DecimalType = GpuDecimalDivide.asDecimalType(left.dataType)
-  private[this] lazy val rhsType: DecimalType = GpuDecimalDivide.asDecimalType(right.dataType)
+  private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
+  private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
   private[this] lazy val intermediateLhsType =
     GpuDecimalDivide.intermediateLhsType(lhsType, rhsType, dataType)
   private[this] lazy val intermediateRhsType =
@@ -683,16 +723,6 @@ object GpuDecimalDivide {
   // new_precision = lhs.precision - lhs.scale + rhs.scale + new_scale
   // But Spark will round the final result, so we need at least one more
   // decimal place on the scale to be able to do the rounding too.
-
-  def asDecimalType(t: DataType): DecimalType = t match {
-    case dt: DecimalType => dt
-    case ByteType | ShortType | IntegerType | LongType =>
-      val prec = DecimalUtil.getPrecisionForIntegralType(GpuColumnVector.getNonNestedRapidsType(t))
-      DecimalType(prec, 0)
-    case _ =>
-      // Decimals are promoted to doubles/floats instead of the other way around...
-      throw new IllegalArgumentException(s"Type $t is not supported.")
-  }
 
   def lhsNeededScale(rhs: DecimalType, outputType: DecimalType): Int =
     outputType.scale + rhs.scale + 1

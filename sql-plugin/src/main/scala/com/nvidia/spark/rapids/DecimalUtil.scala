@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.sql.types.{ByteType, DataType, Decimal, DecimalType, IntegerType, LongType, ShortType}
 
 object DecimalUtil extends Arm {
 
@@ -214,7 +214,6 @@ object DecimalUtil extends Arm {
     }
   }
 
-
   /**
    * Get the number of decimal places needed to hold the integral type held by this column
    */
@@ -224,5 +223,15 @@ object DecimalUtil extends Arm {
     case DType.INT32 => 10 // -2147483648 to 2147483647
     case DType.INT64 => 19 // -9223372036854775808 to 9223372036854775807
     case t => throw new IllegalArgumentException(s"Unsupported type $t")
+  }
+
+  def asDecimalType(t: DataType): DecimalType = t match {
+    case dt: DecimalType => dt
+    case ByteType | ShortType | IntegerType | LongType =>
+      val prec = getPrecisionForIntegralType(GpuColumnVector.getNonNestedRapidsType(t))
+      DecimalType(prec, 0)
+    case _ =>
+      // Decimals are promoted to doubles/floats instead of the other way around...
+      throw new IllegalArgumentException(s"Type $t is not supported.")
   }
 }
