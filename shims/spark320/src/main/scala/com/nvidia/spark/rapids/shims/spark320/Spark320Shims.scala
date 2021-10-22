@@ -1009,6 +1009,10 @@ class Spark320Shims extends Spark32XShims {
       new KryoJavaSerializer())
   }
 
+  override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
+    adaptivePlan.initialPlan
+  }
+
   override def getLegacyStatisticalAggregate(): Boolean =
     SQLConf.get.legacyStatisticalAggregate
 }

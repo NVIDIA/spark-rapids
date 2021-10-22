@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -280,6 +280,8 @@ trait SparkShims {
   def leafNodeDefaultParallelism(ss: SparkSession): Int
 
   def registerKryoClasses(kryo: Kryo): Unit
+
+  def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 
   /**
   * This Boolean variable set to `true` for Spark < 3.1.0, and set to 

@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
@@ -852,6 +852,10 @@ abstract class SparkBaseShims extends Spark31XShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
+
+  override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
+    adaptivePlan.inputPlan
+  }
 
   override def getLegacyStatisticalAggregate(): Boolean =
     SQLConf.get.legacyStatisticalAggregate
