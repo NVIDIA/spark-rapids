@@ -142,7 +142,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 
-	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
 
@@ -224,13 +224,13 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures: 
 
-	GPU Architecture: NVIDIA V100, T4 and A10/A30/A100 GPUs
+	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 	
-	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 	
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
 	
