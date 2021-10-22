@@ -135,7 +135,15 @@ object ShimLoader extends Logging {
     // org/apache/spark/serializer/KryoSerializer.scala#L134
 
     Option(SparkEnv.get)
-      .map(_.serializer)
+      .flatMap {
+        case env if !env.conf.get("spark.rapids.force.caller.classloader",
+          true.toString).toBoolean => Option(env.serializer)
+        case _ =>
+          logInfo("Forcing shim caller classloader update (default behavior). " +
+            "If it causes issues with userClassPathFirst, set " +
+            "spark.rapids.force.caller.classloader to false!")
+          None
+      }
       .flatMap { serializer =>
         logInfo("Looking for a mutable classloader (defaultClassLoader) in SparkEnv.serializer " +
           serializer)
@@ -153,8 +161,9 @@ object ShimLoader extends Logging {
         logInfo("Extracted Spark classloader from SparkEnv.serializer " + serdeClassLoader)
         findURLClassLoader(serdeClassLoader)
       }.orElse {
-        logInfo("Spark-less use case: RapidsConf.help?")
-        Option(getClass.getClassLoader)
+        val shimLoaderCallerCl = getClass.getClassLoader
+        logInfo("Falling back on ShimLoader caller's classloader " + shimLoaderCallerCl)
+        Option(shimLoaderCallerCl)
       }
   }
 
@@ -416,5 +425,9 @@ object ShimLoader extends Logging {
 
   def loadColumnarRDD(): Class[_] = {
     loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
+  }
+
+  def newExplainPlan(): ExplainPlanBase = {
+    ShimLoader.newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
 }

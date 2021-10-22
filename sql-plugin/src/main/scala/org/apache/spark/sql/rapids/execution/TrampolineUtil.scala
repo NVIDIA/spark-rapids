@@ -42,7 +42,8 @@ object TrampolineUtil {
     case _ => false
   }
 
-  def structTypeMerge(left: DataType, right: DataType): DataType = StructType.merge(left, right)
+  def unionLikeMerge(left: DataType, right: DataType): DataType =
+    ShimTrampolineUtil.unionLikeMerge(left, right)
 
   def fromAttributes(attrs: Seq[Attribute]): StructType = StructType.fromAttributes(attrs)
 

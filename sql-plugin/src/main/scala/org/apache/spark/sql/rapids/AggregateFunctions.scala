@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByAggregationOnColumn, GroupByScanAggregation, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, ScanAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
+import com.nvidia.spark.rapids.shims.v2.{ShimExpression, ShimUnaryExpression}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -1122,7 +1122,7 @@ case class GpuToCpuCollectBufferTransition(
  * This is also a GPU-based implementation of 'CentralMomentAgg' aggregation class in Spark with
  * the fixed 'momentOrder' variable set to '2'.
  */
-abstract class GpuM2(child: Expression)
+abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   extends GpuAggregateFunction with ImplicitCastInputTypes with Serializable {
 
   override def children: Seq[Expression] = Seq(child)
@@ -1131,7 +1131,7 @@ abstract class GpuM2(child: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
 
   protected def divideByZeroEvalResult: Expression =
-    ShimLoader.getSparkShims.getCentralMomentDivideByZeroEvalResult
+    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
 
   override lazy val inputProjection: Seq[Expression] = Seq(child, child, child)
   override lazy val initialValues: Seq[GpuLiteral] =
@@ -1210,8 +1210,8 @@ abstract class GpuM2(child: Expression)
     GpuCast(GpuGetStructField(m2Struct, 2), DoubleType))
 }
 
-case class GpuStddevPop(child: Expression)
-  extends GpuM2(child) {
+case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean)
+  extends GpuM2(child, nullOnDivideByZero) {
 
   override lazy val evaluateExpression: Expression = {
     // stddev_pop = sqrt(m2 / n).
@@ -1224,8 +1224,8 @@ case class GpuStddevPop(child: Expression)
   override def prettyName: String = "stddev_pop"
 }
 
-case class GpuStddevSamp(child: Expression)
-  extends GpuM2(child) {
+case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
+  extends GpuM2(child, nullOnDivideByZero) {
 
   override lazy val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
@@ -1241,8 +1241,8 @@ case class GpuStddevSamp(child: Expression)
   override def prettyName: String = "stddev_samp"
 }
 
-case class GpuVariancePop(child: Expression)
-  extends GpuM2(child) {
+case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean)
+  extends GpuM2(child, nullOnDivideByZero) {
 
   override lazy val evaluateExpression: Expression = {
     // var_pop = m2 / n.
@@ -1255,8 +1255,8 @@ case class GpuVariancePop(child: Expression)
   override def prettyName: String = "var_pop"
 }
 
-case class GpuVarianceSamp(child: Expression)
-  extends GpuM2(child) {
+case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
+  extends GpuM2(child, nullOnDivideByZero) {
 
   override lazy val evaluateExpression: Expression = {
     // var_samp = m2 / (n - 1.0).
