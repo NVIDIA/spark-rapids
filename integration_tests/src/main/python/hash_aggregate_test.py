@@ -1125,7 +1125,6 @@ def test_agg_nested_map():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_byte(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
@@ -1134,7 +1133,6 @@ def test_hash_groupby_approx_percentile_byte(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
@@ -1143,7 +1141,6 @@ def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
         0.5, conf)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
@@ -1152,7 +1149,6 @@ def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
@@ -1161,7 +1157,6 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_long_scalar(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
@@ -1170,7 +1165,6 @@ def test_hash_groupby_approx_percentile_long_scalar(aqe_enabled):
         0.5, conf)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
@@ -1179,7 +1173,6 @@ def test_hash_groupby_approx_percentile_double(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-@ignore_order(local=True)
 def test_hash_groupby_approx_percentile_double_scalar(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
@@ -1238,6 +1231,8 @@ def compare_percentile_approx(df_fun, percentiles, conf):
             assert gpu_approx_percentile is not None
             if isinstance(exact_percentile, list):
                 for j in range(len(exact_percentile)):
+                    assert cpu_approx_percentile[j] is not None
+                    assert gpu_approx_percentile[j] is not None
                     gpu_delta = abs(float(gpu_approx_percentile[j]) - float(exact_percentile[j]))
                     cpu_delta = abs(float(cpu_approx_percentile[j]) - float(exact_percentile[j]))
                     if gpu_delta > cpu_delta:
