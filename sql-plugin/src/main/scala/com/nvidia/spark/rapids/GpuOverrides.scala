@@ -945,8 +945,9 @@ object GpuOverrides extends Logging {
                 GpuDecimalDivide.nonRoundedIntermediateArgPrecision(l, r, a.dataType)
 
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                binExpr.willNotWorkOnGpu("The intermediate output precision of the " +
-                    s"divide is too large to be supported on the GPU $intermediatePrecision")
+                binExpr.willNotWorkOnGpu(s"The intermediate precision of $intermediatePrecision " +
+                    s"that is required to guarnatee no overflow issues for this divide is too " +
+                    s"large to be supported on the GPU")
               }
             case _ => // NOOP
           }

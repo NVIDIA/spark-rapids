@@ -89,7 +89,7 @@ class GpuShuffleMeta(
             .sortBeforeRepartition =>
         val orderableTypes = GpuOverrides.pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL
         shuffle.output.map(_.dataType)
-            .filterNot(orderableTypes.isSupportedByPlugin(_, conf.decimalTypeEnabled))
+            .filterNot(orderableTypes.isSupportedByPlugin)
             .foreach { dataType =>
               willNotWorkOnGpu(s"round-robin partitioning cannot sort $dataType to run " +
                   s"this on the GPU set ${SQLConf.SORT_BEFORE_REPARTITION.key} to false")
