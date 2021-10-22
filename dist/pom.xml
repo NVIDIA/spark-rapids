@@ -1295,7 +1295,7 @@
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
                                     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
-                                    <classifier>spark320</classifier>
+                                    <classifier>spark321</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <overWrite>false</overWrite>
