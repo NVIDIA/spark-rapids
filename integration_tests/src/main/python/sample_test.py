@@ -25,6 +25,7 @@ basic_gens = all_gen + [NullGen()]
 # If sample exec can't handle empty batch, will trigger "Input table cannot be empty" error
 @ignore_order
 @pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3892')
 def test_sample_produce_empty_batch(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # length = 4 will generate empty batch after sample
@@ -34,6 +35,7 @@ def test_sample_produce_empty_batch(data_gen):
 # the following cases is the normal cases and do not use @ignore_order
 nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 @pytest.mark.parametrize('data_gen', basic_gens + nested_gens, ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3892')
 def test_sample(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).sample(fraction = 0.9, seed = 1),
@@ -41,6 +43,7 @@ def test_sample(data_gen):
     )
 
 @pytest.mark.parametrize('data_gen', basic_gens + nested_gens, ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/3892')
 def test_sample_with_replacement(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).sample(
