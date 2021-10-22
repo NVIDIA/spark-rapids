@@ -32,16 +32,19 @@ import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
-class CastExprMeta[INPUT <: CastBase](
+abstract class CastExprMeta[INPUT <: CastBase](
     cast: INPUT,
-    ansiEnabled: Boolean,
+    val ansiEnabled: Boolean,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
+    rule: DataFromReplacementRule,
+    toTypeOverride: Option[DataType] = None)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
+  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT]
+
   val fromType: DataType = cast.child.dataType
-  val toType: DataType = cast.dataType
+  val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
   val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
 
   // stringToDate supports ANSI mode from Spark v3.2.0.  Here is the details.
