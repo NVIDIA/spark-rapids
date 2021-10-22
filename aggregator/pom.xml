@@ -49,17 +49,6 @@
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
         </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-udf_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <classifier>${spark.version.classifier}</classifier>
-        </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-shims-${spark.version.classifier}_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -120,40 +109,19 @@
                             </excludes>
                         </filter>
                     </filters>
+                    <generateUniqueDependencyReducedPom>true</generateUniqueDependencyReducedPom>
+                    <createDependencyReducedPom>true</createDependencyReducedPom>
+                    <shadedArtifactAttached>false</shadedArtifactAttached>
                 </configuration>
                 <executions>
-                    <!-- Unfortunately have to have 2 executions here to get dependency reduced pom.
-                         The shade plugin won't generate it when using the classifier and shadedArtifactAttached=true.
-                    -->
                     <execution>
-                        <id>main</id>
+                        <id>main-${spark.version.classifier}</id>
                         <phase>package</phase>
                         <goals>
                             <goal>shade</goal>
                         </goals>
-                        <configuration>
-                            <createDependencyReducedPom>true</createDependencyReducedPom>
-                            <shadedArtifactAttached>false</shadedArtifactAttached>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>classifierversion</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <!-- note that the classifier version won't generate dependency reduce pom due to shadedArtifactAttached=true -->
-                            <createDependencyReducedPom>true</createDependencyReducedPom>
-                            <shadedArtifactAttached>true</shadedArtifactAttached>
-                            <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
-                        </configuration>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>net.alchim31.maven</groupId>
-                <artifactId>scala-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>

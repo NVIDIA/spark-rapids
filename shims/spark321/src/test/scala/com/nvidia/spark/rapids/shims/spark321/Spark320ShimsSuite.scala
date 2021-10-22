@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark321;
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion, TypeSig}
+import com.nvidia.spark.rapids.{ShimLoader, SparkShims, SparkShimVersion, TypeSig}
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
@@ -28,7 +28,7 @@ class Spark321ShimsSuite extends FunSuite {
   }
 
   test("shuffle manager class") {
-    assert(sparkShims.getRapidsShuffleManagerClass ===
+    assert(ShimLoader.getRapidsShuffleManagerClass ===
       classOf[com.nvidia.spark.rapids.spark321.RapidsShuffleManager].getCanonicalName)
   }
 

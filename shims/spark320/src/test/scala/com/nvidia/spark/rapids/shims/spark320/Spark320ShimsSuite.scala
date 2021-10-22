@@ -28,7 +28,7 @@ class Spark320ShimsSuite extends FunSuite {
   }
 
   test("shuffle manager class") {
-    assert(sparkShims.getRapidsShuffleManagerClass ===
+    assert(ShimLoader.getRapidsShuffleManagerClass ===
       classOf[com.nvidia.spark.rapids.spark320.RapidsShuffleManager].getCanonicalName)
   }
 
