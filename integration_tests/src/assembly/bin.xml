@@ -42,6 +42,10 @@
             <source>conftest.py</source>
             <outputDirectory>integration_tests</outputDirectory>
         </file>
+        <file>
+            <source>${project.build.directory}/extra-resources/rapids4spark-version-info.properties</source>
+            <outputDirectory>integration_tests</outputDirectory>
+        </file>
     </files>
     <fileSets>
         <fileSet>
