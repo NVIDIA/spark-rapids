@@ -58,7 +58,7 @@ class CastExprMeta[INPUT <: CastBase](
       depth: Int = 0): Unit = {
     val checks = rule.getChecks.get.asInstanceOf[CastChecks]
     if (depth > 0 &&
-        !checks.gpuCanCast(fromDataType, toDataType, allowDecimal = conf.decimalTypeEnabled)) {
+        !checks.gpuCanCast(fromDataType, toDataType)) {
       willNotWorkOnGpu(s"Casting child type $fromDataType to $toDataType is not supported")
     }
     (fromDataType, toDataType) match {

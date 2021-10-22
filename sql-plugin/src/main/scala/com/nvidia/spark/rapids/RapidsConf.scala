@@ -562,13 +562,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
-      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
-          "which can slow down processing in some cases.")
-      .booleanConf
-      .createWithDefault(false)
-
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
     .booleanConf
@@ -1491,8 +1484,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
-
-  lazy val decimalTypeEnabled: Boolean = get(DECIMAL_TYPE_ENABLED)
 
   lazy val explain: String = get(EXPLAIN)
 
