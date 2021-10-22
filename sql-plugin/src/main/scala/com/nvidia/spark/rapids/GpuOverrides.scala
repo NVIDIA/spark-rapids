@@ -915,11 +915,37 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
         private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
           expr.wrapped match {
-            case PromotePrecision(_: Cast) =>
-              // Strip out the promote precision and the cast so we get as close to the original
-              // values as we can.
-              val castExpr = expr.childExprs.head
-              castExpr.childExprs.head
+            // We avoid unapply for Cast because it changes between versions of Spark
+            case PromotePrecision(c: CastBase) if c.dataType.isInstanceOf[DecimalType] =>
+              val to = c.dataType.asInstanceOf[DecimalType]
+              val fromType = DecimalUtil.optionallyAsDecimalType(c.child.dataType)
+              fromType match {
+                case Some(from) =>
+                  val minScale = math.min(from.scale, to.scale)
+                  val fromWhole = from.precision - from.scale
+                  val toWhole = to.precision - to.scale
+                  val minWhole = if (to.scale < from.scale) {
+                    // If the scale is getting smaller in the worst case we need an
+                    // extra whole part to handle rounding up.
+                    math.min(fromWhole + 1, toWhole)
+                  } else {
+                    math.min(fromWhole, toWhole)
+                  }
+                  val newToType = DecimalType(minWhole + minScale, minScale)
+                  if (newToType == from) {
+                    // We can remove the cast totally
+                    val castExpr = expr.childExprs.head
+                    castExpr.childExprs.head
+                  } else if (newToType == to) {
+                    // The cast is already ideal
+                    expr
+                  } else {
+                    val castExpr = expr.childExprs.head.asInstanceOf[CastExprMeta[_]]
+                    castExpr.withToTypeOverride(newToType)
+                  }
+                case _ =>
+                  expr
+              }
             case _ => expr
           }
         private[this] lazy val binExpr = childExprs.head
@@ -2250,9 +2276,12 @@ object GpuOverrides extends Logging {
           checkAndTagFloatAgg(inputDataType, conf, this)
 
           a.dataType match {
-            case dt: DecimalType if dt.precision >= DType.DECIMAL128_MAX_PRECISION =>
-              willNotWorkOnGpu("overflow checking on aggregations with " +
-                  s"a precision of ${DType.DECIMAL128_MAX_PRECISION} is not perfect.")
+            case _: DecimalType =>
+              val unboundPrecision = a.child.dataType.asInstanceOf[DecimalType].precision + 10
+              if (unboundPrecision > DType.DECIMAL128_MAX_PRECISION) {
+                willNotWorkOnGpu("overflow checking on sum would need " +
+                    s"a precision of $unboundPrecision to properly detect overflows.")
+              }
             case _ => // NOOP
           }
         }

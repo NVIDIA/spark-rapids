@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
+import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, CastBase, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
@@ -68,6 +68,37 @@ import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
+
+private final class CastMeta[INPUT <: CastBase](
+    cast: INPUT,
+    ansiEnabled: Boolean,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule,
+    stringToAnsiDate: Boolean,
+    toTypeOverride: Option[DataType] = None) extends
+    CastExprMeta[INPUT](cast,
+      ansiEnabled,
+      conf,
+      parent,
+      rule,
+      toTypeOverride) {
+
+  override def tagExprForGpu(): Unit = {
+    if (!conf.isCastFloatToIntegralTypesEnabled &&
+        (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
+        (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
+            toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
+      willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
+    }
+    super.tagExprForGpu()
+  }
+
+  override def stringToDateAnsiModeEnabled: Boolean = stringToAnsiDate
+
+  override def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
+    new CastMeta[INPUT](cast, ansiEnabled, conf, parent, rule, stringToAnsiDate, Some(newToType))
+}
 
 class Spark320Shims extends Spark32XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
@@ -132,20 +163,8 @@ class Spark320Shims extends Spark32XShims {
     GpuOverrides.expr[Cast](
       "Convert a column of one type of data into another type",
       new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-          .ansiEnabled, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!conf.isCastFloatToIntegralTypesEnabled &&
-              (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
-              (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
-                  toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
-            willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
-          }
-          super.tagExprForGpu()
-        }
-
-        override def stringToDateAnsiModeEnabled: Boolean = true
-      }),
+      (cast, conf, p, r) => new CastMeta[Cast](cast,
+        SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r, true)),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
       new CastChecks {
@@ -202,17 +221,7 @@ class Spark320Shims extends Spark32XShims {
         override val udtChecks: TypeSig = none
         override val sparkUdtSig: TypeSig = UDT
       },
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!conf.isCastFloatToIntegralTypesEnabled &&
-              (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
-              (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
-                  toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
-            willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
-          }
-          super.tagExprForGpu()
-        }
-      }),
+      (cast, conf, p, r) => new CastMeta[AnsiCast](cast, true, conf, p, r, false)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(

@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.types.{ByteType, DataType, Decimal, DecimalType, IntegerType, LongType, ShortType}
+import org.apache.spark.sql.types.{BooleanType, ByteType, DataType, Decimal, DecimalType, DoubleType, FloatType, IntegerType, LongType, ShortType}
 
 object DecimalUtil extends Arm {
 
@@ -224,12 +224,20 @@ object DecimalUtil extends Arm {
     case DType.INT64 => 19 // -9223372036854775808 to 9223372036854775807
     case t => throw new IllegalArgumentException(s"Unsupported type $t")
   }
+  // The following types were copied from Spark's DecimalType class
+  private val BooleanDecimal = DecimalType(1, 0)
 
-  def asDecimalType(t: DataType): DecimalType = t match {
-    case dt: DecimalType => dt
+  def optionallyAsDecimalType(t: DataType): Option[DecimalType] = t match {
+    case dt: DecimalType => Some(dt)
     case ByteType | ShortType | IntegerType | LongType =>
       val prec = DecimalUtil.getPrecisionForIntegralType(GpuColumnVector.getNonNestedRapidsType(t))
-      DecimalType(prec, 0)
+      Some(DecimalType(prec, 0))
+    case BooleanType => Some(BooleanDecimal)
+    case _ => None
+  }
+
+  def asDecimalType(t: DataType): DecimalType = optionallyAsDecimalType(t) match {
+    case Some(dt) => dt
     case _ =>
       throw new IllegalArgumentException(
         s"Internal Error: type $t cannot automatically be cast to a supported DecimalType")

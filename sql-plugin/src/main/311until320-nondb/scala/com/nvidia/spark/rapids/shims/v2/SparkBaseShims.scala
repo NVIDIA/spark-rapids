@@ -62,6 +62,34 @@ import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 
+private final class CastMeta[INPUT <: CastBase](
+    cast: INPUT,
+    ansiEnabled: Boolean,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule,
+    toTypeOverride: Option[DataType] = None) extends
+    CastExprMeta[INPUT](cast,
+      ansiEnabled,
+      conf,
+      parent,
+      rule,
+      toTypeOverride) {
+
+  override def tagExprForGpu(): Unit = {
+    if (!conf.isCastFloatToIntegralTypesEnabled &&
+        (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
+        (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
+            toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
+      willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
+    }
+    super.tagExprForGpu()
+  }
+
+  override def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
+    new CastMeta[INPUT](cast, ansiEnabled, conf, parent, rule, Some(newToType))
+}
+
 abstract class SparkBaseShims extends Spark31XShims {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
@@ -123,18 +151,8 @@ abstract class SparkBaseShims extends Spark31XShims {
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-            .ansiEnabled, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            if (!conf.isCastFloatToIntegralTypesEnabled &&
-                (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
-                (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
-                    toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
-              willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
-            }
-            super.tagExprForGpu()
-          }
-        }),
+        (cast, conf, p, r) => new CastMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r)),
     GpuOverrides.expr[AnsiCast](
       "Convert a column of one type of data into another type",
       new CastChecks {
@@ -185,17 +203,7 @@ abstract class SparkBaseShims extends Spark31XShims {
         override val udtChecks: TypeSig = none
         override val sparkUdtSig: TypeSig = UDT
       },
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!conf.isCastFloatToIntegralTypesEnabled &&
-              (fromType == DataTypes.FloatType || fromType == DataTypes.DoubleType) &&
-              (toType == DataTypes.ByteType || toType == DataTypes.ShortType ||
-                  toType == DataTypes.IntegerType || toType == DataTypes.LongType)) {
-            willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
-          }
-          super.tagExprForGpu()
-        }
-      }),
+      (cast, conf, p, r) => new CastMeta[AnsiCast](cast, true, conf, p, r)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(
