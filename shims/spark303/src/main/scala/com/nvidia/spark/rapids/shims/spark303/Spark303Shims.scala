@@ -27,10 +27,6 @@ class Spark303Shims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
-
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,

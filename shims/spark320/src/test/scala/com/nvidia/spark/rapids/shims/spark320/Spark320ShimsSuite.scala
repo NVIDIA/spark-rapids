@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.spark320;
 
-import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion, TypeSig}
+import com.nvidia.spark.rapids.{ShimLoader, SparkShims, SparkShimVersion, TypeSig}
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}

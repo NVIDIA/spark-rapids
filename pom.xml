@@ -907,6 +907,13 @@
                         </goals>
                     </execution>
                   </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>ant-contrib</groupId>
+                        <artifactId>ant-contrib</artifactId>
+                        <version>1.0b2</version>
+                    </dependency>
+                </dependencies>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>

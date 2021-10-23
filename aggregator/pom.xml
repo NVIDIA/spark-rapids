@@ -201,11 +201,6 @@
                                     <type>jar</type>
                                     <classifier>${spark.version.classifier}</classifier>
                                 </artifact>
-                                <artifact>
-                                    <file>${project.build.directory}/${project.artifactId}-${project.version}.pom</file>
-                                    <type>pom</type>
-                                    <classifier>${spark.version.classifier}</classifier>
-                                </artifact>
                             </artifacts>
                         </configuration>
                     </execution>
