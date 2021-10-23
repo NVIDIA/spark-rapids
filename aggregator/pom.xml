@@ -185,6 +185,30 @@
                         <id>add-profile-src-31+</id>
                         <phase>none</phase>
                     </execution>
+                    <execution>
+                        <!-- WORKAROUND: when we have the shade pluin attach the jar via shadedArtifactAttached
+                             it omits generating reduced pom
+                        -->
+                        <id>attach-shaded-with-spark-version</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>attach-artifact</goal>
+                        </goals>
+                        <configuration>
+                            <artifacts>
+                                <artifact>
+                                    <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
+                                    <type>jar</type>
+                                    <classifier>${spark.version.classifier}</classifier>
+                                </artifact>
+                                <artifact>
+                                    <file>${project.build.directory}/${project.artifactId}-${project.version}.pom</file>
+                                    <type>pom</type>
+                                    <classifier>${spark.version.classifier}</classifier>
+                                </artifact>
+                            </artifacts>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
