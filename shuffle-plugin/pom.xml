@@ -149,6 +149,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
+                    <archive>
+                        <!-- transient jar -->
+                        <compress>false</compress>
+                    </archive>
                     <classifier>${spark.version.classifier}</classifier>
                 </configuration>
             </plugin>

@@ -37,6 +37,7 @@
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
+            <classifier>spark321-slim-unshaded</classifier>
         </dependency>
     </dependencies>
     <profiles>
@@ -68,18 +69,7 @@
                                     <overWriteSnapshots>true</overWriteSnapshots>
                                     <includeGroupIds>com.nvidia</includeGroupIds>
                                     <includeArtifactIds>rapids-4-spark-aggregator_${scala.binary.version}</includeArtifactIds>
-                                    <includeClassifiers>
-                                        spark301,
-                                        spark301db,
-                                        spark302,
-                                        spark303,
-                                        spark311,
-                                        spark311cdh,
-                                        spark311db,
-                                        spark312,
-                                        spark311,
-                                        spark320
-                                    </includeClassifiers>
+                                    <includeClassifiers>*</includeClassifiers>
                                 </configuration>
                             </execution>
                         </executions>
