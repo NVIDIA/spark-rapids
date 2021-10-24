@@ -196,7 +196,7 @@
                                                 <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
                                             </patternset>
                                         </unzip>
-\                                        <ac:for list="301,302,303,311,312,320,311cdh,301db,311db" param="bv" xmlns:ac="antlib:net.sf.antcontrib">
+                                        <ac:for list="301,302,303,311,312,320,311cdh,301db,311db" param="bv" xmlns:ac="antlib:net.sf.antcontrib">
                                             <sequential>
                                                 <unzip
                                                         src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
@@ -749,6 +749,15 @@
                                     <groupId>com.nvidia</groupId>
                                     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
                                     <classifier>spark320</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark321</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <overWrite>false</overWrite>
