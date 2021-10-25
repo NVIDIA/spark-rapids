@@ -46,13 +46,6 @@
             <build>
                 <plugins>
                     <plugin>
-                        <!-- weird but first build the jar for dependencies pick it up,
-                             it gets overwritten below by ant target
-                        -->
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                    </plugin>
-                    <plugin>
                         <artifactId>maven-dependency-plugin</artifactId>
                         <executions>
                             <execution>
@@ -158,77 +151,23 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>delete-shim-classes</id>
-                                <configuration>
-                                    <target>
-                                        <delete
-                                                dir="${project.build.directory}/parallel-world"
-                                                includeemptydirs="true"
-                                        />
-
-                                        <delete>
-                                            <fileset
-                                                    dir="${project.build.directory}"
-                                                    includes="*.jar"
-                                            />
-                                        </delete>
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <phase>package</phase>
+                                <phase>process-test-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-                                        <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                        <unzip
-                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
-                                                dest="${project.build.directory}/parallel-world"
-                                        >
-                                            <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
-                                            </patternset>
-                                        </unzip>
-                                        <ac:for list="301,302,303,311,312,320,311cdh,301db,311db" param="bv" xmlns:ac="antlib:net.sf.antcontrib">
-                                            <sequential>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/spark@{bv}"
-                                                >
-                                                    <patternset id="excludeMeta">
-                                                        <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/"
-                                                >
-                                                    <patternset id="includeMeta">
-                                                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                            </sequential>
-                                        </ac:for>
-                                        <delete
-                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        <property name="project.basedir" value="${project.basedir}"/>
+                                        <property name="project.build.directory" value="${project.build.directory}"/>
+                                        <property name="project.version" value="${project.version}"/>
+                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                        <property name="included_buildvers"
+                                                  value="301,302,303,311,312,320,311cdh,301db,311db"/>
+                                        <ant
+                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                            target="build-parallel-worlds"
                                         />
-                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
-                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"
-                                              failonerror="true"
-                                        />
-                                        <jar
-                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
-                                                basedir="${project.build.directory}/parallel-world"
-                                        >
-                                        </jar>
                                     </target>
                                 </configuration>
                             </execution>
@@ -260,13 +199,6 @@
             </dependencies>
             <build>
                 <plugins>
-                    <plugin>
-                        <!-- weird but first build the jar for dependencies pick it up,
-                             it gets overwritten below by ant target
-                        -->
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                    </plugin>
                     <plugin>
                         <artifactId>maven-dependency-plugin</artifactId>
                         <executions>
@@ -364,80 +296,23 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>delete-shim-classes</id>
-                                <configuration>
-                                    <target>
-                                        <delete
-                                                dir="${project.build.directory}/parallel-world"
-                                                includeemptydirs="true"
-                                        />
-
-                                        <delete>
-                                            <fileset
-                                                    dir="${project.build.directory}"
-                                                    includes="*.jar"
-                                            />
-                                        </delete>
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <phase>package</phase>
+                                <phase>process-test-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-
-                                        <unzip
-                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
-                                                dest="${project.build.directory}/parallel-world"
-                                        >
-                                            <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
-                                            </patternset>
-                                        </unzip>
-
-                                        <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                        <ac:for list="301,302,303,311,312,320,311cdh" param="bv" xmlns:ac="antlib:net.sf.antcontrib">
-                                            <sequential>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/spark@{bv}"
-                                                >
-                                                    <patternset id="excludeMeta">
-                                                        <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/"
-                                                >
-                                                    <patternset id="includeMeta">
-                                                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                            </sequential>
-                                        </ac:for>
-
-                                        <delete
-                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        <property name="project.basedir" value="${project.basedir}"/>
+                                        <property name="project.build.directory" value="${project.build.directory}"/>
+                                        <property name="project.version" value="${project.version}"/>
+                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                        <property name="included_buildvers"
+                                                  value="301,302,303,311,312,320,311cdh"/>
+                                        <ant
+                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                            target="build-parallel-worlds"
                                         />
-                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkNonSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
-                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"
-                                              failonerror="true"
-                                        />
-                                        <jar
-                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
-                                                basedir="${project.build.directory}/parallel-world"
-                                        >
-                                        </jar>
                                     </target>
                                 </configuration>
                             </execution>
@@ -481,13 +356,6 @@
             <build>
                 <plugins>
                     <plugin>
-                        <!-- weird but first build the jar for dependencies pick it up,
-                             it gets overwritten below by ant target
-                        -->
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                    </plugin>
-                    <plugin>
                         <artifactId>maven-dependency-plugin</artifactId>
                         <executions>
                             <execution>
@@ -548,80 +416,23 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>delete-shim-classes</id>
-                                <configuration>
-                                    <target>
-                                        <delete
-                                                dir="${project.build.directory}/parallel-world"
-                                                includeemptydirs="true"
-                                        />
-
-                                        <delete>
-                                            <fileset
-                                                    dir="${project.build.directory}"
-                                                    includes="*.jar"
-                                            />
-                                        </delete>
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <phase>package</phase>
+                                <phase>process-test-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-
-                                        <unzip
-                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark302.jar"
-                                                dest="${project.build.directory}/parallel-world"
-                                        >
-                                            <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
-                                            </patternset>
-                                        </unzip>
-
-                                        <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                        <ac:for list="302,312,320,311cdh" param="bv" xmlns:ac="antlib:net.sf.antcontrib">
-                                            <sequential>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/spark@{bv}"
-                                                >
-                                                    <patternset id="excludeMeta">
-                                                        <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/"
-                                                >
-                                                    <patternset id="includeMeta">
-                                                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                            </sequential>
-                                        </ac:for>
-
-                                        <delete
-                                                file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        <property name="project.basedir" value="${project.basedir}"/>
+                                        <property name="project.build.directory" value="${project.build.directory}"/>
+                                        <property name="project.version" value="${project.version}"/>
+                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                        <property name="included_buildvers"
+                                                  value="302,312,320,311cdh"/>
+                                        <ant
+                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                            target="build-parallel-worlds"
                                         />
-                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
-                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"
-                                              failonerror="true"
-                                        />
-                                        <jar
-                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
-                                                basedir="${project.build.directory}/parallel-world"
-                                        >
-                                        </jar>
                                     </target>
                                 </configuration>
                             </execution>
@@ -653,13 +464,6 @@
             </dependencies>
             <build>
                 <plugins>
-                    <plugin>
-                        <!-- weird but first build the jar for dependencies pick it up,
-                             it gets overwritten below by ant target
-                        -->
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                    </plugin>
                     <plugin>
                         <artifactId>maven-dependency-plugin</artifactId>
                         <executions>
@@ -775,81 +579,23 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>delete-shim-classes</id>
-                                <configuration>
-                                    <target>
-                                        <delete
-                                                dir="${project.build.directory}/parallel-world"
-                                                includeemptydirs="true"
-                                        />
-
-                                        <delete>
-                                            <fileset
-                                                    dir="${project.build.directory}"
-                                                    includes="*.jar"
-                                            />
-                                        </delete>
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <phase>package</phase>
+                                <phase>process-test-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-
-                                        <unzip
-                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
-                                                dest="${project.build.directory}/parallel-world"
-                                        >
-                                            <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
-                                            </patternset>
-                                        </unzip>
-
-
-                                        <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                        <ac:for list="301,302,303,311,312,313,320,321,311cdh" param="bv" xmlns:ac="antlib:net.sf.antcontrib">
-                                            <sequential>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/spark@{bv}"
-                                                >
-                                                    <patternset id="excludeMeta">
-                                                        <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/"
-                                                >
-                                                    <patternset id="includeMeta">
-                                                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                            </sequential>
-                                        </ac:for>
-
-                                        <delete
-                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        <property name="project.basedir" value="${project.basedir}"/>
+                                        <property name="project.build.directory" value="${project.build.directory}"/>
+                                        <property name="project.version" value="${project.version}"/>
+                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                        <property name="included_buildvers"
+                                                  value="301,302,303,311,312,313,320,321,311cdh"/>
+                                        <ant
+                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                            target="build-parallel-worlds"
                                         />
-                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshot" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
-                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"
-                                              failonerror="true"
-                                        />
-                                        <jar
-                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
-                                                basedir="${project.build.directory}/parallel-world"
-                                        >
-                                        </jar>
                                     </target>
                                 </configuration>
                             </execution>
@@ -881,13 +627,6 @@
             </dependencies>
             <build>
                 <plugins>
-                    <plugin>
-                        <!-- weird but first build the jar for dependencies pick it up,
-                             it gets overwritten below by ant target
-                        -->
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                    </plugin>
                     <plugin>
                         <artifactId>maven-dependency-plugin</artifactId>
                         <executions>
@@ -1021,80 +760,23 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>delete-shim-classes</id>
-                                <configuration>
-                                    <target>
-                                        <delete
-                                                dir="${project.build.directory}/parallel-world"
-                                                includeemptydirs="true"
-                                        />
-
-                                        <delete>
-                                            <fileset
-                                                    dir="${project.build.directory}"
-                                                    includes="*.jar"
-                                            />
-                                        </delete>
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <phase>package</phase>
+                                <phase>process-test-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-
-                                        <unzip
-                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301.jar"
-                                                dest="${project.build.directory}/parallel-world"
-                                        >
-                                            <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
-                                            </patternset>
-                                        </unzip>
-
-                                        <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                        <ac:for list="301,302,303,304,311,312,313,320,321,311cdh,301db,311db" param="bv" xmlns:ac="antlib:net.sf.antcontrib">
-                                            <sequential>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/spark@{bv}"
-                                                >
-                                                    <patternset id="excludeMeta">
-                                                        <excludesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                                <unzip
-                                                        src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark@{bv}.jar"
-                                                        dest="${project.build.directory}/parallel-world/"
-                                                >
-                                                    <patternset id="includeMeta">
-                                                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                    </patternset>
-                                                </unzip>
-                                            </sequential>
-                                        </ac:for>
-
-                                        <delete
-                                            file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
+                                        <property name="project.basedir" value="${project.basedir}"/>
+                                        <property name="project.build.directory" value="${project.build.directory}"/>
+                                        <property name="project.version" value="${project.version}"/>
+                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                        <property name="included_buildvers"
+                                                  value="301,302,303,304,311,312,313,320,321,311cdh,301db,311db"/>
+                                        <ant
+                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                            target="build-parallel-worlds"
                                         />
-                                        <copy file="com.nvidia.spark.rapids.SparkShimServiceProvider.sparkSnapshotDB" tofile="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
-                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"
-                                              failonerror="true"
-                                        />
-                                        <jar
-                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
-                                                basedir="${project.build.directory}/parallel-world"
-                                        >
-                                        </jar>
                                     </target>
                                 </configuration>
                             </execution>
@@ -1145,69 +827,31 @@
             <build>
                 <plugins>
                     <plugin>
-                        <!-- weird but first build the jar for dependencies pick it up,
-                             it gets overwritten below by ant target
-                        -->
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                    </plugin>
-                    <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>delete-shim-classes</id>
-                                <configuration>
-                                    <target>
-                                        <delete
-                                                dir="${project.build.directory}/parallel-world"
-                                                includeemptydirs="true"
-                                        />
-
-                                        <delete>
-                                            <fileset
-                                                    dir="${project.build.directory}"
-                                                    includes="*.jar"
-                                            />
-                                        </delete>
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <phase>package</phase>
+                                <phase>process-test-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-                                        <unzip
-                                                src="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
-                                                dest="${project.build.directory}/parallel-world"
-                                        >
-                                            <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                            </patternset>
-                                        </unzip>
-                                        <unzip
-                                                src="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
-                                                dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
-                                        >
-                                        </unzip>
-                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"
-                                              failonerror="true"
+                                        <mkdir dir="${project.build.directory}/target/deps"/>
+                                        <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
+                                              tofile="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"/>
+
+                                        <property name="project.basedir" value="${project.basedir}"/>
+                                        <property name="project.build.directory" value="${project.build.directory}"/>
+                                        <property name="project.version" value="${project.version}"/>
+                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                        <property name="included_buildvers"
+                                                  value="311cdh"/>
+                                        <ant
+                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                            target="build-parallel-worlds"
                                         />
-                                        <jar
-                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
-                                                basedir="${project.build.directory}/parallel-world"
-                                        >
-                                        </jar>
                                     </target>
                                 </configuration>
                             </execution>
@@ -1243,69 +887,31 @@
             <build>
                 <plugins>
                     <plugin>
-                        <!-- weird but first build the jar for dependencies pick it up,
-                             it gets overwritten below by ant target
-                        -->
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-jar-plugin</artifactId>
-                    </plugin>
-                    <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>delete-shim-classes</id>
-                                <configuration>
-                                    <target>
-                                        <delete
-                                                dir="${project.build.directory}/parallel-world"
-                                                includeemptydirs="true"
-                                        />
-
-                                        <delete>
-                                            <fileset
-                                                    dir="${project.build.directory}"
-                                                    includes="*.jar"
-                                            />
-                                        </delete>
-                                    </target>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <phase>package</phase>
+                                <phase>process-test-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-                                       <unzip
-                                                src="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
-                                                dest="${project.build.directory}/parallel-world"
-                                        >
-                                            <patternset id="sharedWorld">
-                                                <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
-                                                <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
-                                            </patternset>
-                                        </unzip>
-                                        <unzip
-                                                src="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
-                                                dest="${project.build.directory}/parallel-world/${spark.version.classifier}"
+                                        <mkdir dir="${project.build.directory}/target/deps"/>
+                                        <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
+                                              tofile="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"/>
+
+                                        <property name="project.basedir" value="${project.basedir}"/>
+                                        <property name="project.build.directory" value="${project.build.directory}"/>
+                                        <property name="project.version" value="${project.version}"/>
+                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                        <property name="included_buildvers"
+                                                  value="${buildver}"/>
+                                        <ant
+                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                            target="build-parallel-worlds"
                                         />
-                                        <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
-                                              dir="${project.build.directory}"
-                                              failonerror="true"
-                                        />
-                                        <jar
-                                                destfile="${project.build.directory}/rapids-4-spark_${scala.binary.version}-${project.version}.jar"
-                                                basedir="${project.build.directory}/parallel-world"
-                                        >
-                                        </jar>
                                     </target>
                                 </configuration>
                             </execution>
@@ -1338,79 +944,112 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+            <id>generate-rapids-docs</id>
+            <activation>
+                <property>
+                    <name>!maven.updateconfig.skip</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>update_config_docs</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
+                                            <arg value="${project.basedir}/../docs/configs.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
+                                            <arg value="${project.basedir}/../docs/supported_ops.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
+                                        </java>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.nvidia</groupId>
+                                <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                                <version>${project.version}</version>
+                                <classifier>${spark.version.classifier}</classifier>
+                            </dependency>
+                            <dependency>
+                                <groupId>org.apache.spark</groupId>
+                                <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                                <version>${spark.version}</version>
+                                <exclusions>
+                                    <exclusion>
+                                        <groupId>org.apache.curator</groupId>
+                                        <artifactId>curator-recipes</artifactId>
+                                    </exclusion>
+                                </exclusions>
+                            </dependency>
+                        </dependencies>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
-
     <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <configuration>
-                    <skip>${maven.updateconfig.skip}</skip>
-                </configuration>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven.jar.plugin.version}</version>
                 <executions>
                     <execution>
-                        <id>update_config</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
+                        <id>default-jar</id>
+                        <phase>package</phase>
                         <configuration>
-                            <target>
-                                <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
-                                    <arg value="${project.basedir}/../docs/configs.md"/>
-                                </java>
-                            </target>
+                            <classesDirectory>${project.build.directory}/parallel-world</classesDirectory>
                         </configuration>
                     </execution>
                     <execution>
-                        <id>update_supported</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
-                                    <arg value="${project.basedir}/../docs/supported_ops.md"/>
-                                </java>
-                            </target>
-                        </configuration>
+                        <id>default-test-jar</id>
+                        <phase>none</phase>
                     </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
                     <execution>
-                        <id>update_supported_tools</id>
-                        <phase>verify</phase>
+                        <!-- any phase preceding create-parallel-world -->
+                        <phase>generate-test-resources</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
+                        <id>delete-shim-classes</id>
                         <configuration>
                             <target>
-                                <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                    <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
-                                </java>
+                                <delete
+                                        dir="${project.build.directory}/parallel-world"
+                                        includeemptydirs="true"
+                                />
+
+                                <delete>
+                                    <fileset
+                                            dir="${project.build.directory}"
+                                            includes="*.jar"
+                                    />
+                                </delete>
                             </target>
                         </configuration>
                     </execution>
                 </executions>
-                <dependencies>
-                    <dependency>
-                        <groupId>com.nvidia</groupId>
-                        <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                        <version>${project.version}</version>
-                        <classifier>${spark.version.classifier}</classifier>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.apache.spark</groupId>
-                        <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                        <version>${spark.version}</version>
-                        <exclusions>
-                            <exclusion>
-                                <groupId>org.apache.curator</groupId>
-                                <artifactId>curator-recipes</artifactId>
-                            </exclusion>
-                        </exclusions>
-                    </dependency>
-                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>

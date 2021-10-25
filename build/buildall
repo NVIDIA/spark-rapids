@@ -115,7 +115,7 @@ BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 echo Clean once across all modules
 mvn -q clean
 
-echo Building a combined dist jar with Shims for "${SPARK_SHIM_VERSIONS[@]}" ...
+echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 
 export MVN_BASE_DIR=$(mvn help:evaluate -Dexpression=project.basedir -q -DforceStdout)
 build_single_shim() {
