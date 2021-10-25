@@ -74,10 +74,10 @@ object RapidsPluginUtils extends Logging {
         s" To disable GPU support set `${RapidsConf.SQL_ENABLED}` to false")
   }
 
-  def fixupConfigs(conf: SparkConf): Unit = {
+  def fixupConfigs(conf: SparkConf, sqlPluginName: String = SQL_PLUGIN_NAME): Unit = {
     // First add in the SQL executor plugin because that is what we need at a minimum
     if (conf.contains(SQL_PLUGIN_CONF_KEY)) {
-      for (pluginName <- Array(SQL_PLUGIN_NAME, UDF_PLUGIN_NAME)){
+      for (pluginName <- Array(sqlPluginName, UDF_PLUGIN_NAME)){
         val previousValue = conf.get(SQL_PLUGIN_CONF_KEY).split(",").map(_.trim)
         if (!previousValue.contains(pluginName)) {
           conf.set(SQL_PLUGIN_CONF_KEY, (previousValue :+ pluginName).mkString(","))
@@ -86,7 +86,7 @@ object RapidsPluginUtils extends Logging {
         }
       }
     } else {
-      conf.set(SQL_PLUGIN_CONF_KEY, Array(SQL_PLUGIN_NAME,UDF_PLUGIN_NAME).mkString(","))
+      conf.set(SQL_PLUGIN_CONF_KEY, Array(sqlPluginName, UDF_PLUGIN_NAME).mkString(","))
     }
 
     val serializer = conf.get(SERIALIZER_CONF_KEY, JAVA_SERIALIZER_NAME)
