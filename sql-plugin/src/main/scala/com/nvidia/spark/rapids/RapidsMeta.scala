@@ -54,6 +54,10 @@ final class NoRuleDataFromReplacementRule extends DataFromReplacementRule {
   override def getChecks: Option[TypeChecks[_]] = None
 }
 
+object RapidsMeta {
+  val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+}
+
 /**
  * Holds metadata about a stage in the physical plan that is separate from the plan itself.
  * This is helpful in deciding when to replace part of the plan with a GPU enabled version.
@@ -120,7 +124,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
   protected var cannotRunOnGpuBecauseOfCost: Boolean = false
 
-  val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+  import RapidsMeta.gpuSupportedTag
 
   /**
    * Recursively force a section of the plan back onto CPU, stopping once a plan
@@ -628,16 +632,6 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
   }
 
-  def recursivelyCheckTags() {
-    if (wrapped.isInstanceOf[QueryStageExec] ||
-      ShimLoader.getSparkShims.isCustomReaderExec(wrapped)) {
-      // stop recursion once we hit an already-executed query stage or a reader for it
-    } else {
-      wrapped.getTagValue(gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
-      childPlans.foreach(_.recursivelyCheckTags())
-    }
-  }
-
   /**
    * Run rules that happen for the entire tree after it has been tagged initially.
    */
@@ -688,7 +682,17 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       willNotWorkOnGpu("not all data writing commands can be replaced")
     }
 
+    checkExistingTags()
+
     tagPlanForGpu()
+  }
+
+  /**
+   * When AQE is enabled and we are planning a new query stage, we need to look at meta-data
+   * previously stored on the spark plan to determine whether this operator can run on GPU
+   */
+  def checkExistingTags(): Unit = {
+    wrapped.getTagValue(RapidsMeta.gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
   }
 
   /**
