@@ -1003,6 +1003,11 @@
         </profile>
     </profiles>
     <build>
+        <resources>
+          <resource>
+            <directory>${project.build.directory}/extra-resources</directory>
+          </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

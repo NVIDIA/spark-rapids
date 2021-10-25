@@ -184,8 +184,6 @@ trait SparkShims {
       colType: String,
       resolver: Resolver): Unit
 
-  def sortOrderChildren(s: SortOrder): Seq[Expression]
-
   def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
     sortOrder(child, direction, direction.defaultNullOrdering)
   }

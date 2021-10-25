@@ -17,6 +17,8 @@
 
 set -e
 
+shopt -s extglob
+
 while [[ "$1" != "" ]] ; do
 
 case "$1" in
@@ -59,7 +61,7 @@ DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 
 case $DIST_PROFILE in
 
-  snapshots)
+  snapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=(
       301
       302
@@ -70,10 +72,11 @@ case $DIST_PROFILE in
       312
       313
       320
+      321
     )
     ;;
 
-  noSnapshots)
+  noSnapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=(
       301
       302
