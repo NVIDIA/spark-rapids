@@ -3818,7 +3818,7 @@ object GpuOverrideUtil extends Logging {
       case NonFatal(t) if !failOnError =>
         logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
         planOriginal
-      case fatal =>
+      case fatal: Throwable =>
         logError("Encountered an exception applying GPU overrides " + fatal, fatal)
         throw fatal
     }
