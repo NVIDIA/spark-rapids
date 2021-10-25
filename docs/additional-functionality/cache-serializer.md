@@ -32,7 +32,7 @@ nav_order: 2
 
   To use this serializer please run Spark with the following conf.
   ```
-  spark-shell --conf spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer
+  spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer
   ```
 
  
