@@ -768,7 +768,7 @@ object GpuDecimalDivide {
       rhs: DecimalType,
       outputType: DecimalType): DecimalType = {
     val precision = intermediateArgPrecision(lhs, rhs, outputType)
-    val scale = lhsNeededScale(rhs, outputType)
+    val scale = math.min(lhsNeededScale(rhs, outputType), precision)
     DecimalType(precision, scale)
   }
 

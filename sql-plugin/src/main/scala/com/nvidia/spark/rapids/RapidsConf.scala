@@ -554,6 +554,18 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val NEED_DECIMAL_OVERFLOW_CHECKS = conf("spark.rapids.sql.decimalOverflowChecks")
+      .doc("Spark will often do decimal calculation with unbounded precision and then " +
+          "check for overflow when converting the result back to 128 bi decimal values. The " +
+          "RAPIDS Accelerator supports only up to 128 bit decimal values. So in cases where " +
+          "larger precision would be needed in the worst case for intermediate values we fall " +
+          "back to the CPU. If you want as many decimal calculations on the GPU as possible and" +
+          "know that the worst case overflows will not happen, then you probably should " +
+          "explicitly cast to decimal types with a smaller precision, or set this to false.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -1480,6 +1492,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gdsSpillAlignmentThreshold: Long = get(GDS_SPILL_ALIGNMENT_THRESHOLD)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
+
+  lazy val needDecimalChecks: Boolean = get(NEED_DECIMAL_OVERFLOW_CHECKS)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
