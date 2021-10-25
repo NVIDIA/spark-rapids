@@ -70,7 +70,7 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 class Spark320Shims extends Spark32XShims {
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION320
+  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   override def getRapidsShuffleManagerClass: String = {
     classOf[RapidsShuffleManager].getCanonicalName
@@ -802,8 +802,6 @@ class Spark320Shims extends Spark32XShims {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
-
   override def sortOrder(
       child: Expression,
       direction: SortDirection,
@@ -1004,8 +1002,10 @@ class Spark320Shims extends Spark32XShims {
       new KryoJavaSerializer())
   }
 
-  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
-    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
-    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
+  override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
+    adaptivePlan.initialPlan
   }
+
+  override def getLegacyStatisticalAggregate(): Boolean =
+    SQLConf.get.legacyStatisticalAggregate
 }

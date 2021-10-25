@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, Predicate, StringSplit, SubstringIndex}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, Literal, NullIntolerant, Predicate, RLike, StringSplit, SubstringIndex}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -742,6 +742,56 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
     }
     out.result() + "\\Z" // makes this match for cuDF expected format for `matchesRe`
   }
+}
+
+class GpuRLikeMeta(
+    expr: RLike,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
+
+    override def tagExprForGpu(): Unit = {
+      if (!expr.right.isInstanceOf[Literal]) {
+        willNotWorkOnGpu(s"RLike with non-literal pattern is not supported on GPU")
+      }
+    }
+
+    override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+      GpuRLike(lhs, rhs)
+}
+
+case class GpuRLike(left: Expression, right: Expression)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant  {
+
+  override def toString: String = s"$left gpurlike $right"
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have two column vectors as input in RLike")
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    throw new IllegalStateException("Really should not be here, " +
+      "Cannot have a scalar as left side operand in RLike")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val pattern = if (rhs.isValid) {
+      rhs.getValue.asInstanceOf[UTF8String].toString
+    } else {
+      throw new IllegalStateException("Really should not be here, " +
+        "Cannot have an invalid scalar value as right side operand in RLike")
+    }
+    lhs.getBase.containsRe(pattern)
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+
+  override def dataType: DataType = BooleanType
 }
 
 class SubstringIndexMeta(

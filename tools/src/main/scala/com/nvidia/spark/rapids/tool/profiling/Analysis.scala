@@ -320,7 +320,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
         // Potential problems not properly track, add it later
         SQLDurationExecutorTimeProfileResult(app.index, app.appId, sqlId, sqlCase.duration,
-          sqlCase.hasDataset, app.appInfo.duration, sqlCase.problematic,
+          sqlCase.hasDatasetOrRDD, app.appInfo.duration, sqlCase.problematic,
           sqlCase.sqlCpuTimePercent)
       }
     }

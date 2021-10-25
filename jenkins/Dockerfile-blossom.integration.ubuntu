@@ -32,7 +32,8 @@ ARG CUDF_VER
 
 # Install jdk-8, jdk-11, maven, docker image
 RUN apt-get update -y && \
-    apt-get install -y software-properties-common
+    apt-get install -y software-properties-common rsync
+
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \

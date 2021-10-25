@@ -29,6 +29,10 @@
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
     <version>21.12.0-SNAPSHOT</version>
 
+    <properties>
+        <target.classifier/>
+    </properties>
+
     <profiles>
         <profile>
             <id>noSnapshotsWithDatabricks</id>
@@ -122,6 +126,15 @@
                                     <groupId>com.nvidia</groupId>
                                     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
                                     <classifier>spark311cdh</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark320</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <overWrite>false</overWrite>
@@ -294,6 +307,18 @@
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
                                         <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark301db.jar"
                                                 dest="${project.build.directory}/parallel-world/"
                                         >
@@ -436,6 +461,15 @@
                                     <overWrite>false</overWrite>
                                     <outputDirectory>${project.build.directory}/deps</outputDirectory>
                                 </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.nvidia</groupId>
+                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <classifier>spark320</classifier>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
+                                </artifactItem>
                             </artifactItems>
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
@@ -572,6 +606,18 @@
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark311cdh.jar"
                                                 dest="${project.build.directory}/parallel-world/spark311cdh"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark320.jar"
+                                                dest="${project.build.directory}/parallel-world/spark320"
                                         >
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
@@ -1556,6 +1602,12 @@
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
             <build>
                 <plugins>
                     <plugin>
@@ -1600,7 +1652,7 @@
                                 <configuration>
                                     <target>
                                         <mkdir dir="${project.build.directory}/target/deps"/>
-                                        <copy file="../aggregator/target/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                        <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
                                               todir="${project.build.directory}/deps"/>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
@@ -1701,7 +1753,7 @@
                                 <configuration>
                                     <target>
                                         <mkdir dir="${project.build.directory}/target/deps"/>
-                                        <copy file="../aggregator/target/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
+                                        <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
                                               todir="${project.build.directory}/deps"/>
                                         <unzip
                                                 src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"
@@ -1764,8 +1816,11 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>net.alchim31.maven</groupId>
-                <artifactId>scala-maven-plugin</artifactId>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <configuration>
+                    <skip>${maven.updateconfig.skip}</skip>
+                </configuration>
                 <executions>
                     <execution>
                         <id>update_config</id>
@@ -1774,15 +1829,11 @@
                             <goal>run</goal>
                         </goals>
                         <configuration>
-                            <launchers>
-                                <launcher>
-                                    <id>update_rapids_config</id>
-                                    <mainClass>com.nvidia.spark.rapids.RapidsConf</mainClass>
-                                    <args>
-                                        <arg>${project.basedir}/../docs/configs.md</arg>
-                                    </args>
-                                </launcher>
-                            </launchers>
+                            <target>
+                                <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
+                                    <arg value="${project.basedir}/../docs/configs.md"/>
+                                </java>
+                            </target>
                         </configuration>
                     </execution>
                     <execution>
@@ -1792,15 +1843,11 @@
                             <goal>run</goal>
                         </goals>
                         <configuration>
-                            <launchers>
-                                <launcher>
-                                    <id>update_rapids_support</id>
-                                    <mainClass>com.nvidia.spark.rapids.SupportedOpsDocs</mainClass>
-                                    <args>
-                                        <arg>${project.basedir}/../docs/supported_ops.md</arg>
-                                    </args>
-                                </launcher>
-                            </launchers>
+                            <target>
+                                <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
+                                    <arg value="${project.basedir}/../docs/supported_ops.md"/>
+                                </java>
+                            </target>
                         </configuration>
                     </execution>
                     <execution>
@@ -1810,19 +1857,33 @@
                             <goal>run</goal>
                         </goals>
                         <configuration>
-                            <launchers>
-                                <launcher>
-                                    <id>update_rapids_support_tools</id>
-                                    <mainClass>com.nvidia.spark.rapids.SupportedOpsForTools</mainClass>
-                                    <args>
-                                        <arg>${project.basedir}/../tools/src/main/resources/supportedDataSource.csv
-                                        </arg>
-                                    </args>
-                                </launcher>
-                            </launchers>
+                            <target>
+                                <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                    <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
+                                </java>
+                            </target>
                         </configuration>
                     </execution>
                 </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.nvidia</groupId>
+                        <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                        <version>${project.version}</version>
+                        <classifier>${spark.version.classifier}</classifier>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.apache.spark</groupId>
+                        <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                        <version>${spark.version}</version>
+                        <exclusions>
+                            <exclusion>
+                                <groupId>org.apache.curator</groupId>
+                                <artifactId>curator-recipes</artifactId>
+                            </exclusion>
+                        </exclusions>
+                    </dependency>
+                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>

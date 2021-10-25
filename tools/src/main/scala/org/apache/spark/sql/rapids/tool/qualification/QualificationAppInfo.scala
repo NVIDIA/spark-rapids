@@ -24,18 +24,17 @@ import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.scheduler.SparkListenerEvent
+import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent}
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
 import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 
-class QualAppInfo(
-    numOutputRows: Int,
-    eventLogInfo: EventLogInfo,
-    hadoopConf: Configuration,
+class QualificationAppInfo(
+    eventLogInfo: Option[EventLogInfo],
+    hadoopConf: Option[Configuration] = None,
     pluginTypeChecker: Option[PluginTypeChecker],
     readScorePercent: Int)
-  extends AppBase(numOutputRows, eventLogInfo, hadoopConf) with Logging {
+  extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
   var isPluginEnabled = false
@@ -58,39 +57,56 @@ class QualAppInfo(
 
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
 
-  // SQL containing any Dataset operation
-  val sqlIDToDataSetCase: HashSet[Long] = HashSet[Long]()
+  // SQL containing any Dataset operation or RDD to DataSet/DataFrame operation
+  val sqlIDToDataSetOrRDDCase: HashSet[Long] = HashSet[Long]()
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
 
-  private lazy val eventProcessor =  new QualEventProcessor()
+  private lazy val eventProcessor =  new QualificationEventProcessor(this)
+
+  /**
+   * Get the event listener the qualification tool uses to process Spark events.
+   * Install this listener in Spark.
+   *
+   * {{{
+   *   spark.sparkContext.addSparkListener(listener)
+   * }}}
+   * @return SparkListener
+   */
+  def getEventListener: SparkListener = {
+    eventProcessor
+  }
 
   processEvents()
 
   override def processEvent(event: SparkListenerEvent): Boolean = {
-    eventProcessor.processAnyEvent(this, event)
+    eventProcessor.processAnyEvent(event)
     false
   }
 
   // time in ms
   private def calculateAppDuration(startTime: Long): Option[Long] = {
-    val estimatedResult =
-      this.appEndTime match {
-        case Some(t) => this.appEndTime
-        case None =>
-          if (lastSQLEndTime.isEmpty && lastJobEndTime.isEmpty) {
-            None
-          } else {
-            logWarning(s"Application End Time is unknown for $appId, estimating based on" +
-              " job and sql end times!")
-            // estimate the app end with job or sql end times
-            val sqlEndTime = if (this.lastSQLEndTime.isEmpty) 0L else this.lastSQLEndTime.get
-            val jobEndTime = if (this.lastJobEndTime.isEmpty) 0L else lastJobEndTime.get
-            val maxEndTime = math.max(sqlEndTime, jobEndTime)
-            if (maxEndTime == 0) None else Some(maxEndTime)
-          }
-      }
-    ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
+    if (startTime > 0) {
+      val estimatedResult =
+        this.appEndTime match {
+          case Some(t) => this.appEndTime
+          case None =>
+            if (lastSQLEndTime.isEmpty && lastJobEndTime.isEmpty) {
+              None
+            } else {
+              logWarning(s"Application End Time is unknown for $appId, estimating based on" +
+                " job and sql end times!")
+              // estimate the app end with job or sql end times
+              val sqlEndTime = if (this.lastSQLEndTime.isEmpty) 0L else this.lastSQLEndTime.get
+              val jobEndTime = if (this.lastJobEndTime.isEmpty) 0L else lastJobEndTime.get
+              val maxEndTime = math.max(sqlEndTime, jobEndTime)
+              if (maxEndTime == 0) None else Some(maxEndTime)
+            }
+        }
+      ProfileUtils.OptionLongMinusLong(estimatedResult, startTime)
+    } else {
+      None
+    }
   }
 
   /**
@@ -115,19 +131,19 @@ class QualAppInfo(
   // for the SQL dataframe duration
   private def calculateSqlDataframeDuration: Long = {
     sqlDurationTime.filterNot { case (sqlID, dur) =>
-        sqlIDToDataSetCase.contains(sqlID) || dur == -1
+      sqlIDToDataSetOrRDDCase.contains(sqlID) || dur == -1
     }.values.sum
   }
 
   private def probNotDataset: HashMap[Long, Set[String]] = {
-    sqlIDtoProblematic.filterNot { case (sqlID, _) => sqlIDToDataSetCase.contains(sqlID) }
+    sqlIDtoProblematic.filterNot { case (sqlID, _) => sqlIDToDataSetOrRDDCase.contains(sqlID) }
   }
 
   // The total task time for all tasks that ran during SQL dataframe
   // operations.  if the SQL contains a dataset, it isn't counted.
   private def calculateTaskDataframeDuration: Long = {
     val validSums = sqlIDToTaskEndSum.filterNot { case (sqlID, _) =>
-      sqlIDToDataSetCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
+      sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
     validSums.values.map(dur => dur.totalTaskDuration).sum
   }
@@ -164,7 +180,7 @@ class QualAppInfo(
 
   private def calculateCpuTimePercent: Double = {
     val validSums = sqlIDToTaskEndSum.filterNot { case (sqlID, _) =>
-      sqlIDToDataSetCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
+      sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
     val totalCpuTime = validSums.values.map { dur =>
       dur.executorCPUTime
@@ -180,7 +196,7 @@ class QualAppInfo(
       s"${ds.format.toLowerCase()}[${ds.schema}]"
     }.mkString(":")
   }
-  
+
   // For the read score we look at all the read formats and datatypes for each
   // format and for each read give it a value 0.0 - 1.0 depending on whether
   // the format is supported and if the data types are supported. We then sum
@@ -205,15 +221,20 @@ class QualAppInfo(
     }.getOrElse(1.0)
   }
 
-  def reportComplexTypes: (String, String) = {
+  private def reportComplexTypes: (String, String) = {
     if (dataSourceInfo.size != 0) {
       val schema = dataSourceInfo.map { ds => ds.schema }
-      QualAppInfo.parseReadSchemaForNestedTypes(schema)
+      QualificationAppInfo.parseReadSchemaForNestedTypes(schema)
     } else {
       ("", "")
     }
   }
 
+  /**
+   * Aggregate and process the application after reading the events.
+   * @return Option of QualificationSummaryInfo, Some if we were able to process the application
+   *         otherwise None.
+   */
   def aggregateStats(): Option[QualificationSummaryInfo] = {
     appInfo.map { info =>
       val appDuration = calculateAppDuration(info.startTime).getOrElse(0L)
@@ -246,14 +267,14 @@ class QualAppInfo(
     }
   }
 
-  def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
+  private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
       checkGraphNodeForBatchScan(sqlID, node)
-      if (isDataSetPlan(node.desc)) {
-        sqlIDToDataSetCase += sqlID
+      if (isDataSetOrRDDPlan(node.desc)) {
+        sqlIDToDataSetOrRDDCase += sqlID
       }
       val issues = findPotentialIssues(node.desc)
       if (issues.nonEmpty) {
@@ -268,7 +289,7 @@ class QualAppInfo(
     }
   }
 
-  def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
+  private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
     // Filter unsupported write data format
     val unSupportedWriteFormat = pluginTypeChecker.map { checker =>
       checker.isWriteFormatsupported(writeFormat)
@@ -324,15 +345,15 @@ case class QualificationSummaryInfo(
     complexTypes: String,
     nestedComplexTypes: String)
 
-object QualAppInfo extends Logging {
+object QualificationAppInfo extends Logging {
   def createApp(
       path: EventLogInfo,
-      numRows: Int,
       hadoopConf: Configuration,
       pluginTypeChecker: Option[PluginTypeChecker],
-      readScorePercent: Int): Option[QualAppInfo] = {
+      readScorePercent: Int): Option[QualificationAppInfo] = {
     val app = try {
-        val app = new QualAppInfo(numRows, path, hadoopConf, pluginTypeChecker, readScorePercent)
+        val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
+          readScorePercent)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {
@@ -350,7 +371,8 @@ object QualAppInfo extends Logging {
     app
   }
 
-  def parseReadSchemaForNestedTypes(schema: ArrayBuffer[String]): (String, String) = {
+  def parseReadSchemaForNestedTypes(
+      schema: ArrayBuffer[String]): (String, String) = {
     val tempStringBuilder = new StringBuilder()
     val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
     var angleBracketsCount = 0
