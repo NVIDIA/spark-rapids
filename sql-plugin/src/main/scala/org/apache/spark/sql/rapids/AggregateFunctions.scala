@@ -983,8 +983,8 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
   // otherwise, and the total count can be correctly evaluated only by summing them. eg.
   // avg(col(null, 27)) should be 27, with count column projection as (0, 1) and total count
   // for dividing the average = (0 + 1) and not 2 which is the rowcount of the projected column.
-  override lazy val updateExpressions: Seq[Expression] =
-  Seq(new CudfSum(cudfSum), new CudfSum(cudfCount))
+  override lazy val updateExpressions: Seq[Expression] = Seq(
+    new CudfSum(cudfSum), new CudfSum(cudfCount))
 
   override lazy val postUpdate: Seq[Expression] = sumDataType match {
     case dt: DecimalType => Seq(GpuCheckOverflow(cudfSum, dt, nullOnOverflow = true), cudfCount)

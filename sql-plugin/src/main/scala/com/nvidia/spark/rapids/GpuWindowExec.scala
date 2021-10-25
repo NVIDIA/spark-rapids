@@ -322,7 +322,7 @@ object GpuWindowExec extends Arm {
         // First pass replace any operations that should be totally replaced.
         val replacePass = expr.transformDown {
           case GpuWindowExpression(
-          GpuAggregateExpression(rep: GpuReplaceWindowFunction, _, _, _, _), spec) =>
+            GpuAggregateExpression(rep: GpuReplaceWindowFunction, _, _, _, _), spec) =>
             // We don't actually care about the GpuAggregateExpression because it is ignored
             // by our GPU window operations anyways.
             rep.windowReplacement(spec)
