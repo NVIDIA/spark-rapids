@@ -52,7 +52,7 @@ Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the v
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
 CUDA and will not run on other versions. The jars use a maven classifier to keep them separate.
 
-- CUDA 11.0/11.1/11.2 => classifier cuda11
+- CUDA 11.x => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
 - cudf-21.10.0-cuda11.jar
