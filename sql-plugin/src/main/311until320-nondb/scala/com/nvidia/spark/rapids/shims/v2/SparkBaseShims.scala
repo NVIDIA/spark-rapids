@@ -209,7 +209,7 @@ abstract class SparkBaseShims extends Spark31XShims {
       ExprChecks.fullAgg(
         // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
         // then it divides by the count with an output scale that is 4 more than the input
-        // scale. With how our divide works to match Spark. This means that we will need a
+        // scale. With how our divide works to match Spark, this means that we will need a
         // precision of 5 more. So 38 - 10 - 5 = 23
         TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
         TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
