@@ -19,26 +19,29 @@ package com.nvidia.spark.rapids
 import java.sql.{Date, Timestamp}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.functions.{array, col, map, struct}
+import org.apache.spark.sql.types.DecimalType
 
 class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   val cpuEnabledConf: SparkConf = new SparkConf()
     .set(RapidsConf.ENABLE_CPU_BASED_UDF.key, "true")
-    .set(RapidsConf.EXPLAIN.key, "all")
+
+  val csvAndCpuEnabledConf: SparkConf = enableCsvConf().setAll(cpuEnabledConf.getAll)
 
   testSparkResultsAreEqual("CPU Based Scala UDF-Boolean",
-    booleanDf,
-    cpuEnabledConf,
-    decimalTypeEnabled = false) { frame =>
+      booleanDf,
+      cpuEnabledConf,
+      decimalTypeEnabled = false) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Boolean]())
     frame.select(noopUDF(col("bools")))
   }
 
   testSparkResultsAreEqual("CPU Based Scala UDF-Short",
-    shortsFromCsv,
-    enableCsvConf.set(RapidsConf.ENABLE_CPU_BASED_UDF.key, "true"),
-    decimalTypeEnabled = false) { frame =>
+      shortsFromCsv,
+      csvAndCpuEnabledConf,
+      decimalTypeEnabled = false) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Short]())
     frame.select(noopUDF(col("shorts")))
   }
@@ -59,22 +62,63 @@ class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("CPU Based Scala UDF-Date",
-    datesDf,
-    cpuEnabledConf,
-    decimalTypeEnabled = false) { frame =>
+      datesDf,
+      cpuEnabledConf,
+      decimalTypeEnabled = false) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Date]())
     frame.select(noopUDF(col("dates")))
   }
 
   testSparkResultsAreEqual("CPU Based Scala UDF-Timestamp",
-    timestampsDf,
-    cpuEnabledConf,
-    decimalTypeEnabled = false) { frame =>
+      timestampsDf,
+      cpuEnabledConf,
+      decimalTypeEnabled = false) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Timestamp]())
     frame.select(noopUDF(col("timestamps")))
   }
 
-  // TODO Nested types: Array, Struct, Map
+  testSparkResultsAreEqual("CPU Based Scala UDF-Decimal",
+      mixedDf(_, 1),
+      cpuEnabledConf) { frame =>
+    // Scala UDF returns a Decimal(38, 18) by default and there is no way to specify the
+    // precision for Scala functions. So here uses the Java version of `register` to do it.
+    frame.sparkSession.udf.register("NoopUDF", (dec: java.math.BigDecimal) => dec,
+      DecimalType(15, 5))
+    frame.selectExpr("NoopUDF(decimals)")
+  }
+
+  testSparkResultsAreEqual("CPU Based Scala UDF-Array(Int)",
+      mixedDfWithNulls,
+      cpuEnabledConf,
+      decimalTypeEnabled = false) { frame =>
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Seq[java.lang.Integer]]())
+    frame.select(noopUDF(array("ints", "ints")))
+  }
+
+  testSparkResultsAreEqual("CPU Based Scala UDF-Struct(Int, Double, String)",
+      mixedDfWithNulls,
+      cpuEnabledConf,
+      decimalTypeEnabled = false) { frame =>
+    // udf accepting a struct as row, can not return the input Row directly, since Row is
+    // not supported by Spark, so here convert it to a Tuple3 to return.
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF",
+      (row: Row) => (
+        row(0).asInstanceOf[java.lang.Integer],
+        row(1).asInstanceOf[java.lang.Double],
+        row(2).asInstanceOf[String]))
+    frame.select(noopUDF(struct("ints", "doubles", "strings")))
+  }
+
+  testSparkResultsAreEqual("CPU Based Scala UDF-Map(String -> Long)",
+      mixedDfWithNulls,
+      cpuEnabledConf,
+      decimalTypeEnabled = false) { frame =>
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF",
+      new NoopUDF[Map[String, java.lang.Long]]())
+    // keys should not be null, so filter nulls out first.
+    frame.filter("strings != null")
+      .select(noopUDF(map(col("strings"), col("longs"))))
+  }
 }
 
 /** An UDF for test only, returning the input directly. */

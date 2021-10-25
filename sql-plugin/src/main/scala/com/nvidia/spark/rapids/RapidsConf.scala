@@ -720,7 +720,7 @@ object RapidsConf {
   val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.cpuBasedUDF.enabled")
     .doc("When set to true, supports to run a CPU based UDF efficiently by transferring " +
       "only the data it needs between GPU and CPU inside a plan, instead of falling the whole " +
-      "plan back to CPU. This is an experimental feature, and this conf might be removed in " +
+      "plan back to CPU. This is an experimental feature, and this config might be removed in " +
       "the future.")
     .booleanConf
     .createWithDefault(false)
