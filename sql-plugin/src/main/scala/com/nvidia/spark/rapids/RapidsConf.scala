@@ -556,7 +556,7 @@ object RapidsConf {
 
   val NEED_DECIMAL_OVERFLOW_CHECKS = conf("spark.rapids.sql.decimalOverflowChecks")
       .doc("Spark will often do decimal calculation with unbounded precision and then " +
-          "check for overflow when converting the result back to 128 bi decimal values. The " +
+          "check for overflow when converting the result back to 128 bit decimal values. The " +
           "RAPIDS Accelerator supports only up to 128 bit decimal values. So in cases where " +
           "larger precision would be needed in the worst case for intermediate values we fall " +
           "back to the CPU. If you want as many decimal calculations on the GPU as possible and" +
