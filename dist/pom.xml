@@ -342,6 +342,18 @@
                                         >
                                             <patternset refid="excludeMeta"/>
                                         </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312db.jar"
+                                                dest="${project.build.directory}/parallel-world/"
+                                        >
+                                            <patternset refid="includeMeta"/>
+                                        </unzip>
+                                        <unzip
+                                                src="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-spark312db.jar"
+                                                dest="${project.build.directory}/parallel-world/spark312db"
+                                        >
+                                            <patternset refid="excludeMeta"/>
+                                        </unzip>
 
                                         <delete
                                             file="${project.build.directory}/parallel-world/META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"
