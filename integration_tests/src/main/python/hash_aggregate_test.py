@@ -1170,24 +1170,23 @@ def test_hash_groupby_approx_percentile_double_scalar():
     'ApproximatePercentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
 def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {
-        'spark.sql.adaptive.enabled': aqe_enabled,
-        'spark.rapids.sql.explain': 'ALL'
+        'spark.sql.adaptive.enabled': aqe_enabled
     })
 
     def create_and_show_df(spark):
+        # This simulates calling  "df.show" by introducing a `CAST(approx_percentile(...) AS string)` on the
+        # final aggregate and this is not supported on GPU so falls back to CPU and the purpose of this test
+        # is to make sure that the partial aggregate also falls back to CPU (the query will fail if
+        # the partial aggregate runs on the GPU because the t-digest buffer is not compatible with Spark's
+        # CPU buffer for approx percentile).
+
         df = gen_df(spark, [('k', StringGen(nullable=False)),
                             ('v', DoubleGen())], length=100)
         df.createOrReplaceTempView("t")
-        df2 = spark.sql("SELECT k, approx_percentile(v, array(0.1, 0.2)) from t group by k")
-
-        # the "show" introduces a `CAST(approx_percentile(...) AS string)` on the final aggregate and this is
-        # not supported on GPU so falls back to CPU and the purpose of this test is to make sure that the
-        # partial aggregate also falls back to CPU
-        df2.show()
-
+        df2 = spark.sql("select k, cast(approx_percentile(v, array(0.1, 0.2)) as string) from t group by k")
         return df2
 
-    run_with_cpu_and_gpu(create_and_show_df, 'COLLECT', conf)
+    assert_gpu_fallback_collect(lambda spark: create_and_show_df(spark), 'ApproximatePercentile', conf)
 
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
