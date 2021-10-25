@@ -322,7 +322,7 @@ abstract class BaseScalaUDFMeta(
       val udfName = expr.udfName.getOrElse("UDF")
       val udfClass = expr.function.getClass
       willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
-        s"a GPU implementation, nor the conf `${RapidsConf.CPU_BASED_UDF_ENABLED.key}` " +
+        s"a GPU implementation, nor the conf `${RapidsConf.ENABLE_CPU_BASED_UDF.key}` " +
         s"is enabled")
     }
   }
@@ -343,7 +343,8 @@ abstract class BaseScalaUDFMeta(
 
 object GpuScalaUDF {
   def exprMeta: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
-    "User Defined Function, support requires the UDF to implement a RAPIDS accelerated interface",
+    "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
+      "to get better performance.",
     ExprChecks.projectOnly(
       udfTypeSig,
       TypeSig.all,

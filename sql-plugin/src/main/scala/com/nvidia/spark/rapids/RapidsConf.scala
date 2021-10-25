@@ -715,14 +715,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  // FIXME Should it be an internal conf? Since it is an experimental feature now.
-  // And eventually, it should be enabled or disabled depending on something
-  // that we don't know yet but would try to figure out.
-  val CPU_BASED_UDF_ENABLED = conf("spark.rapids.sql.cpuBasedUDF.enabled")
+  // This is an experimental feature now. And eventually, should be enabled or disabled depending
+  // on something that we don't know yet but would try to figure out.
+  val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.cpuBasedUDF.enabled")
     .doc("When set to true, supports to run a CPU based UDF efficiently by transferring " +
       "only the data it needs between GPU and CPU inside a plan, instead of falling the whole " +
-      "plan back to CPU. This is an experimental feature, and may be changed in the future.")
-    .internal()
+      "plan back to CPU. This is an experimental feature, and this conf might be removed in " +
+      "the future.")
     .booleanConf
     .createWithDefault(false)
 
@@ -1726,7 +1725,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
-  lazy val isCpuBasedUDFEnabled: Boolean = get(CPU_BASED_UDF_ENABLED)
+  lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

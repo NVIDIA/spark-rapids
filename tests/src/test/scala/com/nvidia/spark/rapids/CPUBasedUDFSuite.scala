@@ -24,7 +24,7 @@ import org.apache.spark.sql.functions.col
 class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   val cpuEnabledConf: SparkConf = new SparkConf()
-    .set(RapidsConf.CPU_BASED_UDF_ENABLED.key, "true")
+    .set(RapidsConf.ENABLE_CPU_BASED_UDF.key, "true")
     .set(RapidsConf.EXPLAIN.key, "all")
 
   testSparkResultsAreEqual("CPU Based Scala UDF-Boolean",
@@ -37,16 +37,16 @@ class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("CPU Based Scala UDF-Short",
     shortsFromCsv,
-    enableCsvConf.set(RapidsConf.CPU_BASED_UDF_ENABLED.key, "true"),
+    enableCsvConf.set(RapidsConf.ENABLE_CPU_BASED_UDF.key, "true"),
     decimalTypeEnabled = false) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Short]())
     frame.select(noopUDF(col("shorts")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Mixed(int,long,double,string,decimal)",
+  testSparkResultsAreEqual("CPU Based Scala UDF-Mixed(int,long,double,string)",
       mixedDfWithNulls,
       cpuEnabledConf,
-      execsAllowedNonGpu = Seq("ProjectExec")) { frame =>
+      decimalTypeEnabled = false) { frame =>
     val iNoopUDF = frame.sparkSession.udf.register("iNoopUDF", new NoopUDF[Int]())
     val lNoopUDF = frame.sparkSession.udf.register("lNoopUDF", new NoopUDF[Long]())
     val dNoopUDF = frame.sparkSession.udf.register("dNoopUDF", new NoopUDF[Double]())

@@ -369,7 +369,8 @@ abstract class SparkBaseShims extends Spark30XShims {
         }
       }),
     GpuOverrides.expr[ScalaUDF](
-      "User Defined Function, support requires the UDF to implement a RAPIDS accelerated interface",
+      "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
+        "to get better performance.",
       ExprChecks.projectOnly(
         udfTypeSig,
         TypeSig.all,

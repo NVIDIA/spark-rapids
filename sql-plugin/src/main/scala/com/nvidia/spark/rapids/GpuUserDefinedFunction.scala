@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, HostColumnVector, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostColumnVector, NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -24,11 +24,9 @@ import com.nvidia.spark.rapids.shims.v2.ShimExpression
 import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.UserDefinedExpression
+import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, UserDefinedExpression}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 
 /** Common implementation across all RAPIDS accelerated UDF types */
 trait GpuUserDefinedFunction extends GpuExpression
@@ -107,16 +105,20 @@ trait RapidsUserDefinedFunction extends GpuUserDefinedFunction with Logging {
         // 1 Convert the argument columns to row.
         // 2 Evaluate the CPU UDF row by row and cache the result.
         // 3 Build a result column from the cache.
-        closeOnExcept(new RowDataBuffer(dataType, batch.numRows)) { buffer =>
+        val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
+        val retType = GpuColumnVector.convertFrom(dataType, nullable)
+        val retRow = new GenericInternalRow(size = 1)
+        closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
           new ColumnarToRowIterator(
               Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
               NoopMetric,
               NoopMetric,
               NoopMetric,
               NoopMetric).foreach { row =>
-            buffer.append(evaluateRow(row))
+            retRow.update(0, evaluateRow(row))
+            retConverter.append(retRow, 0, builder)
           }
-          closeOnExcept(buffer.copyToDevice()) { resultCol =>
+          closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
             GpuColumnVector.from(resultCol, dataType)
           }
         }
@@ -128,56 +130,4 @@ trait RapidsUserDefinedFunction extends GpuUserDefinedFunction with Logging {
     }
   } // end of `columnarEval`
 
-}
-
-/** The wrapper of a ColumnBuilder to support appending an `Any`. */
-class RowDataBuffer(rowType: DataType, estimatedRows: Int) extends AutoCloseable {
-  private val builder =
-    new HostColumnVector.ColumnBuilder(GpuScalar.resolveElementType(rowType), estimatedRows)
-
-  /**
-   * Append a value of Catalyst type to this buffer.
-   * The value `row` should be compatible with the `rowType` used to create this buffer.
-   */
-  def append(row: Any): this.type = {
-    if (row == null) {
-      builder.appendNull()
-    } else {
-      // A boxed version of primitive types will be unboxed, and it is safe for non-nulls here.
-      rowType match {
-        case NullType => builder.appendNull()
-        case ByteType => builder.append(row.asInstanceOf[Byte])
-        case ShortType => builder.append(row.asInstanceOf[Short])
-        case FloatType => builder.append(row.asInstanceOf[Float])
-        case DoubleType => builder.append(row.asInstanceOf[Double])
-        case BooleanType => builder.append(row.asInstanceOf[Boolean])
-        case IntegerType | DateType => builder.append(row.asInstanceOf[Int])
-        case LongType | TimestampType => builder.append(row.asInstanceOf[Long])
-        case StringType => builder.appendUTF8String(row.asInstanceOf[UTF8String].getBytes)
-        case dt: DecimalType =>
-          GpuScalar.convertDecimalTo(row.asInstanceOf[Decimal], dt) match {
-            case Left(dec32AsInt) => builder.append(dec32AsInt)
-            case Right(dec64AsLong) => builder.append(dec64AsLong)
-          }
-        case StructType(_) =>
-          val dataAsStruct = GpuScalar.convertElementTo(row, rowType)
-          builder.appendStructValues(dataAsStruct.asInstanceOf[HostColumnVector.StructData])
-        case ArrayType(_, _) | MapType(_, _, _) =>
-          val dataAsList = GpuScalar.convertElementTo(row, rowType)
-          builder.appendLists(dataAsList.asInstanceOf[java.util.List[_]])
-        case ot =>
-          throw new IllegalArgumentException(s"Failed to append the value ('$row'), " +
-            s"because of unsupported data type ($ot).")
-      }
-    }
-    this
-  }
-
-  /**
-   * Copy the data collected so far to device.
-   * The returned column should be closed after done.
-   */
-  def copyToDevice(): ColumnVector = builder.buildAndPutOnDevice()
-
-  override def close(): Unit = builder.close()
 }

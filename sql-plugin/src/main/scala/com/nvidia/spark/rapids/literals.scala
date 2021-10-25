@@ -72,18 +72,9 @@ object GpuScalar extends Arm with Logging {
    * Resolves a cudf `HostColumnVector.DataType` from a Spark `DataType`.
    * The returned type will be used by the `ColumnVector.fromXXX` family.
    */
-  private[rapids] def resolveElementType(dt: DataType): HostColumnVector.DataType = dt match {
-    case ArrayType(elementType, _) =>
-      new HostColumnVector.ListType(true, resolveElementType(elementType))
-    case StructType(fields) =>
-      new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
-    case MapType(keyType, valueType, _) =>
-      new HostColumnVector.ListType(true,
-        new HostColumnVector.StructType(true,
-          resolveElementType(keyType),
-          resolveElementType(valueType)))
-    case other =>
-      new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
+  private[rapids] def resolveElementType(dt: DataType,
+      nullable: Boolean = true): HostColumnVector.DataType = {
+    GpuColumnVector.convertFrom(dt, nullable)
   }
 
   /**
@@ -95,7 +86,7 @@ object GpuScalar extends Arm with Logging {
    * 'validateLiteralValue' in Spark.
    */
   /** Converts a decimal, `dec` should not be null. */
-  private[rapids] def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
+  private def convertDecimalTo(dec: Decimal, dt: DecimalType): Either[Integer, JLong] = {
     if (dec.scale > dt.scale) {
       throw new IllegalArgumentException(s"Unexpected decimals rounding.")
     }
@@ -118,8 +109,8 @@ object GpuScalar extends Arm with Logging {
     }
   }
 
-  /** Converts an element from Catalyst type to cuDF type */
-  private[rapids] def convertElementTo(element: Any, elemType: DataType): Any = elemType match {
+  /** Converts an element for nested lists */
+  private def convertElementTo(element: Any, elementType: DataType): Any = elementType match {
     case _ if element == null => null
     case StringType => element.asInstanceOf[UTF8String].getBytes
     case dt: DecimalType => convertDecimalTo(element.asInstanceOf[Decimal], dt) match {
