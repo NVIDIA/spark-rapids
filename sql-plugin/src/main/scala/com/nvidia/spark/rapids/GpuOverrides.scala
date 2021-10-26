@@ -3568,8 +3568,9 @@ object GpuOverrides extends Logging {
     exec[ObjectHashAggregateExec](
       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
       ExecChecks(
+        //TODO adding BINARY just to run tests and see if there any other issues
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY) //TODO adding BINARY just to run tests and see if there any other issues
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
@@ -3580,8 +3581,9 @@ object GpuOverrides extends Logging {
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
+        //TODO adding BINARY just to run tests and see if there any other issues
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY) //TODO adding BINARY just to run tests and see if there any other issues
+            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
@@ -3593,8 +3595,9 @@ object GpuOverrides extends Logging {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
+      //TODO adding BINARY just to run tests and see if there any other issues
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
-          TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all), //TODO adding BINARY just to run tests and see if there any other issues
+          TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
