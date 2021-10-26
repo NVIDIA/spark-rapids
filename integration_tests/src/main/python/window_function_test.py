@@ -905,3 +905,21 @@ def test_window_ride_along(ride_along):
             ' row_number() over (order by a) as row_num '
             'from window_agg_table ',
             conf = allow_negative_scale_of_decimal_conf)
+
+@approximate_float
+@pytest.mark.parametrize('part_gen', numeric_gens, ids=idfn)
+def test_window_stddev(part_gen):
+    window_spec_agg = Window.partitionBy('_1')
+    window_spec = Window.partitionBy('_1').orderBy("_2")
+
+    def do_it(spark):
+        data_gen = [('_1', IntegerGen()), ('_2', part_gen)]
+        df = gen_df(spark, data_gen)
+        return df.withColumn("row", f.row_number().over(window_spec))\
+            .withColumn("standard_dev", f.stddev("_2").over(window_spec_agg))\
+            .selectExpr("standard_dev")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={
+        'spark.rapids.sql.decimalType.enabled': 'true',
+        'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+

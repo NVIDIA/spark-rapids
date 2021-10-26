@@ -1224,10 +1224,10 @@ case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean)
   override def prettyName: String = "stddev_pop"
 }
 
-case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
-  extends GpuM2(child, nullOnDivideByZero) {
-
-  override lazy val evaluateExpression: Expression = {
+abstract class CudfStddev(
+    child:Expression,
+    nullOnDivideByZero: Boolean) extends GpuM2(child, nullOnDivideByZero) {
+  override val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
     val stddevSamp =
       GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
@@ -1237,8 +1237,42 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
     GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
       GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevSamp))
   }
+}
+
+case class WindowStddevSamp(
+    child: Expression,
+    nullOnDivideByZero: Boolean)
+    extends CudfStddev(child, nullOnDivideByZero) with GpuAggregateWindowFunction {
+  /**
+   * Using child references, define the shape of the vectors sent to the window operations
+   */
+  override val windowInputProjection: Seq[Expression] = Seq(child)
+
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
+    RollingAggregation.standardDeviation().onColumn(inputs.head._2)
+  }
+}
+
+case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
+    extends CudfStddev(child, nullOnDivideByZero) with GpuReplaceWindowFunction {
 
   override def prettyName: String = "stddev_samp"
+
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    // calculate n
+    val count = GpuCast(GpuWindowExpression(GpuCount(Seq(child)), spec), DoubleType)
+    val stddev = GpuWindowExpression(WindowStddevSamp(child, nullOnDivideByZero), spec)
+    // if (n == 0.0)
+    GpuIf(GpuEqualTo(count, GpuLiteral(0.0)),
+      // return null
+      GpuLiteral(null, DoubleType),
+      // else if (n == 1.0)
+      GpuIf(GpuEqualTo(count, GpuLiteral(1.0)),
+        // return divideByZeroEval
+        divideByZeroEvalResult,
+        // else return stddev
+        stddev))
+  }
 }
 
 case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean)
