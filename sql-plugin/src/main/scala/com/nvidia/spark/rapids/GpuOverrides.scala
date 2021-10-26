@@ -3569,7 +3569,7 @@ object GpuOverrides extends Logging {
       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY) //TODO adding BINARY just to run tests and see if there any other issues
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
@@ -3581,7 +3581,7 @@ object GpuOverrides extends Logging {
       "The backend for sort based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY) //TODO adding BINARY just to run tests and see if there any other issues
             .nested()
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
@@ -3594,7 +3594,7 @@ object GpuOverrides extends Logging {
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
-          TypeSig.MAP).nested(), TypeSig.all),
+          TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all), //TODO adding BINARY just to run tests and see if there any other issues
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",

@@ -1084,19 +1084,6 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
       case _ => true
     }
 
-  override def checkExistingTags(): Unit = {
-    if (availableRuntimeDataTransition) {
-      // we can ignore any tags for BinaryType being unsupported if we have runtime
-      // transitions available
-      wrapped.getTagValue(RapidsMeta.gpuSupportedTag)
-        .foreach(_.diff(cannotBeReplacedReasons.get)
-        .filterNot(_.startsWith("unsupported data types in input: BinaryType"))
-        .foreach(willNotWorkOnGpu))
-    } else {
-      super.checkExistingTags()
-    }
-  }
-
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
 
