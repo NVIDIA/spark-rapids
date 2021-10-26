@@ -31,76 +31,8 @@ import org.apache.spark.sql.rapids.tool.EventProcessorBase
 /**
  * This class is to process all events and do validation in the end.
  */
-class EventsProcessor() extends EventProcessorBase with  Logging {
-
-  type T = ApplicationInfo
-
-  override def processAnyEvent(app: T, event: SparkListenerEvent): Unit = {
-    event match {
-      case _: SparkListenerLogStart =>
-        doSparkListenerLogStart(app, event.asInstanceOf[SparkListenerLogStart])
-      case _: SparkListenerBlockManagerAdded =>
-        doSparkListenerBlockManagerAdded(app,
-          event.asInstanceOf[SparkListenerBlockManagerAdded])
-      case _: SparkListenerBlockManagerRemoved =>
-        doSparkListenerBlockManagerRemoved(app,
-          event.asInstanceOf[SparkListenerBlockManagerRemoved])
-      case _: SparkListenerEnvironmentUpdate =>
-        doSparkListenerEnvironmentUpdate(app,
-          event.asInstanceOf[SparkListenerEnvironmentUpdate])
-      case _: SparkListenerApplicationStart =>
-        doSparkListenerApplicationStart(app,
-          event.asInstanceOf[SparkListenerApplicationStart])
-      case _: SparkListenerApplicationEnd =>
-        doSparkListenerApplicationEnd(app,
-          event.asInstanceOf[SparkListenerApplicationEnd])
-      case _: SparkListenerExecutorAdded =>
-        doSparkListenerExecutorAdded(app,
-          event.asInstanceOf[SparkListenerExecutorAdded])
-      case _: SparkListenerExecutorRemoved =>
-        doSparkListenerExecutorRemoved(app,
-          event.asInstanceOf[SparkListenerExecutorRemoved])
-      case _: SparkListenerTaskStart =>
-        doSparkListenerTaskStart(app,
-          event.asInstanceOf[SparkListenerTaskStart])
-      case _: SparkListenerTaskEnd =>
-        doSparkListenerTaskEnd(app,
-          event.asInstanceOf[SparkListenerTaskEnd])
-      case _: SparkListenerSQLExecutionStart =>
-        doSparkListenerSQLExecutionStart(app,
-          event.asInstanceOf[SparkListenerSQLExecutionStart])
-      case _: SparkListenerSQLExecutionEnd =>
-        doSparkListenerSQLExecutionEnd(app,
-          event.asInstanceOf[SparkListenerSQLExecutionEnd])
-      case _: SparkListenerDriverAccumUpdates =>
-        doSparkListenerDriverAccumUpdates(app,
-          event.asInstanceOf[SparkListenerDriverAccumUpdates])
-      case _: SparkListenerJobStart =>
-        doSparkListenerJobStart(app,
-          event.asInstanceOf[SparkListenerJobStart])
-      case _: SparkListenerJobEnd =>
-        doSparkListenerJobEnd(app,
-          event.asInstanceOf[SparkListenerJobEnd])
-      case _: SparkListenerStageSubmitted =>
-        doSparkListenerStageSubmitted(app,
-          event.asInstanceOf[SparkListenerStageSubmitted])
-      case _: SparkListenerStageCompleted =>
-        doSparkListenerStageCompleted(app,
-          event.asInstanceOf[SparkListenerStageCompleted])
-      case _: SparkListenerTaskGettingResult =>
-        doSparkListenerTaskGettingResult(app,
-          event.asInstanceOf[SparkListenerTaskGettingResult])
-      case _: SparkListenerSQLAdaptiveExecutionUpdate =>
-        doSparkListenerSQLAdaptiveExecutionUpdate(app,
-          event.asInstanceOf[SparkListenerSQLAdaptiveExecutionUpdate])
-      case _: SparkListenerSQLAdaptiveSQLMetricUpdates =>
-        doSparkListenerSQLAdaptiveSQLMetricUpdates(app,
-          event.asInstanceOf[SparkListenerSQLAdaptiveSQLMetricUpdates])
-      case _ =>
-        val wasResourceProfileAddedEvent = doSparkListenerResourceProfileAddedReflect(app, event)
-        if (!wasResourceProfileAddedEvent) doOtherEvent(app, event)
-    }
-  }
+class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[ApplicationInfo](app)
+  with Logging {
 
   override def doSparkListenerResourceProfileAddedReflect(
       app: ApplicationInfo,

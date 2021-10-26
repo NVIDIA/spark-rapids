@@ -128,7 +128,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
         try {
-          val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+          val appOpt = createApp(path, index, hadoopConf)
           appOpt.foreach(app => allApps.add(app))
         } catch {
           case t: Throwable => errorHandler(t, path)
@@ -165,7 +165,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     class ProfileThread(path: EventLogInfo, index: Int) extends Runnable {
       def run: Unit = {
         try {
-          val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+          val appOpt = createApp(path, index, hadoopConf)
           appOpt.foreach { app =>
             val sum = try {
               val (s, _) = processApps(Seq(app), false, profileOutputWriter)
@@ -209,7 +209,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       def run: Unit = {
         try {
           // we just skip apps that don't process cleanly and exit if heap is smaller
-          val appOpt = createApp(path, numOutputRows, index, hadoopConf)
+          val appOpt = createApp(path, index, hadoopConf)
           appOpt match {
             case Some(app) =>
               val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/${app.appId}",
@@ -241,12 +241,12 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
   }
 
-  private def createApp(path: EventLogInfo, numRows: Int, index: Int,
+  private def createApp(path: EventLogInfo, index: Int,
       hadoopConf: Configuration): Option[ApplicationInfo] = {
     try {
       // This apps only contains 1 app in each loop.
       val startTime = System.currentTimeMillis()
-      val app = new ApplicationInfo(numRows, hadoopConf, path, index)
+      val app = new ApplicationInfo(hadoopConf, path, index)
       EventLogPathProcessor.logApplicationInfo(app)
       val endTime = System.currentTimeMillis()
       logInfo(s"Took ${endTime - startTime}ms to process ${path.eventLog.toString}")
