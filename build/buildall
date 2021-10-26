@@ -32,6 +32,9 @@ function print_usage() {
   echo "   --profile=BUILDVER       builds a single Spark shim, e.g. --profile=320"
   echo "   --module=MODULE          after finishing parallel builds, resume from dist and build"
   echo "                            up to and including module MODULE, e.g., integration_tests"
+  echo "   --parallel=N             build in parallel, N is passed -P to xargs. NOTE: standard maven does not support"
+  echo "                            concurrent installs. If you see an error related to a maven-metadata-local.xml in"
+  echo "                            your local m2 cache, delete its parent directory and retry."
 }
 
 case "$1" in
@@ -43,12 +46,14 @@ case "$1" in
 
 -p=*|--profile=*)
   DIST_PROFILE="${1#*=}"
-  shift
   ;;
 
 -m=*|--module=*)
   MODULE="${1#*=}"
-  shift
+  ;;
+
+-P=*|--parallel=*)
+  BUILD_PARALLEL="${1#*=}"
   ;;
 
 *)
@@ -58,6 +63,9 @@ case "$1" in
   ;;
 
 esac
+
+# advance $1 to the next in the arg list
+shift
 
 done
 
