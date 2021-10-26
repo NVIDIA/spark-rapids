@@ -995,12 +995,12 @@ object GpuOverrides extends Logging {
                   rhsDecimalType, a.dataType)
 
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalChecks) {
+                if (conf.needDecimalGuarantees) {
                   binExpr.willNotWorkOnGpu(s"The intermediate precision of " +
                       s"$intermediatePrecision that is required to guarantee no overflow issues " +
                       s"for this divide is too large to be supported on the GPU")
                 } else {
-                  logWarning(s"Decimal Overflow Checks disabled for " +
+                  logWarning("Decimal overflow guarantees disabled for " +
                       s"${lhs.dataType} / ${rhs.dataType} produces ${a.dataType} with an " +
                       s"intermediate precision of $intermediatePrecision")
                 }
@@ -1010,12 +1010,12 @@ object GpuOverrides extends Logging {
                 GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalChecks) {
+                if (conf.needDecimalGuarantees) {
                   binExpr.willNotWorkOnGpu(s"The intermediate precision of " +
                       s"$intermediatePrecision that is required to guarantee no overflow issues " +
                       s"for this multiply is too large to be supported on the GPU")
                 } else {
-                  logWarning(s"Decimal Overflow Checks disabled for " +
+                  logWarning("Decimal overflow guarantees disabled for " +
                       s"${lhs.dataType} * ${rhs.dataType} produces ${a.dataType} with an " +
                       s"intermediate precision of $intermediatePrecision")
                 }
@@ -2308,11 +2308,11 @@ object GpuOverrides extends Logging {
             case _: DecimalType =>
               val unboundPrecision = a.child.dataType.asInstanceOf[DecimalType].precision + 10
               if (unboundPrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalChecks) {
+                if (conf.needDecimalGuarantees) {
                   willNotWorkOnGpu("overflow checking on sum would need " +
                       s"a precision of $unboundPrecision to properly detect overflows.")
                 } else {
-                  logWarning(s"Decimal Overflow Checks disabled for " +
+                  logWarning("Decimal overflow guarantees disabled for " +
                       s"sum(${a.child.dataType}) produces ${a.dataType}")
                 }
               }

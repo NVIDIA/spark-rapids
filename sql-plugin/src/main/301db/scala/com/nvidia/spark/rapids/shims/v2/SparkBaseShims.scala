@@ -322,12 +322,12 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
             dataType match {
               case dt: DecimalType =>
                 if (dt.precision > 23) {
-                  if (conf.needDecimalChecks) {
-                    willNotWorkOnGpu("GpuAverage cannot guaratee proper overflow checks for " +
+                  if (conf.needDecimalGuarantees) {
+                    willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
                         s"a precision large than 23. The current precision is ${dt.precision}")
                   } else {
-                    logWarning("Decimal Overflow Checks disabled for " +
-                        s"Average(${a.child.dataType}) produces ${dt} with an " +
+                    logWarning("Decimal overflow guarantees disabled for " +
+                        s"Average(${a.child.dataType}) produces $dt with an " +
                         s"intermediate precision of ${dt.precision + 15}")
                   }
                 }
