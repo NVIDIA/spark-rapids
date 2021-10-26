@@ -104,22 +104,32 @@ trait TableCompressionCodec {
       stream: Cuda.Stream): BatchedBufferDecompressor
 }
 
+/**
+ * A small case class used to carry codec-specific settings.
+ */
+case class TableCompressionCodecConfig(lz4ChunkSize: Long)
+
 object TableCompressionCodec {
   private val codecNameToId = Map(
     "copy" -> CodecType.COPY,
     "lz4" -> CodecType.NVCOMP_LZ4)
 
+  /** Make a codec configuration object which can be serialized (can be used in tasks) */
+  def makeCodecConfig(rapidsConf: RapidsConf): TableCompressionCodecConfig =
+    TableCompressionCodecConfig(
+      rapidsConf.shuffleCompressionLz4ChunkSize)
+
   /** Get a compression codec by short name or fully qualified class name */
-  def getCodec(name: String): TableCompressionCodec = {
+  def getCodec(name: String, codecConfigs: TableCompressionCodecConfig): TableCompressionCodec = {
     val codecId = codecNameToId.getOrElse(name,
       throw new IllegalArgumentException(s"Unknown table codec: $name"))
-    getCodec(codecId)
+    getCodec(codecId, codecConfigs)
   }
 
   /** Get a compression codec by ID, using a cache. */
-  def getCodec(codecId: Byte): TableCompressionCodec = {
+  def getCodec(codecId: Byte, codecConfig: TableCompressionCodecConfig): TableCompressionCodec = {
     codecId match {
-      case CodecType.NVCOMP_LZ4 => new NvcompLZ4CompressionCodec
+      case CodecType.NVCOMP_LZ4 => new NvcompLZ4CompressionCodec(codecConfig)
       case CodecType.COPY => new CopyCompressionCodec
       case _ => throw new IllegalArgumentException(s"Unknown codec ID: $codecId")
     }
