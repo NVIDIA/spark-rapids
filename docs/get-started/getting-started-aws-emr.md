@@ -26,7 +26,7 @@ documentation](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-i
 
 ## Configure and Launch AWS EMR with GPU Nodes
 
-The following steps are based on the AWS EMR document ["Using the Nvidia Spark-RAPIDS Accelerator
+The following steps are based on the AWS EMR document ["Using the NVIDIA Spark-RAPIDS Accelerator
 for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html)
 
 ###  Launch an EMR Cluster using AWS CLI
