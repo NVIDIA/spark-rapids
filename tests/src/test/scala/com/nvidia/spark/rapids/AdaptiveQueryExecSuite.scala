@@ -20,12 +20,13 @@ import java.io.File
 
 import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
 import org.scalatest.BeforeAndAfterEach
-
 import org.apache.spark.SparkConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.DynamicPruningExpression
 import org.apache.spark.sql.execution.{LocalTableScanExec, PartialReducerPartitionSpec, SortExec, SparkPlan}
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
@@ -220,6 +221,57 @@ class AdaptiveQueryExecSuite
       })
 
     }, conf)
+  }
+
+  test("Plugin should work properly when both AQE and DPP are enabled") {
+    assumeSpark320orLater
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.DYNAMIC_PARTITION_PRUNING_REUSE_BROADCAST_ONLY.key, "true")
+
+    def findDynamicPruning(plan: SparkPlan): Boolean = plan.find {
+      case p: AdaptiveSparkPlanExec =>
+        findDynamicPruning(p.inputPlan)
+      case p: QueryStageExec =>
+        findDynamicPruning(GpuTransitionOverrides.getNonQueryStagePlan(p))
+      case p =>
+        p.expressions.exists(_.isInstanceOf[DynamicPruningExpression])
+    }.nonEmpty
+
+    try {
+      withCpuSparkSession(spark => {
+        import spark.implicits._
+
+        val numPart = 10
+        spark.range(100)
+            .map(x => (x, x + 1, 0))
+            .toDF("did", "d1", "d2")
+            .write
+            .format("parquet")
+            .mode("overwrite")
+            .saveAsTable("dim")
+        spark.range(1000)
+            .map(x => (x, x % numPart))
+            .toDF("f1", "fid")
+            .write.partitionBy("fid")
+            .format("parquet")
+            .mode("overwrite")
+            .saveAsTable("fact")
+      })
+      val (cpuRet, gpuRet) = runOnCpuAndGpu(spark => {
+        spark.sql("SELECT sum(f1) FROM fact, dim WHERE fid = did AND d1 = 5")
+      }, df => {
+        assert(findDynamicPruning(df.queryExecution.executedPlan))
+        df
+      }, conf)
+      compareResults(true, 0, cpuRet, gpuRet)
+    } finally {
+      withCpuSparkSession((ss: SparkSession) => {
+        ss.sql("DROP TABLE IF EXISTS fact")
+        ss.sql("DROP TABLE IF EXISTS dim")
+      })
+    }
   }
 
   test("Plugin should translate child plan of GPU DataWritingCommandExec to GPU") {
