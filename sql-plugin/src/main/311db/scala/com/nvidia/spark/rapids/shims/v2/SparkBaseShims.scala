@@ -372,9 +372,10 @@ abstract class SparkBaseShims extends Spark30XShims {
       "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
         "to get better performance.",
       ExprChecks.projectOnly(
-        udfTypeSig,
+        GpuUserDefinedFunction.udfTypeSig,
         TypeSig.all,
-        repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
+        repeatingParamCheck =
+          Some(RepeatingParamCheck("param", GpuUserDefinedFunction.udfTypeSig, TypeSig.all))),
       (a, conf, p, r) => new BaseScalaUDFMeta(a, conf, p, r) {
         override protected def outputEncoder: Option[ExpressionEncoder[_]] = a.outputEncoder
       })
