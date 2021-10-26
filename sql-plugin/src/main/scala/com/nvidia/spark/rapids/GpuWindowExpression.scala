@@ -619,6 +619,22 @@ case class GpuSpecialFrameBoundary(boundary : SpecialFrameBoundary)
 trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
 
 /**
+ * This is a special window function that simply replaces itself with one or more
+ * window functions and other expressions that can be executed. This allows you to write
+ * `GpuAverage` in terms of `GpuSum` and `GpuCount` which can both operate on all window
+ * optimizations making `GpuAverage` be able to do the same.
+ */
+trait GpuReplaceWindowFunction extends GpuWindowFunction {
+  /**
+   * Return a new single expression that can replace the existing aggregation in window
+   * calculations. Please note that this requires that there are no nested window operations.
+   * For example you cannot do a SUM of AVERAGES with this currently. That support may be added
+   * in the future.
+   */
+  def windowReplacement(spec: GpuWindowSpecDefinition): Expression
+}
+
+/**
  * GPU Counterpart of `AggregateWindowFunction`.
  * On the CPU this would extend `DeclarativeAggregate` and use the provided methods
  * to build up the expressions need to produce a result. For window operations we do it

@@ -319,9 +319,19 @@ object GpuWindowExec extends Arm {
 
     exprs.foreach { expr =>
       if (hasGpuWindowFunction(expr)) {
-        // First pass looks for GpuWindowFunctions and GpuWindowSpecDefinitions to build up
+        // First pass replace any operations that should be totally replaced.
+        val replacePass = expr.transformDown {
+          case GpuWindowExpression(
+            GpuAggregateExpression(rep: GpuReplaceWindowFunction, _, _, _, _), spec) =>
+            // We don't actually care about the GpuAggregateExpression because it is ignored
+            // by our GPU window operations anyways.
+            rep.windowReplacement(spec)
+          case GpuWindowExpression(rep: GpuReplaceWindowFunction, spec) =>
+            rep.windowReplacement(spec)
+        }
+        // Second pass looks for GpuWindowFunctions and GpuWindowSpecDefinitions to build up
         // the preProject phase
-        val firstPass = expr.transformDown {
+        val secondPass = replacePass.transformDown {
           case wf: GpuWindowFunction =>
             // All window functions, including those that are also aggregation functions, are
             // wrapped in a GpuWindowExpression, so dedup and save their children into the pre
@@ -340,14 +350,15 @@ object GpuWindowExec extends Arm {
             }.toArray.toSeq
             wsc.copy(partitionSpec = newPartitionSpec, orderSpec = newOrderSpec)
         }
-        val secondPass = firstPass.transformDown {
+        // Final pass is to extract, dedup, and save the results.
+        val finalPass = secondPass.transformDown {
           case we: GpuWindowExpression =>
             // A window Expression holds a window function or an aggregate function, so put it into
             // the windowOps phase, and create a new alias for it for the post phase
             extractAndSave(we, windowOps, windowDedupe)
         }.asInstanceOf[NamedExpression]
 
-        postProject += secondPass
+        postProject += finalPass
       } else {
         // There is no window function so pass the result through all of the phases (with deduping)
         postProject += extractAndSave(

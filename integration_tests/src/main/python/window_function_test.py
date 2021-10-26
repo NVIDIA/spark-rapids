@@ -56,17 +56,21 @@ _grpkey_longs_with_nullable_timestamps = [
 _grpkey_longs_with_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
     ('b', DecimalGen(precision=18, scale=3, nullable=False)),
-    ('c', IntegerGen())]
+    ('c', DecimalGen(precision=18, scale=3))]
 
 _grpkey_longs_with_nullable_decimals = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', DecimalGen(precision=18, scale=10, nullable=True)),
-    ('c', IntegerGen())]
+    ('c', DecimalGen(precision=18, scale=10, nullable=True))]
+
+_grpkey_longs_with_nullable_larger_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DecimalGen(precision=23, scale=10, nullable=True)),
+    ('c', DecimalGen(precision=23, scale=10, nullable=True))]
 
 _grpkey_decimals_with_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', IntegerGen()),
-    # the max decimal precision supported by sum operation is 8
     ('c', DecimalGen(precision=8, scale=3, nullable=True))]
 
 _grpkey_byte_with_nulls = [
@@ -334,6 +338,7 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
                                       _grpkey_longs_with_nullable_dates,
                                       _grpkey_longs_with_decimals,
                                       _grpkey_longs_with_nullable_decimals,
+                                      _grpkey_longs_with_nullable_larger_decimals,
                                       _grpkey_decimals_with_nulls], ids=idfn)
 def test_window_aggs_for_rows(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,

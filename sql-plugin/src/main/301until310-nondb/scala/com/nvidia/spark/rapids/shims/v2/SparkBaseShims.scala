@@ -285,15 +285,22 @@ abstract class SparkBaseShims extends Spark30XShims {
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
-          TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
+          // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
+          // then it divides by the count with an output scale that is 4 more than the input
+          // scale. With how our divide works to match Spark, this means that we will need a
+          // precision of 5 more. So 38 - 10 - 5 = 23
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          Seq(ParamCheck("input", 
+            TypeSig.integral + TypeSig.fp + TypeSig.decimal(23),
+            TypeSig.numeric))),
         (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
           override def tagAggForGpu(): Unit = {
             val dataType = a.child.dataType
             GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
           }
 
-          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = 
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
             GpuAverage(childExprs.head)
 
           // Average is not supported in ANSI mode right now, no matter the type

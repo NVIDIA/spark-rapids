@@ -2075,7 +2075,8 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           a.dataType match {
             case _: DecimalType =>
-              throw new IllegalStateException("Decimal Divide should be converted in CheckOverflow")
+              throw new IllegalStateException("Internal Error: Decimal Divide operations " +
+                  "should be converted to the GPU in the CheckOverflow rule")
             case _ =>
               GpuDivide(lhs, rhs)
           }

@@ -296,14 +296,13 @@ def test_hash_reduction_sum(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, _grpkey_short_big_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.avg('b')),
         conf=conf
     )
-
 
 # tracks https://github.com/NVIDIA/spark-rapids/issues/154
 @approximate_float
@@ -813,7 +812,7 @@ def test_hash_count_with_filter(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_no_nans + [_grpkey_short_mid_decimals, _grpkey_short_big_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_filters(data_gen, conf):
     assert_gpu_and_cpu_are_equal_sql(
@@ -997,7 +996,7 @@ def test_distinct_float_count_reductions(data_gen):
                 'count(DISTINCT a)'))
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + [decimal_gen_12_2, decimal_gen_18_3, decimal_gen_20_2], ids=idfn)
 def test_arithmetic_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(

@@ -48,8 +48,6 @@ trait GpuTimeUnaryExpression extends GpuUnaryExpression with TimeZoneAwareExpres
   override def dataType: DataType = IntegerType
 
   override def outputTypeOverride: DType = DType.INT32
-
-  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
 case class GpuWeekDay(child: Expression)
@@ -138,8 +136,6 @@ abstract class GpuTimeMath(
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, CalendarIntervalType)
 
   override def dataType: DataType = TimestampType
-
-  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
   val microSecondsInOneDay: Long = TimeUnit.DAYS.toMicros(1)
 
@@ -315,8 +311,6 @@ case class GpuDateFormatClass(timestamp: Expression,
   // while creating the expressions map and passed down here as strfFormat
   override def right: Expression = format
   override def prettyName: String = "date_format"
-
-  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
     copy(timeZoneId = Option(timeZoneId))
@@ -672,7 +666,7 @@ abstract class GpuToTimestamp
 
   import GpuToTimestamp._
 
-  def downScaleFactor = DateUtils.ONE_SECOND_MICROSECONDS
+  def downScaleFactor: Int = DateUtils.ONE_SECOND_MICROSECONDS
 
   def sparkFormat: String
   def strfFormat: String
@@ -682,8 +676,6 @@ abstract class GpuToTimestamp
 
   override def dataType: DataType = LongType
   override def nullable: Boolean = true
-
-  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
   val timeParserPolicy = getTimeParserPolicy
 
@@ -910,8 +902,6 @@ case class GpuFromUnixTime(
   override def right: Expression = format
 
   override def dataType: DataType = StringType
-
-  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
 trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {
@@ -921,8 +911,6 @@ trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {
   override def dataType: DataType = DateType
 
   def binaryOp: BinaryOp
-
-  override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     withResource(lhs.getBase.castTo(DType.INT32)) { daysSinceEpoch =>
