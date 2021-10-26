@@ -14099,7 +14099,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 23</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14120,7 +14120,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14142,7 +14142,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 23</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14163,7 +14163,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14185,7 +14185,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>max DECIMAL precision of 23</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -14206,7 +14206,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>

@@ -87,7 +87,7 @@ class GpuShuffleMeta(
       case _: RoundRobinPartitioning
         if ShimLoader.getSparkShims.sessionFromPlan(shuffle).sessionState.conf
             .sortBeforeRepartition =>
-        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig
+        val orderableTypes = GpuOverrides.pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL
         shuffle.output.map(_.dataType)
             .filterNot(orderableTypes.isSupportedByPlugin)
             .foreach { dataType =>
