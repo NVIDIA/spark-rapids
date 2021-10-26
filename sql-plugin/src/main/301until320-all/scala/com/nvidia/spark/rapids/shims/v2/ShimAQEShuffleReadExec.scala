@@ -33,10 +33,10 @@ class GpuCustomShuffleReaderMeta(reader: CustomShuffleReaderExec,
     // CoalesceShufflePartitions performs a transformUp and may replace ShuffleQueryStageExec
     // with CustomShuffleReaderExec, causing tags to be copied from ShuffleQueryStageExec to
     // CustomShuffleReaderExec, including the "no need to replace ShuffleQueryStageExec" tag.
-    wrapped.getTagValue(RapidsMeta.gpuSupportedTag).foreach(reason =>
-      reason
-        .filterNot(_ == s"there is no need to replace ${classOf[ShuffleQueryStageExec]}")
-        .foreach(willNotWorkOnGpu))
+    wrapped.getTagValue(RapidsMeta.gpuSupportedTag)
+      .foreach(_.diff(cannotBeReplacedReasons.get)
+      .filterNot(_ == s"there is no need to replace ${classOf[ShuffleQueryStageExec]}")
+      .foreach(willNotWorkOnGpu))
   }
 
   override def tagPlanForGpu(): Unit = {

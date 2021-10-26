@@ -116,7 +116,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   def convertToCpu(): BASE = wrapped
 
-  private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
+  protected var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
   private var mustBeReplacedReasons: Option[mutable.Set[String]] = None
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
@@ -692,7 +692,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * previously stored on the spark plan to determine whether this operator can run on GPU
    */
   def checkExistingTags(): Unit = {
-    wrapped.getTagValue(RapidsMeta.gpuSupportedTag).foreach(_.foreach(willNotWorkOnGpu))
+    wrapped.getTagValue(RapidsMeta.gpuSupportedTag)
+      .foreach(_.diff(cannotBeReplacedReasons.get)
+      .foreach(willNotWorkOnGpu))
   }
 
   /**
