@@ -19,22 +19,13 @@
 
     <target name="build-parallel-worlds">
         <echo>Preparing parallel worlds with params: incuded_buildvers=${included_buildvers}, buildver=${buildver}</echo>
-
-        <property name="servicesDir"
-            value="${project.build.directory}/extra-resources/META-INF/services"/>
-        <property name="shimServiceFile"
-            value="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+        <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+        <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
         <property name="aggregatorPrefix"
             value="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}"/>
-
         <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
         <ac:for list="${included_buildvers}" param="bv">
             <sequential>
-                <property name="shimService" value="com.nvidia.spark.rapids.shims.spark@{bv}.SparkShimServiceProvider"/>
-                <echo>Adding shim service entry ${shimService} to ${shimServiceFile}</echo>
-                <echo append="true" file="${shimServiceFile}"
-                    message="${shimService}${line.separator}"/>
-
                 <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
                     dest="${project.build.directory}/parallel-world">
                     <patternset id="shared-world-includes">
@@ -43,16 +34,16 @@
                         <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
                     </patternset>
                 </unzip>
-
                 <unzip src="${aggregatorPrefix}-spark@{bv}.jar"
                     dest="${project.build.directory}/parallel-world/spark@{bv}">
-                    <patternset id="parallel-world-includes">
-                        <invert>
-                            <patternset refid="shared-world-includes"/>
-                        </invert>
-                    </patternset>
                 </unzip>
             </sequential>
         </ac:for>
+
+        <concat destfile="${shimServiceFile}">
+            <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
+        </concat>
+        <exec executable="${project.basedir}/scripts/binary-dedupe.sh" failonerror="true"
+            dir="${project.build.directory}"/>
     </target>
 </project>

@@ -60,7 +60,7 @@
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark301</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -69,7 +69,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark302</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -78,7 +78,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark303</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -87,7 +87,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -96,7 +96,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark312</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -105,7 +105,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311cdh</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -114,7 +114,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark320</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -123,7 +123,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                   <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                   <classifier>spark301db</classifier>
                                   <version>${project.version}</version>
                                   <type>jar</type>
@@ -132,7 +132,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                   <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                   <classifier>spark311db</classifier>
                                   <version>${project.version}</version>
                                   <type>jar</type>
@@ -214,7 +214,7 @@
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark301</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -223,7 +223,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark302</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -232,7 +232,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark303</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -241,7 +241,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -250,7 +250,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark312</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -259,7 +259,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311cdh</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -268,7 +268,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark320</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -277,7 +277,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark321</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -370,7 +370,7 @@
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark302</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -379,7 +379,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311cdh</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -388,7 +388,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark312</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -397,7 +397,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark320</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -479,7 +479,7 @@
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark301</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -488,7 +488,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark302</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -497,7 +497,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark303</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -506,7 +506,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark304</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -515,7 +515,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -524,7 +524,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark312</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -533,7 +533,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark313</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -542,7 +542,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311cdh</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -551,7 +551,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark320</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -560,7 +560,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark321</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -642,7 +642,7 @@
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark301</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -651,7 +651,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark302</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -660,7 +660,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark303</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -669,7 +669,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark304</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -678,7 +678,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -687,7 +687,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark312</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -696,7 +696,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark313</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -705,7 +705,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark311cdh</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -714,7 +714,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark320</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -723,7 +723,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                     <classifier>spark321</classifier>
                                     <version>${project.version}</version>
                                     <type>jar</type>
@@ -732,7 +732,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                   <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                   <classifier>spark301db</classifier>
                                   <version>${project.version}</version>
                                   <type>jar</type>
@@ -741,7 +741,7 @@
                                 </artifactItem>
                                 <artifactItem>
                                   <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
+                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                   <classifier>spark311db</classifier>
                                   <version>${project.version}</version>
                                   <type>jar</type>

@@ -188,7 +188,7 @@ function verify_same_sha_for_unshimmed() {
   if [[ ! "$class_file_quoted" =~ (com/nvidia/spark/rapids/spark3.*/.*ShuffleManager.class|org/apache/spark/sql/rapids/shims/spark3.*/ProxyRapidsShuffleInternalManager.class) ]]; then
 
     if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK3XX_COMMON_TXT"; then
-      echo >&2 "$classFile is not bitwise-identical across shims"
+      echo >&2 "$class_file is not bitwise-identical across shims"
       exit 255
     fi
   fi

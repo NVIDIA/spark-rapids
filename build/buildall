@@ -160,7 +160,7 @@ time (
     xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
     bash -c 'build_single_shim "$@"' _ %
   echo "Resuming from dist build only using $BASE_VER"
-  mvn -U install --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT \
+  mvn install --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT \
     -Dbuildver="$BASE_VER" \
     -DskipTests
 )
