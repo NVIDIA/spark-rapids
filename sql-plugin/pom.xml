@@ -325,7 +325,7 @@
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
                     <archive>
-                        <!-- transient jar -->
+                       <!-- transient jar, writing compressed can take several x time -->
                         <compress>false</compress>
                     </archive>
                     <classifier>${spark.version.classifier}</classifier>

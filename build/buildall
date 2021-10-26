@@ -21,16 +21,23 @@ shopt -s extglob
 
 while [[ "$1" != "" ]] ; do
 
-case "$1" in
 
---help|-h)
+function print_usage() {
   echo "Usage: buildall [OPTION]"
   echo "Options:"
   echo "   --profile=DIST_PROFILE   profile for the dist module, default: noSnapshots,"
-  echo "                            also supported: snapshots, minimumFeatureVersionMix"
+  echo "                            also supported: snapshots, minimumFeatureVersionMix, snapshotsWithDataBricks,"
+  echo "                            and noSnapshotsWithDataBricks. NOTE: the Databricks-related spark3XYdb shims"
+  echo "                            are not built locally, the jars are fetched prebuilt from a remote Maven repo."
   echo "   --profile=BUILDVER       builds a single Spark shim, e.g. --profile=320"
   echo "   --module=MODULE          after finishing parallel builds, resume from dist and build"
   echo "                            up to and including module MODULE, e.g., integration_tests"
+}
+
+case "$1" in
+
+--help|-h)
+  print_usage
   exit 0
   ;;
 
@@ -46,6 +53,7 @@ case "$1" in
 
 *)
   echo >&2 "Unknown arg: $1"
+  print_usage
   exit 1
   ;;
 
@@ -103,7 +111,7 @@ case $DIST_PROFILE in
     ;;
 
   *)
-    echo "ERROR: Supported profiles are: snapshots, noSnapshots, minimumFeatureVersionMix"
+    echo "ERROR unnexpected value for profile: $DIST_PROFILE, see 'buildall --help'"
     exit 1
 
 esac
