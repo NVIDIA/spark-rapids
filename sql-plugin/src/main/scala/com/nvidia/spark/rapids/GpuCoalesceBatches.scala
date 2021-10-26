@@ -214,6 +214,8 @@ abstract class AbstractGpuCoalesceIterator(
   private val iter = new CollectTimeIterator(s"$opName: collect", batches, streamTime)
 
   private var batchInitialized: Boolean = false
+  private var largestInputBatchRows: Long = 0L
+  private var largestInputBatchSize: Long = 0L
 
   /**
    * Return true if there is something saved on deck for later processing.
@@ -336,8 +338,22 @@ abstract class AbstractGpuCoalesceIterator(
         addBatch(batch)
       }
 
-      // there is a hard limit of 2^31 rows
-      while (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
+      def shouldFetchNextBatch: Boolean =
+        if (numRows < Int.MaxValue && !hasOnDeck && iter.hasNext) {
+          goal match {
+            case g: TargetSize =>
+              // avoid fetching if next batch is likely to exceed the specified row or size limits
+              // based on the stats of previous batches
+              val rowLimit = if (batchRowLimit > 0) batchRowLimit else Int.MaxValue
+              numRows + largestInputBatchSize <= rowLimit &&
+                  numBytes + largestInputBatchRows <= g.targetSizeBytes
+            case _ => true
+          }
+        } else {
+          false
+        }
+
+      while (shouldFetchNextBatch) {
         closeOnExcept(iter.next()) { cb =>
           val nextRows = cb.numRows()
           numInputBatches += 1
@@ -346,6 +362,8 @@ abstract class AbstractGpuCoalesceIterator(
           if (nextRows > 0) {
             numInputRows += nextRows
             val nextBytes = getBatchDataSize(cb)
+            largestInputBatchSize = largestInputBatchSize.max(nextRows)
+            largestInputBatchRows = largestInputBatchRows.max(nextBytes)
 
             // calculate the new sizes based on this input batch being added to the current
             // output batch
