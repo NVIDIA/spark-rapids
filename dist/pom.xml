@@ -275,15 +275,6 @@
                                     <overWrite>false</overWrite>
                                     <outputDirectory>${project.build.directory}/deps</outputDirectory>
                                 </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark321</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
                             </artifactItems>
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
@@ -558,15 +549,6 @@
                                     <overWrite>false</overWrite>
                                     <outputDirectory>${project.build.directory}/deps</outputDirectory>
                                 </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark321</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
                             </artifactItems>
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
@@ -591,7 +573,7 @@
                                         <property name="project.version" value="${project.version}"/>
                                         <property name="scala.binary.version" value="${scala.binary.version}"/>
                                         <property name="included_buildvers"
-                                                  value="301,302,303,311,312,313,320,321,311cdh"/>
+                                                  value="301,302,303,311,312,313,320,311cdh"/>
                                         <ant
                                             antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
                                             target="build-parallel-worlds"
@@ -722,15 +704,6 @@
                                     <outputDirectory>${project.build.directory}/deps</outputDirectory>
                                 </artifactItem>
                                 <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark321</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
                                   <groupId>com.nvidia</groupId>
                                   <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                                   <classifier>spark301db</classifier>
@@ -772,7 +745,7 @@
                                         <property name="project.version" value="${project.version}"/>
                                         <property name="scala.binary.version" value="${scala.binary.version}"/>
                                         <property name="included_buildvers"
-                                                  value="301,302,303,304,311,312,313,320,321,311cdh,301db,311db"/>
+                                                  value="301,302,303,304,311,312,313,320,311cdh,301db,311db"/>
                                         <ant
                                             antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
                                             target="build-parallel-worlds"
