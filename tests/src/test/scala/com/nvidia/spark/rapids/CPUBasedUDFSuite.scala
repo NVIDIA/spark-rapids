@@ -99,8 +99,9 @@ class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
       mixedDfWithNulls,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
-    // udf accepting a struct as row, can not return the input Row directly, since Row is
-    // not supported by Spark, so here convert it to a Tuple3 to return.
+    // UDF accepting a struct as row, can not return the input Row directly, since Row is
+    // not supported as the returned type of an UDF in Spark.
+    // Then here convert it to a Tuple3 to return.
     val noopUDF = frame.sparkSession.udf.register("NoopUDF",
       (row: Row) => (
         row(0).asInstanceOf[java.lang.Integer],
