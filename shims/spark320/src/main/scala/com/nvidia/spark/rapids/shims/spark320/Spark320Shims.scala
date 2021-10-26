@@ -802,8 +802,6 @@ class Spark320Shims extends Spark32XShims {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
-
   override def sortOrder(
       child: Expression,
       direction: SortDirection,
@@ -1002,6 +1000,10 @@ class Spark320Shims extends Spark32XShims {
       new KryoJavaSerializer())
     kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
+  }
+
+  override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
+    adaptivePlan.initialPlan
   }
 
   override def getLegacyStatisticalAggregate(): Boolean =

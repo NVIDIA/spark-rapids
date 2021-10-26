@@ -15,18 +15,47 @@
 # limitations under the License.
 #
 
-set -ex
+set -e
 
-case $1 in
+while [[ "$1" != "" ]] ; do
 
---h|-h)
-  echo "buildall [noSnapshots (default) | snapshots | minimumFeatureVersionMix | <buildver> (e.g. 320) ]"
+case "$1" in
+
+--help|-h)
+  echo "Usage: buildall [OPTION]"
+  echo "Options:"
+  echo "   --profile=DIST_PROFILE   profile for the dist module, default: noSnapshots,"
+  echo "                            also supported: snapshots, minimumFeatureVersionMix"
+  echo "   --profile=BUILDVER       builds a single Spark shim, e.g. --profile=320"
+  echo "   --module=MODULE          after finishing parallel builds, resume from dist and build"
+  echo "                            up to and including module MODULE, e.g., integration_tests"
   exit 0
+  ;;
+
+-p=*|--profile=*)
+  DIST_PROFILE="${1#*=}"
+  shift
+  ;;
+
+-m=*|--module=*)
+  MODULE="${1#*=}"
+  shift
+  ;;
+
+*)
+  echo >&2 "Unknown arg: $1"
+  exit 1
   ;;
 
 esac
 
-DIST_PROFILE=${1:-"noSnapshots"}
+done
+
+# TODO create a switch for debug
+set -x
+
+DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+[[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
 case $DIST_PROFILE in
 
@@ -76,7 +105,7 @@ case $DIST_PROFILE in
 
 esac
 
-[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE"
+[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE" || MVN_PROFILE_OPT=""
 
 # First element in SPARK_SHIM_VERSIONS to do most of the checks
 export BASE_VER=${SPARK_SHIM_VERSIONS[0]}
@@ -123,11 +152,16 @@ export -f build_single_shim
 #
 # Then resume maven build from the dist module now that shims have been installed
 
+# don't regenerate config markdowns unless 301 is included
+SKIP_UPDATE_CONFIG=$( [[ "$BASE_VER" == "301" ]] && echo false || echo true )
 time (
   # printf a single buildver array element per line
   printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
     xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
     bash -c 'build_single_shim "$@"' _ %
   echo "Resuming from dist build only using $BASE_VER"
-  mvn -U -Dbuildver="$BASE_VER" install --resume-from dist -DskipTests $MVN_PROFILE_OPT
+  mvn -U install --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT \
+    -Dbuildver="$BASE_VER" \
+    -DskipTests \
+    -Dmaven.updateconfig.skip="$SKIP_UPDATE_CONFIG"
 )
