@@ -1170,6 +1170,7 @@ def test_hash_groupby_approx_percentile_double_scalar():
     'ApproximatePercentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
 def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
     conf = copy_and_update(_approx_percentile_conf, {
+        'spark.rapids.sql.hashAgg.replaceMode': 'partial',
         'spark.sql.adaptive.enabled': aqe_enabled
     })
 
@@ -1183,7 +1184,7 @@ def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
         df = gen_df(spark, [('k', StringGen(nullable=False)),
                             ('v', DoubleGen())], length=100)
         df.createOrReplaceTempView("t")
-        df2 = spark.sql("select k, cast(approx_percentile(v, array(0.1, 0.2)) as string) from t group by k")
+        df2 = spark.sql("select k, approx_percentile(v, array(0.1, 0.2)) from t group by k")
         return df2
 
     assert_gpu_fallback_collect(lambda spark: create_and_show_df(spark), 'ApproximatePercentile', conf)
