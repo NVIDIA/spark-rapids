@@ -184,9 +184,9 @@ def test_decimal_division_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_t
 @ignore_order
 @pytest.mark.parametrize('rhs,rhs_type', [
     (DecimalGen(15, 3), DecimalType(30, 10)),
-    (DecimalGen(10, 2), DecimalType(28, 18))], ids=idfn)
+    (DecimalGen(10, 2), DecimalType(28, 9))], ids=idfn)
 @pytest.mark.parametrize('lhs,lhs_type', [
-    (DecimalGen(15, 3), DecimalType(27, 7)),
+    (DecimalGen(10, 3), DecimalType(27, 7)),
     (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
 def test_decimal_multiplication_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
     conf = copy_and_update(allow_negative_scale_of_decimal_conf,
