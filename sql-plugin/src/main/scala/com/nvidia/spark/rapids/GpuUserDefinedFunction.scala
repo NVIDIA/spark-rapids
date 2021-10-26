@@ -98,9 +98,11 @@ trait RapidsUserDefinedFunction extends GpuUserDefinedFunction with Logging {
       super.columnarEval(batch)
     }.getOrElse {
       logInfo(s"Begin to execute the UDF($name) row by row.")
+      val cpuUDFStart = System.nanoTime
       // It is only a CPU based UDF
       // These child columns will be closed by `ColumnarToRowIterator`.
       val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
+      val prepareArgsEnd = System.nanoTime
       try {
         // 1 Convert the argument columns to row.
         // 2 Evaluate the CPU UDF row by row and cache the result.
@@ -118,9 +120,16 @@ trait RapidsUserDefinedFunction extends GpuUserDefinedFunction with Logging {
             retRow.update(0, evaluateRow(row))
             retConverter.append(retRow, 0, builder)
           }
-          closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
+          val retColumn = closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
             GpuColumnVector.from(resultCol, dataType)
           }
+
+          val cpuRunningTime = System.nanoTime - prepareArgsEnd
+          // Use log of info. level to record the eclipsed time for the UDF running before
+          // figuring out how to support Spark metrics in this expression.
+          logInfo(s"It took ${cpuRunningTime/1000000.0} ms to run UDF $name, and " +
+            s"${(prepareArgsEnd - cpuUDFStart)/1000000.0} ms to get the input from children.")
+          retColumn
         }
       } catch {
         case e: Exception =>

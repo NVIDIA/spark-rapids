@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF}
+import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF, SpecializedGetters}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 
@@ -133,20 +133,22 @@ case class GpuScalaUDF(
 
   /** Some refactor to simplify the Spark code of executing the function */
 
-  private lazy val childScalaConverters: Seq[Any => Any] =
-    children.zipWithIndex.map { case (child, i) => scalaConverter(i, child.dataType)._1 }
+    /** Build an accessor for each child to read the data from a row and do type conversion */
+  private lazy val childAccessors: Seq[SpecializedGetters => Any] =
+    children.zipWithIndex.map { case (child, i) =>
+      val accessor = InternalRow.getAccessor(child.dataType, child.nullable)
+      val converter = scalaConverter(i, child.dataType)._1
+      row: SpecializedGetters => converter(accessor(row, i))
+    }
+
+  private lazy val argsParser: InternalRow => Seq[Any] =
+    row => children.indices.map(childAccessors(_)(row))
 
   // scalastyle:off line.size.limit
   /**
    * Spark Scala UDF supports at most 22 parameters.
    */
   private lazy val wrappedFunc: InternalRow => Any = {
-    lazy val argsParser = (row: InternalRow) => {
-      children.zipWithIndex.map { case (child, i) =>
-        val arg = if (row.isNullAt(i)) null else row.get(i, child.dataType)
-        childScalaConverters(i)(arg)
-      }
-    }
     children.size match {
       case 0 =>
         val f = sparkFunc.asInstanceOf[() => Any]

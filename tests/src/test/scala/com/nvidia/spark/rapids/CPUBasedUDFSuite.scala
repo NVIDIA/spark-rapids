@@ -34,7 +34,7 @@ class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
       booleanDf,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
-    val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Boolean]())
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[java.lang.Boolean]())
     frame.select(noopUDF(col("bools")))
   }
 
@@ -42,7 +42,7 @@ class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
       shortsFromCsv,
       csvAndCpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
-    val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Short]())
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[java.lang.Short]())
     frame.select(noopUDF(col("shorts")))
   }
 
@@ -50,9 +50,9 @@ class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
       mixedDfWithNulls,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
-    val iNoopUDF = frame.sparkSession.udf.register("iNoopUDF", new NoopUDF[Int]())
-    val lNoopUDF = frame.sparkSession.udf.register("lNoopUDF", new NoopUDF[Long]())
-    val dNoopUDF = frame.sparkSession.udf.register("dNoopUDF", new NoopUDF[Double]())
+    val iNoopUDF = frame.sparkSession.udf.register("iNoopUDF", new NoopUDF[java.lang.Integer]())
+    val lNoopUDF = frame.sparkSession.udf.register("lNoopUDF", new NoopUDF[java.lang.Long]())
+    val dNoopUDF = frame.sparkSession.udf.register("dNoopUDF", new NoopUDF[java.lang.Double]())
     val sNoopUDF = frame.sparkSession.udf.register("sNoopUDF", new NoopUDF[String]())
     frame.select(
         iNoopUDF(col("ints")),
