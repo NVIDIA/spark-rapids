@@ -885,7 +885,7 @@
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
-                  <version>1.8</version>
+                  <version>3.0.0</version>
                   <executions>
                     <execution>
                         <id>generate-build-info</id>
@@ -909,9 +909,14 @@
                   </executions>
                 <dependencies>
                     <dependency>
+                        <groupId>org.apache.ant</groupId>
+                        <artifactId>ant</artifactId>
+                        <version>1.10.12</version>
+                    </dependency>
+                    <dependency>
                         <groupId>ant-contrib</groupId>
                         <artifactId>ant-contrib</artifactId>
-                        <version>1.0b2</version>
+                        <version>1.0b3</version>
                     </dependency>
                 </dependencies>
                 </plugin>
