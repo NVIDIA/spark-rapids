@@ -63,24 +63,6 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-private final class CastMeta[INPUT <: CastBase](
-    cast: INPUT,
-    ansiEnabled: Boolean,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule,
-    toTypeOverride: Option[DataType] = None) extends
-    CastExprMeta[INPUT](cast,
-      ansiEnabled,
-      conf,
-      parent,
-      rule,
-      toTypeOverride) {
-
-  override def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
-    new CastMeta[INPUT](cast, ansiEnabled, conf, parent, rule, Some(newToType))
-}
-
 abstract class SparkBaseShims extends Spark30XShims with Logging {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
@@ -277,12 +259,14 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
       GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
-        (cast, conf, p, r) => new CastMeta[Cast](cast, SparkSession.active.sessionState.conf
-            .ansiEnabled, conf, p, r)),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          doFloatToIntCheck = false, stringToAnsiDate = false)),
       GpuOverrides.expr[AnsiCast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
-        (cast, conf, p, r) => new CastMeta[AnsiCast](cast, true, conf, p, r)),
+        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
+          parent = p, rule = r, doFloatToIntCheck = false, stringToAnsiDate = false)),
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
