@@ -131,6 +131,8 @@ Run `--help` for more information.
 For example, GPU run vs CPU run performance comparison or different runs with different parameters.
 
 We can input multiple Spark event logs and this tool can compare environments, executors, Rapids related Spark parameters,
+In Application Information section, the last column lists potential issues for acceleration.
+This includes UDFs, some decimal operations and nested complex types.
 
 - Compare the durations/versions/gpuMode on or off:
 
@@ -139,12 +141,12 @@ We can input multiple Spark event logs and this tool can compare environments, e
 ### A. Information Collected ###
 Application Information:
 
-+--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
-|appIndex|appName    |appId                  |sparkUser|startTime    |endTime      |duration|durationStr|sparkVersion|pluginEnabled|
-+--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
-|1       |Spark shell|app-20210329165943-0103|user1    |1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false        |
++--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+---------------------------+
+|appIndex|appName    |appId                  |sparkUser|startTime    |endTime      |duration|durationStr|sparkVersion|pluginEnabled|potentialProblems          |
++--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+---------------------------+
+|1       |Spark shell|app-20210329165943-0103|user1    |1617037182848|1617037490515|307667  |5.1 min    |3.0.1       |false        |DECIMAL:NESTED COMPLEX TYPE|
 |2       |Spark shell|app-20210329170243-0018|user1    |1617037362324|1617038578035|1215711 |20 min     |3.0.1       |true         |
-+--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+
++--------+-----------+-----------------------+---------+-------------+-------------+--------+-----------+------------+-------------+---------------------------+
 ```
 
 - Executor information:
