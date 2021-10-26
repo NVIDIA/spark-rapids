@@ -51,6 +51,9 @@ case class GpuScalaUDF(
    * Unfortunately we need to copy the following code from Spark for input/output type
    * conversions between Scala type and Catalyst type.
    *
+   * NOTE the expression encoder for input does not work here. So disable it for now.
+   * Please find "GPU DIFF" for details.
+   *
    * == Copy begin ==
    */
 
@@ -96,8 +99,10 @@ case class GpuScalaUDF(
         inputEncoders(i).isEmpty || // for types aren't supported by encoder, e.g. Any
         inputPrimitives(i)) // for primitive types
 
-    // FIXME Getting the errors as below when using encoders, so disable it now.
-    // "catalyst.analysis.UnresolvedException: Invalid call to nullable on unresolved object"
+    // GPU DIFF
+    // Getting the errors as below when using the encoder, so disable it now.
+    //   > "catalyst.analysis.UnresolvedException: Invalid call to nullable on unresolved object"
+    // Tracked by https://github.com/NVIDIA/spark-rapids/issues/3924
     if (false /* useEncoder */) {
       val enc = inputEncoders(i).get
       val fromRow = enc.createDeserializer()
