@@ -151,7 +151,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-test-resources</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -296,7 +296,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-test-resources</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -416,7 +416,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-test-resources</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -579,7 +579,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-test-resources</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -760,7 +760,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-test-resources</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -831,7 +831,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-test-resources</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -891,7 +891,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-test-resources</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -944,63 +944,6 @@
                 </plugins>
             </build>
         </profile>
-        <profile>
-            <id>generate-rapids-docs</id>
-            <activation>
-                <property>
-                    <name>!maven.updateconfig.skip</name>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-antrun-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>update_config_docs</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <configuration>
-                                    <target>
-                                        <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/configs.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/supported_ops.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
-                                        </java>
-                                    </target>
-                                </configuration>
-                            </execution>
-                        </executions>
-                        <dependencies>
-                            <dependency>
-                                <groupId>com.nvidia</groupId>
-                                <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                <version>${project.version}</version>
-                                <classifier>${spark.version.classifier}</classifier>
-                            </dependency>
-                            <dependency>
-                                <groupId>org.apache.spark</groupId>
-                                <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                                <version>${spark.version}</version>
-                                <exclusions>
-                                    <exclusion>
-                                        <groupId>org.apache.curator</groupId>
-                                        <artifactId>curator-recipes</artifactId>
-                                    </exclusion>
-                                </exclusions>
-                            </dependency>
-                        </dependencies>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
     </profiles>
     <build>
         <resources>
@@ -1011,8 +954,20 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-resources</id>
+                        <phase>process-resources</phase>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>${maven.jar.plugin.version}</version>
                 <executions>
                     <execution>
                         <id>default-jar</id>
@@ -1032,8 +987,8 @@
                 <artifactId>maven-antrun-plugin</artifactId>
                 <executions>
                     <execution>
-                        <!-- any phase preceding create-parallel-world -->
-                        <phase>generate-test-resources</phase>
+                        <!-- ensure a phase preceding create-parallel-world -->
+                        <phase>process-sources</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
@@ -1054,7 +1009,52 @@
                             </target>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>update_config_docs</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
+                                    <equals arg1="spark301" arg2="${spark.version.classifier}"/>
+                                    <ac:then>
+                                        <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
+                                            <arg value="${project.basedir}/../docs/configs.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
+                                            <arg value="${project.basedir}/../docs/supported_ops.md"/>
+                                        </java>
+                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
+                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
+                                        </java>
+                                    </ac:then>
+                                </ac:if>
+                            </target>
+                        </configuration>
+                    </execution>
                 </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.nvidia</groupId>
+                        <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+                        <version>${project.version}</version>
+                        <classifier>${spark.version.classifier}</classifier>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.apache.spark</groupId>
+                        <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                        <version>${spark.version}</version>
+                        <exclusions>
+                            <exclusion>
+                                <groupId>org.apache.curator</groupId>
+                                <artifactId>curator-recipes</artifactId>
+                            </exclusion>
+                        </exclusions>
+                    </dependency>
+                </dependencies>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>
