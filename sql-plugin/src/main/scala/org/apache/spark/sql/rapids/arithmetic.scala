@@ -330,6 +330,129 @@ case class GpuSubtract(
   }
 }
 
+/**
+ * This is a special multiply implementation that gives much better semantics when there is a
+ * probability that the result will overflow.  In the normal multiply the output scale is
+ * left.scale + right.scale (+1 for rounding). This means that in the common case we are adding
+ * at most 1 to the scale of either the LHS or RHS, and we also know what the maximum precision
+ * is needed to hold the result. So if the LHS or RHS is so large it would cause an overflow, well
+ * first it should not happen because we know ahead of time it should fit and second we are
+ * increasing the precision/scale to get to the desired input and can check when casting the input
+ * values if an overflow would happen. When we hit the maximum precision that Spark can hold (38),
+ * Spark will start to reduce the scale in favor of having a higher precision in the output. But
+ * that is only to a point and there is a config that controls part of it. Long story short we can
+ * run into a situation where we can no longer guarantee that there will not be an overflow ahead of
+ * time without reducing the scale on either the left or the right. We don't want to reduce the
+ * scale because that can lose information and cause errors in the result, even in cases when no
+ * overflow would occur. Oddly divide has no such problems it can detect overflow even on very
+ * large operations. So instead we can write multiply as
+ *
+ * `if(rhs = 0, 0, lhs/(1/rhs))`
+ *
+ * This allows us to detect overflow much more cleanly. But because rhs appears twice in the above
+ * expression and Spark only supports expression trees, not expression DAGs, we want to write a
+ * custom operator to make this work cleanly.
+ */
+case class GpuDecimalOverflowMultiply(
+    left: Expression,
+    right: Expression,
+    dataType: DecimalType,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends
+    ShimExpression with GpuExpression {
+  override def toString: String = s"($left * $right)"
+
+  override def sql: String = s"(${left.sql} * ${right.sql})"
+
+  private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
+  private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
+  private[this] val oneType: DecimalType = DecimalType(1, 0)
+  // Types for 1/rhs
+  private[this] lazy val oneOverOutputType = {
+    val tmp = GpuDecimalDivide.sparkDivideOutputType(oneType, rhsType)
+    System.err.println(s"ONE/$rhsType => $tmp")
+    tmp
+  }
+  private[this] lazy val intermediateOneType =
+    GpuDecimalDivide.intermediateLhsType(oneType, rhsType, oneOverOutputType)
+  private[this] lazy val intermediateRhsType =
+    GpuDecimalDivide.intermediateRhsType(oneType, rhsType, oneOverOutputType)
+  private[this] lazy val intermediateOneOverResultType =
+    GpuDecimalDivide.intermediateResultType(oneOverOutputType)
+
+  // Types for lhs/(1/rhs)
+  private[this] lazy val intermediateLhsType =
+    GpuDecimalDivide.intermediateLhsType(lhsType, oneOverOutputType, dataType)
+  private[this] lazy val intermediateOneOverType =
+    GpuDecimalDivide.intermediateRhsType(lhsType, oneOverOutputType, dataType)
+  private[this] lazy val intermediateResultType =
+    GpuDecimalDivide.intermediateResultType(dataType)
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    // Special overflow detection case, so we don't have to worry about it later
+    if (oneOverOutputType.precision + 1 > DType.DECIMAL128_MAX_PRECISION) {
+       // Everything is going to overflow so don't bother, just return nulls
+      withResource(GpuScalar.from(null, dataType)) { nullVal =>
+        return GpuColumnVector.from(nullVal, batch.numRows(), dataType)
+      }
+    }
+    // First compute RHS = 0 and 1 / RHS, so we can close right and not hold it in memory
+    val (isRhsZero, oneOverRhs) = withResource(GpuExpressionsUtils.columnarEvalToColumn(right,
+      batch)) { rhs =>
+      // For details of what we are doing for divide see GpuDecimalDivide
+      val oneOverRhs = withResource(GpuCast.doCast(rhs.getBase, rhs.dataType(), intermediateRhsType,
+        ansiMode = failOnError, legacyCastToString = false,
+        stringToDateAnsiModeEnabled = false)) { castRhs =>
+
+        val oneOverTmp = withResource(GpuScalar.from(Decimal(1), intermediateOneType)) { one =>
+          one.div(castRhs, GpuColumnVector.getNonNestedRapidsType(intermediateOneOverResultType))
+        }
+
+        withResource(oneOverTmp) { oneOverTmp =>
+          GpuCast.doCast(oneOverTmp, intermediateOneOverResultType, oneOverOutputType,
+            ansiMode = failOnError, legacyCastToString = false,
+            stringToDateAnsiModeEnabled = false)
+        }
+      }
+      closeOnExcept(oneOverRhs) { oneOverRhs =>
+        withResource(GpuScalar.from(Decimal(0), rhsType)) { zero =>
+          (zero.equalTo(rhs.getBase), oneOverRhs)
+        }
+      }
+    }
+    withResource(isRhsZero) { isRhsZero =>
+      // Now compute LHS / oneOverRhs
+      val dividedAndCast = withResource(oneOverRhs) { oneOverRhs =>
+        // For details of what we are doing for divide see GpuDecimalDivide
+        val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+          GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
+            legacyCastToString = false, stringToDateAnsiModeEnabled = false)
+        }
+        val divResult = withResource(castLhs) { castLhs =>
+          withResource(GpuCast.doCast(oneOverRhs, oneOverOutputType, intermediateOneOverType,
+            ansiMode = failOnError, legacyCastToString = false,
+            stringToDateAnsiModeEnabled = false)) { castOneOver =>
+            castLhs.div(castOneOver, GpuColumnVector.getNonNestedRapidsType(intermediateResultType))
+          }
+        }
+        withResource(divResult) { divResult =>
+          GpuCast.doCast(divResult, intermediateResultType, dataType,
+            ansiMode = failOnError, legacyCastToString = false,
+            stringToDateAnsiModeEnabled = false)
+        }
+      }
+      withResource(dividedAndCast) { dividedAndCast =>
+        withResource(GpuScalar.from(Decimal(0), dataType)) { zero =>
+          GpuColumnVector.from(isRhsZero.ifElse(zero, dividedAndCast), dataType)
+        }
+      }
+    }
+  }
+
+  override def nullable: Boolean = left.nullable || right.nullable
+
+  override def children: Seq[Expression] = Seq(left, right)
+}
+
 case class GpuDecimalMultiply(
     left: Expression,
     right: Expression,

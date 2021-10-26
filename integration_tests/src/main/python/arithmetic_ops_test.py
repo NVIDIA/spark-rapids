@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat, approximate_float, allow_non_gpu
+from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311, is_before_spark_320
@@ -162,6 +162,42 @@ def test_division_mixed(lhs, rhs):
                 f.col('a') / f.col('b')),
             conf=copy_and_update(allow_negative_scale_of_decimal_conf,
                 {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}))
+
+@ignore_order
+@pytest.mark.parametrize('rhs,rhs_type', [
+    (DecimalGen(15, 3), DecimalType(30, 10)),
+    (DecimalGen(10, 2), DecimalType(28, 18))], ids=idfn)
+@pytest.mark.parametrize('lhs,lhs_type', [
+    (DecimalGen(15, 3), DecimalType(27, 7)),
+    (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
+def test_decimal_division_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf,
+                {'spark.rapids.sql.decimalOverflowChecks': 'false'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs)\
+                    .withColumn('lhs', f.col('a').cast(lhs_type))\
+                    .withColumn('rhs', f.col('b').cast(rhs_type))\
+                    .repartition(1)\
+                    .select(f.col('lhs'), f.col('rhs'), f.col('lhs') / f.col('rhs')),
+            conf = conf)
+
+@ignore_order
+@pytest.mark.parametrize('rhs,rhs_type', [
+    (DecimalGen(15, 3), DecimalType(30, 10)),
+    (DecimalGen(10, 2), DecimalType(28, 18))], ids=idfn)
+@pytest.mark.parametrize('lhs,lhs_type', [
+    (DecimalGen(15, 3), DecimalType(27, 7)),
+    (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
+def test_decimal_multiplication_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf,
+                {'spark.rapids.sql.decimalOverflowChecks': 'false'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs)\
+                    .withColumn('lhs', f.col('a').cast(lhs_type))\
+                    .withColumn('rhs', f.col('b').cast(rhs_type))\
+                    .repartition(1)\
+                    .select(f.col('lhs'), f.col('rhs'), f.col('lhs') * f.col('rhs')),
+            conf = conf)
 
 @pytest.mark.parametrize('data_gen', integral_gens +  [decimal_gen_default, decimal_gen_scale_precision,
         decimal_gen_same_scale_precision, decimal_gen_64bit, decimal_gen_18_3, decimal_gen_30_2,

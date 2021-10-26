@@ -1030,25 +1030,16 @@ object GpuOverrides extends Logging {
               // GpuDecimalDivide includes the overflow check in it.
               GpuDecimalDivide(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
             case _: Multiply =>
-              // GpuDecimalMultiply includes the overflow check in it.
+              // GpuDecimal*Multiply includes the overflow check in it.
               val intermediatePrecision =
                 GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION &&
                   !conf.needDecimalChecks) {
-                // TODO this appears to work well, just need to turn it into a new Expression
-                System.err.println(s"$lhsDecimalType * $rhsDecimalType CONVERTED TO " +
-                    s"$lhsDecimalType / (1 / $rhsDecimalType)")
-                // This is a bit of a hack. Multiply might have to lose scale, to get to the correct
-                // answer. This can lead to an incorrect answer because we would have to round to
-                // do this. However, divide has us increase the scale (and precision), which lets us
-                // detect overflow. So we now write it as
-                val intermediate = GpuDecimalDivide.sparkDivideOutputType(DecimalType(1, 0),
-                  rhsDecimalType)
-                // TODO need to think about divide by 0, but will need our own GpuMultiplyThing...
-                val firstDiv = GpuDecimalDivide(GpuLiteral(Decimal(1), DecimalType(1, 0)),
-                  rhs.convertToGpu(), intermediate)
-                GpuDecimalDivide(lhs.convertToGpu(), firstDiv, wrapped.dataType)
+                // If overflow guarantees are suspended and it is possible that we will overflow
+                // then we need to use a different multiply implementation that is slower, uses
+                // more memory, but is more resilient in these cases.
+                GpuDecimalOverflowMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
               } else {
                 GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
               }

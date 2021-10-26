@@ -554,6 +554,9 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  // TODO change this to guarantees instead of checks. We still check for overflows, we
+  //  just cannot guarantee that we will match Spark in all cases when detecting overflow
+  //  or for not overflowing on some intermediate results.
   val NEED_DECIMAL_OVERFLOW_CHECKS = conf("spark.rapids.sql.decimalOverflowChecks")
       .doc("Spark will often do decimal calculation with unbounded precision and then " +
           "check for overflow when converting the result back to 128 bit decimal values. The " +
