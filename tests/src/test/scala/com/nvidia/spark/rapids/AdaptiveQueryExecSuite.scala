@@ -244,7 +244,7 @@ class AdaptiveQueryExecSuite
         import spark.implicits._
 
         val numPart = 10
-        spark.range(100)
+        spark.range(10)
             .map(x => (x, x + 1, 0))
             .toDF("did", "d1", "d2")
             .write
