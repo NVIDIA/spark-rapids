@@ -915,28 +915,28 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
         private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
           expr.wrapped match {
-            case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
-              val dt = lit.dataType.asInstanceOf[DecimalType]
-              // Lets figure out if we can make the Literal value smaller
-              val (newType, value) = lit.value match {
-                case null =>
-                  (DecimalType(0, 0), null)
-                case dec: Decimal =>
-                  val stripped = Decimal(dec.toJavaBigDecimal.stripTrailingZeros())
-                  val p = stripped.precision
-                  val s = stripped.scale
-                  // TODO need to test negative scale decimal literals...
-                  val t = if (s < 0 && dt.scale >= 0) {
-                    // need to adjust
-                    DecimalType(p - s, 0)
-                  } else {
-                    DecimalType(p, s)
-                  }
-                  (t, stripped)
-                case other =>
-                  throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
-              }
-              expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
+//            case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
+//              val dt = lit.dataType.asInstanceOf[DecimalType]
+//              // Lets figure out if we can make the Literal value smaller
+//              val (newType, value) = lit.value match {
+//                case null =>
+//                  (DecimalType(0, 0), null)
+//                case dec: Decimal =>
+//                  val stripped = Decimal(dec.toJavaBigDecimal.stripTrailingZeros())
+//                  val p = stripped.precision
+//                  val s = stripped.scale
+//                  // TODO need to test negative scale decimal literals...
+//                  val t = if (s < 0 && dt.scale >= 0) {
+//                    // need to adjust
+//                    DecimalType(p - s, 0)
+//                  } else {
+//                    DecimalType(p, s)
+//                  }
+//                  (t, stripped)
+//                case other =>
+//                  throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
+//              }
+//              expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
             // We avoid unapply for Cast because it changes between versions of Spark
             case PromotePrecision(c: CastBase) if c.dataType.isInstanceOf[DecimalType] =>
               val to = c.dataType.asInstanceOf[DecimalType]
@@ -1031,7 +1031,27 @@ object GpuOverrides extends Logging {
               GpuDecimalDivide(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
             case _: Multiply =>
               // GpuDecimalMultiply includes the overflow check in it.
-              GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
+              val intermediatePrecision =
+                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
+                  rhsDecimalType, a.dataType)
+              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION &&
+                  !conf.needDecimalChecks) {
+                // TODO this appears to work well, just need to turn it into a new Expression
+                System.err.println(s"$lhsDecimalType * $rhsDecimalType CONVERTED TO " +
+                    s"$lhsDecimalType / (1 / $rhsDecimalType)")
+                // This is a bit of a hack. Multiply might have to lose scale, to get to the correct
+                // answer. This can lead to an incorrect answer because we would have to round to
+                // do this. However, divide has us increase the scale (and precision), which lets us
+                // detect overflow. So we now write it as
+                val intermediate = GpuDecimalDivide.sparkDivideOutputType(DecimalType(1, 0),
+                  rhsDecimalType)
+                // TODO need to think about divide by 0, but will need our own GpuMultiplyThing...
+                val firstDiv = GpuDecimalDivide(GpuLiteral(Decimal(1), DecimalType(1, 0)),
+                  rhs.convertToGpu(), intermediate)
+                GpuDecimalDivide(lhs.convertToGpu(), firstDiv, wrapped.dataType)
+              } else {
+                GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
+              }
             case _ =>
               GpuCheckOverflow(childExprs.head.convertToGpu(),
                 wrapped.dataType, wrapped.nullOnOverflow)
