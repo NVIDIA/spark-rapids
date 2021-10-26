@@ -32,26 +32,27 @@ import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
-abstract class CastExprMeta[INPUT <: CastBase](
+final class CastExprMeta[INPUT <: CastBase](
     cast: INPUT,
     val ansiEnabled: Boolean,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule,
+    doFloatToIntCheck: Boolean,
+    // stringToDate supports ANSI mode from Spark v3.2.0.  Here is the details.
+    //     https://github.com/apache/spark/commit/6e862792fb
+    // We do not want to create a shim class for this small change
+    stringToAnsiDate: Boolean,
     toTypeOverride: Option[DataType] = None)
   extends UnaryExprMeta[INPUT](cast, conf, parent, rule) {
 
-  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT]
+  def withToTypeOverride(newToType: DecimalType): CastExprMeta[INPUT] =
+    new CastExprMeta[INPUT](cast, ansiEnabled, conf, parent, rule,
+      doFloatToIntCheck, stringToAnsiDate, Some(newToType))
 
   val fromType: DataType = cast.child.dataType
   val toType: DataType = toTypeOverride.getOrElse(cast.dataType)
   val legacyCastToString: Boolean = ShimLoader.getSparkShims.getLegacyComplexTypeToString()
-
-  // stringToDate supports ANSI mode from Spark v3.2.0.  Here is the details.
-  //     https://github.com/apache/spark/commit/6e862792fb
-  // We do not want to create a shim class for this small change, so define a method
-  // to support both cases in a single class.
-  protected def stringToDateAnsiModeEnabled: Boolean = false
 
   override def tagExprForGpu(): Unit = recursiveTagExprForGpuCheck()
 
@@ -64,7 +65,11 @@ abstract class CastExprMeta[INPUT <: CastBase](
         !checks.gpuCanCast(fromDataType, toDataType)) {
       willNotWorkOnGpu(s"Casting child type $fromDataType to $toDataType is not supported")
     }
+
     (fromDataType, toDataType) match {
+      case (FloatType | DoubleType, ByteType | ShortType | IntegerType | LongType) if
+          doFloatToIntCheck && !conf.isCastFloatToIntegralTypesEnabled =>
+        willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
       case (dt: DecimalType, _: StringType) if dt.precision > DType.DECIMAL64_MAX_PRECISION =>
         willNotWorkOnGpu(s"decimal to string with a " +
             s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
@@ -145,7 +150,7 @@ abstract class CastExprMeta[INPUT <: CastBase](
 
   override def convertToGpu(child: Expression): GpuExpression =
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString,
-      stringToDateAnsiModeEnabled)
+      stringToAnsiDate)
 }
 
 object GpuCast extends Arm {
