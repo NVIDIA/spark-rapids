@@ -37,7 +37,7 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
       val a = app.appInfo
       AppInfoProfileResults(app.index, a.appName, a.appId,
         a.sparkUser,  a.startTime, a.endTime, a.duration,
-        a.durationStr, a.sparkVersion, a.pluginEnabled)
+        a.durationStr, a.sparkVersion, a.pluginEnabled, a.potentialProblems)
     }
     if (allRows.size > 0) {
       allRows.sortBy(cols => (cols.appIndex))

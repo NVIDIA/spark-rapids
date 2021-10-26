@@ -108,10 +108,10 @@ object QualOutputWriter {
   val SQL_IDS_FAILURES_STR = "SQL Ids with Failures"
   val READ_SCORE_PERCENT_STR = "Read Score Percent"
   val READ_FILE_FORMAT_SCORE_STR = "Read File Format Score"
-  val READ_FILE_FORMAT_TYPES_STR = "Unsupported Read File Formats and Types"
-  val WRITE_DATA_FORMAT_STR = "Unsupported Write Data Format"
+  val READ_FILE_FORMAT_TYPES_STR = "Problematic Read File Formats and Types"
+  val WRITE_DATA_FORMAT_STR = "Problematic Write Data Format"
   val COMPLEX_TYPES_STR = "Complex Types"
-  val NESTED_TYPES_STR = "Unsupported Nested Types"
+  val NESTED_TYPES_STR = "Problematic Nested Types"
   val READ_SCHEMA_STR = "Read Schema"
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size

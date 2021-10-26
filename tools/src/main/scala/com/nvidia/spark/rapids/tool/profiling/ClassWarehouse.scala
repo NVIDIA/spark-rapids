@@ -187,10 +187,10 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
     appId: Option[String], sparkUser: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],
     durationStr: String, sparkVersion: String,
-    pluginEnabled: Boolean)  extends ProfileResult {
+    pluginEnabled: Boolean, potentialProblems: String)  extends ProfileResult {
   override val outputHeaders = Seq("appIndex", "appName", "appId",
     "sparkUser", "startTime", "endTime", "duration", "durationStr",
-    "sparkVersion", "pluginEnabled")
+    "sparkVersion", "pluginEnabled", "potentialProblems")
 
   def endTimeToStr: String = {
     endTime match {
@@ -209,14 +209,15 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
   override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, appName, appId.getOrElse(""),
       sparkUser,  startTime.toString, endTimeToStr, durToStr,
-      durationStr, sparkVersion, pluginEnabled.toString)
+      durationStr, sparkVersion, pluginEnabled.toString, potentialProblems)
   }
 }
 
 case class ApplicationCase(
     appName: String, appId: Option[String], sparkUser: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],
-    durationStr: String, sparkVersion: String, pluginEnabled: Boolean)
+    durationStr: String, sparkVersion: String, pluginEnabled: Boolean,
+    potentialProblems: String)
 
 case class SQLPlanMetricsCase(
     sqlID: Long,

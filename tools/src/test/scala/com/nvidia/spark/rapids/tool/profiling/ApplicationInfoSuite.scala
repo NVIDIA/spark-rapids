@@ -196,6 +196,27 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     ToolTestUtils.compareDataFrames(df, dfExpect)
   }
 
+  test("test potentialProblems in profiling") {
+    var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+    val appArgs =
+      new ProfileArgs(Array(s"$qualLogDir/complex_dec_eventlog.zstd"))
+    var index: Int = 1
+    val eventlogPaths = appArgs.eventlog()
+    for (path <- eventlogPaths) {
+      apps += new ApplicationInfo(hadoopConf,
+        EventLogPathProcessor.getEventLogInfo(path, hadoopConf).head._1, index)
+      index += 1
+    }
+    assert(apps.size == 1)
+
+    val collect = new CollectInformation(apps)
+    val appInfo = collect.getAppInfo
+    import sparkSession.implicits._
+    val dfCol = appInfo.toDF.select("potentialProblems").collect.mkString("")
+    val expectedRes = "[DECIMAL:NESTED COMPLEX TYPE]"
+    assert(dfCol == expectedRes)
+  }
+
   test("test printSQLPlans") {
     TrampolineUtil.withTempDir { tempOutputDir =>
       var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()

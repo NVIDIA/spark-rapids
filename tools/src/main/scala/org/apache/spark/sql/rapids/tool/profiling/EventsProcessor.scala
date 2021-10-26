@@ -138,7 +138,8 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
       None,
       "",
       "",
-      pluginEnabled = false
+      pluginEnabled = false,
+      ""
     )
     app.appInfo = thisAppStart
     app.appId = event.appId.getOrElse("")

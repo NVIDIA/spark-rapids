@@ -271,6 +271,7 @@ class ApplicationInfo(
       for (node <- allnodes) {
         checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetOrRDDPlan(node.desc)) {
+          sqlIDToDataSetOrRDDCase += sqlID
           sqlIdToInfo.get(sqlID).foreach { sql =>
             sql.hasDatasetOrRDD = true
           }
@@ -279,6 +280,11 @@ class ApplicationInfo(
               "Contains Dataset or RDD")
             unsupportedSQLplan += thisPlan
           }
+        }
+        val issues = findPotentialIssues(node.desc)
+        if (issues.nonEmpty) {
+          val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
+          sqlIDtoProblematic(sqlID) = existingIssues ++ issues
         }
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
@@ -338,10 +344,12 @@ class ApplicationInfo(
         case Some(i) => UIUtils.formatDuration(i.toLong)
         case None => ""
       }
+      val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
+      val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
       val newApp = res.copy(endTime = this.appEndTime, duration = durationResult,
         durationStr = durationString, sparkVersion = this.sparkVersion,
-        pluginEnabled = this.gpuMode)
+        pluginEnabled = this.gpuMode, potentialProblems = problems)
       appInfo = newApp
     }
   }
