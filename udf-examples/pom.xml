@@ -75,32 +75,6 @@
     </resources>
     <plugins>
       <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-antrun-plugin</artifactId>
-          <version>1.8</version>
-          <executions>
-              <execution>
-                  <id>generate-build-info</id>
-                  <phase>generate-resources</phase>
-                  <configuration>
-                      <!-- Execute the shell script to generate the plugin build information. -->
-                      <target>
-                          <mkdir dir="${project.build.directory}/extra-resources"/>
-                          <mkdir dir="${project.build.directory}/tmp"/>
-                          <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                              <arg value="${user.dir}/build/build-info"/>
-                              <arg value="${project.version}"/>
-                              <arg value="${cudf.version}"/>
-                          </exec>
-                      </target>
-                  </configuration>
-                  <goals>
-                      <goal>run</goal>
-                  </goals>
-              </execution>
-          </executions>
-      </plugin>
-      <plugin>
         <artifactId>maven-assembly-plugin</artifactId>
         <configuration>
           <descriptorRefs>
