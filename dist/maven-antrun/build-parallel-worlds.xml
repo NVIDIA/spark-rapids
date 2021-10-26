@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2021, NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project name="maven-antrun" xmlns:ac="antlib:net.sf.antcontrib">
+    <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+
+    <target name="build-parallel-worlds">
+        <echo>Preparing parallel worlds with params: incuded_buildvers=${included_buildvers}, buildver=${buildver}</echo>
+
+        <property name="servicesDir"
+            value="${project.build.directory}/extra-resources/META-INF/services"/>
+        <property name="shimServiceFile"
+            value="${servicesDir}/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+        <property name="aggregatorPrefix"
+            value="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}"/>
+
+        <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
+        <ac:for list="${included_buildvers}" param="bv">
+            <sequential>
+                <property name="shimService" value="com.nvidia.spark.rapids.shims.spark@{bv}.SparkShimServiceProvider"/>
+                <echo>Adding shim service entry ${shimService} to ${shimServiceFile}</echo>
+                <echo append="true" file="${shimServiceFile}"
+                    message="${shimService}${line.separator}"/>
+
+                <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
+                    dest="${project.build.directory}/parallel-world">
+                    <patternset id="shared-world-includes">
+                        <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
+                        <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                    </patternset>
+                </unzip>
+
+                <unzip src="${aggregatorPrefix}-spark@{bv}.jar"
+                    dest="${project.build.directory}/parallel-world/spark@{bv}">
+                    <patternset id="parallel-world-includes">
+                        <invert>
+                            <patternset refid="shared-world-includes"/>
+                        </invert>
+                    </patternset>
+                </unzip>
+            </sequential>
+        </ac:for>
+    </target>
+</project>
