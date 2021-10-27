@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-10-16
+Generated on 2021-10-26
 
 ## Release 21.10
 
@@ -145,6 +145,8 @@ Generated on 2021-10-16
 ### PRs
 |||
 |:---|:---|
+|[#3906](https://github.com/NVIDIA/spark-rapids/pull/3906)|Doc updated for v2110[skip ci]|
+|[#3840](https://github.com/NVIDIA/spark-rapids/pull/3840)|Update changelog [skip ci]|
 |[#3838](https://github.com/NVIDIA/spark-rapids/pull/3838)|Update deploy script [skip ci]|
 |[#3827](https://github.com/NVIDIA/spark-rapids/pull/3827)|Update changelog 21.10 to latest [skip ci]|
 |[#3808](https://github.com/NVIDIA/spark-rapids/pull/3808)|Rewording qualification and profiling tools doc files[skip ci]|

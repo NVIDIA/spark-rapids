@@ -508,44 +508,6 @@ object GpuOverrides extends Logging {
     }
   }
 
-  private def gpuOrderingSemanticEquals(
-      found: Expression,
-      required: Expression,
-      conf: RapidsConf): Boolean =
-    found.deterministic &&
-        required.deterministic &&
-        convertExprToGpuIfPossible(found, conf).canonicalized ==
-            convertExprToGpuIfPossible(required, conf).canonicalized
-
-  private def orderingSatisfies(
-      found: SortOrder,
-      required: SortOrder,
-      conf: RapidsConf): Boolean = {
-    val foundChildren = ShimLoader.getSparkShims.sortOrderChildren(found)
-    found.direction == required.direction &&
-        found.nullOrdering == required.nullOrdering &&
-        foundChildren.exists(gpuOrderingSemanticEquals(_, required.child, conf))
-  }
-
-  private def orderingSatisfies(
-      ordering1: Seq[SortOrder],
-      ordering2: Seq[SortOrder],
-      conf: RapidsConf): Boolean = {
-    // We cannot use SortOrder.orderingSatisfies because there is a corner case where
-    // some operators like a Literal can be a part of SortOrder, which then results in errors
-    // because we may have converted it over to a GpuLiteral at that point and a Literal
-    // is not equivalent to a GpuLiteral, even though it should be.
-    if (ordering2.isEmpty) {
-      true
-    } else if (ordering2.length > ordering1.length) {
-      false
-    } else {
-      ordering2.zip(ordering1).forall {
-        case (o2, o1) => orderingSatisfies(o1, o2, conf)
-      }
-    }
-  }
-
   private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
     part match {
       case _: GpuPartitioning => part
@@ -3811,7 +3773,7 @@ object GpuOverrides extends Logging {
     // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
     children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
       // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering, conf)) {
+      if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
         child
       } else {
         val sort = SortExec(requiredOrdering, global = false, child = child)
@@ -3913,7 +3875,7 @@ object GpuOverrideUtil extends Logging {
       case NonFatal(t) if !failOnError =>
         logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
         planOriginal
-      case fatal =>
+      case fatal: Throwable =>
         logError("Encountered an exception applying GPU overrides " + fatal, fatal)
         throw fatal
     }

@@ -804,8 +804,6 @@ class Spark320Shims extends Spark32XShims with Logging {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
-
   override def sortOrder(
       child: Expression,
       direction: SortDirection,

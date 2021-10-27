@@ -534,10 +534,6 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
-  override def sortOrderChildren(s: SortOrder): Seq[Expression] = {
-    (s.sameOrderExpressions + s.child).toSeq
-  }
-
   override def sortOrder(
       child: Expression,
       direction: SortDirection,
