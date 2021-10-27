@@ -274,7 +274,7 @@ abstract class AppBase(
   }
 }
 
-object AppBase extends Logging {
+object AppBase {
 
   def parseReadSchemaForNestedTypes(
       schema: ArrayBuffer[String]): (String, String) = {
