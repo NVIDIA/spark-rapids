@@ -962,15 +962,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     if (!allTypesAreSupported) {
       willNotWorkOnGpu("ArrayTypes or MayTypes in grouping expressions are not supported")
     }
-
-    val anyBinaryAggregates = agg.aggregateExpressions.exists(e =>
-      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[BinaryType]))
-    if (anyBinaryAggregates && !availableRuntimeDataTransition) {
-      willNotWorkOnGpu("Aggregate does not support binary input " +
-        "when there is no runtime data transition available")
-    }
-
     tagForReplaceMode()
 
     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
@@ -1419,8 +1410,6 @@ class GpuSortAggregateExecMeta(
     if (canThisBeReplaced && !hasFirstOrLast) {
       childPlans.foreach { plan =>
         if (plan.wrapped.isInstanceOf[SortExec]) {
-          // TODO tag child Sort as unsupported if there are binary types and we do not have
-          // aggregate buffer converters
           if (!plan.canThisBeReplaced) {
             willNotWorkOnGpu("one of the preceding SortExec's cannot be replaced")
           } else {
