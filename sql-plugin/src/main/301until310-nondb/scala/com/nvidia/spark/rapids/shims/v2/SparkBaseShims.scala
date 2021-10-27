@@ -258,12 +258,14 @@ abstract class SparkBaseShims extends Spark30XShims {
       GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-            .ansiEnabled, conf, p, r)),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          doFloatToIntCheck = false, stringToAnsiDate = false)),
       GpuOverrides.expr[AnsiCast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
+        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
+          parent = p, rule = r, doFloatToIntCheck = false, stringToAnsiDate = false)),
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
