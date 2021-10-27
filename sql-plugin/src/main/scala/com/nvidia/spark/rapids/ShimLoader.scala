@@ -426,4 +426,8 @@ object ShimLoader extends Logging {
   def loadColumnarRDD(): Class[_] = {
     loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
+
+  def newExplainPlan(): ExplainPlanBase = {
+    ShimLoader.newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
+  }
 }

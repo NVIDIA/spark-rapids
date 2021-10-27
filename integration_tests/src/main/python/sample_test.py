@@ -27,8 +27,11 @@ basic_gens = all_gen + [NullGen()]
 @pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
 def test_sample_produce_empty_batch(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        # length = 4 will generate empty batch after sample
-        lambda spark: unary_op_df(spark, data_gen, length= 4).sample(fraction = 0.9, seed = 1)
+        # length = 4 will generate empty batch after sample;
+        # set num_slices as constant,
+        # num_slices is not same in different mode, such as local, yarn, Mesos
+        lambda spark: unary_op_df(spark, data_gen, length= 4, num_slices = 10)
+            .sample(fraction = 0.9, seed = 1)
     )
 
 # the following cases is the normal cases and do not use @ignore_order
@@ -36,14 +39,15 @@ nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 @pytest.mark.parametrize('data_gen', basic_gens + nested_gens, ids=idfn)
 def test_sample(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).sample(fraction = 0.9, seed = 1),
+        lambda spark: unary_op_df(spark, data_gen, num_slices = 10)
+            .sample(fraction = 0.9, seed = 1),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True}
     )
 
 @pytest.mark.parametrize('data_gen', basic_gens + nested_gens, ids=idfn)
 def test_sample_with_replacement(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).sample(
+        lambda spark: unary_op_df(spark, data_gen, num_slices = 10).sample(
             withReplacement =True, fraction = 0.5, seed = 1),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True}
     )
