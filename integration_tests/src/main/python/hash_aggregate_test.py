@@ -598,7 +598,6 @@ _replace_modes_single_distinct = [
     # Databricks runtime: GPU(Final&Complete) -> CPU(PartialMerge)
     'final|partialMerge&partial|final&complete',
 ]
-# TODO: add param of use_obj_hash_agg after https://github.com/NVIDIA/spark-rapids/issues/3367 getting fixed
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
@@ -608,11 +607,14 @@ _replace_modes_single_distinct = [
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
                                                                      replace_mode,
-                                                                     aqe_enabled):
+                                                                     aqe_enabled,
+                                                                     use_obj_hash_agg):
     conf = {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
-            'spark.sql.adaptive.enabled': aqe_enabled}
+            'spark.sql.adaptive.enabled': aqe_enabled,
+            'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
     # test with single Distinct
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
