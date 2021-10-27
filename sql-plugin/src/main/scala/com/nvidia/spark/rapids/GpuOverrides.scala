@@ -3563,8 +3563,8 @@ object GpuOverrides extends Logging {
       // The types below are allowed as inputs and outputs.
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
           TypeSig.MAP + TypeSig.BINARY).nested()
-        .withPsNote(TypeEnum.BINARY, "only allowed in conjunction with a SortAggregateExec when " +
-          "aggregate buffers can be converted between CPU and GPU")
+        .withPsNote(TypeEnum.BINARY,
+          "Binary columns are supported but not for the sort expressions")
         , TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](

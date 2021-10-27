@@ -412,7 +412,7 @@ Accelerator supports are described below.
 <td>S</td>
 <td><em>PS<br/>max DECIMAL precision of 18</em></td>
 <td>S</td>
-<td><em>PS<br/>only allowed in conjunction with a SortAggregateExec when aggregate buffers can be converted between CPU and GPU</em></td>
+<td><em>PS<br/>Binary columns are supported but not for the sort expressions</em></td>
 <td><b>NS</b></td>
 <td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>
 <td><em>PS<br/>max child DECIMAL precision of 18;<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, UDT</em></td>

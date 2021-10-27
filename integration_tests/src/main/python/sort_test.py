@@ -30,12 +30,18 @@ orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), Int
 @allow_non_gpu('SortExec', 'ShuffleExchangeExec', 'RangePartitioning', 'SortOrder')
 @pytest.mark.parametrize('data_gen', [StringGen(nullable=False)], ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').cast(BinaryType())], ids=idfn)
-def test_sort_binary(data_gen, order):
-    conf = {'spark.rapids.sql.explain': 'ALL'}
+def test_sort_binary_fallback(data_gen, order):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            "SortExec",
-            conf = conf)
+            "SortExec")
+
+@allow_non_gpu('ProjectExec', 'ShuffleExchangeExec', 'RangePartitioning')
+@pytest.mark.parametrize('data_gen', [StringGen(nullable=False)], ids=idfn)
+def test_sort_nonbinary_carry_binary(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen)
+                .withColumn("binary_string", f.col("a").cast(BinaryType()))
+                .orderBy(f.col('a')))
 
 @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
