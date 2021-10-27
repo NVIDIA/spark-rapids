@@ -79,7 +79,7 @@ class AnalysisSuite extends FunSuite {
 
   test("test sqlMetrics duration, execute cpu time and potential_problems") {
     val logs = Array(s"$qualLogDir/complex_dec_eventlog.zstd")
-    val expectFile = "rapids_duration_and_cpu_expectation_1.csv"
+    val expectFile = "rapids_duration_and_cpu_expectation.csv"
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)
     val analysis = new Analysis(apps)
