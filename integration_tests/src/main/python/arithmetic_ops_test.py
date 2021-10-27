@@ -188,7 +188,7 @@ def test_float_division_mixed(lhs, rhs):
     (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
 def test_decimal_division_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
     conf = copy_and_update(allow_negative_scale_of_decimal_conf,
-                {'spark.rapids.sql.decimalOverflowChecks': 'false'})
+                {'spark.rapids.sql.decimalOverflowGuarantees': 'false'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs)\
                     .withColumn('lhs', f.col('a').cast(lhs_type))\
@@ -206,7 +206,7 @@ def test_decimal_division_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_t
     (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
 def test_decimal_multiplication_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
     conf = copy_and_update(allow_negative_scale_of_decimal_conf,
-                {'spark.rapids.sql.decimalOverflowChecks': 'false'})
+                {'spark.rapids.sql.decimalOverflowGuarantees': 'false'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs)\
                     .withColumn('lhs', f.col('a').cast(lhs_type))\
