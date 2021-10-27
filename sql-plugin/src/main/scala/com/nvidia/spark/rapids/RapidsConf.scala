@@ -1145,6 +1145,12 @@ object RapidsConf {
       .stringConf
       .createWithDefault("none")
 
+  val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+    .doc("A configurable chunk size to use when compressing with LZ4.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(64 * 1024)
+
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
@@ -1666,6 +1672,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
 
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
+
+  lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 

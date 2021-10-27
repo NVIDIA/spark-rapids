@@ -51,6 +51,24 @@ $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
 # The version of pytest.tar.gz that is uploaded is the one built against spark301 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
+
+set +x
+rm -rf /tmp/artifacts-build.info
+TEE_CMD="tee -a /tmp/artifacts-build.info"
+echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" | $TEE_CMD
+echo "-------------------- cudf JNI BUILD INFO --------------------" | $TEE_CMD
+unzip -p $CUDF_JAR cudf-java-version-info.properties | $TEE_CMD || true
+echo "-------------------- rapids-4-spark BUILD INFO --------------------" | $TEE_CMD
+unzip -p $RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties | $TEE_CMD || true
+echo "-------------------- rapids-4-spark-udf-examples BUILD INFO --------------------" | $TEE_CMD
+unzip -p $RAPIDS_UDF_JAR rapids4spark-version-info.properties | $TEE_CMD || true
+echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" | $TEE_CMD
+unzip -p $RAPIDS_TEST_JAR rapids4spark-version-info.properties | $TEE_CMD || true
+echo "-------------------- rapids-4-spark-integration-tests pytest BUILD INFO --------------------" | $TEE_CMD
+tar -xzf $RAPIDS_INT_TESTS_TGZ --to-command=cat integration_tests/rapids4spark-version-info.properties | $TEE_CMD || true
+echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" | $TEE_CMD
+set -x
+
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
 $MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
@@ -150,6 +168,7 @@ run_test() {
           sed -n -e '/test session starts/,/deselected,/ p' "$LOG_FILE" || true
         else
           cat "$LOG_FILE" || true
+          cat /tmp/artifacts-build.info || true
         fi
         return $CODE
         ;;

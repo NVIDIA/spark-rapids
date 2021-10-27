@@ -39,7 +39,8 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
     if (codecName == "none") {
       None
     } else {
-      Some(TableCompressionCodec.getCodec(codecName))
+      val codecConfigs = TableCompressionCodec.makeCodecConfig(rapidsConf)
+      Some(TableCompressionCodec.getCodec(codecName, codecConfigs))
     }
   }
 
