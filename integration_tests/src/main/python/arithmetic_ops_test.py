@@ -129,9 +129,9 @@ def test_multiplication_mixed(lhs, rhs):
                 f.col('a') * f.col('b')),
             conf = allow_negative_scale_of_decimal_conf)
 
-@approximate_float # we should get the perfectly correct answer for floats except when casting a deciml to a float in some corner cases.
+@approximate_float # we should get the perfectly correct answer for floats except when casting a decimal to a float in some corner cases.
 @pytest.mark.parametrize('lhs', [float_gen, double_gen], ids=idfn)
-@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3)], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3)], ids=idfn)
 def test_float_multiplication_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
@@ -169,9 +169,9 @@ def test_division_mixed(lhs, rhs):
                 f.col('a') / f.col('b')),
             conf = allow_negative_scale_of_decimal_conf)
 
-@approximate_float # we should get the perfectly correct answer for floats except when casting a deciml to a float in some corner cases.
+@approximate_float # we should get the perfectly correct answer for floats except when casting a decimal to a float in some corner cases.
 @pytest.mark.parametrize('rhs', [float_gen, double_gen], ids=idfn)
-@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
+@pytest.mark.parametrize('lhs', [DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
 def test_float_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
