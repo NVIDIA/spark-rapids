@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.lang.invoke.SerializedLambda
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta, RapidsUserDefinedFunction, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, GpuRowBasedUserDefinedFunction, GpuUserDefinedFunction, RapidsConf, RapidsMeta, RepeatingParamCheck, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
@@ -29,7 +29,19 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 
 case class GpuScalaUDF(
-    rapidsFunc: Option[RapidsUDF],
+    function: RapidsUDF,
+    dataType: DataType,
+    children: Seq[Expression],
+    udfName: Option[String],
+    nullable: Boolean,
+    udfDeterministic: Boolean) extends GpuUserDefinedFunction {
+  override def toString: String = s"${udfName.getOrElse("UDF")}(${children.mkString(", ")})"
+
+  /** name of the UDF function */
+  override val name: String = udfName.getOrElse("???")
+}
+
+case class GpuRowBasedScalaUDF(
     sparkFunc: AnyRef,
     dataType: DataType,
     children: Seq[Expression],
@@ -37,25 +49,23 @@ case class GpuScalaUDF(
     outputEncoder: Option[ExpressionEncoder[_]],
     udfName: Option[String],
     nullable: Boolean,
-    udfDeterministic: Boolean) extends RapidsUserDefinedFunction {
-  override def toString: String = s"${udfName.getOrElse("UDF")}(${children.mkString(", ")})"
+    udfDeterministic: Boolean) extends GpuRowBasedUserDefinedFunction {
+  override def toString: String = s"$name(${children.mkString(", ")})"
 
   /** name of the UDF function */
-  override val name: String = udfName.getOrElse("???")
+  override val name: String = udfName.getOrElse(getClass.getSimpleName)
 
   /** The input `row` consists of only child columns. */
-  override def evaluateRow(childrenRow: InternalRow): Any =
+  override protected def evaluateRow(childrenRow: InternalRow): Any =
     catalystConverter(wrappedFunc(childrenRow))
 
-  /**
-   * Unfortunately we need to copy the following code from Spark for input/output type
+  /** Unfortunately we need to copy the following code from Spark for input/output type
    * conversions between Scala type and Catalyst type.
    *
    * NOTE the expression encoder for input does not work here. So disable it for now.
    * Please find "GPU DIFF" for details.
    *
-   * == Copy begin ==
-   */
+   * == Copy begin == */
 
   /**
    * The analyzer should be aware of Scala primitive types so as to make the
@@ -138,7 +148,7 @@ case class GpuScalaUDF(
 
   /** Some refactor to simplify the Spark code of executing the function */
 
-    /** Build an accessor for each child to read the data from a row and do type conversion */
+  /** Build an accessor for each child to read the data from a row and do type conversion */
   private lazy val childAccessors: Seq[SpecializedGetters => Any] =
     children.zipWithIndex.map { case (child, i) =>
       val accessor = InternalRow.getAccessor(child.dataType, child.nullable)
@@ -335,21 +345,35 @@ abstract class BaseScalaUDFMeta(
   }
 
   override def convertToGpu(): GpuExpression = {
-    GpuScalaUDF(
-      opRapidsFunc,
-      expr.function,
-      expr.dataType,
-      childExprs.map(_.convertToGpu()),
-      expr.inputEncoders,
-      outputEncoder,
-      expr.udfName,
-      expr.nullable,
-      expr.udfDeterministic)
+    // It can go here only when either
+    //   1. UDF implements a RAPIDS accelerated interface, or
+    //   2. The conf "spark.rapids.sql.rowBasedUDF.enabled" is enabled.
+    opRapidsFunc.map { rapidsFunc =>
+      GpuScalaUDF(
+        rapidsFunc,
+        expr.dataType,
+        childExprs.map(_.convertToGpu()),
+        expr.udfName,
+        expr.nullable,
+        expr.udfDeterministic)
+    }.getOrElse {
+      // This `require` is just for double check.
+      require(conf.isCpuBasedUDFEnabled)
+      GpuRowBasedScalaUDF(
+        expr.function,
+        expr.dataType,
+        childExprs.map(_.convertToGpu()),
+        expr.inputEncoders,
+        outputEncoder,
+        expr.udfName,
+        expr.nullable,
+        expr.udfDeterministic)
+    }
   }
 }
 
 object GpuScalaUDF {
-  def exprMeta: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
+  def exprMeta30X: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
     "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
       "to get better performance.",
     ExprChecks.projectOnly(
@@ -359,8 +383,6 @@ object GpuScalaUDF {
     (a, conf, p, r) => new BaseScalaUDFMeta(a, conf, p, r) {
       override protected def outputEncoder: Option[ExpressionEncoder[_]] = None
     })
-
-  def exprMeta30X: ExprRule[ScalaUDF] = exprMeta
 
   /**
    * Determine if the UDF function implements the [[com.nvidia.spark.RapidsUDF]] interface,

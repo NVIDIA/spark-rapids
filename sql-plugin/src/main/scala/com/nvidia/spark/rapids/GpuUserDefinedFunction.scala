@@ -45,8 +45,8 @@ trait GpuUserDefinedFunction extends GpuExpression
 
   private[this] val nvtxRangeName = s"UDF: $name"
   private[this] lazy val funcCls = TrampolineUtil.getSimpleName(function.getClass)
-  protected lazy val inputTypesString = children.map(_.dataType.catalogString).mkString(", ")
-  protected lazy val outputType = dataType.catalogString
+  private[this] lazy val inputTypesString = children.map(_.dataType.catalogString).mkString(", ")
+  private[this] lazy val outputType = dataType.catalogString
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val cols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
@@ -78,64 +78,60 @@ object GpuUserDefinedFunction {
 }
 
 /**
- * Try to execute an UDF efficiently by
- *   1 running the UDF on GPU if it is an instance of RapidsUDF. Otherwise,
- *   2 pull back only the columns the UDF needs to host and do the processing on CPU.
+ * Execute a row based UDF efficiently by pulling back only the columns the UDF needs to host
+ * and do the processing on CPU.
  */
-trait RapidsUserDefinedFunction extends GpuUserDefinedFunction with Logging {
+trait GpuRowBasedUserDefinedFunction extends GpuExpression
+    with ShimExpression with UserDefinedExpression with Serializable with Logging {
+  /** name of the UDF function */
+  val name: String
 
-  /** Whether this UDF implements the RapidsUDF interface */
-  protected def rapidsFunc: Option[RapidsUDF]
+  /** True if the UDF is deterministic */
+  val udfDeterministic: Boolean
 
   /** The row based function of the UDF. */
   protected def evaluateRow(childrenRow: InternalRow): Any
 
-  override final val function: RapidsUDF = rapidsFunc.orNull
+  private[this] lazy val inputTypesString = children.map(_.dataType.catalogString).mkString(", ")
+  private[this] lazy val outputType = dataType.catalogString
+
+  override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    rapidsFunc.map { _ =>
-      // It is a RapidsUDF instance.
-      super.columnarEval(batch)
-    }.getOrElse {
-      logInfo(s"Begin to execute the UDF($name) row by row.")
-      val cpuUDFStart = System.nanoTime
-      // It is only a CPU based UDF
-      // These child columns will be closed by `ColumnarToRowIterator`.
-      val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
-      val prepareArgsEnd = System.nanoTime
-      try {
-        // 1 Convert the argument columns to row.
-        // 2 Evaluate the CPU UDF row by row and cache the result.
-        // 3 Build a result column from the cache.
-        val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
-        val retType = GpuColumnVector.convertFrom(dataType, nullable)
-        val retRow = new GenericInternalRow(size = 1)
-        closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
-          new ColumnarToRowIterator(
-              Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
-              NoopMetric,
-              NoopMetric,
-              NoopMetric,
-              NoopMetric).foreach { row =>
-            retRow.update(0, evaluateRow(row))
-            retConverter.append(retRow, 0, builder)
-          }
-          val retColumn = closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
-            GpuColumnVector.from(resultCol, dataType)
-          }
-
+    val cpuUDFStart = System.nanoTime
+    // These child columns will be closed by `ColumnarToRowIterator`.
+    val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
+    val prepareArgsEnd = System.nanoTime
+    try {
+      // 1 Convert the argument columns to row.
+      // 2 Evaluate the CPU UDF row by row and cache the result.
+      // 3 Build a result column from the cache.
+      val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
+      val retType = GpuColumnVector.convertFrom(dataType, nullable)
+      val retRow = new GenericInternalRow(size = 1)
+      closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
+        new ColumnarToRowIterator(
+            Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
+            NoopMetric,
+            NoopMetric,
+            NoopMetric,
+            NoopMetric).foreach { row =>
+          retRow.update(0, evaluateRow(row))
+          retConverter.append(retRow, 0, builder)
+        }
+        closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
           val cpuRunningTime = System.nanoTime - prepareArgsEnd
           // Use log of info. level to record the eclipsed time for the UDF running before
           // figuring out how to support Spark metrics in this expression.
-          logInfo(s"It took ${cpuRunningTime/1000000.0} ms to run UDF $name, and " +
-            s"${(prepareArgsEnd - cpuUDFStart)/1000000.0} ms to get the input from children.")
-          retColumn
+          logInfo(s"It took ${cpuRunningTime} ns to run UDF $name, and " +
+            s"${prepareArgsEnd - cpuUDFStart} ns to get the input from children.")
+          GpuColumnVector.from(resultCol, dataType)
         }
-      } catch {
-        case e: Exception =>
-          throw new SparkException("Failed to execute user defined function: " +
-            s"($name: ($inputTypesString) => $outputType)", e)
       }
+    } catch {
+      case e: Exception =>
+        throw new SparkException("Failed to execute user defined function: " +
+          s"($name: ($inputTypesString) => $outputType)", e)
     }
   } // end of `columnarEval`
 
