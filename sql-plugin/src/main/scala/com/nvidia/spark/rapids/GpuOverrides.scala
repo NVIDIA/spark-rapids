@@ -3535,6 +3535,8 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
+            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
+              "converted between CPU and GPU")
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
@@ -3544,11 +3546,11 @@ object GpuOverrides extends Logging {
     exec[SortAggregateExec](
       "The backend for sort based aggregations",
       ExecChecks(
-        // note that binary input is allowed here but there are additional checks later on to
-        // check that we have can support binary in the context of aggregate buffer conversions
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
             TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
+            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
+              "converted between CPU and GPU")
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
@@ -3559,10 +3561,11 @@ object GpuOverrides extends Logging {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      // note that binary input is allowed here but there are additional checks later on to
-      // check that we have can support binary in the context of aggregate buffer conversions
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
-          TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
+          TypeSig.MAP + TypeSig.BINARY).nested()
+        .withPsNote(TypeEnum.BINARY, "only allowed in conjunction with a SortAggregateExec when " +
+          "aggregate buffers can be converted between CPU and GPU")
+        , TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",

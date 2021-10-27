@@ -20,16 +20,18 @@ import java.util
 
 import scala.annotation.tailrec
 import scala.collection.mutable
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{GroupByAggregationOnColumn, NvtxColor, Scalar}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
+
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, ExprId, Expression, If, NamedExpression, NullsFirst}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -40,7 +42,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, LongType, MapType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, DataTypes, LongType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -961,6 +963,14 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       willNotWorkOnGpu("ArrayTypes or MayTypes in grouping expressions are not supported")
     }
 
+    val anyBinaryAggregates = agg.aggregateExpressions.exists(e =>
+      TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+        dt => dt.isInstanceOf[BinaryType]))
+    if (anyBinaryAggregates && !availableRuntimeDataTransition) {
+      willNotWorkOnGpu("Aggregate does not support binary input " +
+        "when there is no runtime data transition available")
+    }
+
     tagForReplaceMode()
 
     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
@@ -1084,16 +1094,6 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
 
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
-
-    // TODO this is untested so far ...
-    // check for unsupported binary input
-    if (!availableRuntimeDataTransition) {
-      if (aggregateExpressions.exists(_.childExprs.head
-        .typeMeta.dataType.contains(DataTypes.BinaryType))) {
-          willNotWorkOnGpu(
-            "Aggregate does not support binary input and has no runtime data transition available")
-      }
-    }
 
     // If a typedImperativeAggregate function run across CPU and GPU (ex: Partial mode on CPU,
     // Merge mode on GPU), it will lead to a runtime crash. Because aggregation buffers produced
@@ -1403,10 +1403,6 @@ class GpuSortAggregateExecMeta(
       agg.requiredChildDistributionExpressions, conf, parent, rule) {
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
-
-    // TODO tag child Sort as unsupported if there are binary types and we do not have
-    // aggregate buffer converters
-
     // Make sure this is the last check - if this is SortAggregate, the children can be sorts and we
     // want to validate they can run on GPU and remove them before replacing this with a
     // HashAggregate.  We don't want to do this if there is a first or last aggregate,
@@ -1423,6 +1419,8 @@ class GpuSortAggregateExecMeta(
     if (canThisBeReplaced && !hasFirstOrLast) {
       childPlans.foreach { plan =>
         if (plan.wrapped.isInstanceOf[SortExec]) {
+          // TODO tag child Sort as unsupported if there are binary types and we do not have
+          // aggregate buffer converters
           if (!plan.canThisBeReplaced) {
             willNotWorkOnGpu("one of the preceding SortExec's cannot be replaced")
           } else {
