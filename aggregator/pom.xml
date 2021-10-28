@@ -137,8 +137,6 @@
                             </excludes>
                         </filter>
                     </filters>
-                    <generateUniqueDependencyReducedPom>true</generateUniqueDependencyReducedPom>
-                    <createDependencyReducedPom>true</createDependencyReducedPom>
                     <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
                 </configuration>
                 <executions>
@@ -185,25 +183,6 @@
                     <execution>
                         <id>add-profile-src-31+</id>
                         <phase>none</phase>
-                    </execution>
-                    <execution>
-                        <!-- WORKAROUND: when we have the shade pluin attach the jar via shadedArtifactAttached
-                             it omits generating reduced pom
-                        -->
-                        <id>attach-shaded-with-spark-version</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>attach-artifact</goal>
-                        </goals>
-                        <configuration>
-                            <artifacts>
-                                <artifact>
-                                    <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
-                                    <type>jar</type>
-                                    <classifier>${spark.version.classifier}</classifier>
-                                </artifact>
-                            </artifacts>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>

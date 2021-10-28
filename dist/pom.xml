@@ -50,7 +50,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>generate-sources</phase>
+                                <phase>process-resources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -143,7 +143,6 @@
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
-                            <overWriteSnapshots>true</overWriteSnapshots>
                         </configuration>
                     </plugin>
                     <plugin>
@@ -151,7 +150,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <phase>process-classes</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -204,7 +203,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>generate-sources</phase>
+                                <phase>process-resources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -279,7 +278,6 @@
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
-                            <overWriteSnapshots>true</overWriteSnapshots>
                         </configuration>
                     </plugin>
                     <plugin>
@@ -287,7 +285,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <phase>process-classes</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -351,7 +349,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>generate-sources</phase>
+                                <phase>process-resources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -399,7 +397,6 @@
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
-                            <overWriteSnapshots>true</overWriteSnapshots>
                         </configuration>
                     </plugin>
                     <plugin>
@@ -407,7 +404,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <phase>process-classes</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -460,7 +457,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>generate-sources</phase>
+                                <phase>process-resources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -553,7 +550,6 @@
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
-                            <overWriteSnapshots>true</overWriteSnapshots>
                         </configuration>
                     </plugin>
                     <plugin>
@@ -561,7 +557,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <phase>process-classes</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -614,7 +610,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>generate-sources</phase>
+                                <phase>process-resources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -725,7 +721,6 @@
                             <useBaseVersion>true</useBaseVersion>
                             <outputDirectory>${project.build.directory}/deps</outputDirectory>
                             <overWriteReleases>false</overWriteReleases>
-                            <overWriteSnapshots>true</overWriteSnapshots>
                         </configuration>
                     </plugin>
                     <plugin>
@@ -733,7 +728,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <phase>process-classes</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -804,14 +799,13 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <phase>process-classes</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-                                        <mkdir dir="${project.build.directory}/target/deps"/>
                                         <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
                                               tofile="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"/>
 
@@ -864,14 +858,13 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <phase>process-classes</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
                                 <id>create-parallel-world</id>
                                 <configuration>
                                     <target>
-                                        <mkdir dir="${project.build.directory}/target/deps"/>
                                         <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
                                               tofile="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"/>
 
@@ -960,25 +953,21 @@
                 <artifactId>maven-antrun-plugin</artifactId>
                 <executions>
                     <execution>
-                        <!-- ensure a phase preceding create-parallel-world -->
-                        <phase>process-sources</phase>
+                        <!-- ensure a phase preceding create-parallel-world and copy-current -->
+                        <phase>initialize</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
-                        <id>delete-shim-classes</id>
+                        <id>clean-any-prior-output</id>
                         <configuration>
                             <target>
-                                <delete
-                                        dir="${project.build.directory}/parallel-world"
-                                        includeemptydirs="true"
-                                />
-
+                                <delete dir="${project.build.directory}/parallel-world"
+                                        includeemptydirs="true"/>
                                 <delete>
-                                    <fileset
-                                            dir="${project.build.directory}"
-                                            includes="*.jar"
-                                    />
+                                    <fileset dir="${project.build.directory}" includes="*.jar"/>
                                 </delete>
+                                <delete dir="${project.build.directory}/deps" includeemptydirs="true"/>
+                                <mkdir dir="${project.build.directory}/deps"/>
                             </target>
                         </configuration>
                     </execution>

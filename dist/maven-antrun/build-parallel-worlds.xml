@@ -15,10 +15,40 @@
   limitations under the License.
 -->
 <project name="maven-antrun" xmlns:ac="antlib:net.sf.antcontrib">
+    <!--
+        - Generates shim service discovery META-INF entries for ShimLoader
+
+        - Creates per-spark-build shim root directories (parallel worlds) from versioned aggregators
+
+        - Uses whichever aggregator from included_buildvers earliest in the list can contribute to
+          the conventional class file locations (shared world) without overwriting them. This is just
+          for deterministic retracing what aggregator contributed a particular file. The shared world
+          files should be bitwise-identical as a rough approximation of binary compatibility.
+          If we keep buildvers in a consistent order across all profiles, we should be able to fix many
+          issues in one shot. The only anticipated issue is the violation of the bitwise identity check
+          in the binary-dedupe script below.
+
+        - Verifies that all public classes in the shared world can indeed be safely shared because they
+          are bitwise-identical for all Spark version dependencies
+
+        - binary-dedupe ensures that only one bitwise-identical copy per class is stored in the final jar.
+
+        This ant script emulates compile and resource generation phases such that its output
+        can be passed to the maven-jar-plugin to fit well into conventional maven execution logic
+        after side-stepping it in this script.
+
+        The script is in a dedicated file because we can't use ant refid across different maven-antrun-plugin
+        executions, let alone maven profiles. It should be kept as general as possible w.r.t. to a particular
+        shim mix, such that it can generically be called from any profile.
+
+        TODO Once the caller pom is cleaned up enough it should be possible to have a single invocation of this
+        ant script outside profiles, and profiles will just set different values for input properties. At this
+        point it can be inlined again in pom.
+    -->
     <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
 
     <target name="build-parallel-worlds">
-        <echo>Preparing parallel worlds with params: incuded_buildvers=${included_buildvers}, buildver=${buildver}</echo>
+        <echo>Preparing parallel worlds with params: included_buildvers=${included_buildvers}</echo>
         <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
         <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
         <property name="aggregatorPrefix"
