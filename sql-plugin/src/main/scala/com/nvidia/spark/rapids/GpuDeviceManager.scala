@@ -58,6 +58,8 @@ object GpuDeviceManager extends Logging {
 
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
+    logWarning(s"try to set: $addr")
+
     try {
       GpuDeviceManager.setGpuDeviceAndAcquire(addr)
     } catch {
@@ -80,6 +82,7 @@ object GpuDeviceManager extends Logging {
     // we couldn't acquire on first try
     var numRetries = 2
     val addrsToTry = ArrayBuffer.empty ++= (0 until deviceCount)
+    logWarning(s"find gpu and acquire: $addrsToTry")
     while (numRetries > 0) {
       val addr = addrsToTry.find(tryToSetGpuDeviceAndAcquire)
       if (addr.isDefined) {
@@ -100,9 +103,12 @@ object GpuDeviceManager extends Logging {
     addr
   }
 
-  def getGPUAddrFromResources(resources: Map[String, ResourceInformation]): Option[Int] = {
-    if (resources.contains("gpu")) {
-      val addrs = resources("gpu").addresses
+  def getGPUAddrFromResources(resources: Map[String, ResourceInformation],
+      conf: RapidsConf): Option[Int] = {
+    val sparkGpuResourceName = conf.getSparkGpuResourceName
+    if (resources.contains(sparkGpuResourceName)) {
+      logWarning(s"spark resources contains: $sparkGpuResourceName")
+      val addrs = resources(sparkGpuResourceName).addresses
       if (addrs.length > 1) {
         // Throw an exception since we assume one GPU per executor.
         // If multiple GPUs are allocated by spark, then different tasks could get assigned
@@ -112,22 +118,24 @@ object GpuDeviceManager extends Logging {
       }
       Some(addrs.head.toInt)
     } else {
+      logWarning(s"spark resources do NOT contain: $sparkGpuResourceName")
       None
     }
   }
 
   // Initializes the GPU if Spark assigned one.
   // Returns either the GPU addr Spark assigned or None if Spark didn't assign one.
-  def initializeGpu(resources: Map[String, ResourceInformation]): Option[Int] = {
-    getGPUAddrFromResources(resources).map(setGpuDeviceAndAcquire(_))
+  def initializeGpu(resources: Map[String, ResourceInformation], conf: RapidsConf): Option[Int] = {
+    getGPUAddrFromResources(resources, conf).map(setGpuDeviceAndAcquire(_))
   }
 
-  def initializeGpuAndMemory(resources: Map[String, ResourceInformation]): Unit = {
+  def initializeGpuAndMemory(resources: Map[String, ResourceInformation],
+      conf: RapidsConf): Unit = {
     // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
     // uses that GPU. We only need to initialize RMM once per Executor because we are relying on
     // only 1 GPU per executor.
     // If Spark didn't provide the address we just use the default GPU.
-    val addr = initializeGpu(resources)
+    val addr = initializeGpu(resources, conf)
     initializeMemory(addr)
   }
 

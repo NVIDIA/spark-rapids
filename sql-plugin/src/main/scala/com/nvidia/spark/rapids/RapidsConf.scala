@@ -1292,6 +1292,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
+  val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
+    .doc("The name of the Spark resource that represents a GPU")
+    .internal()
+    .stringConf
+    .createWithDefault("gpu")
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1700,6 +1706,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
