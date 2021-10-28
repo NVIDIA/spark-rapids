@@ -512,11 +512,11 @@ object RapidsConf {
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
     .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
-         "formats are fully supported on the GPU and some are unsupported and will fall back to " + 
+         "formats are fully supported on the GPU and some are unsupported and will fall back to " +
          "the CPU.  Some formats behave differently on the GPU than the CPU.  Spark on the CPU " +
          "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
          "the GPU will parse the date with invalid trailing characters. More detail can be found " +
-         "at [parsing strings as dates or timestamps]" + 
+         "at [parsing strings as dates or timestamps]" +
          "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
@@ -1291,6 +1291,13 @@ object RapidsConf {
     .internal()
     .booleanConf
     .createWithDefault(value = true)
+
+  val FALLBACK_IF_PLAN_OVERRIDING_FAILED = conf("spark.rapids.tolerateGpuOverridesApplyFailures")
+    .doc("Option to fallback the query to CPU if GpuOverrides failed to apply rules creating " +
+      "a GPU plan.")
+    .internal()
+    .booleanConf
+    .createWithDefault(value = false)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")

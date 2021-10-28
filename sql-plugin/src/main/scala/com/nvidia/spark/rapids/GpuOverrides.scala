@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.RapidsConf.TEST_CONF
+import com.nvidia.spark.rapids.RapidsConf.{FALLBACK_IF_PLAN_OVERRIDING_FAILED, TEST_CONF}
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
@@ -3773,7 +3773,7 @@ class ExplainPlanImpl extends ExplainPlanBase {
 object GpuOverrideUtil extends Logging {
   def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
     val planOriginal = plan.clone()
-    val failOnError = TEST_CONF.get(plan.conf)
+    val failOnError = TEST_CONF.get(plan.conf) || !FALLBACK_IF_PLAN_OVERRIDING_FAILED.get(plan.conf)
     try {
       fn(plan)
     } catch {
