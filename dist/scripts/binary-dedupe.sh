@@ -112,3 +112,9 @@ done
 echo Removing duplicates of unshimmed classes
 xargs --arg-file="$UNSHIMMED_LIST_TXT" -P 6 -n 100 -I% \
   find . -path './parallel-world/spark*/%' | xargs rm || exit 255
+
+
+
+echo "Generating dependency-reduced-pom.xml"
+# which is just delete the dependencies list altogether
+sed  -e '/<dependencies>/,/<\/dependencies>/d' ../pom.xml > dependency-reduced-pom.xml
