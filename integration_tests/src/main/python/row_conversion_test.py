@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2021, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import incompat, approximate_float
+from marks import allow_non_gpu, approximate_float, incompat
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import with_cpu_session
 
 
 # This is one of the most basic tests where we verify that we can
@@ -48,3 +49,18 @@ def test_row_conversions_fixed_width():
             ["l", decimal_gen_scale_precision]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
+
+# Test handling of transitions when the data is already columnar on the host
+@pytest.mark.parametrize('data_gen', [
+    int_gen,
+    string_gen,
+    decimal_gen_default,
+    ArrayGen(string_gen, max_length=10),
+    StructGen([('a', string_gen)]) ] + map_string_string_gen, ids=idfn)
+@allow_non_gpu('FileSourceScanExec')
+def test_host_columnar_transition(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(lambda spark : unary_op_df(spark, data_gen).write.parquet(data_path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).filter("a IS NOT NULL"),
+        conf={ 'spark.rapids.sql.exec.FileSourceScanExec' : 'false'})

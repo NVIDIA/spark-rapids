@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
-import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
@@ -36,6 +35,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange,
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastToCpuExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.types.{ArrayType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -386,7 +386,22 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def insertColumnarToGpu(plan: SparkPlan): SparkPlan = {
     val nonQueryStagePlan = GpuTransitionOverrides.getNonQueryStagePlan(plan)
     if (nonQueryStagePlan.supportsColumnar && !nonQueryStagePlan.isInstanceOf[GpuExec]) {
-      HostColumnarToGpu(insertColumnarFromGpu(plan), TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
+      val coalesceGoal = TargetSize(rapidsConf.gpuTargetBatchSizeBytes)
+      // There are no batch methods to access nested types in Spark's ColumnVector, and as such
+      // HostColumnarToGpu does not support nested types due to the performance problem. If there's
+      // nested types involved, use a CPU columnar to row transition followed by a GPU row to
+      // columnar transition which is a more optimized code path for these types.
+      val hasNestedTypes = nonQueryStagePlan.schema.exists {
+        _.dataType match {
+          case _: ArrayType | _: MapType | _: StructType => true
+          case _ => false
+        }
+      }
+      if (hasNestedTypes) {
+        GpuRowToColumnarExec(ColumnarToRowExec(plan), coalesceGoal)
+      } else {
+        HostColumnarToGpu(insertColumnarFromGpu(plan), coalesceGoal)
+      }
     } else {
       plan.withNewChildren(plan.children.map(insertColumnarToGpu))
     }
