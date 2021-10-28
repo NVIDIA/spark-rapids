@@ -60,12 +60,12 @@ case class GpuRowBasedScalaUDF(
     catalystConverter(wrappedFunc(childrenRow))
 
   /** The code for input type conversion is changed a lot from Spark 3.0.x to 3.1.1+.
-   * The good news is that the 3.0.x version also works under Spark 3.1.1+, but not
-   * vice versa.
-   * So copy the methods "inputPrimitives" and "createToScalaConverter" from 3.0.x now.
-   * It can avoid shim layers. Besides, we will get an assertion error when running the
-   * 3.1.1+ code under the Spark 3.1.1+.
-   * Of course we can add shims for this after fixing the assertion error, tracked by
+   * The good news is that the 3.0.x version also works under Spark 3.1.1+.
+   * But the later versions do not work under Spark3.0.x. Besides, an assertion error will
+   * come up if running the 3.1.1+ code under the Spark 3.1.1+ respectively.
+   * So here copies the methods "inputPrimitives" and "createToScalaConverter" from 3.0.x
+   * for all the Spark versions for now.
+   * Of course we can add shims for this diff after fixing the assertion error, tracked by
    *   https://github.com/NVIDIA/spark-rapids/issues/3942
    */
 
