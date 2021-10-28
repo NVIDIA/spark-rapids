@@ -1224,25 +1224,15 @@ case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean)
   override def prettyName: String = "stddev_pop"
 }
 
-abstract class CudfStddev(
-    child:Expression,
-    nullOnDivideByZero: Boolean) extends GpuM2(child, nullOnDivideByZero) {
-  override val evaluateExpression: Expression = {
-    // stddev_samp = sqrt(m2 / (n - 1.0)).
-    val stddevSamp =
-      GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
-        failOnErrorOverride = false))
-
-    // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
-    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
-      GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevSamp))
-  }
-}
-
 case class WindowStddevSamp(
     child: Expression,
     nullOnDivideByZero: Boolean)
-    extends CudfStddev(child, nullOnDivideByZero) with GpuAggregateWindowFunction {
+    extends GpuAggregateWindowFunction {
+
+  override def dataType: DataType = DoubleType
+  override def children: Seq[Expression] = Seq(child)
+  override def nullable: Boolean = true
+
   /**
    * Using child references, define the shape of the vectors sent to the window operations
    */
@@ -1254,7 +1244,18 @@ case class WindowStddevSamp(
 }
 
 case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
-    extends CudfStddev(child, nullOnDivideByZero) with GpuReplaceWindowFunction {
+    extends GpuM2(child, nullOnDivideByZero) with GpuReplaceWindowFunction {
+
+  override val evaluateExpression: Expression = {
+    // stddev_samp = sqrt(m2 / (n - 1.0)).
+    val stddevSamp =
+      GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
+        failOnErrorOverride = false))
+
+    // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
+    GpuIf(GpuEqualTo(bufferN, GpuLiteral(1.0)), divideByZeroEvalResult,
+      GpuIf(GpuEqualTo(bufferN, GpuLiteral(0.0)), GpuLiteral(null, DoubleType), stddevSamp))
+  }
 
   override def prettyName: String = "stddev_samp"
 
