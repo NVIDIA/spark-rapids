@@ -422,7 +422,8 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     opTime: GpuMetric,
     peakDevMemory: GpuMetric,
     spillCallback: SpillCallback,
-    opName: String)
+    opName: String,
+    codecConfigs: TableCompressionCodecConfig)
   extends AbstractGpuCoalesceIterator(iter,
     goal,
     numInputRows,
@@ -463,7 +464,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
         }
         if (codec == null) {
           val descr = compressedVecs.head.getTableMeta.bufferMeta.codecBufferDescrs(0)
-          codec = TableCompressionCodec.getCodec(descr.codec)
+          codec = TableCompressionCodec.getCodec(descr.codec, codecConfigs)
         }
         withResource(codec.createBatchDecompressor(maxDecompressBatchMemory,
             Cuda.DEFAULT_STREAM)) { decompressor =>
@@ -528,8 +529,11 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
   extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
-  private[this] val maxDecompressBatchMemory =
-    new RapidsConf(child.conf).shuffleCompressionMaxBatchMemory
+  private[this] val (codecConfigs, maxDecompressBatchMemory) = {
+    val rapidsConf = new RapidsConf(child.conf)
+    (TableCompressionCodec.makeCodecConfig(rapidsConf),
+     rapidsConf.shuffleCompressionMaxBatchMemory)
+  }
 
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -591,7 +595,8 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
           batches.mapPartitions { iter =>
             new GpuCoalesceIterator(iter, outputSchema, sizeGoal, decompressMemoryTarget,
               numInputRows, numInputBatches, numOutputRows, numOutputBatches, NoopMetric,
-              concatTime, opTime, peakDevMemory, callback, "GpuCoalesceBatches")
+              concatTime, opTime, peakDevMemory, callback, "GpuCoalesceBatches",
+              codecConfigs)
           }
         case batchingGoal: BatchedByKey =>
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
