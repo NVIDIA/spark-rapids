@@ -37,6 +37,7 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <!-- required for conf generation script -->
@@ -358,6 +359,7 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <!-- required for conf generation script -->
@@ -648,6 +650,7 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <!-- required for conf generation script -->
@@ -860,6 +863,7 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <!-- required for conf generation script -->
@@ -1180,6 +1184,7 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <!-- required for conf generation script -->
@@ -1548,6 +1553,7 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
@@ -1655,6 +1661,7 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <!-- required for conf generation script -->
@@ -1847,6 +1854,20 @@
                         <exclude>*.md</exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-install-plugin</artifactId>
+                <version>3.0.0-M1</version>
+                <executions>
+                    <execution>
+                        <id>default-install</id>
+                        <phase>install</phase>
+                        <configuration>
+                            <pomFile>${project.build.directory}/dependency-reduced-pom.xml</pomFile>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
