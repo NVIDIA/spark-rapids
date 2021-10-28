@@ -942,7 +942,7 @@ def test_window_rows_stddev(gen, preceding, following):
 
     def do_it(spark):
         data_gen = [('_1', RepeatSeqGen(gen, length=20)), ('_2', gen)]
-        df = gen_df(spark, data_gen, length=100)
+        df = gen_df(spark, data_gen)
         debug_df(df.orderBy("_2", "_1"))
         return df.withColumn("standard_dev", f.stddev("_2").over(window_spec_agg)) \
             .selectExpr("standard_dev")
