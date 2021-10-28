@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF, SpecializedGetters}
+import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF, SpecializedGetters}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 
@@ -59,13 +59,15 @@ case class GpuRowBasedScalaUDF(
   override protected def evaluateRow(childrenRow: InternalRow): Any =
     catalystConverter(wrappedFunc(childrenRow))
 
-  /** Unfortunately we need to copy the following code from Spark for input/output type
-   * conversions between Scala type and Catalyst type.
-   *
-   * NOTE the expression encoder for input does not work here. So disable it for now.
-   * Please find "GPU DIFF" for details.
-   *
-   * == Copy begin == */
+  /** The code for input type conversion is changed a lot from Spark 3.0.x to 3.1.1+.
+   * The good news is that the 3.0.x version also works under Spark 3.1.1+, but not
+   * vice versa.
+   * So copy the methods "inputPrimitives" and "createToScalaConverter" from 3.0.x now.
+   * It can avoid shim layers. Besides, we will get an assertion error when running the
+   * 3.1.1+ code under the Spark 3.1.1+.
+   * Of course we can add shims for this after fixing the assertion error, tracked by
+   *   https://github.com/NVIDIA/spark-rapids/issues/3942
+   */
 
   /**
    * The analyzer should be aware of Scala primitive types so as to make the
@@ -89,42 +91,18 @@ case class GpuRowBasedScalaUDF(
     }
   }
 
-  /**
-   * Create the converter which converts the catalyst data type to the scala data type.
-   * We use `CatalystTypeConverters` to create the converter for:
-   *   - UDF which doesn't provide inputEncoders, e.g., untyped Scala UDF and Java UDF
-   *   - type which isn't supported by `ExpressionEncoder`, e.g., Any
-   *   - primitive types, in order to use `identity` for better performance
-   * For other cases like case class, Option[T], we use `ExpressionEncoder` instead since
-   * `CatalystTypeConverters` doesn't support these data types.
-   *
-   * @param i the index of the child
-   * @param dataType the output data type of the i-th child
-   * @return the converter and a boolean value to indicate whether the converter is
-   *         created by using `ExpressionEncoder`.
-   */
-  private def scalaConverter(i: Int, dataType: DataType): (Any => Any, Boolean) = {
-    val useEncoder =
-      !(inputEncoders.isEmpty || // for untyped Scala UDF and Java UDF
-        inputEncoders(i).isEmpty || // for types aren't supported by encoder, e.g. Any
-        inputPrimitives(i)) // for primitive types
-
-    // GPU DIFF
-    // Getting the errors as below when using the encoder, so disable it now.
-    //   > "catalyst.analysis.UnresolvedException: Invalid call to nullable on unresolved object"
-    // Tracked by https://github.com/NVIDIA/spark-rapids/issues/3924
-    if (false /* useEncoder */) {
-      val enc = inputEncoders(i).get
-      val fromRow = enc.createDeserializer()
-      val converter = if (enc.isSerializedAsStructForTopLevel) {
+  private def createToScalaConverter(i: Int, dataType: DataType): Any => Any = {
+    if (inputEncoders.isEmpty) {
+      // for untyped Scala UDF
+      CatalystTypeConverters.createToScalaConverter(dataType)
+    } else {
+      val encoder = inputEncoders(i)
+      if (encoder.isDefined && encoder.get.isSerializedAsStructForTopLevel) {
+        val fromRow = encoder.get.resolveAndBind().createDeserializer()
         row: Any => fromRow(row.asInstanceOf[InternalRow])
       } else {
-        val inputRow = new GenericInternalRow(1)
-        value: Any => inputRow.update(0, value); fromRow(inputRow)
+        CatalystTypeConverters.createToScalaConverter(dataType)
       }
-      (converter, true)
-    } else { // use CatalystTypeConverters
-      (CatalystTypeConverters.createToScalaConverter(dataType), false)
     }
   }
 
@@ -144,7 +122,6 @@ case class GpuRowBasedScalaUDF(
         if (value == null) null else toRow(value).asInstanceOf[InternalRow].get(0, dataType)
     }
   }.getOrElse(CatalystTypeConverters.createToCatalystConverter(dataType))
-  /** == Copy end == */
 
   /** Some refactor to simplify the Spark code of executing the function */
 
@@ -152,7 +129,7 @@ case class GpuRowBasedScalaUDF(
   private lazy val childAccessors: Seq[SpecializedGetters => Any] =
     children.zipWithIndex.map { case (child, i) =>
       val accessor = InternalRow.getAccessor(child.dataType, child.nullable)
-      val converter = scalaConverter(i, child.dataType)._1
+      val converter = createToScalaConverter(i, child.dataType)
       row: SpecializedGetters => converter(accessor(row, i))
     }
 
