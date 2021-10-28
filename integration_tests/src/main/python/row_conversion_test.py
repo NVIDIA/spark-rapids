@@ -57,7 +57,7 @@ def test_row_conversions_fixed_width():
     decimal_gen_default,
     ArrayGen(string_gen, max_length=10),
     StructGen([('a', string_gen)]) ] + map_string_string_gen, ids=idfn)
-@allow_non_gpu('FileSourceScanExec')
+@allow_non_gpu('ColumnarToRowExec', 'FileSourceScanExec')
 def test_host_columnar_transition(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(lambda spark : unary_op_df(spark, data_gen).write.parquet(data_path))
