@@ -907,19 +907,46 @@ def test_window_ride_along(ride_along):
             conf = allow_negative_scale_of_decimal_conf)
 
 @approximate_float
-@pytest.mark.parametrize('part_gen', numeric_gens, ids=idfn)
-def test_window_stddev(part_gen):
-    window_spec_agg = Window.partitionBy('_1')
-    window_spec = Window.partitionBy('_1').orderBy("_2")
+@ignore_order
+@pytest.mark.parametrize('gen', [ByteGen(min_val=-(1 << 7) + 4, max_val=(1 << 7) - 4),
+                                        ShortGen(min_val=-(1 << 15) + 4, max_val=(1 << 15) - 4),
+                                        IntegerGen(min_val=-(1 << 31) + 4, max_val=(1 << 31) - 4),
+                                        LongGen(min_val=-(1 << 63) + 4, max_val=(1 << 63) - 4)], ids=idfn)
+@pytest.mark.parametrize('preceding', [-2, -3, -4], ids=idfn)
+@pytest.mark.parametrize('following', [1, 2, 3], ids=idfn)
+def test_window_range_stddev(gen, preceding, following):
+    window_spec_agg = Window.partitionBy("_1").orderBy("_2").rangeBetween(preceding, following)
 
     def do_it(spark):
-        data_gen = [('_1', IntegerGen()), ('_2', part_gen)]
-        df = gen_df(spark, data_gen)
-        return df.withColumn("row", f.row_number().over(window_spec))\
-            .withColumn("standard_dev", f.stddev("_2").over(window_spec_agg))\
+        data_gen = [('_1', RepeatSeqGen(gen, length=20)), ('_2', gen)]
+        df = gen_df(spark, data_gen, length=100)
+        debug_df(df.orderBy("_2", "_1"))
+        return df.withColumn("standard_dev", f.stddev("_2").over(window_spec_agg)) \
+            .selectExpr("standard_dev")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={
+        'spark.rapids.sql.decimalType.enabled': 'true',
+        'spark.rapids.sql.window.range.byte.enabled': 'true',
+        'spark.rapids.sql.window.range.short.enabled': 'true',
+        'spark.rapids.sql.window.range.integer.enabled': 'true',
+        'spark.rapids.sql.window.range.long.enabled': 'true',
+        'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
+
+@approximate_float
+@ignore_order
+@pytest.mark.parametrize('gen', numeric_gens, ids=idfn)
+@pytest.mark.parametrize('preceding', [-2, -3, -4], ids=idfn)
+@pytest.mark.parametrize('following', [1, 2, 3], ids=idfn)
+def test_window_rows_stddev(gen, preceding, following):
+    window_spec_agg = Window.partitionBy("_1").orderBy("_2").rowsBetween(preceding, following)
+
+    def do_it(spark):
+        data_gen = [('_1', RepeatSeqGen(gen, length=20)), ('_2', gen)]
+        df = gen_df(spark, data_gen, length=100)
+        debug_df(df.orderBy("_2", "_1"))
+        return df.withColumn("standard_dev", f.stddev("_2").over(window_spec_agg)) \
             .selectExpr("standard_dev")
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={
         'spark.rapids.sql.decimalType.enabled': 'true',
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
-
