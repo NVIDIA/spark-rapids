@@ -912,8 +912,8 @@ def test_window_ride_along(ride_along):
                                         ShortGen(min_val=-(1 << 15) + 4, max_val=(1 << 15) - 4),
                                         IntegerGen(min_val=-(1 << 31) + 4, max_val=(1 << 31) - 4),
                                         LongGen(min_val=-(1 << 63) + 4, max_val=(1 << 63) - 4)], ids=idfn)
-@pytest.mark.parametrize('preceding', [-2, -3, -4], ids=idfn)
-@pytest.mark.parametrize('following', [1, 2, 3], ids=idfn)
+@pytest.mark.parametrize('preceding', [Window.unboundedPreceding, -2, -3, -4], ids=idfn)
+@pytest.mark.parametrize('following', [Window.unboundedFollowing, 1, 2, 3], ids=idfn)
 def test_window_range_stddev(gen, preceding, following):
     window_spec_agg = Window.partitionBy("_1").orderBy("_2").rangeBetween(preceding, following)
 
@@ -935,8 +935,8 @@ def test_window_range_stddev(gen, preceding, following):
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('gen', numeric_gens, ids=idfn)
-@pytest.mark.parametrize('preceding', [-2, -3, -4], ids=idfn)
-@pytest.mark.parametrize('following', [1, 2, 3], ids=idfn)
+@pytest.mark.parametrize('preceding', [Window.unboundedPreceding, -2, -3, -4], ids=idfn)
+@pytest.mark.parametrize('following', [Window.unboundedFollowing, 1, 2, 3], ids=idfn)
 def test_window_rows_stddev(gen, preceding, following):
     window_spec_agg = Window.partitionBy("_1").orderBy("_2").rowsBetween(preceding, following)
 
