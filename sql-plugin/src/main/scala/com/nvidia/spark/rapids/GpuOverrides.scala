@@ -3562,10 +3562,7 @@ object GpuOverrides extends Logging {
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
-          TypeSig.MAP + TypeSig.BINARY).nested()
-        .withPsNote(TypeEnum.BINARY,
-          "Binary columns are supported but not for the sort expressions")
-        , TypeSig.all),
+          TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
