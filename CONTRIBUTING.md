@@ -82,7 +82,7 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 There is a build script `build/buildall` that automates the local build process. Use
 `./buid/buildall --help` for up-to-date use information.
 
-By defualt, it builds everying that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
+By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots`
 - `minimumFeatureVersionMix` that currently includes 302, 311cdh, 312, 320 is recommended for catching incompatibilites already in the local development cycle
 
