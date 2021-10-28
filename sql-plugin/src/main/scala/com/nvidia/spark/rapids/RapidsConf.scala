@@ -718,7 +718,7 @@ object RapidsConf {
   // This is an experimental feature now. And eventually, should be enabled or disabled depending
   // on something that we don't know yet but would try to figure out.
   val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
-    .doc("When set to true, supports to run a row based UDF efficiently by transferring " +
+    .doc("When set to true, optimizes a row-based UDF in a GPU operation by transferring " +
       "only the data it needs between GPU and CPU inside a query operation, instead of falling " +
       "this operation back to CPU. This is an experimental feature, and this config might be " +
       "removed in the future.")
