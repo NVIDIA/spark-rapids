@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, DataTypes, LongType, MapType}
+import org.apache.spark.sql.types.{ArrayType, DataType, LongType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -962,6 +962,7 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     if (!allTypesAreSupported) {
       willNotWorkOnGpu("ArrayTypes or MayTypes in grouping expressions are not supported")
     }
+
     tagForReplaceMode()
 
     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
@@ -1394,6 +1395,7 @@ class GpuSortAggregateExecMeta(
       agg.requiredChildDistributionExpressions, conf, parent, rule) {
   override def tagPlanForGpu(): Unit = {
     super.tagPlanForGpu()
+
     // Make sure this is the last check - if this is SortAggregate, the children can be sorts and we
     // want to validate they can run on GPU and remove them before replacing this with a
     // HashAggregate.  We don't want to do this if there is a first or last aggregate,
