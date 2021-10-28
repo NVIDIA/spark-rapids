@@ -110,10 +110,13 @@ function retain_single_copy() {
   done >> "$DELETE_DUPLICATES_TXT" || exit 255
 }
 
+# this belongs into maven initialize phase, left in here for easier
+# standalone debugging
 # truncate incremental files
 : > "$DELETE_DUPLICATES_TXT"
 rm -f from-spark3*-to-spark3xx-common.txt
 rm -rf "$SPARK3XX_COMMON_DIR"
+mkdir -p "$SPARK3XX_COMMON_DIR"
 
 echo "$((++STEP))/ retaining a single copy of spark3xx-common classes"
 time (

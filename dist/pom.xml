@@ -50,8 +50,13 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>process-resources</phase>
+                                <phase>generate-sources</phase>
                                 <goals>
+                                    <!-- TODO may be able to use unpack skipping an extra coy
+                                         but first look into eliminating this rolled out list of artifacts by using
+                                         http://maven.apache.org/ant-tasks/examples/dependencies.html
+                                         in an ant-contrib for loop
+                                    -->
                                     <goal>copy</goal>
                                 </goals>
                             </execution>
@@ -150,7 +155,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-classes</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -203,7 +208,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>process-resources</phase>
+                                <phase>generate-sources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -285,7 +290,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-classes</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -349,7 +354,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>process-resources</phase>
+                                <phase>generate-sources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -404,7 +409,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-classes</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -457,7 +462,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>process-resources</phase>
+                                <phase>generate-sources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -557,7 +562,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-classes</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -610,7 +615,7 @@
                         <executions>
                             <execution>
                                 <id>copy-current</id>
-                                <phase>process-resources</phase>
+                                <phase>generate-sources</phase>
                                 <goals>
                                     <goal>copy</goal>
                                 </goals>
@@ -728,7 +733,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-classes</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -799,7 +804,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-classes</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -858,7 +863,7 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>process-classes</phase>
+                                <phase>generate-resources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
@@ -921,6 +926,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
+                <version>3.2.0</version>
                 <executions>
                     <execution>
                         <id>default-resources</id>

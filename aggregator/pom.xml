@@ -137,7 +137,7 @@
                             </excludes>
                         </filter>
                     </filters>
-                    <shadedClassifierName>${spark.version.classifier}</shadedClassifierName>
+                    <createDependencyReducedPom>false</createDependencyReducedPom>
                 </configuration>
                 <executions>
                     <execution>
@@ -183,6 +183,26 @@
                     <execution>
                         <id>add-profile-src-31+</id>
                         <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <!-- WORKAROUND: default-jar does not contain classes by design.
+                             there seems to be a race between shade and empty default-jar
+                             So attaching here manually because maven complains when we try
+                             to disable default-jar to resolve the conflict.-->
+                        <id>attach-shaded-with-spark-version</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>attach-artifact</goal>
+                        </goals>
+                        <configuration>
+                            <artifacts>
+                                <artifact>
+                                    <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
+                                    <type>jar</type>
+                                    <classifier>${spark.version.classifier}</classifier>
+                                </artifact>
+                            </artifacts>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
