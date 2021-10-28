@@ -137,8 +137,10 @@ abstract class AppBase(
 
   private val UDFKeywords = Map(".*UDF.*" -> "UDF")
 
+  private val JDBCkeywords = Map(".*JDBCRelation.*" -> "JDBCRelation")
+
   protected def findPotentialIssues(desc: String): Set[String] =  {
-    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords
+    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords ++ JDBCkeywords
     val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
     issues.values.toSet
   }
