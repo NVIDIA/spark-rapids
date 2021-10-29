@@ -232,7 +232,7 @@ class AdaptiveQueryExecSuite
 
     def findDynamicPruning(plan: SparkPlan): Boolean = plan.find {
       case p: AdaptiveSparkPlanExec =>
-        findDynamicPruning(p.inputPlan)
+        findDynamicPruning(ShimLoader.getSparkShims.getAdaptiveInputPlan(p))
       case p: QueryStageExec =>
         findDynamicPruning(GpuTransitionOverrides.getNonQueryStagePlan(p))
       case p =>
@@ -267,9 +267,9 @@ class AdaptiveQueryExecSuite
       }, conf)
       compareResults(true, 0, cpuRet, gpuRet)
     } finally {
-      withCpuSparkSession((ss: SparkSession) => {
-        ss.sql("DROP TABLE IF EXISTS fact")
-        ss.sql("DROP TABLE IF EXISTS dim")
+      withCpuSparkSession(spark => {
+        spark.sql("DROP TABLE IF EXISTS fact")
+        spark.sql("DROP TABLE IF EXISTS dim")
       })
     }
   }

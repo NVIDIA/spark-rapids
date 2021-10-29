@@ -325,9 +325,11 @@ def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
     gpu_end = time.time()
     jvm = spark_jvm()
     for clz in exist_classes.split(','):
-        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
+        if clz:
+            jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
     for clz in non_exist_classes.split(','):
-        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
+        if clz:
+            jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():

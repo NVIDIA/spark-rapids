@@ -23,8 +23,8 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-
 import org.apache.spark.{SparkConf, SparkContext}
+
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
@@ -33,8 +33,10 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
 import org.apache.spark.sql.util.QueryExecutionListener
 
 class PluginException(msg: String) extends RuntimeException(msg)
@@ -325,9 +327,8 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertContains(gpuPlan: SparkPlan, className: String): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
-    assert(containsPlan(executedPlan, className),
-      s"Could not find $className in the Spark plan\n$executedPlan")
+    assert(containsPlan(gpuPlan, className),
+      s"Could not find $className in the Spark plan\n$gpuPlan")
   }
 
   def assertContains(df: DataFrame, gpuClass: String): Unit = {
@@ -336,9 +337,8 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertNotContain(gpuPlan: SparkPlan, className: String): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
-    assert(!containsPlan(executedPlan, className),
-      s"We found $className in the Spark plan\n$executedPlan")
+    assert(!containsPlan(gpuPlan, className),
+      s"We found $className in the Spark plan\n$gpuPlan")
   }
 
   def assertNotContain(df: DataFrame, gpuClass: String): Unit = {
@@ -360,20 +360,26 @@ object ExecutionPlanCaptureCallback {
     executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def containsExpression(exp: Expression, className: String): Boolean = {
-    PlanUtils.getBaseNameFromClass(exp.getClass.getName) == className ||
-        exp.children.exists(containsExpression(_, className))
-  }
+  private def containsExpression(exp: Expression, className: String): Boolean = exp.find {
+    case e: ExecSubqueryExpression =>
+      containsPlan(e.plan, className)
+    case e =>
+      PlanUtils.getBaseNameFromClass(e.getClass.getName) == className
+  }.nonEmpty
 
-  private def containsPlan(plan: SparkPlan, className: String): Boolean = {
-    val p = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan)) match {
-      case p: QueryStageExec => p.plan
-      case p => p
-    }
-    PlanUtils.sameClass(p, className) ||
-        p.expressions.exists(containsExpression(_, className)) ||
-        p.children.exists(containsPlan(_, className))
-  }
+  private def containsPlan(plan: SparkPlan, className: String): Boolean = plan.find {
+    case p: AdaptiveSparkPlanExec =>
+      containsPlan(p.executedPlan, className)
+    case p: QueryStageExec =>
+      containsPlan(p.plan, className)
+    case p: InMemoryTableScanExec =>
+      containsPlan(p.relation.cachedPlan, className)
+    case p: GpuInMemoryTableScanExec =>
+      containsPlan(p.relation.cachedPlan, className)
+    case p =>
+      PlanUtils.sameClass(p, className) ||
+          p.expressions.exists(containsExpression(_, className))
+  }.nonEmpty
 }
 
 /**
