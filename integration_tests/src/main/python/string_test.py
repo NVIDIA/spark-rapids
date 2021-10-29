@@ -346,7 +346,15 @@ def test_re_replace_null():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "\u0000", "")',
+                'REGEXP_REPLACE(a, "\000", "")',
+                'REGEXP_REPLACE(a, "\00", "")',
+                'REGEXP_REPLACE(a, "\x00", "")',
+                'REGEXP_REPLACE(a, "\0", "")',
                 'REGEXP_REPLACE(a, "\u0000", "NULL")',
+                'REGEXP_REPLACE(a, "\000", "NULL")',
+                'REGEXP_REPLACE(a, "\00", "NULL")',
+                'REGEXP_REPLACE(a, "\x00", "NULL")',
+                'REGEXP_REPLACE(a, "\0", "NULL")',
                 'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
                 'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'))
 
