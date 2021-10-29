@@ -51,6 +51,10 @@ def test_row_conversions_fixed_width():
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
 # Test handling of transitions when the data is already columnar on the host
+# Note that Apache Spark will automatically convert a load of nested types to rows, so
+# the nested types will not test a host columnar transition in that case.
+# Databricks does support returning nested types as columnar data on the host, and that
+# is where we would expect any problems with handling nested types in host columnar form to appear.
 @pytest.mark.parametrize('data_gen', [
     int_gen,
     string_gen,
