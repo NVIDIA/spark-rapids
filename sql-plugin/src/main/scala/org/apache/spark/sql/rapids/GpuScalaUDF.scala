@@ -123,18 +123,15 @@ case class GpuRowBasedScalaUDF(
     }
   }.getOrElse(CatalystTypeConverters.createToCatalystConverter(dataType))
 
-  /** Some refactor to simplify the Spark code of executing the function */
+  /** A little refactor to simplify the Spark code of executing the function */
 
   /** Build an accessor for each child to read the data from a row and do type conversion */
-  private lazy val childAccessors: Seq[SpecializedGetters => Any] =
+  private lazy val childAccessors: Array[SpecializedGetters => Any] =
     children.zipWithIndex.map { case (child, i) =>
       val accessor = InternalRow.getAccessor(child.dataType, child.nullable)
       val converter = createToScalaConverter(i, child.dataType)
       row: SpecializedGetters => converter(accessor(row, i))
-    }
-
-  private lazy val argsParser: InternalRow => Seq[Any] =
-    row => children.indices.map(childAccessors(_)(row))
+    }.toArray
 
   // scalastyle:off line.size.limit
   /**
@@ -148,152 +145,365 @@ case class GpuRowBasedScalaUDF(
       case 1 =>
         val f = sparkFunc.asInstanceOf[(Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head)
+          val a0 = childAccessors(0)(row)
+          f(a0)
         }
       case 2 =>
         val f = sparkFunc.asInstanceOf[(Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          f(a0, a1)
         }
       case 3 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          f(a0, a1, a2)
         }
       case 4 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          f(a0, a1, a2, a3)
         }
       case 5 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          f(a0, a1, a2, a3, a4)
         }
       case 6 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          f(a0, a1, a2, a3, a4, a5)
         }
       case 7 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          f(a0, a1, a2, a3, a4, a5, a6)
         }
       case 8 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7)
         }
       case 9 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8)
         }
       case 10 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9)
         }
       case 11 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10)
         }
       case 12 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11)
         }
       case 13 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12)
         }
       case 14 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13)
         }
       case 15 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14)
         }
       case 16 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14), args(15))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          val a15 = childAccessors(15)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15)
         }
       case 17 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          val a15 = childAccessors(15)(row)
+          val a16 = childAccessors(16)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16)
         }
       case 18 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
-            args(17))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          val a15 = childAccessors(15)(row)
+          val a16 = childAccessors(16)(row)
+          val a17 = childAccessors(17)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17)
         }
       case 19 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
-            args(17), args(18))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          val a15 = childAccessors(15)(row)
+          val a16 = childAccessors(16)(row)
+          val a17 = childAccessors(17)(row)
+          val a18 = childAccessors(18)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18)
         }
       case 20 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
-            args(17), args(18), args(19))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          val a15 = childAccessors(15)(row)
+          val a16 = childAccessors(16)(row)
+          val a17 = childAccessors(17)(row)
+          val a18 = childAccessors(18)(row)
+          val a19 = childAccessors(19)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19)
         }
       case 21 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
-            args(17), args(18), args(19), args(20))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          val a15 = childAccessors(15)(row)
+          val a16 = childAccessors(16)(row)
+          val a17 = childAccessors(17)(row)
+          val a18 = childAccessors(18)(row)
+          val a19 = childAccessors(19)(row)
+          val a20 = childAccessors(20)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20)
         }
       case 22 =>
         val f = sparkFunc.asInstanceOf[(Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any) => Any]
         (row: InternalRow) => {
-          val args = argsParser(row)
-          f(args.head, args(1), args(2), args(3), args(4), args(5), args(6), args(7), args(8),
-            args(9), args(10), args(11), args(12), args(13), args(14), args(15), args(16),
-            args(17), args(18), args(19), args(20), args(21))
+          val a0 = childAccessors(0)(row)
+          val a1 = childAccessors(1)(row)
+          val a2 = childAccessors(2)(row)
+          val a3 = childAccessors(3)(row)
+          val a4 = childAccessors(4)(row)
+          val a5 = childAccessors(5)(row)
+          val a6 = childAccessors(6)(row)
+          val a7 = childAccessors(7)(row)
+          val a8 = childAccessors(8)(row)
+          val a9 = childAccessors(9)(row)
+          val a10 = childAccessors(10)(row)
+          val a11 = childAccessors(11)(row)
+          val a12 = childAccessors(12)(row)
+          val a13 = childAccessors(13)(row)
+          val a14 = childAccessors(14)(row)
+          val a15 = childAccessors(15)(row)
+          val a16 = childAccessors(16)(row)
+          val a17 = childAccessors(17)(row)
+          val a18 = childAccessors(18)(row)
+          val a19 = childAccessors(19)(row)
+          val a20 = childAccessors(20)(row)
+          val a21 = childAccessors(21)(row)
+          f(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21)
         }
     }
   } // end of wrappedFunc

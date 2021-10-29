@@ -121,9 +121,9 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
         }
         closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
           val cpuRunningTime = System.nanoTime - prepareArgsEnd
-          // Use log of info. level to record the eclipsed time for the UDF running before
+          // Use log to record the eclipsed time for the UDF running before
           // figuring out how to support Spark metrics in this expression.
-          logInfo(s"It took ${cpuRunningTime} ns to run UDF $name, and " +
+          logDebug(s"It took ${cpuRunningTime} ns to run UDF $name, and " +
             s"${prepareArgsEnd - cpuUDFStart} ns to get the input from children.")
           GpuColumnVector.from(resultCol, dataType)
         }
