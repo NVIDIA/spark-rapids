@@ -63,6 +63,10 @@ _exchange_reuse_conf = _aqe_dpp_conf + [
     ('spark.sql.optimizer.dynamicPartitionPruning.reuseBroadcastOnly', 'true'),
     ('spark.sql.exchange.reuse', 'true')
 ]
+_bypass_conf = _aqe_dpp_conf + [
+    ('spark.sql.optimizer.dynamicPartitionPruning.reuseBroadcastOnly', 'true'),
+    ('spark.sql.exchange.reuse', 'false')
+]
 _no_exchange_reuse_conf = _aqe_dpp_conf + [
     ('spark.sql.optimizer.dynamicPartitionPruning.reuseBroadcastOnly', 'false'),
     ('spark.sql.exchange.reuse', 'false')
@@ -105,7 +109,27 @@ def test_aqe_and_dpp_reuse_broadcast_exchange(store_format, s_index):
         assert_cpu_and_gpu_are_equal_collect_with_capture(
             lambda spark: spark.sql(statement),
             # SubqueryBroadcastExec appears if we reuse broadcast exchange for DPP
-            exist_classes='DynamicPruningExpression,SubqueryBroadcastExec')
+            exist_classes='DynamicPruningExpression,SubqueryBroadcastExec',
+            conf=dict(_exchange_reuse_conf))
+    finally:
+        drop_tables()
+
+
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
+def test_aqe_and_dpp_bypass_exchange(store_format, s_index):
+    try:
+        create_fact_table(store_format)
+        filter_val = create_dim_table(store_format)
+        statement = _statements[s_index].format(filter_val)
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: spark.sql(statement),
+            # Bypass with a true literal, if we can not reuse broadcast exchange.
+            exist_classes='DynamicPruningExpression',
+            non_exist_classes='SubqueryExec,SubqueryBroadcastExec',
+            conf=dict(_bypass_conf))
     finally:
         drop_tables()
 
