@@ -201,9 +201,9 @@ object GpuDeviceManager extends Logging {
     }
     val adjustedMaxAllocation = maxAllocation - reserveAmount
     if (poolAllocation > adjustedMaxAllocation) {
-      logWarning(s"RMM pool allocation (${toMB(poolAllocation)} MB) is larger than " +
-          s"the adjusted maximum allocation (${toMB(adjustedMaxAllocation)} MB), " +
-          "lowering initial allocation to the adjusted maximum allocation.")
+      logWarning(s"RMM pool allocation (${toMB(poolAllocation)} MB) does not leave enough free " +
+          s"memory for reserve memory (${toMB(reserveAmount)} MB), lowering the pool size to " +
+          s"${toMB(adjustedMaxAllocation)} MB to accommodate the requested reserve amount.")
       poolAllocation = adjustedMaxAllocation
     }
 
