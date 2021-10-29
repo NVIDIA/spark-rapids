@@ -1134,7 +1134,6 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   lazy val cudfM2: CudfM2 = new CudfM2
 
   // For local update, we need to compute all 3 aggregates: n, avg, m2.
-  // TODO: comment => this matches inputs
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(cudfCountN, cudfMean, cudfM2)
 
   // We copy the `bufferN` attribute and stomp on the type as Integer here, because we only
@@ -1148,7 +1147,6 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   // corresponding buffers require them to be non-nullable.
   // As such, we need to convert those nulls into Double(0.0) in the postUpdate step.
   // This will not affect the outcome of the merge step.
-  // TODO: comment => this matches outside world
   override lazy val postUpdate: Seq[Expression] = {
     val bufferAvgNoNulls = GpuCoalesce(Seq(cudfMean.attr, GpuLiteral(0.0, DoubleType)))
     val bufferM2NoNulls = GpuCoalesce(Seq(cudfM2.attr, GpuLiteral(0.0, DoubleType)))
@@ -1188,8 +1186,6 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   // output from the merge step. Note that the first one is casted to Double to match with Spark.
   //
   // In the future, when rewriting CudfMergeM2, we will need to ouput it in Double type.
-  //
-  // TODO: comment => this matches outside world
   override lazy val postMerge: Seq[Expression] = Seq(
     GpuCast(GpuGetStructField(mergeM2.attr, 0), DoubleType),
     GpuCast(GpuGetStructField(mergeM2.attr, 1), DoubleType),
