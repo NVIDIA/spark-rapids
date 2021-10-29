@@ -30,7 +30,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   val csvAndCpuEnabledConf: SparkConf = enableCsvConf().setAll(cpuEnabledConf.getAll)
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Boolean",
+  testSparkResultsAreEqual("Row Based Scala UDF-Boolean",
       booleanDf,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
@@ -38,7 +38,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(noopUDF(col("bools")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Short",
+  testSparkResultsAreEqual("Row Based Scala UDF-Short",
       shortsFromCsv,
       csvAndCpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
@@ -46,7 +46,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(noopUDF(col("shorts")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Mixed(int,long,double,string)",
+  testSparkResultsAreEqual("Row Based Scala UDF-Mixed(int,long,double,string)",
       mixedDfWithNulls,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
@@ -61,7 +61,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
         sNoopUDF(col("strings")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Date",
+  testSparkResultsAreEqual("Row Based Scala UDF-Date",
       datesDf,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
@@ -69,7 +69,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(noopUDF(col("dates")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Timestamp",
+  testSparkResultsAreEqual("Row Based Scala UDF-Timestamp",
       timestampsDf,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
@@ -77,7 +77,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(noopUDF(col("timestamps")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Decimal",
+  testSparkResultsAreEqual("Row Based Scala UDF-Decimal",
       mixedDf(_, 1),
       cpuEnabledConf) { frame =>
     // Scala UDF returns a Decimal(38, 18) by default and there is no way to specify the
@@ -87,7 +87,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.selectExpr("NoopUDF(decimals)")
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Array(Int)",
+  testSparkResultsAreEqual("Row Based Scala UDF-Array(Int)",
     mixedDfWithNulls,
     cpuEnabledConf,
     decimalTypeEnabled = false,
@@ -100,7 +100,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
    * Remove this test after the below issue is fixed.
    *   https://github.com/NVIDIA/spark-rapids/issues/3942
    */
-  testSparkResultsAreEqual("CPU Based Scala UDF-Array(Int)-NoNulls",
+  testSparkResultsAreEqual("Row Based Scala UDF-Array(Int)-NoNulls",
     mixedDfWithNulls,
     cpuEnabledConf,
     decimalTypeEnabled = false,
@@ -114,7 +114,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
    *  Remove this test after the below issue is fixed.
    *    https://github.com/NVIDIA/spark-rapids/issues/3942
    */
-  testSparkResultsAreEqual("CPU Based Scala UDF-Array(Int)-Fallback",
+  testSparkResultsAreEqual("Row Based Scala UDF-Array(Int)-Fallback",
       mixedDfWithNulls,
       cpuEnabledConf,
       execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec"),
@@ -124,7 +124,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(noopUDF(array("ints", "ints")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Struct(Int, Double, String)",
+  testSparkResultsAreEqual("Row Based Scala UDF-Struct(Int, Double, String)",
       mixedDfWithNulls,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
@@ -139,7 +139,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(noopUDF(struct("ints", "doubles", "strings")))
   }
 
-  testSparkResultsAreEqual("CPU Based Scala UDF-Map(String -> Long)",
+  testSparkResultsAreEqual("Row Based Scala UDF-Map(String -> Long)",
       mixedDfWithNulls,
       cpuEnabledConf,
       decimalTypeEnabled = false) { frame =>
