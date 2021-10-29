@@ -231,8 +231,8 @@ class AppFilterImpl(
         }
       } catch {
         case _: PatternSyntaxException =>
-          logError(s" $filterAppName is not a valid regex pattern. Please provide correct " +
-              s"regex pattern.")
+          logError(s" $filterAppName is not a valid regex pattern. The regular expression" +
+              s" provided should be based on java.util.regex.Pattern.")
           sys.exit(1)
       }
     } else {
