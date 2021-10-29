@@ -49,7 +49,7 @@ class MortgageSparkSuite extends FunSuite {
       .config("spark.rapids.sql.csv.read.long.enabled", true)
       .config("spark.rapids.sql.csv.read.float.enabled", true)
       .config("spark.rapids.sql.csv.read.double.enabled", true)
-    val rapidsShuffle = ShimLoader.getSparkShims.getRapidsShuffleManagerClass
+    val rapidsShuffle = ShimLoader.getRapidsShuffleManagerClass
     val prop = System.getProperty("rapids.shuffle.manager.override", "false")
     if (prop.equalsIgnoreCase("true")) {
       println("RAPIDS SHUFFLE MANAGER ACTIVE")
