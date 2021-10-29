@@ -18,6 +18,64 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
+## Release v21.10.0
+Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Architecture: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+
+Software Requirements:
+
+	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
+
+	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
+
+	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
+
+	Apache Hadoop 2.10+ or 3.1.1+ (3.1.1 for nvidia-docker version 2)
+
+	Python 3.6+, Scala 2.12, Java 8
+
+*Some hardware may have a minimum driver version greater than v450.80.02+.  Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+### Download v21.10.0
+* Download the [RAPIDS
+  Accelerator for Apache Spark 21.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.10.0/rapids-4-spark_2.12-21.10.0.jar)
+* Download the [RAPIDS cuDF 21.10.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.10.0/cudf-21.10.0-cuda11.jar)
+
+This package is built against CUDA 11.2 and has [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
+on V100, T4, A30 and A100 GPUs with CUDA 11.0-11.4.  For those using other types of GPUs which
+do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
+need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
+
+### Release Notes
+New functionality and performance improvements for this release include:
+* Support collect_list and collect_set in group-by aggregation
+* Support stddev, percentile_approx in group-by aggregation
+* RunningWindow operations on map
+* HashAggregate on struct and nested struct
+* Sorting on nested structs
+* Explode on map, array, struct
+* Union-all on map, array and struct of maps
+* Parquet writing of map
+* ORC reader supports reading map/struct columns
+* ORC reader support decimal64 
+* Spark Qualification Tool
+  * Add conjunction and disjunction filters
+  * Filtering specific configuration values
+  * Filtering user name
+  * Reporting nested data types
+  * Reporting write data formats
+* Spark Profiling Tool
+  * Generating structured output format
+  * Improved profiling tool performance
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
 ## Release v21.08.0
 Hardware Requirements:
 
@@ -29,7 +87,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 
-	CUDA & Nvidia Drivers*: 11.0-11.4 & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
 
@@ -84,7 +142,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 
-	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 7.3 ML LTS or 8.2 ML Runtime, and GCP Dataproc 2.0
 
@@ -126,7 +184,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 
-	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, and GCP Dataproc 2.0
 
@@ -172,7 +230,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 	
-	CUDA & Nvidia Drivers*: 11.0 or 11.2 & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.0 or 11.2 & v450.80.02+
 	
 	Apache Spark 3.0.1, 3.0.2, 3.1.1, 3.1.2, Cloudera CDP 7.1.7, Databricks 8.2 ML Runtime, and GCP Dataproc 2.0
 	
@@ -238,7 +296,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS8
 	
-	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
 	
@@ -286,7 +344,7 @@ Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
 	
-	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
 	
@@ -306,7 +364,7 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
-**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+**_Note:_** Using NVIDIA driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
 compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
 driver.  This issue is resolved in the 0.5.0 and higher releases.
@@ -328,7 +386,7 @@ Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
 	
-	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, 3.0.2, 3.1.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
 	
@@ -360,7 +418,7 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
-**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+**_Note:_** Using NVIDIA driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
 compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
 driver.  This issue is resolved in the 0.5.0 and higher releases.
@@ -382,7 +440,7 @@ Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
 	
-	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1, Databricks 7.3 ML LTS Runtime, or GCP Dataproc 2.0 
 	
@@ -411,7 +469,7 @@ The list of all supported operations is provided [here](supported_ops.md).
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
-**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+**_Note:_** Using NVIDIA driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
 compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
 driver.  This issue is resolved in the 0.5.0 and higher releases.
@@ -433,7 +491,7 @@ Software Requirements:
 
 	OS: Ubuntu 16.04, Ubuntu 18.04 or CentOS 7
 	
-	CUDA & Nvidia Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
+	CUDA & NVIDIA Drivers: 10.1.2 & v418.87+, 10.2 & v440.33+ or 11.0 & v450.36+
 	
 	Apache Spark 3.0, 3.0.1
 	
@@ -465,7 +523,7 @@ The list of all supported operations is provided
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md). 
 
-**_Note:_** Using Nvidia driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
+**_Note:_** Using NVIDIA driver release 450.80.02, 450.102.04 or 460.32.03 in combination with the
 CUDA 10.1 or 10.2 toolkit may result in long read times when reading a file that is snappy
 compressed.  In those cases we recommend either running with the CUDA 11.0 toolkit or using a newer
 driver.  This issue is resolved in the 0.5.0 and higher releases.

@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Frequently Asked Questions
-nav_order: 11
+nav_order: 12
 ---
 # Frequently Asked Questions
 
@@ -10,18 +10,19 @@ nav_order: 11
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.1.1 or 3.1.2 of Apache
-Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to be
-internal the code for those plans can change even between bug fix releases. As a part of our
+The RAPIDS Accelerator for Apache Spark requires version 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2 or 3.2.0 of
+Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
+be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
 
 ### Which distributions are supported?
 
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
-- [AWS EMR 6.2.0, 6.3.0](get-started/getting-started-aws-emr.md)
+- [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
 - [Databricks Runtime 7.3, 8.2](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
+- Cloudera CDP 7.1.6+
 
 Most distributions based on a supported Apache Spark version should work, but because the plugin
 replaces parts of the physical plan that Apache Spark considers to be internal the code for those
@@ -30,15 +31,15 @@ to set up testing and validation on their distributions.
 
 ### What CUDA versions are supported?
 
-CUDA 11.0 and 11.2 are currently supported.  Please look [here](download.md) for download links for
-the latest release.
+CUDA 11.x is currently supported.  Please look [here](download.md) for download links for the latest
+release.
 
 ### What hardware is supported? 
 
 The plugin is tested and supported on V100, T4, A10, A30 and A100 datacenter GPUs.  It is possible
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
-does not support [CUDA enhanced
-compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#enhanced-compat-minor-releases),
+does not support [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
 and will need CUDA 11.2 installed. If not, the following error will be displayed:
 
 ```
@@ -46,6 +47,9 @@ ai.rapids.cudf.CudaException: forward compatibility was attempted on non support
         at ai.rapids.cudf.Cuda.getDeviceCount(Native Method)
         at com.nvidia.spark.rapids.GpuDeviceManager$.findGpuAndAcquire(GpuDeviceManager.scala:78)
 ```
+
+More information about cards that support forward compatibility can be found
+[here](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#faq).
 
 ### How can I check if the RAPIDS Accelerator is installed and which version is running?
 
@@ -120,6 +124,17 @@ starts. If you are only going to run a single query that only takes a few second
 be problematic. In general if you are going to do 30 seconds or more of processing within a single
 session the overhead can be amortized.
 
+### How long does it take to translate a query to run on the GPU?
+
+The time it takes to translate the Apache Spark physical plan to one that can run on the GPU
+is proportional to the size of the plan. But, it also depends on the CPU you are
+running on and if the JVM has optimized that code path yet. The first queries run in a client will
+be worse than later queries. Small queries can typically be translated in a millisecond or two while
+larger queries can take tens of milliseconds. In all cases tested the translation time is orders of
+magnitude smaller than the total runtime of the query.
+
+See the entry on [explain](#explain) for details on how to measure this for your queries.
+
 ### How can I tell what will run on the GPU and what will not run on it?
 <a name="explain"></a>
 
@@ -166,9 +181,26 @@ In this `indicator` is one of the following
   * will not run on the GPU with an explanation why
   * will be removed from the plan with a reason why
 
-Generally if an operator is not compatible with Spark for some reason and is off the explanation
+Generally if an operator is not compatible with Spark for some reason and is off, the explanation
 will include information about how it is incompatible and what configs to set to enable the
 operator if you can accept the incompatibility.
+
+These messages are logged at the WARN level so even in `spark-shell` which by default only logs
+at WARN or above you should see these messages.
+
+This translation takes place in two steps. The first step looks at the plan, figures out what
+can be translated to the GPU, and then does the translation. The second step optimizes the
+transitions between the CPU and the GPU.
+Explain will also log how long these translations took at the INFO level with lines like.
+
+```
+INFO GpuOverrides: Plan conversion to the GPU took 3.13 ms
+INFO GpuOverrides: GPU plan transition optimization took 1.66 ms
+```
+
+Because it is at the INFO level, the default logging level for `spark-shell` is not going to display
+this information. If you want to monitor this number for your queries you might need to adjust your
+logging configuration.
 
 ### Why does the plan for the GPU query look different from the CPU query?
 
@@ -228,11 +260,17 @@ efficient to stay on the CPU instead of going back and forth.
 
 Yes, DPP still works.  It might not be as efficient as it could be, and we are working to improve it.
 
+DPP is not supported on Databricks with the plugin.
+Queries on Databricks will not fail but it can not benefit from DPP.
+
 ### Is Adaptive Query Execution (AQE) Supported?
 
 In the 0.2 release, AQE is supported but all exchanges will default to the CPU.  As of the 0.3 
 release, running on Spark 3.0.1 and higher any operation that is supported on GPU will now stay on 
 the GPU when AQE is enabled. 
+
+AQE is not supported on Databricks with the plugin. 
+If AQE is enabled on Databricks, queries may fail with `StackOverflowError` error.
 
 #### Why does my query show as not on the GPU when Adaptive Query Execution is enabled?
 
@@ -250,13 +288,15 @@ AdaptiveSparkPlan isFinalPlan=false
 
 ### Are cache and persist supported?
 
-Yes cache and persist are supported, but they are not GPU accelerated yet. We are working with
-the Spark community on changes that would allow us to accelerate compression when caching data.
+Yes cache and persist are supported, the cache is GPU accelerated 
+but still stored on the host memory. 
+Please refer to [RAPIDS Cache Serializer](./additional-functionality/cache-serializer.md) 
+for more details.
 
 ### Can I cache data into GPU memory?
 
-No, that is not currently supported. It would require much larger changes to Apache Spark to be able
-to support this.
+No, that is not currently supported. 
+It would require much larger changes to Apache Spark to be able to support this.
 
 ### Is PySpark supported?
 

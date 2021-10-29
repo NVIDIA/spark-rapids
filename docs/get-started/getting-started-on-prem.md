@@ -52,11 +52,11 @@ Download the RAPIDS Accelerator for Apache Spark plugin jar. Then download the v
 jar that your version of the accelerator depends on. Each cudf jar is for a specific version of
 CUDA and will not run on other versions. The jars use a maven classifier to keep them separate.
 
-- CUDA 11.0/11.1/11.2 => classifier cuda11
+- CUDA 11.x => classifier cuda11
 
 For example, here is a sample version of the jars and cudf with CUDA 11.0 support:
-- cudf-21.08.2-cuda11.jar
-- rapids-4-spark_2.12-21.08.0.jar
+- cudf-21.10.0-cuda11.jar
+- rapids-4-spark_2.12-21.10.0.jar
 jar that your version of the accelerator depends on.
 
 
@@ -64,8 +64,8 @@ For simplicity export the location to these jars. This example assumes the sampl
 been placed in the `/opt/sparkRapidsPlugin` directory:
 ```shell 
 export SPARK_RAPIDS_DIR=/opt/sparkRapidsPlugin
-export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-21.08.2-cuda11.jar
-export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-21.08.0.jar
+export SPARK_CUDF_JAR=${SPARK_RAPIDS_DIR}/cudf-21.10.0-cuda11.jar
+export SPARK_RAPIDS_PLUGIN_JAR=${SPARK_RAPIDS_DIR}/rapids-4-spark_2.12-21.10.0.jar
 ```
 
 ## Install the GPU Discovery Script
