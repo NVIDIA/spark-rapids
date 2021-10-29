@@ -261,7 +261,7 @@ class Spark320Shims extends Spark32XShims {
             TypeSig.lit(TypeEnum.INT)))),
       (a, conf, p, r) => new ExprMeta[RegExpReplace](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
+          if (!GpuOverrides.isSupportedStringReplacePattern(a.regexp)) {
             willNotWorkOnGpu(
               "Only non-null, non-empty String literals that are not regex patterns " +
                   "are supported by RegExpReplace on the GPU")
