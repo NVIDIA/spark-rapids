@@ -74,7 +74,7 @@ import org.apache.spark.sql.types._
  *      1 - The step is used to match the `aggBufferAttributes` references for partial
  *           aggregates where each partially aggregated batch is getting merged with
  *           `AggHelper(merge=true)`
- *      2 - In the final aggregate where the merged batches are transformed to what
+ *      2 - In a final aggregate where the merged batches are transformed to what
  *          `evaluateExpression` expects. For simple aggregates like sum or count,
  *          `evaluateExpression` is just `aggBufferAttributes`, but for more complex
  *          aggregates, it is an expression (see GpuAverage and GpuM2 subclasses) that
@@ -127,7 +127,7 @@ trait GpuAggregateFunction extends GpuExpression
   lazy val postUpdate: Seq[Expression] = postUpdateAttr
 
   /**
-   * This step is the first step into the final. It can optionally modify the result of
+   * This step is the first step into the merge phase. It can optionally modify the result of
    * the postUpdate before it goes into the cuDF merge aggregation.
    * preMerge: modify a partial batch to match the input required by a merge aggregate
    *
