@@ -181,8 +181,7 @@ BYTE_MAX = (1 << 7) - 1
 class ByteGen(DataGen):
     """Generate Bytes"""
     def __init__(self, nullable=True, min_val = BYTE_MIN, max_val = BYTE_MAX, special_cases=[]):
-        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
-        super().__init__(ByteType(), nullable=nullable, special_cases=_special_cases)
+        super().__init__(ByteType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
 
@@ -193,8 +192,8 @@ SHORT_MIN = -(1 << 15)
 SHORT_MAX = (1 << 15) - 1
 class ShortGen(DataGen):
     """Generate Shorts, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val = SHORT_MIN, max_val = SHORT_MAX, special_cases = []):
-        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
+    def __init__(self, nullable=True, min_val = SHORT_MIN, max_val = SHORT_MAX,
+                 special_cases = [SHORT_MIN, SHORT_MAX, 0, 1, -1]):
         super().__init__(ShortType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
@@ -206,9 +205,9 @@ INT_MIN = -(1 << 31)
 INT_MAX = (1 << 31) - 1
 class IntegerGen(DataGen):
     """Generate Ints, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val = INT_MIN, max_val = INT_MAX, special_cases = []):
-        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
-        super().__init__(IntegerType(), nullable=nullable, special_cases=_special_cases)
+    def __init__(self, nullable=True, min_val = INT_MIN, max_val = INT_MAX,
+                 special_cases = [INT_MIN, INT_MAX, 0, 1, -1]):
+        super().__init__(IntegerType(), nullable=nullable, special_cases=special_cases)
         self._min_val = min_val
         self._max_val = max_val
 
