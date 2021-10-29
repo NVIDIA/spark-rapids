@@ -1226,7 +1226,7 @@ case class WindowStddevSamp(
 case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
     extends GpuM2(child, nullOnDivideByZero) with GpuReplaceWindowFunction {
 
-  override val evaluateExpression: Expression = {
+  override lazy val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
     val stddevSamp =
       GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false),
