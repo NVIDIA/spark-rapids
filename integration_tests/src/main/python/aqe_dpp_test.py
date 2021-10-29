@@ -97,6 +97,8 @@ _statements = [
 ]
 
 
+# When BroadcastExchangeExec is available on filtering side, and it can be reused:
+# DynamicPruningExpression(InSubqueryExec(value, SubqueryBroadcastExec)))
 @ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
@@ -115,11 +117,13 @@ def test_aqe_and_dpp_reuse_broadcast_exchange(store_format, s_index):
         drop_tables()
 
 
+# When BroadcastExchange is not available and non-broadcast DPPs are forbidden, Spark will bypass it:
+# DynamicPruningExpression(Literal.TrueLiteral)
 @ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_aqe_and_dpp_bypass_exchange(store_format, s_index):
+def test_aqe_and_dpp_bypass(store_format, s_index):
     try:
         create_fact_table(store_format)
         filter_val = create_dim_table(store_format)
@@ -134,6 +138,9 @@ def test_aqe_and_dpp_bypass_exchange(store_format, s_index):
         drop_tables()
 
 
+# When BroadcastExchange is not available, but it is still worthwhile to run DPP,
+# then Spark will plan an extra Aggregate to collect filtering values:
+# DynamicPruningExpression(InSubqueryExec(value, SubqueryExec(Aggregate(...))))
 @ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
@@ -152,11 +159,12 @@ def test_aqe_and_dpp_via_aggregate_subquery(store_format, s_index):
         drop_tables()
 
 
+# When BroadcastExchange is not available, Spark will skip DPP if there is no potential benefit
 @ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_aqe_and_dpp_fallback(store_format, s_index):
+def test_aqe_and_dpp_skip(store_format, s_index):
     try:
         create_fact_table(store_format)
         filter_val = create_dim_table(store_format)
