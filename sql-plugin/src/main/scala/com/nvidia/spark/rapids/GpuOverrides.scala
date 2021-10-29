@@ -587,7 +587,8 @@ object GpuOverrides extends Logging {
       if (strLit.isEmpty) {
         true
       } else {
-        regexList.exists(pattern => strLit.contains(pattern))
+        // check for regex special characters, except for \u0000 which we can support
+        regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
       }
     }
   }
