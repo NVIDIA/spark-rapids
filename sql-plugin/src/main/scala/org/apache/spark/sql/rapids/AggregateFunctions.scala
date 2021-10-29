@@ -138,7 +138,7 @@ trait GpuAggregateFunction extends GpuExpression
   lazy val preMerge: Seq[Expression] = aggBufferAttributes
 
   /**
-   * merge: second half of the aggregation. Also use to merge multiple batches in the
+   * merge: second half of the aggregation. Also used to merge multiple batches in the
    * update or merge stages. These cuDF aggregates consume the output of `preMerge`.
    * The sequence of `CudfAggregate` must match the shape of `aggBufferAttributes`,
    * and care must be taken to ensure that each cuDF aggregate is able to work
@@ -162,9 +162,7 @@ trait GpuAggregateFunction extends GpuExpression
   lazy val postMerge: Seq[Expression] = postMergeAttr
 
   /**
-   * `evaluateExpression` is a pass through for the basic aggregates: min, max, sum,
-   * count. For average, it is a GpuDivide expression, for stddev it is a more complicated
-   * expression.
+   * This takes the output of `postMerge` computes the final result of the aggregation.
    * @note `evaluateExpression` is bound to `aggBufferAttributes`, so the references used in
    *       `evaluateExpression` must also be used in `aggBufferAttributes`.
    */
