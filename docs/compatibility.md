@@ -594,6 +594,11 @@ Spark uses `^` and `$` to refer to the start and end of the entire string (equiv
 
 As a workaround, `\A` and `\Z` can be used instead of `^` and `$`.
 
+### Null support
+
+The GPU implementation of RLike supports null characters in the input but does not support null characters in 
+the regular expression and will fall back to the CPU in this case.
+
 ### Qualifiers with nothing to repeat
 
 Spark supports qualifiers in cases where there is nothing to repeat. For example, Spark supports `a*+` and this

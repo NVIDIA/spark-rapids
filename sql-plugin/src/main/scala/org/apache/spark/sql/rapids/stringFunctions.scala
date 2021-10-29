@@ -751,8 +751,15 @@ class GpuRLikeMeta(
     rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
 
     override def tagExprForGpu(): Unit = {
-      if (!expr.right.isInstanceOf[Literal]) {
-        willNotWorkOnGpu(s"RLike with non-literal pattern is not supported on GPU")
+      expr.right match {
+        case Literal(str: UTF8String, _) =>
+          if (str.toString.contains("\u0000")) {
+            // see https://github.com/NVIDIA/spark-rapids/issues/3962
+            willNotWorkOnGpu("The GPU implementation of RLike does not " +
+              "support null characters in the pattern")
+          }
+        case _ =>
+          willNotWorkOnGpu(s"RLike with non-literal pattern is not supported on GPU")
       }
     }
 
