@@ -385,24 +385,6 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.MiB.toBytes(8))
 
-  val GDS_SPILL_ALIGNED_IO =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.alignedIO")
-    .doc("When GDS spill is enabled, should I/O be 4 KiB aligned. GDS is more efficient when " +
-        "reads and writes are 4 KiB aligned, but aligning has some additional memory overhead " +
-        "with the padding.")
-    .internal()
-    .booleanConf
-    .createWithDefault(true)
-
-  val GDS_SPILL_ALIGNMENT_THRESHOLD =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.alignmentThreshold")
-    .doc("GPU memory buffers with size above this threshold will be aligned to 4 KiB. Setting " +
-        "this value to 0 means every allocation will be 4 KiB aligned. A low threshold may " +
-        "cause more memory consumption because of padding.")
-    .internal()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.KiB.toBytes(64))
-
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -1155,6 +1137,12 @@ object RapidsConf {
       .stringConf
       .createWithDefault("none")
 
+  val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
+    .doc("A configurable chunk size to use when compressing with LZ4.")
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(64 * 1024)
+
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
@@ -1492,10 +1480,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
 
-  lazy val isGdsSpillAlignedIO: Boolean = get(GDS_SPILL_ALIGNED_IO)
-
-  lazy val gdsSpillAlignmentThreshold: Long = get(GDS_SPILL_ALIGNMENT_THRESHOLD)
-
   lazy val hasNans: Boolean = get(HAS_NANS)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
@@ -1676,6 +1660,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleMaxMetadataSize: Long = get(SHUFFLE_MAX_METADATA_SIZE)
 
   lazy val shuffleCompressionCodec: String = get(SHUFFLE_COMPRESSION_CODEC)
+
+  lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
