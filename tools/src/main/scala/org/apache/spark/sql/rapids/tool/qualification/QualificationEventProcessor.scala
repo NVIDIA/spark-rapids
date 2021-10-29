@@ -26,12 +26,13 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
 import org.apache.spark.sql.rapids.tool.{EventProcessorBase, ToolUtils}
 
-class QualEventProcessor() extends EventProcessorBase {
+class QualificationEventProcessor(app: QualificationAppInfo)
+  extends EventProcessorBase[QualificationAppInfo](app) {
 
-  type T = QualAppInfo
+  type T = QualificationAppInfo
 
   override def doSparkListenerEnvironmentUpdate(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerEnvironmentUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
     val sparkProperties = event.environmentDetails("Spark Properties").toMap
@@ -41,7 +42,7 @@ class QualEventProcessor() extends EventProcessorBase {
   }
 
   override def doSparkListenerApplicationStart(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerApplicationStart): Unit = {
     logDebug("Processing event: " + event.getClass)
     val thisAppInfo = QualApplicationInfo(
@@ -58,7 +59,7 @@ class QualEventProcessor() extends EventProcessorBase {
   }
 
   override def doSparkListenerTaskEnd(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerTaskEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     // Adds in everything (including failures)
@@ -73,7 +74,7 @@ class QualEventProcessor() extends EventProcessorBase {
   }
 
   override def doSparkListenerSQLExecutionStart(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
     logDebug("Processing event: " + event.getClass)
     val sqlExecution = QualSQLExecutionInfo(
@@ -93,7 +94,7 @@ class QualEventProcessor() extends EventProcessorBase {
   }
 
   override def doSparkListenerSQLExecutionEnd(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerSQLExecutionEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.lastSQLEndTime = Some(event.time)
@@ -118,7 +119,7 @@ class QualEventProcessor() extends EventProcessorBase {
   }
 
   override def doSparkListenerJobStart(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerJobStart): Unit = {
     logDebug("Processing event: " + event.getClass)
     val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
@@ -132,7 +133,7 @@ class QualEventProcessor() extends EventProcessorBase {
   }
 
   override def doSparkListenerJobEnd(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     app.lastJobEndTime = Some(event.time)
@@ -152,7 +153,7 @@ class QualEventProcessor() extends EventProcessorBase {
   }
 
   override def doSparkListenerSQLAdaptiveExecutionUpdate(
-      app: QualAppInfo,
+      app: QualificationAppInfo,
       event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
     // AQE plan can override the ones got from SparkListenerSQLExecutionStart

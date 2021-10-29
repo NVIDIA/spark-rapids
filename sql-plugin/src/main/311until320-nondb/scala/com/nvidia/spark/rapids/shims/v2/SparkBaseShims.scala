@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
@@ -365,7 +365,8 @@ abstract class SparkBaseShims extends Spark31XShims {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
-      })
+      }),
+    GpuScalaUDFMeta.exprMeta
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -665,8 +666,6 @@ abstract class SparkBaseShims extends Spark31XShims {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
-
   override def sortOrder(
       child: Expression,
       direction: SortDirection,
@@ -844,6 +843,10 @@ abstract class SparkBaseShims extends Spark31XShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
+
+  override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
+    adaptivePlan.inputPlan
+  }
 
   override def getLegacyStatisticalAggregate(): Boolean =
     SQLConf.get.legacyStatisticalAggregate

@@ -29,9 +29,8 @@ case class ApplicationStartInfo(
 case class EnvironmentInfo(configName: Map[String, String])
 
 class FilterAppInfo(
-    numOutputRows: Int,
     eventLogInfo: EventLogInfo,
-    hadoopConf: Configuration) extends AppBase(numOutputRows, eventLogInfo, hadoopConf) {
+    hadoopConf: Configuration) extends AppBase(Some(eventLogInfo), Some(hadoopConf)) {
 
   def doSparkListenerApplicationStart(
       event: SparkListenerApplicationStart): Unit = {
