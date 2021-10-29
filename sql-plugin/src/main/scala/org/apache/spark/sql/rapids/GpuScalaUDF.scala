@@ -534,21 +534,6 @@ abstract class ScalaUDFMetaBase(
       willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
         s"a GPU implementation, nor the conf `${RapidsConf.ENABLE_CPU_BASED_UDF.key}` " +
         s"is enabled")
-    } else if (opRapidsFunc.isEmpty && conf.isCpuBasedUDFEnabled
-        && VersionUtils.isSpark311OrLater) {
-      // Fall back to CPU if the children contain array type with nulls,
-      // because of the issue as below.
-      //   https://github.com/NVIDIA/spark-rapids/issues/3942
-      val hasArrayWithNulls = expr.children.exists { e =>
-        e.dataType match {
-          case ArrayType(_, containsNull) => containsNull
-          case _ => false
-        }
-      }
-      if (hasArrayWithNulls) {
-        willNotWorkOnGpu(s"support for array with nulls in an UDF input is disabled " +
-          s"temporarily for Spark 3.1.1+. UDF will run into an error for this case.")
-      }
     }
   }
 

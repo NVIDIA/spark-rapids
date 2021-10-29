@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF}
 import org.apache.spark.sql.rapids.{GpuRowBasedScalaUDFBase, ScalaUDFMetaBase}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ArrayType, DataType}
 
 /** Run a row-based UDF in a GPU operation */
 case class GpuRowBasedScalaUDF(
@@ -55,10 +55,15 @@ case class GpuRowBasedScalaUDF(
    *         created by using `ExpressionEncoder`.
    */
   private def scalaConverter(i: Int, dataType: DataType): (Any => Any, Boolean) = {
+    val arrayWithNull = dataType match {
+      case ArrayType(_, containsNull) => containsNull
+      case _ => false
+    }
     val useEncoder =
       !(inputEncoders.isEmpty || // for untyped Scala UDF and Java UDF
         inputEncoders(i).isEmpty || // for types aren't supported by encoder, e.g. Any
-        inputPrimitives(i)) // for primitive types
+        inputPrimitives(i) || // for primitive types
+        arrayWithNull) // https://github.com/NVIDIA/spark-rapids/issues/3942#issuecomment-957146443
 
     if (useEncoder) {
       val enc = inputEncoders(i).get
