@@ -887,9 +887,8 @@ object GpuOverrides extends Logging {
                   val stripped = Decimal(dec.toJavaBigDecimal.stripTrailingZeros())
                   val p = stripped.precision
                   val s = stripped.scale
-                  // TODO need to test negative scale decimal literals...
-                  val t = if (s < 0 && dt.scale >= 0) {
-                    // need to adjust
+                  val t = if (s < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
+                    // need to adjust to avoid errors about negative scale
                     DecimalType(p - s, 0)
                   } else {
                     DecimalType(p, s)
@@ -958,7 +957,7 @@ object GpuOverrides extends Logging {
 
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
                 if (conf.needDecimalGuarantees) {
-                  binExpr.willNotWorkOnGpu(s"The intermediate precision of " +
+                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
                       s"$intermediatePrecision that is required to guarantee no overflow issues " +
                       s"for this divide is too large to be supported on the GPU")
                 } else {
@@ -973,7 +972,7 @@ object GpuOverrides extends Logging {
                   rhsDecimalType, a.dataType)
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
                 if (conf.needDecimalGuarantees) {
-                  binExpr.willNotWorkOnGpu(s"The intermediate precision of " +
+                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
                       s"$intermediatePrecision that is required to guarantee no overflow issues " +
                       s"for this multiply is too large to be supported on the GPU")
                 } else {
@@ -2272,7 +2271,7 @@ object GpuOverrides extends Logging {
               if (unboundPrecision > DType.DECIMAL128_MAX_PRECISION) {
                 if (conf.needDecimalGuarantees) {
                   willNotWorkOnGpu("overflow checking on sum would need " +
-                      s"a precision of $unboundPrecision to properly detect overflows.")
+                      s"a precision of $unboundPrecision to properly detect overflows")
                 } else {
                   logWarning("Decimal overflow guarantees disabled for " +
                       s"sum(${a.child.dataType}) produces ${a.dataType}")
