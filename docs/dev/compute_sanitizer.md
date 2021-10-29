@@ -5,7 +5,7 @@ nav_order: 6
 parent: Developer Overview
 ---
 
-# Using Compute Sanitizer with the RAPIDS Plugin for Spark
+# Using Compute Sanitizer with the RAPIDS Accelerator for Apache Spark
 
 Compute Sanitizer is a functional correctness checking suite included in the CUDA toolkit.
 This suite contains multiple tools that can perform different type of checks. Of main interest to
@@ -14,7 +14,7 @@ attributing out of bounds and misaligned memory access errors in CUDA applicatio
 
 To use Compute Sanitizer with the RAPIDS Spark Plugin in a standalone Spark cluster, follow these
 steps:
-  * Create a "fake" java home, for example, in `/opt/compute-sanitizer-java`:
+  * Create a "fake" Java home, for example, in `/opt/compute-sanitizer-java`:
 ```bash
 mkdir -p /opt/compute-sanitizer-java/bin
 ```
