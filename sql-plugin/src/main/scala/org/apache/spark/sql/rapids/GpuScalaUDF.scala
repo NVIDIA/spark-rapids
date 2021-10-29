@@ -19,14 +19,13 @@ package org.apache.spark.sql.rapids
 import java.lang.invoke.SerializedLambda
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, GpuRowBasedUserDefinedFunction, GpuUserDefinedFunction, RapidsConf, RapidsMeta, RepeatingParamCheck, TypeSig}
-import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuExpression, GpuRowBasedUserDefinedFunction, GpuUserDefinedFunction, RapidsConf, RapidsMeta, VersionUtils}
 
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF, SpecializedGetters}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType}
 
 case class GpuScalaUDF(
     function: RapidsUDF,
@@ -41,33 +40,32 @@ case class GpuScalaUDF(
   override val name: String = udfName.getOrElse("???")
 }
 
-case class GpuRowBasedScalaUDF(
+abstract class GpuRowBasedScalaUDFBase(
     sparkFunc: AnyRef,
     dataType: DataType,
     children: Seq[Expression],
     inputEncoders: Seq[Option[ExpressionEncoder[_]]],
     outputEncoder: Option[ExpressionEncoder[_]],
-    udfName: Option[String],
-    nullable: Boolean,
-    udfDeterministic: Boolean) extends GpuRowBasedUserDefinedFunction {
+    udfName: Option[String]) extends GpuRowBasedUserDefinedFunction {
+
+  /**
+   * Create the converter which converts the catalyst data type to the scala data type.
+   * This converter will be used for the UDF input type conversion.
+   *
+   * @param i the index of the child
+   * @param dataType the output data type of the i-th child
+   * @return the converter
+   */
+  def createInputConverter(i: Int, dataType: DataType): Any => Any
+
   override def toString: String = s"$name(${children.mkString(", ")})"
 
   /** name of the UDF function */
-  override val name: String = udfName.getOrElse(getClass.getSimpleName)
+  override val name: String = udfName.getOrElse(this.getClass.getSimpleName)
 
   /** The input `row` consists of only child columns. */
-  override protected def evaluateRow(childrenRow: InternalRow): Any =
+  override final protected def evaluateRow(childrenRow: InternalRow): Any =
     catalystConverter(wrappedFunc(childrenRow))
-
-  /** The code for input type conversion is changed a lot from Spark 3.0.x to 3.1.1+.
-   * The good news is that the 3.0.x version also works under Spark 3.1.1+.
-   * But the later versions do not work under Spark3.0.x. Besides, an assertion error will
-   * come up if running the 3.1.1+ code under the Spark 3.1.1+ respectively.
-   * So here copies the methods "inputPrimitives" and "createToScalaConverter" from 3.0.x
-   * for all the Spark versions for now.
-   * Of course we can add shims for this diff after fixing the assertion error, tracked by
-   *   https://github.com/NVIDIA/spark-rapids/issues/3942
-   */
 
   /**
    * The analyzer should be aware of Scala primitive types so as to make the
@@ -79,7 +77,8 @@ case class GpuRowBasedScalaUDF(
   lazy val inputPrimitives: Seq[Boolean] = {
     inputEncoders.map { encoderOpt =>
       // It's possible that some of the inputs don't have a specific encoder(e.g. `Any`)
-      encoderOpt.exists { encoder =>
+      if (encoderOpt.isDefined) {
+        val encoder = encoderOpt.get
         if (encoder.isSerializedAsStruct) {
           // struct type is not primitive
           false
@@ -87,21 +86,30 @@ case class GpuRowBasedScalaUDF(
           // `nullable` is false iff the type is primitive
           !encoder.schema.head.nullable
         }
+      } else {
+        // Any type is not primitive
+        false
       }
     }
   }
 
-  private def createToScalaConverter(i: Int, dataType: DataType): Any => Any = {
-    if (inputEncoders.isEmpty) {
-      // for untyped Scala UDF
-      CatalystTypeConverters.createToScalaConverter(dataType)
-    } else {
-      val encoder = inputEncoders(i)
-      if (encoder.isDefined && encoder.get.isSerializedAsStructForTopLevel) {
-        val fromRow = encoder.get.resolveAndBind().createDeserializer()
-        row: Any => fromRow(row.asInstanceOf[InternalRow])
+  /**
+   * The expected input types of this UDF, used to perform type coercion. If we do
+   * not want to perform coercion, simply use "Nil". Note that it would've been
+   * better to use Option of Seq[DataType] so we can use "None" as the case for no
+   * type coercion. However, that would require more refactoring of the codebase.
+   */
+  def inputTypes: Seq[AbstractDataType] = {
+    inputEncoders.map { encoderOpt =>
+      if (encoderOpt.isDefined) {
+        val encoder = encoderOpt.get
+        if (encoder.isSerializedAsStruct) {
+          encoder.schema
+        } else {
+          encoder.schema.head.dataType
+        }
       } else {
-        CatalystTypeConverters.createToScalaConverter(dataType)
+        AnyDataType
       }
     }
   }
@@ -126,10 +134,10 @@ case class GpuRowBasedScalaUDF(
   /** A little refactor to simplify the Spark code of executing the function */
 
   /** Build an accessor for each child to read the data from a row and do type conversion */
-  private lazy val childAccessors: Array[SpecializedGetters => Any] =
+  private[this] lazy val childAccessors: Array[SpecializedGetters => Any] =
     children.zipWithIndex.map { case (child, i) =>
       val accessor = InternalRow.getAccessor(child.dataType, child.nullable)
-      val converter = createToScalaConverter(i, child.dataType)
+      val converter = createInputConverter(i, child.dataType)
       row: SpecializedGetters => converter(accessor(row, i))
     }.toArray
 
@@ -511,13 +519,11 @@ case class GpuRowBasedScalaUDF(
 
 }
 
-abstract class BaseScalaUDFMeta(
+abstract class ScalaUDFMetaBase(
     expr: ScalaUDF,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends ExprMeta(expr, conf, parent, rule) {
-
-  protected def outputEncoder: Option[ExpressionEncoder[_]]
 
   lazy val opRapidsFunc = GpuScalaUDF.getRapidsUDFInstance(expr.function)
 
@@ -528,6 +534,21 @@ abstract class BaseScalaUDFMeta(
       willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
         s"a GPU implementation, nor the conf `${RapidsConf.ENABLE_CPU_BASED_UDF.key}` " +
         s"is enabled")
+    } else if (opRapidsFunc.isEmpty && conf.isCpuBasedUDFEnabled
+        && VersionUtils.isSpark311OrLater) {
+      // Fall back to CPU if the children contain array type with nulls,
+      // because of the issue as below.
+      //   https://github.com/NVIDIA/spark-rapids/issues/3942
+      val hasArrayWithNulls = expr.children.exists { e =>
+        e.dataType match {
+          case ArrayType(_, containsNull) => containsNull
+          case _ => false
+        }
+      }
+      if (hasArrayWithNulls) {
+        willNotWorkOnGpu(s"support for array with nulls in an UDF input is disabled " +
+          s"temporarily for Spark 3.1.1+. UDF will run into an error for this case.")
+      }
     }
   }
 
@@ -546,31 +567,14 @@ abstract class BaseScalaUDFMeta(
     }.getOrElse {
       // This `require` is just for double check.
       require(conf.isCpuBasedUDFEnabled)
-      GpuRowBasedScalaUDF(
-        expr.function,
-        expr.dataType,
-        childExprs.map(_.convertToGpu()),
-        expr.inputEncoders,
-        outputEncoder,
-        expr.udfName,
-        expr.nullable,
-        expr.udfDeterministic)
+      rowBasedScalaUDF
     }
   }
+
+  protected def rowBasedScalaUDF: GpuRowBasedScalaUDFBase
 }
 
 object GpuScalaUDF {
-  def exprMeta30X: ExprRule[ScalaUDF] = GpuOverrides.expr[ScalaUDF](
-    "User Defined Function, the UDF can choose to implement a RAPIDS accelerated interface " +
-      "to get better performance.",
-    ExprChecks.projectOnly(
-      udfTypeSig,
-      TypeSig.all,
-      repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
-    (a, conf, p, r) => new BaseScalaUDFMeta(a, conf, p, r) {
-      override protected def outputEncoder: Option[ExpressionEncoder[_]] = None
-    })
-
   /**
    * Determine if the UDF function implements the [[com.nvidia.spark.RapidsUDF]] interface,
    * returning the instance if it does. The lambda wrapper that Spark applies to Java UDFs will be

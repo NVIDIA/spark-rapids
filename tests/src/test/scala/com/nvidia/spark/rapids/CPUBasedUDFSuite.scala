@@ -23,7 +23,7 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.{array, col, map, struct}
 import org.apache.spark.sql.types.DecimalType
 
-class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
+class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   val cpuEnabledConf: SparkConf = new SparkConf()
     .set(RapidsConf.ENABLE_CPU_BASED_UDF.key, "true")
@@ -88,9 +88,38 @@ class CPUBasedUDFSuite extends SparkQueryCompareTestSuite {
   }
 
   testSparkResultsAreEqual("CPU Based Scala UDF-Array(Int)",
+    mixedDfWithNulls,
+    cpuEnabledConf,
+    decimalTypeEnabled = false,
+    assumeCondition = _ => (!VersionUtils.isSpark311OrLater, "")) { frame =>
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Seq[java.lang.Integer]]())
+    frame.select(noopUDF(array("ints", "ints")))
+  }
+
+  /**
+   * Remove this test after the below issue is fixed.
+   *   https://github.com/NVIDIA/spark-rapids/issues/3942
+   */
+  testSparkResultsAreEqual("CPU Based Scala UDF-Array(Int)-NoNulls",
+    mixedDfWithNulls,
+    cpuEnabledConf,
+    decimalTypeEnabled = false,
+    assumeCondition = _ => (VersionUtils.isSpark311OrLater, "")) { frame =>
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Seq[java.lang.Integer]]())
+    frame.filter("ints != null")
+      .select(noopUDF(array("ints", "ints")))
+  }
+
+  /** Test the fallback if the UDF input contains at least one array with nulls.
+   *  Remove this test after the below issue is fixed.
+   *    https://github.com/NVIDIA/spark-rapids/issues/3942
+   */
+  testSparkResultsAreEqual("CPU Based Scala UDF-Array(Int)-Fallback",
       mixedDfWithNulls,
       cpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec"),
+      decimalTypeEnabled = false,
+      assumeCondition = _ => (VersionUtils.isSpark311OrLater, "")) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Seq[java.lang.Integer]]())
     frame.select(noopUDF(array("ints", "ints")))
   }

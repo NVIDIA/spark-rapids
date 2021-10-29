@@ -56,7 +56,7 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuScalaUDF, GpuStringReplace, GpuTimeSub}
+import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
@@ -344,7 +344,7 @@ abstract class SparkBaseShims extends Spark30XShims {
           override def convertToGpu(lhs: Expression, regexp: Expression,
               rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
         }),
-      GpuScalaUDF.exprMeta30X
+      GpuScalaUDFMeta.exprMeta
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 
