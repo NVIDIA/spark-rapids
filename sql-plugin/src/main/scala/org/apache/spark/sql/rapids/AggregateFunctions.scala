@@ -33,29 +33,52 @@ import org.apache.spark.sql.types._
 /**
  * Trait that all aggregate functions implement.
  *
- * Aggregates start with some input, from the child plan or from another aggregate
- * (or from itself if the aggregate is merging several batches)
+ * Aggregates start with some input from the child plan or from another aggregate
+ * (or from itself if the aggregate is merging several batches).
+ *
+ * In general terms an aggregate function can be in one of two modes of operation:
+ * update or merge. Either the function is aggregating raw input, or it is merging
+ * previously aggregated data. Normally, Spark breaks up the processing of the aggregate
+ * in two exec nodes (a partial aggregate and a final), and the are separated by a
+ * shuffle boundary. That is not true for all aggregates, especially when looking at
+ * other flavors of Spark. What doesn't change is the core function of updating or
+ * merging. Note that an aggregate can merge right after an update is
+ * performed, as we have cases where input batches are update-aggregated and then
+ * a bigger batch is built by merging together those pre-aggregated inputs.
+ *
+ * Aggregates have an interface to Spark and that is defined by `aggBufferAttributes`.
+ * This collection of attributes must match the Spark equivalent of the aggregate,
+ * so that if half of the aggregate (update or merge) executes on the CPU, we can
+ * be compatible. The GpuAggregateFunction adds special steps to ensure that it can
+ * produce (and consume) batches in the shape of `aggBufferAttributes`.
  *
  * The general transitions that are implemented in the aggregate function are as
  * follows:
  *
- * 1) inputProjection -> updateAggregates: inputProjection creates a sequence of
- *    values that are operated on by the updateAggregates. The length of inputProjection
- *    must be the same as updateAggregates, and updateAggregates (cuDF aggregates) should
- *    be able to work with the product of the inputProjection (i.e. types are compatible)
+ * 1) `inputProjection` -> `updateAggregates`: `inputProjection` creates a sequence of
+ *    values that are operated on by the `updateAggregates`. The length of `inputProjection`
+ *    must be the same as `updateAggregates`, and `updateAggregates` (cuDF aggregates) should
+ *    be able to work with the product of the `inputProjection` (i.e. types are compatible)
  *
- * 2) updateAggregates -> postUpdate: after the cuDF update aggregate, a post process step
- *    can (optionally) be performed. The postUpdate takes the output of updateAggregate
- *    and will output compatible output with Spark (same number of columns, and types)
+ * 2) `updateAggregates` -> `postUpdate`: after the cuDF update aggregate, a post process step
+ *    can (optionally) be performed. The `postUpdate` takes the output of `updateAggregate`
+ *    that must match the order of columns and types as specified in `aggBufferAttributes`.
  *
- * 3) postUpdate -> preMerge: preMerge prepares batches before going into the mergeAggregate.
- *    The preMerge step binds to aggBufferAttributes, so it can be used to transform Spark
+ * 3) `postUpdate` -> `preMerge`: preMerge prepares batches before going into the `mergeAggregate`.
+ *    The `preMerge` step binds to `aggBufferAttributes`, so it can be used to transform Spark
  *    compatible batch to a batch that the cuDF merge aggregate expects. Its input has the
- *    same shape as that produced by postUpdate.
+ *    same shape as that produced by `postUpdate`.
  *
- * 4) mergeAggregates->postMerge: postMerge optionally transforms the output of the cuDF merge
- *    to the merge aggregate for compatibility with what Spark expects.
- *
+ * 4) `mergeAggregates`->`postMerge`: postMerge optionally transforms the output of the cuDF merge
+ *    aggregate in two situations:
+ *      1 - The step is used to match the `aggBufferAttributes` references for partial
+ *           aggregates where each partially aggregated batch is getting merged with
+ *           `AggHelper(merge=true)`
+ *      2 - In the final aggregate where the merged batches are transformed to what
+ *          `evaluateExpression` expects. For simple aggregates like sum or count,
+ *          `evaluateExpression` is just `aggBufferAttributes`, but for more complex
+ *          aggregates, it is an expression (see GpuAverage and GpuM2 subclasses) that
+ *          relies on the merge step producing a columns in the shape of `aggBufferAttributes`.
  */
 trait GpuAggregateFunction extends GpuExpression
     with ShimExpression
@@ -63,8 +86,12 @@ trait GpuAggregateFunction extends GpuExpression
   /**
    * These are values that spark calls initial because it uses
    * them to initialize the aggregation buffer, and returns them in case
-   * of an empty aggregate when there are no expressions,
-   * here we copy them but with the gpu equivalent
+   * of an empty aggregate when there are no expressions.
+   *
+   * In our case they are only used in a very specific case:
+   * the empty input reduction case. In this case we don't have input
+   * to reduce, but we do have reduction functions, so each reduction function's
+   * `initialValues` is invoked to populate a single row of output.
    **/
   val initialValues: Seq[Expression]
 
@@ -86,7 +113,7 @@ trait GpuAggregateFunction extends GpuExpression
   val updateAggregates: Seq[CudfAggregate]
 
   /**
-   * This is the last step in the partial. It can optionally modify the result of the
+   * This is the last step in the update phase. It can optionally modify the result of the
    * cuDF update aggregates, or be a pass-through.
    * postUpdateAttr: matches the order (and types) of `updateAggregates`
    * postUpdate: binds to `postUpdateAttr` and defines an expression that results
@@ -101,7 +128,7 @@ trait GpuAggregateFunction extends GpuExpression
 
   /**
    * This step is the first step into the final. It can optionally modify the result of
-   * the partial (postUpdate) before it goes into the cuDF merge aggregation.
+   * the postUpdate before it goes into the cuDF merge aggregation.
    * preMerge: modify a partial batch to match the input required by a merge aggregate
    *
    * This always binds to `aggBufferAttributes` as that is the inbound schema
