@@ -1292,10 +1292,11 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
-  val FALLBACK_IF_PLAN_OVERRIDING_FAILED = conf("spark.rapids.tolerateGpuOverridesApplyFailures")
-    .doc("Option to fallback the query to CPU if GpuOverrides failed to apply rules creating " +
-      "a GPU plan.")
-    .internal()
+  val FALLBACK_IF_PLAN_OVERRIDING_FAILED = conf("spark.rapids.sql.suppressPlanningFailure")
+    .doc("Option to fallback an individual query to CPU if an unexpected condition prevents the " +
+      "query plan from being converted to a GPU-enabled one. Note this is different from " +
+      "a normal CPU fallback for a yet-to-be-supported Spark SQL feature. If this happens " +
+      "the error should be reported and investigated as a GitHub issue.")
     .booleanConf
     .createWithDefault(value = false)
 
