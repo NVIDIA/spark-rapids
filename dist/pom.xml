@@ -53,7 +53,7 @@
                                 <id>copy-current</id>
                                 <phase>generate-sources</phase>
                                 <goals>
-                                    <!-- TODO may be able to use unpack skipping an extra coy
+                                    <!-- TODO may be able to use unpack skipping an extra copy
                                          but first look into eliminating this rolled out list of artifacts by using
                                          http://maven.apache.org/ant-tasks/examples/dependencies.html
                                          in an ant-contrib for loop
@@ -188,18 +188,6 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
@@ -337,18 +325,6 @@
                     <version>${project.version}</version>
                     <scope>provided</scope>
                 </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <scope>provided</scope>
-                </dependency>
             </dependencies>
             <build>
                 <plugins>
@@ -444,18 +420,6 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
@@ -598,18 +562,6 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
@@ -848,18 +800,6 @@
                     <groupId>com.nvidia</groupId>
                     <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                     <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <!-- required for conf generation script -->
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
