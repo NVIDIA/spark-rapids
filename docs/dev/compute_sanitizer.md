@@ -9,10 +9,23 @@ parent: Developer Overview
 
 Compute Sanitizer is a functional correctness checking suite included in the CUDA toolkit.
 This suite contains multiple tools that can perform different type of checks. Of main interest to
-the RAPIDS Spark Plugin is the `memcheck` tool that is capable of precisely detecting and
+the RAPIDS Accelerator is the `memcheck` tool that is capable of precisely detecting and
 attributing out of bounds and misaligned memory access errors in CUDA applications.
 
-To use Compute Sanitizer with the RAPIDS Spark Plugin in a standalone Spark cluster, follow these
+To use Compute Sanitizer with a single worker, you can start the worker with `compute-sanitizer`
+in front of the worker start command.
+
+Here is an example that starts up a worker in standalone mode, sanitizes it and the shell until
+the shell exits (using Ctrl+D) while stopping the worker process at the end.
+
+```base
+compute-sanitizer --target-processes all bash -c " \
+${SPARK_HOME}/sbin/start-worker.sh $master_url & \
+$SPARK_HOME/bin/spark-shell; \
+${SPARK_HOME}/sbin/stop-worker.sh"
+```
+
+To use Compute Sanitizer in a distributed Spark standalone cluster, follow these
 steps:
   * Create a "fake" Java home, for example, in `/opt/compute-sanitizer-java`:
 ```bash
