@@ -161,11 +161,12 @@ object GpuDeviceManager extends Logging {
   def initializeFromTask(): Unit = {
     if (threadGpuInitialized.get() == false) {
       val resources = getResourcesFromTaskContext
+      val conf = new RapidsConf(SparkEnv.get.conf)
       if (rmmTaskInitEnabled) {
-        initializeGpuAndMemory(resources)
+        initializeGpuAndMemory(resources, conf)
       } else {
         // just set the device if provided so task thread uses right GPU
-        initializeGpu(resources)
+        initializeGpu(resources, conf)
       }
       threadGpuInitialized.set(true)
     }
