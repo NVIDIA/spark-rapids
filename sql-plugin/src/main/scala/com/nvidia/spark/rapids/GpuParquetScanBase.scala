@@ -172,10 +172,10 @@ object GpuParquetScanBase {
       case _ => false
     }
     val schemaMightNeedNestedRebase = readSchema.exists { field =>
-      field.dataType match {
-        case MapType(_, _, _) | ArrayType(_, _) | StructType(_) =>
-          TrampolineUtil.dataTypeExistsRecursively(field.dataType, isTsOrDate)
-        case _ => false
+      if (DataTypeUtils.isNestedType(field.dataType)) {
+        TrampolineUtil.dataTypeExistsRecursively(field.dataType, isTsOrDate)
+      } else {
+        false
       }
     }
 

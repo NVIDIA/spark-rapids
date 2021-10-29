@@ -203,16 +203,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * looking for HostColumnarToGpu when optimizing transitions.
    */
   def fixupHostColumnarTransitions(plan: SparkPlan): SparkPlan = plan match {
-    case HostColumnarToGpu(child, goal) if hasNestedTypes(child.schema) =>
+    case HostColumnarToGpu(child, goal) if DataTypeUtils.hasNestedTypes(child.schema) =>
       GpuRowToColumnarExec(ColumnarToRowExec(fixupHostColumnarTransitions(child)), goal)
     case p => p.withNewChildren(p.children.map(fixupHostColumnarTransitions))
-  }
-
-  private def hasNestedTypes(schema: StructType) = schema.exists {
-    _.dataType match {
-      case _: ArrayType | _: MapType | _: StructType => true
-      case _ => false
-    }
   }
 
   @tailrec
