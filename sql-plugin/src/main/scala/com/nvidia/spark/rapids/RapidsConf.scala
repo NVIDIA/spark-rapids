@@ -697,6 +697,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  // This is an experimental feature now. And eventually, should be enabled or disabled depending
+  // on something that we don't know yet but would try to figure out.
+  val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
+    .doc("When set to true, optimizes a row-based UDF in a GPU operation by transferring " +
+      "only the data it needs between GPU and CPU inside a query operation, instead of falling " +
+      "this operation back to CPU. This is an experimental feature, and this config might be " +
+      "removed in the future.")
+    .booleanConf
+    .createWithDefault(false)
+
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
   }
@@ -1700,6 +1710,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

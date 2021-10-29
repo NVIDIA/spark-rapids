@@ -3198,8 +3198,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
       }
-    ),
-    GpuScalaUDF.exprMeta
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
