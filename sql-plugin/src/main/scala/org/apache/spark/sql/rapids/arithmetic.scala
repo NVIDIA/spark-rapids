@@ -334,6 +334,7 @@ case class GpuDecimalMultiply(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
+    needsExtraOverflowChecks: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends
     ShimExpression with GpuExpression {
 
@@ -359,7 +360,27 @@ case class GpuDecimalMultiply(
           legacyCastToString = false, stringToDateAnsiModeEnabled = false)
       }
       withResource(castRhs) { castRhs =>
-        castLhs.mul(castRhs, GpuColumnVector.getNonNestedRapidsType(intermediateResultType))
+        withResource(castLhs.mul(castRhs,
+          GpuColumnVector.getNonNestedRapidsType(intermediateResultType))) { mult =>
+          if (needsExtraOverflowChecks) {
+            withResource(GpuDecimalMultiply.checkForOverflow(castLhs, castRhs)) { wouldOverflow =>
+              if (failOnError) {
+                withResource(wouldOverflow.any()) { anyOverflow =>
+                  if (anyOverflow.isValid && anyOverflow.getBoolean) {
+                    throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+                  }
+                }
+                mult.incRefCount()
+              } else {
+                withResource(GpuScalar.from(null, intermediateResultType)) { nullVal =>
+                  wouldOverflow.ifElse(nullVal, mult)
+                }
+              }
+            }
+          } else {
+            mult.incRefCount()
+          }
+        }
       }
     }
     withResource(ret) { ret =>
@@ -374,7 +395,7 @@ case class GpuDecimalMultiply(
   override def children: Seq[Expression] = Seq(left, right)
 }
 
-object GpuDecimalMultiply {
+object GpuDecimalMultiply extends Arm {
   // For Spark the final desired output is
   // new_scale = lhs.scale + rhs.scale
   // new_precision = lhs.precision + rhs.precision + 1
@@ -459,6 +480,45 @@ object GpuDecimalMultiply {
     val precision = intermediatePrecision(lhs, rhs, outputType)
     DecimalType(precision,
       math.min(outputType.scale + 1, DType.DECIMAL128_MAX_PRECISION))
+  }
+
+  private[this] lazy val max128Int = new BigInteger(Array(2.toByte)).pow(127)
+      .subtract(BigInteger.ONE)
+  private[this] lazy val min128Int = new BigInteger(Array(2.toByte)).pow(127)
+      .negate()
+
+  def checkForOverflow(a: ColumnView, b: ColumnView): ColumnVector = {
+    assert(a.getType.isDecimalType)
+    assert(b.getType.isDecimalType)
+    // a > MAX_INT / b || a < MIN_INT / b
+    // So to do this we need the unscaled value, but we have to get it in terms of a
+    // DECIMAL_128 with a scale of 0
+    withResource(a.bitCastTo(DType.create(DType.DTypeEnum.DECIMAL128, 0))) { castA =>
+      withResource(b.bitCastTo(DType.create(DType.DTypeEnum.DECIMAL128, 0))) { castB =>
+        val isNotZero = withResource(Scalar.fromDecimal(0, BigInteger.ZERO)) { zero =>
+          castB.notEqualTo(zero)
+        }
+        withResource(isNotZero) { isNotZero =>
+          val gt = withResource(Scalar.fromDecimal(0, max128Int)) { maxDecimal =>
+            withResource(maxDecimal.div(castB)) { divided =>
+              castA.greaterThan(divided)
+            }
+          }
+          withResource(gt) { gt =>
+            val lt = withResource(Scalar.fromDecimal(0, min128Int)) { minDecimal =>
+              withResource(minDecimal.div(castB)) { divided =>
+                castA.lessThan(divided)
+              }
+            }
+            withResource(lt) { lt =>
+              withResource(lt.or(gt)) { ored =>
+                ored.and(isNotZero)
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -768,7 +828,7 @@ object GpuDecimalDivide {
       rhs: DecimalType,
       outputType: DecimalType): DecimalType = {
     val precision = intermediateArgPrecision(lhs, rhs, outputType)
-    val scale = lhsNeededScale(rhs, outputType)
+    val scale = math.min(lhsNeededScale(rhs, outputType), precision)
     DecimalType(precision, scale)
   }
 

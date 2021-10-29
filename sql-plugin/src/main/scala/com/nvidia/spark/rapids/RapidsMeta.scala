@@ -926,6 +926,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   override val printWrapped: Boolean = true
 
+  def dataType: DataType = expr.dataType
+
   val ignoreUnsetDataTypes = false
 
   override def canExprTreeBeReplaced: Boolean =

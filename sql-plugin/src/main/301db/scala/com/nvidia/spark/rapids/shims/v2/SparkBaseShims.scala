@@ -29,6 +29,7 @@ import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -66,7 +67,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class SparkBaseShims extends Spark30XShims {
+abstract class SparkBaseShims extends Spark30XShims with Logging {
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
@@ -306,18 +307,32 @@ abstract class SparkBaseShims extends Spark30XShims {
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
-          // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
-          // then it divides by the count with an output scale that is 4 more than the input
-          // scale. With how our divide works to match Spark, this means that we will need a
-          // precision of 5 more. So 38 - 10 - 5 = 23
           TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
           TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
           Seq(ParamCheck("input", 
-            TypeSig.integral + TypeSig.fp + TypeSig.decimal(23),
+            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128_FULL,
             TypeSig.numeric))),
         (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
           override def tagAggForGpu(): Unit = {
+            // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
+            // then it divides by the count with an output scale that is 4 more than the input
+            // scale. With how our divide works to match Spark, this means that we will need a
+            // precision of 5 more. So 38 - 10 - 5 = 23
             val dataType = a.child.dataType
+            dataType match {
+              case dt: DecimalType =>
+                if (dt.precision > 23) {
+                  if (conf.needDecimalGuarantees) {
+                    willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
+                        s"a precision large than 23. The current precision is ${dt.precision}")
+                  } else {
+                    logWarning("Decimal overflow guarantees disabled for " +
+                        s"Average(${a.child.dataType}) produces $dt with an " +
+                        s"intermediate precision of ${dt.precision + 15}")
+                  }
+                }
+              case _ => // NOOP
+            }
             GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
           }
 

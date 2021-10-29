@@ -877,6 +877,27 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
         private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
           expr.wrapped match {
+            case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
+              val dt = lit.dataType.asInstanceOf[DecimalType]
+              // Lets figure out if we can make the Literal value smaller
+              val (newType, value) = lit.value match {
+                case null =>
+                  (DecimalType(0, 0), null)
+                case dec: Decimal =>
+                  val stripped = Decimal(dec.toJavaBigDecimal.stripTrailingZeros())
+                  val p = stripped.precision
+                  val s = stripped.scale
+                  val t = if (s < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
+                    // need to adjust to avoid errors about negative scale
+                    DecimalType(p - s, 0)
+                  } else {
+                    DecimalType(p, s)
+                  }
+                  (t, stripped)
+                case other =>
+                  throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
+              }
+              expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
             // We avoid unapply for Cast because it changes between versions of Spark
             case PromotePrecision(c: CastBase) if c.dataType.isInstanceOf[DecimalType] =>
               val to = c.dataType.asInstanceOf[DecimalType]
@@ -935,18 +956,30 @@ object GpuOverrides extends Logging {
                   rhsDecimalType, a.dataType)
 
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                binExpr.willNotWorkOnGpu(s"The intermediate precision of $intermediatePrecision " +
-                    s"that is required to guarantee no overflow issues for this divide is too " +
-                    s"large to be supported on the GPU")
+                if (conf.needDecimalGuarantees) {
+                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
+                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
+                      s"for this divide is too large to be supported on the GPU")
+                } else {
+                  logWarning("Decimal overflow guarantees disabled for " +
+                      s"${lhs.dataType} / ${rhs.dataType} produces ${a.dataType} with an " +
+                      s"intermediate precision of $intermediatePrecision")
+                }
               }
             case _: Multiply =>
               val intermediatePrecision =
                 GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                binExpr.willNotWorkOnGpu(s"The intermediate precision of $intermediatePrecision " +
-                    s"that is required to guarantee no overflow issues for this multiply is too " +
-                    s"large to be supported on the GPU")
+                if (conf.needDecimalGuarantees) {
+                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
+                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
+                      s"for this multiply is too large to be supported on the GPU")
+                } else {
+                  logWarning("Decimal overflow guarantees disabled for " +
+                      s"${lhs.dataType} * ${rhs.dataType} produces ${a.dataType} with an " +
+                      s"intermediate precision of $intermediatePrecision")
+                }
               }
             case _ => // NOOP
           }
@@ -958,8 +991,12 @@ object GpuOverrides extends Logging {
               // GpuDecimalDivide includes the overflow check in it.
               GpuDecimalDivide(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
             case _: Multiply =>
-              // GpuDecimalMultiply includes the overflow check in it.
-              GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
+              // GpuDecimal*Multiply includes the overflow check in it
+              val intermediatePrecision =
+                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
+                  rhsDecimalType, a.dataType)
+              GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType,
+                needsExtraOverflowChecks = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
             case _ =>
               GpuCheckOverflow(childExprs.head.convertToGpu(),
                 wrapped.dataType, wrapped.nullOnOverflow)
@@ -2219,20 +2256,10 @@ object GpuOverrides extends Logging {
       }),
     expr[Sum](
       "Sum aggregate operator",
-      ExprChecksImpl(
-        ExprChecks.fullAgg(
-          TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          Seq(ParamCheck("input", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric))
-        ).asInstanceOf[ExprChecksImpl].contexts
-          ++
-          ExprChecks.windowOnly(
-            TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-            TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-            Seq(ParamCheck("input", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
-              TypeSig.numeric))
-          ).asInstanceOf[ExprChecksImpl].contexts
-      ),
+      ExprChecks.fullAgg(
+        TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        TypeSig.LONG + TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        Seq(ParamCheck("input", TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL, TypeSig.numeric))),
       (a, conf, p, r) => new AggExprMeta[Sum](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
           val inputDataType = a.child.dataType
@@ -2242,8 +2269,13 @@ object GpuOverrides extends Logging {
             case _: DecimalType =>
               val unboundPrecision = a.child.dataType.asInstanceOf[DecimalType].precision + 10
               if (unboundPrecision > DType.DECIMAL128_MAX_PRECISION) {
-                willNotWorkOnGpu("overflow checking on sum would need " +
-                    s"a precision of $unboundPrecision to properly detect overflows.")
+                if (conf.needDecimalGuarantees) {
+                  willNotWorkOnGpu("overflow checking on sum would need " +
+                      s"a precision of $unboundPrecision to properly detect overflows")
+                } else {
+                  logWarning("Decimal overflow guarantees disabled for " +
+                      s"sum(${a.child.dataType}) produces ${a.dataType}")
+                }
               }
             case _ => // NOOP
           }
