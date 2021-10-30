@@ -56,6 +56,18 @@
         <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
         <ac:for list="${included_buildvers}" param="bv">
             <sequential>
+                <java classname="org.codehaus.plexus.classworlds.launcher.Launcher" failonerror="true" fork="true" clonevm="true">
+                    <arg value="dependency:get"/>
+                    <arg value="-s"/>
+                    <arg value="${project.basedir}/../jenkins/settings.xml"/>
+                    <arg value="-B"/>
+                    <arg value="-Ddest=${project.build.directory}/deps"/>
+                    <arg value="-DgroupId=com.nvidia"/>
+                    <arg value="-DartifactId=rapids-4-spark-aggregator_${scala.binary.version}"/>
+                    <arg value="-Dversion=${project.version}"/>
+                    <arg value="-Dpackaging=jar"/>
+                    <arg value="-Dclassifier=spark@{bv}"/>
+                </java>
                 <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
                     dest="${project.build.directory}/parallel-world">
                     <patternset id="shared-world-includes">
