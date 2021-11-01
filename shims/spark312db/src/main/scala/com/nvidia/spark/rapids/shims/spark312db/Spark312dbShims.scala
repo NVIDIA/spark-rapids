@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.shims.spark312db
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
-import com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -27,10 +26,6 @@ import org.apache.spark.sql.internal.SQLConf
 class Spark312dbShims extends SparkBaseShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
 
   override def getParquetFilters(
       schema: MessageType,
