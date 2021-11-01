@@ -15,13 +15,14 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
+from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import ignore_order
 from spark_init_internal import get_spark_i_know_what_i_am_doing
 from spark_session import is_before_spark_320, with_cpu_session
 
 
-def create_dim_table(table_format, length=500):
+def create_dim_table(table_name, table_format, length=500):
     def fn(spark):
         df = gen_df(spark, [
             ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
@@ -32,13 +33,13 @@ def create_dim_table(table_format, length=500):
         df.cache()
         df.write.format(table_format) \
             .mode("overwrite") \
-            .saveAsTable('dim')
+            .saveAsTable(table_name)
         return df.select('filter').first()[0]
 
     return with_cpu_session(fn)
 
 
-def create_fact_table(table_format, length=2000):
+def create_fact_table(table_name, table_format, length=2000):
     def fn(spark):
         df = gen_df(spark, [
             ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
@@ -46,7 +47,7 @@ def create_fact_table(table_format, length=2000):
         df.write.format(table_format) \
             .mode("overwrite") \
             .partitionBy('key') \
-            .saveAsTable('fact')
+            .saveAsTable(table_name)
     with_cpu_session(fn)
 
 
@@ -81,17 +82,18 @@ _dpp_fallback_conf = _aqe_dpp_conf + [
 _statements = [
     '''
     SELECT fact.key, sum(fact.value)
-    FROM fact JOIN dim
+    FROM {0} fact 
+    JOIN {1} dim
     ON fact.key = dim.key
-    WHERE dim.filter = {0} AND fact.value > 0
+    WHERE dim.filter = {2} AND fact.value > 0
     GROUP BY fact.key
     ''',
     '''
     SELECT f.key, sum(f.value)
-    FROM (SELECT *, struct(key) keys FROM fact) f 
-    JOIN (SELECT *, struct(key) keys FROM dim) d
+    FROM (SELECT *, struct(key) keys FROM {0} fact) f 
+    JOIN (SELECT *, struct(key) keys FROM {1} dim) d
     ON f.keys = d.keys
-    WHERE d.filter = {0}
+    WHERE d.filter = {2}
     GROUP BY f.key
     ''',
 ]
@@ -103,11 +105,12 @@ _statements = [
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_aqe_and_dpp_reuse_broadcast_exchange(store_format, s_index):
+def test_aqe_and_dpp_reuse_broadcast_exchange(store_format, s_index, spark_tmp_table_factory):
     try:
-        create_fact_table(store_format)
-        filter_val = create_dim_table(store_format)
-        statement = _statements[s_index].format(filter_val)
+        fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+        create_fact_table(fact_table, store_format)
+        filter_val = create_dim_table(dim_table, store_format)
+        statement = _statements[s_index].format(fact_table, dim_table, filter_val)
         assert_cpu_and_gpu_are_equal_collect_with_capture(
             lambda spark: spark.sql(statement),
             # SubqueryBroadcastExec appears if we reuse broadcast exchange for DPP
@@ -123,19 +126,17 @@ def test_aqe_and_dpp_reuse_broadcast_exchange(store_format, s_index):
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_aqe_and_dpp_bypass(store_format, s_index):
-    try:
-        create_fact_table(store_format)
-        filter_val = create_dim_table(store_format)
-        statement = _statements[s_index].format(filter_val)
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: spark.sql(statement),
-            # Bypass with a true literal, if we can not reuse broadcast exchange.
-            exist_classes='DynamicPruningExpression',
-            non_exist_classes='SubqueryExec,SubqueryBroadcastExec',
-            conf=dict(_bypass_conf))
-    finally:
-        drop_tables()
+def test_aqe_and_dpp_bypass(store_format, s_index, spark_tmp_table_factory):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, store_format)
+    filter_val = create_dim_table(dim_table, store_format)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        # Bypass with a true literal, if we can not reuse broadcast exchange.
+        exist_classes='DynamicPruningExpression',
+        non_exist_classes='SubqueryExec,SubqueryBroadcastExec',
+        conf=dict(_bypass_conf))
 
 
 # When BroadcastExchange is not available, but it is still worthwhile to run DPP,
@@ -145,18 +146,16 @@ def test_aqe_and_dpp_bypass(store_format, s_index):
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_aqe_and_dpp_via_aggregate_subquery(store_format, s_index):
-    try:
-        create_fact_table(store_format)
-        filter_val = create_dim_table(store_format)
-        statement = _statements[s_index].format(filter_val)
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: spark.sql(statement),
-            # SubqueryExec appears if we plan extra subquery for DPP
-            exist_classes='DynamicPruningExpression,SubqueryExec',
-            conf=dict(_no_exchange_reuse_conf))
-    finally:
-        drop_tables()
+def test_aqe_and_dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, store_format)
+    filter_val = create_dim_table(dim_table, store_format)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        # SubqueryExec appears if we plan extra subquery for DPP
+        exist_classes='DynamicPruningExpression,SubqueryExec',
+        conf=dict(_no_exchange_reuse_conf))
 
 
 # When BroadcastExchange is not available, Spark will skip DPP if there is no potential benefit
@@ -164,15 +163,13 @@ def test_aqe_and_dpp_via_aggregate_subquery(store_format, s_index):
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_aqe_and_dpp_skip(store_format, s_index):
-    try:
-        create_fact_table(store_format)
-        filter_val = create_dim_table(store_format)
-        statement = _statements[s_index].format(filter_val)
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: spark.sql(statement),
-            # SubqueryExec appears if we plan extra subquery for DPP
-            non_exist_classes='DynamicPruningExpression',
-            conf=dict(_dpp_fallback_conf))
-    finally:
-        drop_tables()
+def test_aqe_and_dpp_skip(store_format, s_index, spark_tmp_table_factory):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, store_format)
+    filter_val = create_dim_table(dim_table, store_format)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        # SubqueryExec appears if we plan extra subquery for DPP
+        non_exist_classes='DynamicPruningExpression',
+        conf=dict(_dpp_fallback_conf))

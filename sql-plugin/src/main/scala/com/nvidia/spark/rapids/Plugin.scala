@@ -359,20 +359,20 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def containsExpression(exp: Expression, className: String): Boolean = exp.find {
-    case e: ExecSubqueryExpression =>
-      containsPlan(e.plan, className)
-    case e =>
-      PlanUtils.getBaseNameFromClass(e.getClass.getName) == className
+    case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
+    case e: ExecSubqueryExpression => containsPlan(e.plan, className)
+    case _ => false
   }.nonEmpty
 
   private def containsPlan(plan: SparkPlan, className: String): Boolean = plan.find {
+    case p if PlanUtils.sameClass(p, className) =>
+      true
     case p: AdaptiveSparkPlanExec =>
       containsPlan(p.executedPlan, className)
     case p: QueryStageExec =>
       containsPlan(p.plan, className)
     case p =>
-      PlanUtils.sameClass(p, className) ||
-          p.expressions.exists(containsExpression(_, className))
+      p.expressions.exists(containsExpression(_, className))
   }.nonEmpty
 }
 
