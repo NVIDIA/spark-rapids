@@ -28,282 +28,54 @@
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
     <version>21.12.0-SNAPSHOT</version>
+    <dependencies>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
 
     <properties>
         <target.classifier/>
+        <noSnapshot.buildvers>
+            301,
+            302,
+            303,
+            311,
+            311cdh,
+            312,
+            320
+        </noSnapshot.buildvers>
+        <snapshot.buildvers>
+            304,
+            313,
+            321
+        </snapshot.buildvers>
+        <databricks.buildvers>
+            301db,
+            311db
+        </databricks.buildvers>
     </properties>
-
     <profiles>
         <profile>
             <id>noSnapshotsWithDatabricks</id>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>copy-current</id>
-                                <phase>generate-sources</phase>
-                                <goals>
-                                    <!-- TODO may be able to use unpack skipping an extra copy
-                                         but first look into eliminating this rolled out list of artifacts by using
-                                         http://maven.apache.org/ant-tasks/examples/dependencies.html
-                                         in an ant-contrib for loop
-                                    -->
-                                    <goal>copy</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark301</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark302</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark303</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark312</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311cdh</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark320</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                  <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                  <classifier>spark301db</classifier>
-                                  <version>${project.version}</version>
-                                  <type>jar</type>
-                                  <overWrite>false</overWrite>
-                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                  <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                  <classifier>spark311db</classifier>
-                                  <version>${project.version}</version>
-                                  <type>jar</type>
-                                  <overWrite>false</overWrite>
-                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                            <useBaseVersion>true</useBaseVersion>
-                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                            <overWriteReleases>false</overWriteReleases>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-antrun-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <phase>generate-resources</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>create-parallel-world</id>
-                                <configuration>
-                                    <target>
-                                        <property name="project.basedir" value="${project.basedir}"/>
-                                        <property name="project.build.directory" value="${project.build.directory}"/>
-                                        <property name="project.version" value="${project.version}"/>
-                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
-                                        <property name="included_buildvers"
-                                                  value="301,302,303,311,312,320,311cdh,301db,311db"/>
-                                        <ant
-                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                            target="build-parallel-worlds"
-                                        />
-                                    </target>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshot.buildvers},
+                    ${databricks.buildvers}
+                </included_buildvers>
+            </properties>
         </profile>
         <profile>
             <id>noSnapshots</id>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>copy-current</id>
-                                <phase>generate-sources</phase>
-                                <goals>
-                                    <goal>copy</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark301</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark302</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark303</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark312</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311cdh</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark320</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                            <useBaseVersion>true</useBaseVersion>
-                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                            <overWriteReleases>false</overWriteReleases>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-antrun-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <phase>generate-resources</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>create-parallel-world</id>
-                                <configuration>
-                                    <target>
-                                        <property name="project.basedir" value="${project.basedir}"/>
-                                        <property name="project.build.directory" value="${project.build.directory}"/>
-                                        <property name="project.version" value="${project.version}"/>
-                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
-                                        <property name="included_buildvers"
-                                                  value="301,302,303,311,312,320,311cdh"/>
-                                        <ant
-                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                            target="build-parallel-worlds"
-                                        />
-                                    </target>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshot.buildvers}
+                </included_buildvers>
+            </properties>
         </profile>
         <profile>
             <!--
@@ -315,423 +87,41 @@
             Most problems with the shim support occur when we cross into the next
             FEATURE version and when we deal with distributions
 
-            Maintain a representative sample for testing while minimizing the build time
+            Maintain a representative sample one of each:
+                - 3.x upstream versions
+                - a downstream distro
+                - a snapshot
+            for testing while minimizing the build time
+            TODO add 3.3.0-SNAPSHOT
             -->
             <id>minimumFeatureVersionMix</id>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>copy-current</id>
-                                <phase>generate-sources</phase>
-                                <goals>
-                                    <goal>copy</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark302</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311cdh</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark312</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark320</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                            <useBaseVersion>true</useBaseVersion>
-                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                            <overWriteReleases>false</overWriteReleases>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-antrun-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <phase>generate-resources</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>create-parallel-world</id>
-                                <configuration>
-                                    <target>
-                                        <property name="project.basedir" value="${project.basedir}"/>
-                                        <property name="project.build.directory" value="${project.build.directory}"/>
-                                        <property name="project.version" value="${project.version}"/>
-                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
-                                        <property name="included_buildvers"
-                                                  value="302,312,320,311cdh"/>
-                                        <ant
-                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                            target="build-parallel-worlds"
-                                        />
-                                    </target>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <included_buildvers>
+                    302,
+                    312,
+                    320,
+                    311cdh
+                </included_buildvers>
+            </properties>
         </profile>
         <profile>
             <id>snapshots</id>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>copy-current</id>
-                                <phase>generate-sources</phase>
-                                <goals>
-                                    <goal>copy</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark301</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark302</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark303</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark304</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark312</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark313</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311cdh</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark320</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark321</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                            <useBaseVersion>true</useBaseVersion>
-                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                            <overWriteReleases>false</overWriteReleases>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-antrun-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <phase>generate-resources</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>create-parallel-world</id>
-                                <configuration>
-                                    <target>
-                                        <property name="project.basedir" value="${project.basedir}"/>
-                                        <property name="project.build.directory" value="${project.build.directory}"/>
-                                        <property name="project.version" value="${project.version}"/>
-                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
-                                        <property name="included_buildvers"
-                                                  value="301,302,303,311,312,313,320,321,311cdh"/>
-                                        <ant
-                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                            target="build-parallel-worlds"
-                                        />
-                                    </target>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshot.buildvers},
+                    ${snapshot.buildvers}
+                </included_buildvers>
+            </properties>
         </profile>
         <profile>
             <id>snapshotsWithDatabricks</id>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>copy-current</id>
-                                <phase>generate-sources</phase>
-                                <goals>
-                                    <goal>copy</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark301</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark302</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark303</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark304</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark312</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark313</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark311cdh</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark320</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.nvidia</groupId>
-                                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                    <classifier>spark321</classifier>
-                                    <version>${project.version}</version>
-                                    <type>jar</type>
-                                    <overWrite>false</overWrite>
-                                    <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                  <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                  <classifier>spark301db</classifier>
-                                  <version>${project.version}</version>
-                                  <type>jar</type>
-                                  <overWrite>false</overWrite>
-                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                                <artifactItem>
-                                  <groupId>com.nvidia</groupId>
-                                  <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                                  <classifier>spark311db</classifier>
-                                  <version>${project.version}</version>
-                                  <type>jar</type>
-                                  <overWrite>false</overWrite>
-                                  <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                            <useBaseVersion>true</useBaseVersion>
-                            <outputDirectory>${project.build.directory}/deps</outputDirectory>
-                            <overWriteReleases>false</overWriteReleases>
-                        </configuration>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-antrun-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <phase>generate-resources</phase>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <id>create-parallel-world</id>
-                                <configuration>
-                                    <target>
-                                        <property name="project.basedir" value="${project.basedir}"/>
-                                        <property name="project.build.directory" value="${project.build.directory}"/>
-                                        <property name="project.version" value="${project.version}"/>
-                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
-                                        <property name="included_buildvers"
-                                                  value="301,302,303,304,311,312,313,320,321,311cdh,301db,311db"/>
-                                        <ant
-                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                            target="build-parallel-worlds"
-                                        />
-                                    </target>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <included_buildvers>
+                    ${noSnapshot.buildvers},
+                    ${snapshot.buildvers},
+                    ${databricks.buildvers}
+                </included_buildvers>
+            </properties>
         </profile>
         <profile>
             <id>release311cdh</id>
@@ -741,13 +131,10 @@
                     <value>311cdh</value>
                 </property>
             </activation>
+            <properties>
+                <included_buildvers>${buildver}</included_buildvers>
+            </properties>
             <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
@@ -780,26 +167,16 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <!-- phase before create-parallel-worlds -->
+                                <phase>generate-sources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
-                                <id>create-parallel-world</id>
+                                <id>copy-aggregator-from-package-phase-output</id>
                                 <configuration>
                                     <target>
                                         <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
                                               tofile="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"/>
-
-                                        <property name="project.basedir" value="${project.basedir}"/>
-                                        <property name="project.build.directory" value="${project.build.directory}"/>
-                                        <property name="project.version" value="${project.version}"/>
-                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
-                                        <property name="included_buildvers"
-                                                  value="311cdh"/>
-                                        <ant
-                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                            target="build-parallel-worlds"
-                                        />
                                     </target>
                                 </configuration>
                             </execution>
@@ -813,14 +190,9 @@
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.nvidia</groupId>
-                    <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                    <version>${project.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
+            <properties>
+                <included_buildvers>${buildver}</included_buildvers>
+            </properties>
             <build>
                 <plugins>
                     <plugin>
@@ -828,26 +200,16 @@
                         <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
-                                <phase>generate-resources</phase>
+                                <!-- phase before create-parallel-worlds -->
+                                <phase>generate-sources</phase>
                                 <goals>
                                     <goal>run</goal>
                                 </goals>
-                                <id>create-parallel-world</id>
+                                <id>copy-aggregator-from-package-phase-output</id>
                                 <configuration>
                                     <target>
                                         <copy file="../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
                                               tofile="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}-${spark.version.classifier}.jar"/>
-
-                                        <property name="project.basedir" value="${project.basedir}"/>
-                                        <property name="project.build.directory" value="${project.build.directory}"/>
-                                        <property name="project.version" value="${project.version}"/>
-                                        <property name="scala.binary.version" value="${scala.binary.version}"/>
-                                        <property name="included_buildvers"
-                                                  value="${buildver}"/>
-                                        <ant
-                                            antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                            target="build-parallel-worlds"
-                                        />
                                     </target>
                                 </configuration>
                             </execution>
@@ -943,6 +305,26 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <id>create-parallel-world</id>
+                        <configuration>
+                            <target>
+                                <property name="project.basedir" value="${project.basedir}"/>
+                                <property name="project.build.directory" value="${project.build.directory}"/>
+                                <property name="project.version" value="${project.version}"/>
+                                <property name="scala.binary.version" value="${scala.binary.version}"/>
+                                <property name="included_buildvers" value="${included_buildvers}"/>
+                                <ant
+                                    antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
+                                    target="build-parallel-worlds"
+                                />
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>update_config_docs</id>
                         <phase>verify</phase>
                         <goals>
@@ -1017,5 +399,4 @@
             </plugin>
         </plugins>
     </build>
-
 </project>
