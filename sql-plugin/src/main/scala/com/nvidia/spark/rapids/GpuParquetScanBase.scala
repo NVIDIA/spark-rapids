@@ -50,6 +50,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile}
@@ -871,6 +872,28 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     currentChunk
   }
 
+  /**
+   * Take case-sensitive into consideration when getting the data reading column names
+   * before sending parquet-format buffer to cudf.
+   *
+   * @param readDataSchema spark schema to read
+   * @param fileSchema  the schema of the dumped parquet-format buffer
+   * @param isCaseSensitive if it is case sensitive
+   * @return a sequence of column names following the order of readDataSchema
+   */
+  protected def toCudfColumnNames(
+      readDataSchema: StructType,
+      fileSchema: MessageType,
+      isCaseSensitive: Boolean): Seq[String] = {
+    val fields = fileSchema.getFields.asScala.map(_.getName).toSet
+
+    if (!isCaseSensitive) {
+      val m = CaseInsensitiveMap(fields.zip(fields).toMap)
+      readDataSchema.fieldNames.map(m(_))
+    } else {
+      readDataSchema.fieldNames.toSeq
+    }
+  }
 }
 
 // Singleton threadpool that is used across all the tasks.
@@ -1047,10 +1070,12 @@ class MultiFileParquetPartitionReader(
     // Dump parquet data into a file
     dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
 
+    val includeColumn = toCudfColumnNames(readDataSchema, clippedSchema,
+      isSchemaCaseSensitive)
     val parseOpts = ParquetOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
       .enableStrictDecimalType(true)
-      .includeColumn(readDataSchema.fieldNames: _*).build()
+      .includeColumn(includeColumn: _*).build()
 
     // About to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -1304,10 +1329,12 @@ class MultiFileCloudParquetPartitionReader(
       // Dump parquet data into a file
       dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("parquet"))
 
+      val includeColumn = toCudfColumnNames(readDataSchema, clippedSchema,
+        isSchemaCaseSensitive)
       val parseOpts = ParquetOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
         .enableStrictDecimalType(true)
-        .includeColumn(readDataSchema.fieldNames: _*).build()
+        .includeColumn(includeColumn: _*).build()
 
       // about to start using the GPU
       GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -1443,10 +1470,12 @@ class ParquetPartitionReader(
         // Dump parquet data into a file
         dumpDataToFile(dataBuffer, dataSize, Array(split), Option(debugDumpPrefix), Some("parquet"))
 
+        val includeColumn = toCudfColumnNames(readDataSchema, clippedParquetSchema,
+          isSchemaCaseSensitive)
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .enableStrictDecimalType(true)
-          .includeColumn(readDataSchema.fieldNames:_*).build()
+          .includeColumn(includeColumn: _*).build()
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
