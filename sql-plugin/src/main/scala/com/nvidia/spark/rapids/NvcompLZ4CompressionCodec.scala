@@ -16,13 +16,14 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer}
-import ai.rapids.cudf.nvcomp.{BatchedLZ4Compressor, BatchedLZ4Decompressor, CompressionType, Decompressor, LZ4Compressor}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.nvcomp.{BatchedLZ4Compressor, BatchedLZ4Decompressor, CompressionType, LZ4Compressor, LZ4Decompressor}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, CodecType}
 
 /** A table compression codec that uses nvcomp's LZ4-GPU codec */
-class NvcompLZ4CompressionCodec extends TableCompressionCodec with Arm {
+class NvcompLZ4CompressionCodec(codecConfigs: TableCompressionCodecConfig)
+    extends TableCompressionCodec with Arm {
   override val name: String = "nvcomp-LZ4"
   override val codecId: Byte = CodecType.NVCOMP_LZ4
 
@@ -31,7 +32,8 @@ class NvcompLZ4CompressionCodec extends TableCompressionCodec with Arm {
       contigTable: ContiguousTable,
       stream: Cuda.Stream): CompressedTable = {
     val tableBuffer = contigTable.getBuffer
-    val (compressedSize, oversizedBuffer) = NvcompLZ4CompressionCodec.compress(tableBuffer, stream)
+    val (compressedSize, oversizedBuffer) =
+      NvcompLZ4CompressionCodec.compress(tableBuffer, codecConfigs, stream)
     closeOnExcept(oversizedBuffer) { oversizedBuffer =>
       require(compressedSize <= oversizedBuffer.getLength, "compressed buffer overrun")
       val tableMeta = MetaUtils.buildTableMeta(
@@ -61,35 +63,35 @@ class NvcompLZ4CompressionCodec extends TableCompressionCodec with Arm {
   override def createBatchCompressor(
       maxBatchMemoryBytes: Long,
       stream: Cuda.Stream): BatchedTableCompressor = {
-    new BatchedNvcompLZ4Compressor(maxBatchMemoryBytes, stream)
+    new BatchedNvcompLZ4Compressor(maxBatchMemoryBytes, codecConfigs, stream)
   }
 
   override def createBatchDecompressor(
       maxBatchMemoryBytes: Long,
       stream: Cuda.Stream): BatchedBufferDecompressor = {
-    new BatchedNvcompLZ4Decompressor(maxBatchMemoryBytes, stream)
+    new BatchedNvcompLZ4Decompressor(maxBatchMemoryBytes, codecConfigs, stream)
   }
 }
 
 object NvcompLZ4CompressionCodec extends Arm {
-  // TODO: Make this a config?
-  val LZ4_CHUNK_SIZE: Int = 64 * 1024
-
   /**
    * Compress a data buffer.
    * @param input buffer containing data to compress
+   * @param codecConfigs codec specific configuration options
    * @param stream CUDA stream to use
    * @return the size of the compressed data in bytes and the (probably oversized) output buffer
    */
-  def compress(input: DeviceMemoryBuffer, stream: Cuda.Stream): (Long, DeviceMemoryBuffer) = {
-    val tempSize = LZ4Compressor.getTempSize(input, CompressionType.CHAR, LZ4_CHUNK_SIZE)
-    withResource(DeviceMemoryBuffer.allocate(tempSize)) { tempBuffer =>
+  def compress(
+      input: DeviceMemoryBuffer,
+      codecConfigs: TableCompressionCodecConfig,
+      stream: Cuda.Stream): (Long, DeviceMemoryBuffer) = {
+    val lz4Config = LZ4Compressor.configure(codecConfigs.lz4ChunkSize, input.getLength())
+    withResource(DeviceMemoryBuffer.allocate(lz4Config.getTempBytes)) { tempBuffer =>
       var compressedSize: Long = 0L
-      val outputSize = LZ4Compressor.getOutputSize(input, CompressionType.CHAR, LZ4_CHUNK_SIZE,
-        tempBuffer)
+      val outputSize = lz4Config.getMaxCompressedBytes
       closeOnExcept(DeviceMemoryBuffer.allocate(outputSize)) { outputBuffer =>
-        compressedSize = LZ4Compressor.compress(input, CompressionType.CHAR, LZ4_CHUNK_SIZE,
-          tempBuffer, outputBuffer, stream)
+        compressedSize = LZ4Compressor.compress(input, CompressionType.CHAR,
+          codecConfigs.lz4ChunkSize, tempBuffer, outputBuffer, stream)
         require(compressedSize <= outputBuffer.getLength, "compressed buffer overrun")
         (compressedSize, outputBuffer)
       }
@@ -106,55 +108,57 @@ object NvcompLZ4CompressionCodec extends Arm {
       outputBuffer: DeviceMemoryBuffer,
       inputBuffer: DeviceMemoryBuffer,
       stream: Cuda.Stream): Unit = {
-    withResource(Decompressor.getMetadata(inputBuffer, stream)) { metadata =>
-      val outputSize = Decompressor.getOutputSize(metadata)
+    withResource(LZ4Decompressor.configure(inputBuffer, stream)) { decompressConf =>
+      val outputSize = decompressConf.getUncompressedBytes()
       if (outputSize != outputBuffer.getLength) {
         throw new IllegalStateException(
           s"metadata uncompressed size is $outputSize, buffer size is ${outputBuffer.getLength}")
       }
-      val tempSize = Decompressor.getTempSize(metadata)
+      val tempSize = decompressConf.getTempBytes()
       withResource(DeviceMemoryBuffer.allocate(tempSize)) { tempBuffer =>
-        Decompressor.decompressAsync(inputBuffer, tempBuffer, metadata, outputBuffer, stream)
+        LZ4Decompressor.decompressAsync(inputBuffer, decompressConf, tempBuffer, outputBuffer,
+          stream)
       }
     }
   }
 }
 
-class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
+class BatchedNvcompLZ4Compressor(maxBatchMemorySize: Long,
+    codecConfigs: TableCompressionCodecConfig, stream: Cuda.Stream)
     extends BatchedTableCompressor(maxBatchMemorySize, stream) {
   override protected def compress(
       tables: Array[ContiguousTable],
       stream: Cuda.Stream): Array[CompressedTable] = {
-    val inputBuffers: Array[BaseDeviceMemoryBuffer] = tables.map(_.getBuffer)
-    val compressionResult = BatchedLZ4Compressor.compress(inputBuffers,
-      NvcompLZ4CompressionCodec.LZ4_CHUNK_SIZE, stream)
-    val compressedTables = try {
-      val buffers = compressionResult.getCompressedBuffers
-      val compressedSizes = compressionResult.getCompressedSizes
-      buffers.zipWithIndex.map { case (buffer, i) =>
-        val contigTable = tables(i)
-        val compressedSize = compressedSizes(i)
-        require(compressedSize <= buffer.getLength, "compressed buffer overrun")
-        val meta = MetaUtils.buildTableMeta(
-          None,
-          contigTable,
-          CodecType.NVCOMP_LZ4,
-          compressedSize)
-        CompressedTable(compressedSize, meta, buffer)
-      }
-    } catch {
-      case t: Throwable =>
-        compressionResult.getCompressedBuffers.safeClose()
-        throw t
+    val batchCompressor = new BatchedLZ4Compressor(codecConfigs.lz4ChunkSize,
+      maxBatchMemorySize)
+    val inputBuffers: Array[BaseDeviceMemoryBuffer] = tables.map { table =>
+      val buffer = table.getBuffer
+      // cudf compressor guarantees that close will be called for 'inputBuffers' and will not throw
+      // before doing so, but this interface does not close inputs so we need to increment the ref
+      // count.
+      buffer.incRefCount()
+      buffer
     }
-
-    // output buffer sizes were estimated and probably significantly oversized, so copy any
-    // oversized buffers to properly sized buffers in order to release the excess memory.
-    resizeOversizedOutputs(compressedTables)
+    closeOnExcept(batchCompressor.compress(inputBuffers, stream)) { compressedBuffers =>
+      withResource(new NvtxRange("lz4 post process", NvtxColor.YELLOW)) { _ =>
+        require(compressedBuffers.length == tables.length,
+          s"expected ${tables.length} buffers, but compress() returned ${compressedBuffers.length}")
+        compressedBuffers.zip(tables).map { case (buffer, table) =>
+          val compressedSize = buffer.getLength
+          val meta = MetaUtils.buildTableMeta(
+            None,
+            table,
+            CodecType.NVCOMP_LZ4,
+            compressedSize)
+          CompressedTable(compressedSize, meta, buffer)
+        }.toArray
+      }
+    }
   }
 }
 
-class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long, stream: Cuda.Stream)
+class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long,
+    codecConfigs: TableCompressionCodecConfig, stream: Cuda.Stream)
     extends BatchedBufferDecompressor(maxBatchMemory, stream) {
   override val codecId: Byte = CodecType.NVCOMP_LZ4
 
@@ -162,6 +166,29 @@ class BatchedNvcompLZ4Decompressor(maxBatchMemory: Long, stream: Cuda.Stream)
       inputBuffers: Array[BaseDeviceMemoryBuffer],
       bufferMetas: Array[BufferMeta],
       stream: Cuda.Stream): Array[DeviceMemoryBuffer] = {
-    BatchedLZ4Decompressor.decompressAsync(inputBuffers, stream)
+    require(inputBuffers.length == bufferMetas.length,
+      s"number of input buffers (${inputBuffers.length}) does not equal number of metadata " +
+          s"buffers (${bufferMetas.length}")
+    val outputBuffers = allocateOutputBuffers(inputBuffers, bufferMetas)
+    BatchedLZ4Decompressor.decompressAsync(
+      codecConfigs.lz4ChunkSize,
+      inputBuffers,
+      outputBuffers.asInstanceOf[Array[BaseDeviceMemoryBuffer]],
+      stream)
+    outputBuffers
+  }
+
+  private def allocateOutputBuffers(
+      inputBuffers: Array[BaseDeviceMemoryBuffer],
+      bufferMetas: Array[BufferMeta]): Array[DeviceMemoryBuffer] = {
+    withResource(new NvtxRange("alloc output bufs", NvtxColor.YELLOW)) { _ =>
+      bufferMetas.zip(inputBuffers).safeMap { case (meta, input) =>
+        // cudf decompressor guarantees that close will be called for 'inputBuffers' and will not
+        // throw before doing so, but this interface does not close inputs so we need to increment
+        // the ref count.
+        input.incRefCount()
+        DeviceMemoryBuffer.allocate(meta.uncompressedSize())
+      }
+    }
   }
 }

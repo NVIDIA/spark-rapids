@@ -34,7 +34,10 @@ $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-udf-examples_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER
+
+# TODO remove -Dtransitive=false workaround once pom is fixed
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
+    -Dtransitive=false \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM
 if [ "$CUDA_CLASSIFIER"x == x ];then
     CUDF_JAR="$ARTF_ROOT/cudf-$CUDF_VER.jar"
@@ -45,12 +48,54 @@ export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT
 RAPIDS_UDF_JAR="$ARTF_ROOT/rapids-4-spark-udf-examples_${SCALA_BINARY_VER}-$PROJECT_TEST_VER.jar"
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
+# TODO remove -Dtransitive=false workaround once pom is fixed
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
+    -Dtransitive=false \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=pytest -Dpackaging=tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
 # The version of pytest.tar.gz that is uploaded is the one built against spark301 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
+
+tmp_info=${TMP_INFO_FILE:-'/tmp/artifacts-build.info'}
+rm -rf "$tmp_info"
+TEE_CMD="tee -a $tmp_info"
+GREP_CMD="grep revision"
+AWK_CMD=(awk -F'=' '{print $2}')
+getRevision() {
+  local file=$1
+  local properties=$2
+  local revision
+  if [[ $file == *.jar || $file == *.zip ]]; then
+    revision=$(unzip -p "$file" "$properties" | $TEE_CMD | $GREP_CMD | "${AWK_CMD[@]}" || true)
+  elif [[ $file == *.tgz || $file == *.tar.gz ]]; then
+    revision=$(tar -xzf "$file" --to-command=cat "$properties" | $TEE_CMD | $GREP_CMD | "${AWK_CMD[@]}" || true)
+  fi
+  echo "$revision"
+}
+
+set +x
+echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
+echo "-------------------- cudf JNI BUILD INFO --------------------" >> "$tmp_info"
+c_ver=$(getRevision $JARS_PATH/$CUDF_JAR cudf-java-version-info.properties)
+echo "-------------------- rapids-4-spark BUILD INFO --------------------" >> "$tmp_info"
+p_ver=$(getRevision $JARS_PATH/$RAPIDS_PLUGIN_JAR rapids4spark-version-info.properties)
+echo "-------------------- rapids-4-spark-integration-tests BUILD INFO --------------------" >> "$tmp_info"
+it_ver=$(getRevision $JARS_PATH/$RAPIDS_TEST_JAR rapids4spark-version-info.properties)
+echo "-------------------- rapids-4-spark-integration-tests pytest BUILD INFO --------------------" >> "$tmp_info"
+pt_ver=$(getRevision $JARS_PATH/$RAPIDS_INT_TESTS_TGZ integration_tests/rapids4spark-version-info.properties)
+echo "-------------------- rapids-4-spark-udf-examples BUILD INFO --------------------" >> "$tmp_info"
+u_ver=$(getRevision $JARS_PATH/$RAPIDS_UDF_JAR rapids4spark-version-info.properties)
+echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> "$tmp_info"
+set -x
+cat "$tmp_info" || true
+
+if [[ -z "$c_ver" || -z "$p_ver"|| \
+      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver" || "$p_ver" != "$u_ver"  ]]; then
+  echo "Artifacts versions are inconsistent!"
+  exit 1
+fi
+
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
 $MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
@@ -150,6 +195,7 @@ run_test() {
           sed -n -e '/test session starts/,/deselected,/ p' "$LOG_FILE" || true
         else
           cat "$LOG_FILE" || true
+          cat /tmp/artifacts-build.info || true
         fi
         return $CODE
         ;;

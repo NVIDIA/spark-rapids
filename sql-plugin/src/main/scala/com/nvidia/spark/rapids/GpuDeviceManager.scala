@@ -290,19 +290,9 @@ object GpuDeviceManager extends Logging {
         logInfo("Using legacy default stream")
       }
 
-      val (allocationAlignment, alignmentThreshold) =
-        if (conf.isGdsSpillEnabled && conf.isGdsSpillAlignedIO) {
-          logInfo(s"Using allocation alignment = ${toKB(RapidsGdsStore.AllocationAlignment)} KB, " +
-              s"alignment threshold = ${toKB(conf.gdsSpillAlignmentThreshold)} KB")
-          (RapidsGdsStore.AllocationAlignment, conf.gdsSpillAlignmentThreshold)
-        } else {
-          (0L, 0L)
-        }
-
       try {
         Cuda.setDevice(gpuId)
-        Rmm.initialize(
-          init, logConf, initialAllocation, maxAllocation, allocationAlignment, alignmentThreshold)
+        Rmm.initialize(init, logConf, initialAllocation, maxAllocation)
         RapidsBufferCatalog.init(conf)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)

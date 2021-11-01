@@ -36,6 +36,7 @@ class AnalysisSuite extends FunSuite {
 
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
+  private val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
 
   test("test sqlMetricsAggregation simple") {
     testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog.zstd"),
@@ -76,8 +77,8 @@ class AnalysisSuite extends FunSuite {
     ToolTestUtils.compareDataFrames(actualDfJS, dfExpectJS)
   }
 
-  test("test sqlMetrics duration and execute cpu time") {
-    val logs = Array(s"$logDir/rp_sql_eventlog.zstd")
+  test("test sqlMetrics duration, execute cpu time and potential_problems") {
+    val logs = Array(s"$qualLogDir/complex_dec_eventlog.zstd")
     val expectFile = "rapids_duration_and_cpu_expectation.csv"
 
     val apps = ToolTestUtils.processProfileApps(logs, sparkSession)

@@ -29,6 +29,8 @@ import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringT
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuPartitioningSuite extends FunSuite with Arm {
+  var rapidsConf = new RapidsConf(Map[String, String]())
+
   private def buildBatch(): ColumnarBatch = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)
@@ -55,7 +57,8 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     } else if (GpuCompressedColumnVector.isBatchCompressed(batch)) {
       val compressedColumn = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
       val descr = compressedColumn.getTableMeta.bufferMeta.codecBufferDescrs(0)
-      val codec = TableCompressionCodec.getCodec(descr.codec)
+      val codec = TableCompressionCodec.getCodec(
+        descr.codec, TableCompressionCodec.makeCodecConfig(rapidsConf))
       withResource(codec.createBatchDecompressor(100 * 1024 * 1024L,
         Cuda.DEFAULT_STREAM)) { decompressor =>
         compressedColumn.getTableBuffer.incRefCount()

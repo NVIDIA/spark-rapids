@@ -582,7 +582,48 @@
                                         <source>${project.basedir}/src/main/301+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320/scala</source>
+                                        <source>${project.basedir}/src/main/320+/scala</source>
+                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+            <modules>
+                <module>aggregator</module>
+                <module>tests-spark310+</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>release321</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>321</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version>${spark321.version}</spark.version>
+                <spark.test.version>${spark321.version}</spark.test.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>add-profile-src-31+</id>
+                                <goals><goal>add-source</goal></goals>
+                                <phase>generate-sources</phase>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/main/301+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311+-all/scala</source>
+                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -734,6 +775,7 @@
         <spark312db.version>3.1.2-databricks</spark312db.version>
         <spark313.version>3.1.3-SNAPSHOT</spark313.version>
         <spark320.version>3.2.0</spark320.version>
+        <spark321.version>3.2.1-SNAPSHOT</spark321.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
@@ -913,7 +955,7 @@
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
-                  <version>1.8</version>
+                  <version>3.0.0</version>
                   <executions>
                     <execution>
                         <id>generate-build-info</id>
@@ -935,11 +977,23 @@
                         </goals>
                     </execution>
                   </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.ant</groupId>
+                        <artifactId>ant</artifactId>
+                        <version>1.10.12</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>ant-contrib</groupId>
+                        <artifactId>ant-contrib</artifactId>
+                        <version>1.0b3</version>
+                    </dependency>
+                </dependencies>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-shade-plugin</artifactId>
-                  <version>3.2.1</version>
+                  <version>3.2.4</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -1103,12 +1157,12 @@
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
                         <exclude>**/src/test/resources/**</exclude>
                         <exclude>rmm_log.txt</exclude>
-                        <exclude>dependency-reduced-pom.xml</exclude>
+                        <exclude>dependency-reduced-pom*.xml</exclude>
                         <exclude>**/.*/**</exclude>
                         <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>**/*.csv</exclude>
                         <exclude>dist/*.txt</exclude>
-                        <exclude>dist/com.nvidia.spark.rapids.SparkShimServiceProvider.*</exclude>
+                        <exclude>**/META-INF/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
