@@ -16,15 +16,16 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.File
+
 import com.nvidia.spark.rapids.TestUtils.{findOperator, getFinalPlan}
-import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
-class HashSortOptimizeSuite extends FunSuite {
+class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir {
   private def buildDataFrame1(spark: SparkSession): DataFrame = {
     import spark.sqlContext.implicits._
     Seq(
@@ -63,7 +64,7 @@ class HashSortOptimizeSuite extends FunSuite {
     assertResult(joinNode) { sortChild }
   }
 
-  test("sort inserted after broadcast hash join") {
+  test("should not insert sort after broadcast hash join") {
     SparkSessionHolder.withSparkSession(sparkConf, { spark =>
       val df1 = buildDataFrame1(spark)
       val df2 = buildDataFrame2(spark)
@@ -71,14 +72,15 @@ class HashSortOptimizeSuite extends FunSuite {
       val plan = rdf.queryExecution.executedPlan
       // execute the plan so that the final adaptive plan is available when AQE is on
       rdf.collect()
-
       val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
-      validateOptimizeSort(plan, joinNode.get)
+      // should not have sort, because of not have GpuDataWritingCommandExec
+      val sortNode = plan.find(_.isInstanceOf[GpuSortExec])
+      assert(sortNode.isEmpty)
     })
   }
 
-  test("sort inserted after shuffled hash join") {
+  test("should not insert sort after shuffled hash join") {
     val conf = sparkConf.clone().set("spark.sql.autoBroadcastJoinThreshold", "0")
     SparkSessionHolder.withSparkSession(conf, { spark =>
       val df1 = buildDataFrame1(spark)
@@ -89,7 +91,9 @@ class HashSortOptimizeSuite extends FunSuite {
       rdf.collect()
       val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
-      validateOptimizeSort(plan, joinNode.get)
+      // should not have sort, because of not have GpuDataWritingCommandExec
+      val sortNode = plan.find(_.isInstanceOf[GpuSortExec])
+      assert(sortNode.isEmpty)
     })
   }
 
@@ -128,5 +132,66 @@ class HashSortOptimizeSuite extends FunSuite {
         }
       }
     })
+  }
+
+  test("should insert sort for GpuDataWritingCommandExec") {
+    val conf = sparkConf.clone()
+
+    withGpuSparkSession(spark => {
+      buildDataFrame1(spark).createOrReplaceTempView("t1")
+      val parquetTableName = "t3"
+      createParquetTable(spark, parquetTableName)
+
+      val df = spark.sql(s"INSERT INTO TABLE $parquetTableName SELECT a FROM t1 group by a")
+      df.collect()
+
+      // write should be on GPU
+      val sortExec = TestUtils.findOperator(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuSortExec])
+      assert(sortExec.isDefined)
+    }, conf)
+  }
+
+  test("should not insert sort because of without GpuDataWritingCommandExec") {
+    val conf = sparkConf.clone()
+    withGpuSparkSession(spark => {
+      buildDataFrame1(spark).createOrReplaceTempView("t1")
+      val df = spark.sql("select a+1, count(*) from " +
+        "(SELECT a FROM t1 group by a) t " +
+        "group by a+1")
+      df.collect()
+
+      val sortExec = TestUtils.findOperator(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuSortExec])
+      assert(sortExec.isEmpty)
+    }, conf)
+  }
+
+  test("should insert sort node for GpuDataWritingCommandExec") {
+    val conf = sparkConf.clone()
+
+    withGpuSparkSession(spark => {
+      buildDataFrame1(spark).createOrReplaceTempView("t1")
+      buildDataFrame2(spark).createOrReplaceTempView("t2")
+
+      val parquetTableName = "t3"
+      createParquetTable(spark, parquetTableName)
+
+      val df = spark.sql(s"INSERT INTO TABLE $parquetTableName " +
+        s"SELECT a FROM t1 join t2 on t1.a = t2.x")
+      df.collect()
+
+      val plan = df.queryExecution.executedPlan
+      val sortExec = TestUtils.findOperator(plan, _.isInstanceOf[GpuSortExec])
+      assert(sortExec.isDefined)
+
+      val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
+      validateOptimizeSort(plan, joinNode.get)
+    }, conf)
+  }
+
+  def createParquetTable(spark: SparkSession, parquetTableName:String): Unit = {
+    spark.sql(s"CREATE TABLE IF NOT EXISTS $parquetTableName (a INT) USING parquet")
+      .collect()
   }
 }
