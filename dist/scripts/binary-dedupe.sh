@@ -110,10 +110,13 @@ function retain_single_copy() {
   done >> "$DELETE_DUPLICATES_TXT" || exit 255
 }
 
+# this belongs into maven initialize phase, left in here for easier
+# standalone debugging
 # truncate incremental files
 : > "$DELETE_DUPLICATES_TXT"
 rm -f from-spark3*-to-spark3xx-common.txt
 rm -rf "$SPARK3XX_COMMON_DIR"
+mkdir -p "$SPARK3XX_COMMON_DIR"
 
 echo "$((++STEP))/ retaining a single copy of spark3xx-common classes"
 time (
@@ -188,7 +191,7 @@ function verify_same_sha_for_unshimmed() {
   if [[ ! "$class_file_quoted" =~ (com/nvidia/spark/rapids/spark3.*/.*ShuffleManager.class|org/apache/spark/sql/rapids/shims/spark3.*/ProxyRapidsShuffleInternalManager.class) ]]; then
 
     if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK3XX_COMMON_TXT"; then
-      echo >&2 "$classFile is not bitwise-identical across shims"
+      echo >&2 "$class_file is not bitwise-identical across shims"
       exit 255
     fi
   fi
