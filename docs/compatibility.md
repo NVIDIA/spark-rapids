@@ -580,20 +580,6 @@ do your own testing to verify whether the GPU implementation of `RLike` is suita
 We plan on improving the RLike functionality over time to make it more compatible with Spark so this feature should
 be used at your own risk with the expectation that the behavior will change in future releases.
 
-### Multi-line handling
-
-The GPU implementation of RLike supports `^` and `$` to represent the start and end of lines within a string but
-Spark uses `^` and `$` to refer to the start and end of the entire string (equivalent to `\A` and `\Z`).
-
-| Pattern | Input  | Spark on CPU | Spark on GPU |
-|---------|--------|--------------|--------------|
-| `^A`    | `A\nB` | Match        | Match        |
-| `A$`    | `A\nB` | No Match     | Match        |
-| `^B`    | `A\nB` | No Match     | Match        |
-| `B$`    | `A\nB` | Match        | Match        |
-
-As a workaround, `\A` and `\Z` can be used instead of `^` and `$`.
-
 ### Null character in input
 
 The GPU implementation of RLike will not match anything after a null character within a string.

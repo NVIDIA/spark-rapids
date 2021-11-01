@@ -468,7 +468,6 @@ def test_rlike_escape():
                 'a rlike "a[\\\\-]"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF supports multiline by default but Spark does not - https://github.com/rapidsai/cudf/issues/9439')
 def test_rlike_multi_line():
     gen = mk_str_gen('[abc]\n[def]')
     assert_gpu_and_cpu_are_equal_collect(
