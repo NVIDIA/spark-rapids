@@ -40,9 +40,9 @@ object AdaptiveQueryExecSuite {
 
 class AdaptiveQueryExecSuite
     extends SparkQueryCompareTestSuite
-        with AdaptiveSparkPlanHelper
-        with BeforeAndAfterEach
-        with Logging {
+    with AdaptiveSparkPlanHelper
+    with BeforeAndAfterEach
+    with Logging {
 
   override def beforeEach(): Unit = {
     TEST_FILES_ROOT.mkdirs()
@@ -113,8 +113,8 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
       val shuffleExchanges =
-        PlanUtils.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
-            .map(_.asInstanceOf[ShuffleQueryStageExec])
+          PlanUtils.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+              .map(_.asInstanceOf[ShuffleQueryStageExec])
       assert(shuffleExchanges.length === 2)
       val stats = shuffleExchanges.map(_.getRuntimeStatistics)
       assert(stats.forall(_.rowCount.contains(1000)))
@@ -253,7 +253,7 @@ class AdaptiveQueryExecSuite
       // the read should be an adaptive plan
       val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
         _.isInstanceOf[AdaptiveSparkPlanExec])
-          .get.asInstanceOf[AdaptiveSparkPlanExec]
+        .get.asInstanceOf[AdaptiveSparkPlanExec]
 
       // assert that at least part of the adaptive plan ran on GPU
       assert(TestUtils.findOperator(adaptiveSparkPlanExec, _.isInstanceOf[GpuExec]).isDefined)
@@ -263,44 +263,44 @@ class AdaptiveQueryExecSuite
   test("Plugin should translate child plan of CPU DataWritingCommandExec to GPU") {
 
     val conf = new SparkConf()
-        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
-        // force DataWritingCommandExec onto CPU for this test because we want to verify that
-        // the read will still happen on GPU with a CPU write
-        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
-        .set("spark.rapids.sql.exec.DataWritingCommandExec", "false")
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+      // force DataWritingCommandExec onto CPU for this test because we want to verify that
+      // the read will still happen on GPU with a CPU write
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "DataWritingCommandExec")
+      .set("spark.rapids.sql.exec.DataWritingCommandExec", "false")
 
-    withGpuSparkSession(spark => {
-      import spark.implicits._
+      withGpuSparkSession(spark => {
+        import spark.implicits._
 
-      // read from a parquet file so we can test reading on GPU
-      val path = new File(TEST_FILES_ROOT, "DataWritingCommandExecCPU.parquet").getAbsolutePath
-      (0 until 100).toDF("a")
-          .write
-          .mode(SaveMode.Overwrite)
-          .parquet(path)
+        // read from a parquet file so we can test reading on GPU
+        val path = new File(TEST_FILES_ROOT, "DataWritingCommandExecCPU.parquet").getAbsolutePath
+        (0 until 100).toDF("a")
+            .write
+            .mode(SaveMode.Overwrite)
+            .parquet(path)
 
-      spark.read.parquet(path).createOrReplaceTempView("testData")
+        spark.read.parquet(path).createOrReplaceTempView("testData")
 
-      spark.sql("CREATE TABLE IF NOT EXISTS DataWritingCommandExecCPU (a INT) USING parquet")
-          .collect()
+        spark.sql("CREATE TABLE IF NOT EXISTS DataWritingCommandExecCPU (a INT) USING parquet")
+            .collect()
 
-      val df = spark.sql("INSERT INTO TABLE DataWritingCommandExecCPU SELECT * FROM testData")
-      df.collect()
+        val df = spark.sql("INSERT INTO TABLE DataWritingCommandExecCPU SELECT * FROM testData")
+        df.collect()
 
-      // write should be on CPU
-      val writeCommand = TestUtils.findOperator(df.queryExecution.executedPlan,
-        _.isInstanceOf[DataWritingCommandExec])
-      assert(writeCommand.isDefined)
+        // write should be on CPU
+        val writeCommand = TestUtils.findOperator(df.queryExecution.executedPlan,
+          _.isInstanceOf[DataWritingCommandExec])
+        assert(writeCommand.isDefined)
 
-      // the read should be an adaptive plan
-      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
-        _.isInstanceOf[AdaptiveSparkPlanExec])
-          .get.asInstanceOf[AdaptiveSparkPlanExec]
+        // the read should be an adaptive plan
+        val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+          _.isInstanceOf[AdaptiveSparkPlanExec])
+            .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      // even though the write couldn't run on GPU, the read should have done
-      assert(TestUtils.findOperator(adaptiveSparkPlanExec.executedPlan,
-        _.isInstanceOf[GpuExec]).isDefined)
+        // even though the write couldn't run on GPU, the read should have done
+        assert(TestUtils.findOperator(adaptiveSparkPlanExec.executedPlan,
+          _.isInstanceOf[GpuExec]).isDefined)
 
     }, conf)
   }
@@ -432,14 +432,14 @@ class AdaptiveQueryExecSuite
     assumeSpark301orLater
 
     val conf = new SparkConf()
-        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-        .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
-        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
-        .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
-        // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
-        .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
-        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
-        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
+      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
+      .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
+      // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
+      .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
+      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
@@ -464,21 +464,21 @@ class AdaptiveQueryExecSuite
     assumeSpark301orLater
 
     val conf = new SparkConf()
-        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
-        .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
-        // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
-        .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
-        .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
-        .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
-        .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-          "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
+      .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
+      // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
+      .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
+      .set(SQLConf.SHUFFLE_PARTITIONS.key, "5")
+      .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
 
     withGpuSparkSession(spark => {
       setupTestData(spark)
 
       val (plan, adaptivePlan) = runAdaptiveAndVerifyResult(spark, "SELECT * FROM testData join " +
-          "testData2 ON key = a where value = '1'")
+        "testData2 ON key = a where value = '1'")
 
       val smj = findTopLevelSortMergeJoin(plan)
       assert(smj.size == 1)
@@ -563,8 +563,8 @@ class AdaptiveQueryExecSuite
   }
 
   private def checkNumLocalShuffleReaders(
-      plan: SparkPlan,
-      numShufflesWithoutLocalReader: Int = 0): Int = {
+    plan: SparkPlan,
+    numShufflesWithoutLocalReader: Int = 0): Int = {
     val numShuffles = collect(plan) {
       case s: ShuffleQueryStageExec => s
     }.length
@@ -585,12 +585,12 @@ class AdaptiveQueryExecSuite
     assumeSpark301orLater
 
     val conf = new SparkConf()
-        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
-        .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
-        .set(SQLConf.COALESCE_PARTITIONS_MIN_PARTITION_NUM.key, "1")
-        .set(SQLConf.SHUFFLE_PARTITIONS.key, "100")
-        .set(SQLConf.SKEW_JOIN_SKEWED_PARTITION_THRESHOLD.key, "800")
-        .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "800")
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
+      .set(SQLConf.COALESCE_PARTITIONS_MIN_PARTITION_NUM.key, "1")
+      .set(SQLConf.SHUFFLE_PARTITIONS.key, "100")
+      .set(SQLConf.SKEW_JOIN_SKEWED_PARTITION_THRESHOLD.key, "800")
+      .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "800")
 
     withGpuSparkSession(spark => {
       import spark.implicits._
@@ -661,8 +661,8 @@ class AdaptiveQueryExecSuite
   private def testData2(spark: SparkSession) {
     import spark.implicits._
     val df = Seq[(Int, Int)]((1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (3, 2))
-        .toDF("a", "b")
-        .repartition(col("a"))
+      .toDF("a", "b")
+      .repartition(col("a"))
     registerAsParquetTable(spark, df, "testData2")
   }
 
@@ -670,7 +670,7 @@ class AdaptiveQueryExecSuite
   private def testData3(spark: SparkSession) {
     import spark.implicits._
     val df = Seq[(Int, Option[Int])]((1, None), (2, Some(2)))
-        .toDF("a", "b")
+      .toDF("a", "b")
         .repartition(col("a"))
     registerAsParquetTable(spark, df, "testData3")
   }
@@ -699,8 +699,8 @@ class AdaptiveQueryExecSuite
     // AQE is enabled`
     val data: Seq[(Int, String)] = (0 to 10000).map(i => (i, if (i<5) i.toString else "z"))
     val df = data
-        .toDF("n", "l")
-        .repartition(col("n"))
+      .toDF("n", "l")
+      .repartition(col("n"))
     registerAsParquetTable(spark, df, "lowercaseData")
   }
 
