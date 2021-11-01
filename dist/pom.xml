@@ -51,7 +51,8 @@
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             304,
-            313
+            313,
+            321
         </snapshot.buildvers>
         <databricks.buildvers>
             301db,
