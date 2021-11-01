@@ -48,14 +48,35 @@
     <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
 
     <target name="build-parallel-worlds">
-        <echo>Preparing parallel worlds with params: included_buildvers=${included_buildvers}</echo>
+        <echo level="info">Preparing parallel worlds with params: included_buildvers=${included_buildvers}</echo>
         <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
         <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
         <property name="aggregatorPrefix"
             value="${project.build.directory}/deps/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}"/>
         <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
-        <ac:for list="${included_buildvers}" param="bv">
+        <ac:for list="${included_buildvers}" param="bv" trim="true">
             <sequential>
+                <!-- WORKAROUND: in-JVM invocation of resolver ant tasks http://maven.apache.org/resolver-ant-tasks/
+                     fails due to side-stepping Maven classloading isolation, hence, using child Maven processes.
+
+                     Using intransitive dependency:get instead of dependency:copy for structured artifact input
+                     instead of concatenated string
+                -->
+                <echo level="info">dependency:get spark@{bv} aggregator</echo>
+                <exec executable="${maven.home}/bin/mvn" failonerror="true" logError="true"
+                      output="${project.build.directory}/copy-aggregators.log">
+                    <arg value="dependency:get"/>
+                    <arg value="-s"/>
+                    <arg value="${project.basedir}/../jenkins/settings.xml"/>
+                    <arg value="-B"/>
+                    <arg value="-Ddest=${project.build.directory}/deps"/>
+                    <arg value="-DgroupId=com.nvidia"/>
+                    <arg value="-DartifactId=rapids-4-spark-aggregator_${scala.binary.version}"/>
+                    <arg value="-Dversion=${project.version}"/>
+                    <arg value="-Dpackaging=jar"/>
+                    <arg value="-Dclassifier=spark@{bv}"/>
+                    <arg value="-Dtransitive=false"/>
+                </exec>
                 <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
                     dest="${project.build.directory}/parallel-world">
                     <patternset id="shared-world-includes">
