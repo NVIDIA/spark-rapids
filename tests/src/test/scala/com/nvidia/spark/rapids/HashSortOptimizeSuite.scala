@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
-
 import com.nvidia.spark.rapids.TestUtils.{findOperator, getFinalPlan}
 
 import org.apache.spark.SparkConf
@@ -54,14 +52,15 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
    **/
   private def validateOptimizeSort(queryPlan: SparkPlan, joinNode: SparkPlan): Unit = {
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(queryPlan))
-    val sortNode = executedPlan.find(_.isInstanceOf[GpuSortExec])
+    val sortNode = findOperator(executedPlan, _.isInstanceOf[GpuSortExec])
     assert(sortNode.isDefined, "No sort node found")
     val gse = sortNode.get.asInstanceOf[GpuSortExec]
     assert(gse.children.length == 1)
-    assert(gse.global == false)
+    assert(!gse.global)
     assert(gse.sortType == SortEachBatch)
     val sortChild = gse.children.head
-    assertResult(joinNode) { sortChild }
+    val proj = sortChild.asInstanceOf[GpuProjectExec]
+    assertResult(joinNode) { proj.child }
   }
 
   test("should not insert sort after broadcast hash join") {
@@ -75,7 +74,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       // should not have sort, because of not have GpuDataWritingCommandExec
-      val sortNode = plan.find(_.isInstanceOf[GpuSortExec])
+      val sortNode = findOperator(plan, _.isInstanceOf[GpuSortExec])
       assert(sortNode.isEmpty)
     })
   }
@@ -92,7 +91,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuShuffledHashJoin(_))
       assert(joinNode.isDefined, "No broadcast join node found")
       // should not have sort, because of not have GpuDataWritingCommandExec
-      val sortNode = plan.find(_.isInstanceOf[GpuSortExec])
+      val sortNode = findOperator(plan, _.isInstanceOf[GpuSortExec])
       assert(sortNode.isEmpty)
     })
   }
@@ -104,7 +103,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       val df2 = buildDataFrame2(spark)
       val rdf = df1.join(df2, df1("a") === df2("x"))
       val plan = rdf.queryExecution.executedPlan
-      val sortNode = plan.find(_.isInstanceOf[GpuSortExec])
+      val sortNode = findOperator(plan, _.isInstanceOf[GpuSortExec])
       assert(sortNode.isEmpty)
     })
   }
@@ -125,7 +124,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       assertResult(1) {
         numSorts
       }
-      val sort = plan.find(_.isInstanceOf[GpuSortExec])
+      val sort = findOperator(plan, _.isInstanceOf[GpuSortExec])
       if (sort.isDefined) {
         assertResult(true) {
           sort.get.asInstanceOf[GpuSortExec].global
@@ -161,7 +160,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
         "group by a+1")
       df.collect()
 
-      val sortExec = TestUtils.findOperator(df.queryExecution.executedPlan,
+      val sortExec = findOperator(df.queryExecution.executedPlan,
         _.isInstanceOf[GpuSortExec])
       assert(sortExec.isEmpty)
     }, conf)
@@ -182,7 +181,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
       df.collect()
 
       val plan = df.queryExecution.executedPlan
-      val sortExec = TestUtils.findOperator(plan, _.isInstanceOf[GpuSortExec])
+      val sortExec = findOperator(plan, _.isInstanceOf[GpuSortExec])
       assert(sortExec.isDefined)
 
       val joinNode = findOperator(plan, ShimLoader.getSparkShims.isGpuBroadcastHashJoin(_))
