@@ -844,7 +844,7 @@
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
-                  <version>1.8</version>
+                  <version>3.0.0</version>
                   <executions>
                     <execution>
                         <id>generate-build-info</id>
@@ -866,11 +866,23 @@
                         </goals>
                     </execution>
                   </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.ant</groupId>
+                        <artifactId>ant</artifactId>
+                        <version>1.10.12</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>ant-contrib</groupId>
+                        <artifactId>ant-contrib</artifactId>
+                        <version>1.0b3</version>
+                    </dependency>
+                </dependencies>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-shade-plugin</artifactId>
-                  <version>3.2.1</version>
+                  <version>3.2.4</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -1034,12 +1046,12 @@
                         <exclude>**/src/main/resources/META-INF/services/*</exclude>
                         <exclude>**/src/test/resources/**</exclude>
                         <exclude>rmm_log.txt</exclude>
-                        <exclude>dependency-reduced-pom.xml</exclude>
+                        <exclude>dependency-reduced-pom*.xml</exclude>
                         <exclude>**/.*/**</exclude>
                         <exclude>src/main/java/com/nvidia/spark/rapids/format/*</exclude>
                         <exclude>**/*.csv</exclude>
                         <exclude>dist/*.txt</exclude>
-                        <exclude>dist/com.nvidia.spark.rapids.SparkShimServiceProvider.*</exclude>
+                        <exclude>**/META-INF/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>
                         <!-- Apache Rat excludes target folder for projects that are included by
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>

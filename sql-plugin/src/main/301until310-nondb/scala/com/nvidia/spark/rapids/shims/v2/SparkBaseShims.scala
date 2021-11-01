@@ -331,7 +331,8 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
           }
           override def convertToGpu(lhs: Expression, regexp: Expression,
               rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
-        })
+        }),
+      GpuScalaUDFMeta.exprMeta
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 

@@ -818,3 +818,53 @@ The GPU implementation of RLike does not support empty groups correctly.
 |-----------|--------|--------------|--------------|
 | `z()?`    | `a`    | No Match     | Match        |
 | `z()*`    | `a`    | No Match     | Match        |
+
+## Conditionals and operations with side effects (ANSI mode)
+
+In Apache Spark condition operations like `if`, `coalesce`, and `case/when` lazily evaluate
+their parameters on a row by row basis. On the GPU it is generally more efficient to
+evaluate the parameters regardless of the condition and then select which result to return
+based on the condition. This is fine so long as there are no side effects caused by evaluating
+a parameter. For most expressions in Spark this is true, but in ANSI mode many expressions can
+throw exceptions, like for the `Add` expression if an overflow happens. This is also true of
+UDFs, because by their nature they are user defined and can have side effects like throwing
+exceptions.
+
+Currently, the RAPIDS Accelerator
+[assumes that there are no side effects](https://github.com/NVIDIA/spark-rapids/issues/3849).
+This can result it situations, specifically in ANSI mode, where the RAPIDS Accelerator will
+always throw an exception, but Spark on the CPU will not.  For example:
+
+```scala
+spark.conf.set("spark.sql.ansi.enabled", "true")
+
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val + 1) as ret")
+    .show()
+```
+
+If the above example is run on the CPU you will get a result like.
+```
++----+
+| ret|
++----+
+|   1|
+|null|
++----+
+```
+
+But if it is run on the GPU an overflow exception is thrown. As was explained before this
+is because the RAPIDS Accelerator will evaluate both `val + 1` and `null` regardless of
+the result of the condition. In some cases you can work around this. The above example
+could be re-written so the `if` happens before the `Add` operation.
+
+```scala
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val) + 1 as ret")
+    .show()
+```
+
+But this is not something that can be done generically and requires inner knowledge about
+what can trigger a side effect.
