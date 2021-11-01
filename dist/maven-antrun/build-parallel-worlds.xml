@@ -14,7 +14,7 @@
   See the License for the specific language governing permissions and
   limitations under the License.
 -->
-<project name="maven-antrun" xmlns:ac="antlib:net.sf.antcontrib">
+<project name="maven-antrun" xmlns:ac="antlib:net.sf.antcontrib" xmlns:if="ant:if">
     <!--
         - Generates shim service discovery META-INF entries for ShimLoader
 
@@ -48,7 +48,15 @@
     <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
 
     <target name="build-parallel-worlds">
-        <echo level="info">Preparing parallel worlds with params: included_buildvers=${included_buildvers}</echo>
+        <property environment="env"/>
+        <echo level="info">Preparing parallel worlds with params:
+            included_buildvers=${included_buildvers}
+            project.basedir=${project.base.dir}
+            project.build.directory=${project.build.directory}
+            spark.version.classifier=${spark.version.classifier}
+            URM_URL=${env.URM_URL}
+            maven.repo.local=${maven.repo.local}
+        </echo>
         <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
         <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
         <property name="aggregatorPrefix"
@@ -63,20 +71,30 @@
                      instead of concatenated string
                 -->
                 <echo level="info">dependency:get spark@{bv} aggregator</echo>
-                <exec executable="${maven.home}/bin/mvn" failonerror="true" logError="true"
-                      output="${project.build.directory}/copy-aggregators.log">
-                    <arg value="dependency:get"/>
-                    <arg value="-s"/>
-                    <arg value="${project.basedir}/../jenkins/settings.xml"/>
-                    <arg value="-B"/>
-                    <arg value="-Ddest=${project.build.directory}/deps"/>
-                    <arg value="-DgroupId=com.nvidia"/>
-                    <arg value="-DartifactId=rapids-4-spark-aggregator_${scala.binary.version}"/>
-                    <arg value="-Dversion=${project.version}"/>
-                    <arg value="-Dpackaging=jar"/>
-                    <arg value="-Dclassifier=spark@{bv}"/>
-                    <arg value="-Dtransitive=false"/>
-                </exec>
+                <ac:if>
+                    <equals arg1="${spark.version.classifier}" arg2="spark@{bv}"/>
+                    <ac:then>
+                        <copy file="${project.basedir}/../aggregator/target/${spark.version.classifier}/rapids-4-spark-aggregator_${scala.binary.version}-${project.version}.jar"
+                              tofile="${aggregatorPrefix}-${spark.version.classifier}.jar"/>
+                    </ac:then>
+                    <ac:else>
+                        <exec executable="${maven.home}/bin/mvn" failonerror="true" logError="true"
+                              output="${project.build.directory}/copy-aggregators.log">
+                            <arg value="dependency:get"/>
+                            <arg value="-s" if:set="env.URM_URL"/>
+                            <arg value="${project.basedir}/../jenkins/settings.xml" if:set="env.URM_URL"/>
+                            <arg value="-B"/>
+                            <arg value="-Dmaven.repo.local=${maven.repo.local}" if:set="maven.repo.local"/>
+                            <arg value="-Ddest=${project.build.directory}/deps"/>
+                            <arg value="-DgroupId=com.nvidia"/>
+                            <arg value="-DartifactId=rapids-4-spark-aggregator_${scala.binary.version}"/>
+                            <arg value="-Dversion=${project.version}"/>
+                            <arg value="-Dpackaging=jar"/>
+                            <arg value="-Dclassifier=spark@{bv}"/>
+                            <arg value="-Dtransitive=false"/>
+                        </exec>
+                    </ac:else>
+                </ac:if>
                 <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
                     dest="${project.build.directory}/parallel-world">
                     <patternset id="shared-world-includes">
