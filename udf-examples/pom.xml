@@ -194,7 +194,7 @@
                 <id>cmake</id>
                 <phase>validate</phase>
                 <configuration>
-                  <tasks>
+                  <target>
                     <mkdir dir="${udf.native.build.path}"/>
                     <exec dir="${udf.native.build.path}"
                           failonerror="true"
@@ -213,7 +213,7 @@
                       <arg value="-j${CPP_PARALLEL_LEVEL}"/>
                       <arg value="-v"/>
                     </exec>
-                  </tasks>
+                  </target>
                 </configuration>
                 <goals>
                   <goal>run</goal>
