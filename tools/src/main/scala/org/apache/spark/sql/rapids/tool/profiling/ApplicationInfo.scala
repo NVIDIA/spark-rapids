@@ -262,7 +262,7 @@ class ApplicationInfo(
    * Function to process SQL Plan Metrics after all events are processed
    */
   def processSQLPlanMetrics(): Unit = {
-    for ((sqlID, planInfo) <- sqlPlan){
+    for ((sqlID, planInfo) <- sqlPlan) {
       checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
@@ -272,6 +272,7 @@ class ApplicationInfo(
         checkGraphNodeForBatchScan(sqlID, node)
         if (isDataSetOrRDDPlan(node.desc)) {
           sqlIdToInfo.get(sqlID).foreach { sql =>
+            sqlIDToDataSetOrRDDCase += sqlID
             sql.hasDatasetOrRDD = true
           }
           if (gpuMode) {
@@ -280,6 +281,19 @@ class ApplicationInfo(
             unsupportedSQLplan += thisPlan
           }
         }
+
+        // find potential problems
+        val issues = findPotentialIssues(node.desc)
+        if (issues.nonEmpty) {
+          val existingIssues = sqlIDtoProblematic.getOrElse(sqlID, Set.empty[String])
+          sqlIDtoProblematic(sqlID) = existingIssues ++ issues
+        }
+        val (_, nestedComplexTypes) = reportComplexTypes
+        val potentialProbs = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
+        sqlIdToInfo.get(sqlID).foreach { sql =>
+          sql.problematic = potentialProbs
+        }
+
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
           val allMetric = SQLMetricInfoCase(sqlID, metric.name,

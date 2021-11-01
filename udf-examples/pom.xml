@@ -58,6 +58,11 @@
     </dependency>
     <dependency>
         <groupId>com.nvidia</groupId>
+        <!--
+        This should depend on rapids-4-spark_${scala.binary.version} instead, but that dependency
+        only exists after the package phase. External projects should depend on
+        rapids-4-spark_${scala.binary.version}.
+        -->
         <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
         <version>${project.version}</version>
         <classifier>${spark.version.classifier}</classifier>
