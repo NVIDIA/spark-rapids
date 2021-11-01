@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-set -e
+set -ex
 
 SPARKSRCTGZ=$1
 # version of Apache Spark we are building against

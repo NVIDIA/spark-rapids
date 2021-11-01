@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.RapidsConf.TEST_CONF
+import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
@@ -3198,8 +3198,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
       }
-    ),
-    GpuScalaUDF.exprMeta
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
@@ -3773,7 +3772,7 @@ class ExplainPlanImpl extends ExplainPlanBase {
 object GpuOverrideUtil extends Logging {
   def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
     val planOriginal = plan.clone()
-    val failOnError = TEST_CONF.get(plan.conf)
+    val failOnError = TEST_CONF.get(plan.conf) || !SUPPRESS_PLANNING_FAILURE.get(plan.conf)
     try {
       fn(plan)
     } catch {
