@@ -14,25 +14,25 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark320;
+package com.nvidia.spark.rapids.shims.spark330;
 
 import com.nvidia.spark.rapids.{ShimLoader, SparkShims, SparkShimVersion, TypeSig}
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
-class Spark320ShimsSuite extends FunSuite {
+class Spark330ShimsSuite extends FunSuite {
   val sparkShims: SparkShims = new SparkShimServiceProvider().buildShim
   test("spark shims version") {
-    assert(sparkShims.getSparkShimVersion === SparkShimVersion(3, 2, 0))
+    assert(sparkShims.getSparkShimVersion === SparkShimVersion(3, 3, 0))
   }
 
   test("shuffle manager class") {
     assert(ShimLoader.getRapidsShuffleManagerClass ===
-      classOf[com.nvidia.spark.rapids.spark320.RapidsShuffleManager].getCanonicalName)
+      classOf[com.nvidia.spark.rapids.spark330.RapidsShuffleManager].getCanonicalName)
   }
 
-  test("TypeSig320") {
+  test("TypeSig330") {
     val check = TypeSig.DAYTIME + TypeSig.YEARMONTH
     assert(check.isSupportedByPlugin(DayTimeIntervalType(), false) == true)
     assert(check.isSupportedByPlugin(YearMonthIntervalType(), false) == true)

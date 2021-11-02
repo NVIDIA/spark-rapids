@@ -25,7 +25,7 @@
     <version>21.12.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
-  <artifactId>rapids-4-spark-shims-spark320_2.12</artifactId>
+  <artifactId>rapids-4-spark-shims-spark330_2.12</artifactId>
   <name>RAPIDS Accelerator for Apache Spark SQL Plugin Spark 3.2.0 Shim</name>
   <description>The RAPIDS SQL plugin for Apache Spark 3.2.0 Shim</description>
   <version>21.12.0-SNAPSHOT</version>
@@ -48,11 +48,11 @@
               <target>
                 <mkdir dir="${project.build.directory}/extra-resources"/>
                 <exec executable="bash" failonerror="true"
-                      output="${project.build.directory}/extra-resources/spark-${spark320.version}-info.properties">
+                      output="${project.build.directory}/extra-resources/spark-${spark330.version}-info.properties">
                   <arg value="${user.dir}/build/dependency-info.sh"/>
                   <arg value="${cudf.version}"/>
                   <arg value="${cuda.version}"/>
-                  <arg value="${spark320.version}"/>
+                  <arg value="${spark330.version}"/>
                 </exec>
               </target>
             </configuration>
@@ -79,7 +79,7 @@
     <dependency>
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-sql_${scala.binary.version}</artifactId>
-      <version>${spark320.version}</version>
+      <version>${spark330.version}</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

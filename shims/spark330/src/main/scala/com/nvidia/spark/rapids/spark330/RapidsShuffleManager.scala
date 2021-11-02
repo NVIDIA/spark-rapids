@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.spark320
+package com.nvidia.spark.rapids.spark330
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark320.ProxyRapidsShuffleInternalManager
+import org.apache.spark.sql.rapids.shims.spark330.ProxyRapidsShuffleInternalManager
 
 /** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
 sealed class RapidsShuffleManager(

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark320
+package com.nvidia.spark.rapids.shims.spark330
 
 import java.net.URI
 import java.nio.ByteBuffer
@@ -31,6 +31,6 @@ import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.Path
 
 
-class Spark320Shims extends Spark32XShims {
+class Spark330Shims extends Spark32XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 }

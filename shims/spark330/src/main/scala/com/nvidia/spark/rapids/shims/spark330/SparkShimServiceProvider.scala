@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark320
+package com.nvidia.spark.rapids.shims.spark330
 
 import com.nvidia.spark.rapids.{SparkShims, SparkShimVersion}
 
 object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 2, 0)
-  val VERSIONNAMES = Seq(s"$VERSION")
+  val VERSION = SparkShimVersion(3, 3, 0)
+  val VERSIONNAMES = Seq(s"$VERSION", s"$VERSION-SNAPSHOT")
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
@@ -30,6 +30,6 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   }
 
   def buildShim: SparkShims = {
-    new Spark320Shims()
+    new Spark330Shims()
   }
 }
