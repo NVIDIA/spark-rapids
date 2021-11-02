@@ -3090,16 +3090,10 @@ object GpuOverrides extends Logging {
       }),
     expr[StddevSamp](
       "Aggregation computing sample standard deviation",
-      ExprChecksImpl(
-        ExprChecks.groupByOnly(
+      ExprChecks.aggNotReduction(
           TypeSig.DOUBLE, TypeSig.DOUBLE,
           Seq(ParamCheck("input", TypeSig.DOUBLE,
-            TypeSig.DOUBLE))).asInstanceOf[ExprChecksImpl].contexts
-            ++
-            ExprChecks.windowOnly(
-              TypeSig.DOUBLE, TypeSig.DOUBLE,
-              Seq(ParamCheck("input", TypeSig.DOUBLE,
-                TypeSig.DOUBLE))).asInstanceOf[ExprChecksImpl].contexts),
+            TypeSig.DOUBLE))),
         (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
           override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
             val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
