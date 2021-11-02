@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect
 from conftest import is_databricks_runtime
 from data_gen import *
 from marks import *
@@ -478,6 +478,26 @@ def test_rlike():
                 'a rlike "a{1,3}"',
                 'a rlike "a{1,}"',
                 'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_embedded_null():
+    gen = mk_str_gen('[abcd]{1,3}')\
+            .with_special_case('\u0000aaa')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a{2}"',
+                'a rlike "a{1,3}"',
+                'a rlike "a{1,}"',
+                'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_null_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a\u0000"'),
+            'RLike',
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
 def test_rlike_escape():
