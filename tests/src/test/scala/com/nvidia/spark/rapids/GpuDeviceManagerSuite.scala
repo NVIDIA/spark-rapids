@@ -49,7 +49,8 @@ class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
     TestUtils.withGpuSparkSession(conf) { _ =>
       val freeGpuSize = Cuda.memGetInfo().free
       val poolSize = (freeGpuSize * poolFraction).toLong
-      val allocSize = Math.max(poolSize - 1024 * 1024, 0)
+      val allocSize = poolSize * 3 / 4
+      assert(allocSize > 0)
       // initial allocation should fit within pool size
       withResource(DeviceMemoryBuffer.allocate(allocSize)) { _ =>
         assertThrows[OutOfMemoryError] {
