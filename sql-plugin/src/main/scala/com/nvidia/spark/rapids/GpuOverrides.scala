@@ -575,20 +575,18 @@ object GpuOverrides extends Logging {
     lit.value == null
   }
 
-  def isNullOrEmptyOrRegex(exp: Expression): Boolean = {
-    val lit = extractLit(exp)
-    if (!isOfType(lit, StringType)) {
-      false
-    } else if (isNullLit(lit.get)) {
-      //isOfType check above ensures that this lit.get does not throw
-      true
-    } else {
-      val strLit = lit.get.value.asInstanceOf[UTF8String].toString
-      if (strLit.isEmpty) {
-        true
-      } else {
-        regexList.exists(pattern => strLit.contains(pattern))
-      }
+  def isSupportedStringReplacePattern(exp: Expression): Boolean = {
+    extractLit(exp) match {
+      case Some(Literal(null, _)) => false
+      case Some(Literal(value: UTF8String, DataTypes.StringType)) =>
+        val strLit = value.toString
+        if (strLit.isEmpty) {
+          false
+        } else {
+          // check for regex special characters, except for \u0000 which we can support
+          !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+        }
+      case _ => false
     }
   }
 
@@ -815,7 +813,8 @@ object GpuOverrides extends Logging {
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64 +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+          // Note Map is not put into nested, now CUDF only support single level map
+          TypeSig.STRUCT + TypeSig.DECIMAL_64).nested() + TypeSig.MAP,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
@@ -3529,9 +3528,13 @@ object GpuOverrides extends Logging {
     exec[ObjectHashAggregateExec](
       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
       ExecChecks(
+        // note that binary input is allowed here but there are additional checks later on to
+        // check that we have can support binary in the context of aggregate buffer conversions
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
+            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
+              "converted between CPU and GPU")
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
@@ -3542,8 +3545,10 @@ object GpuOverrides extends Logging {
       "The backend for sort based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
+            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
+              "converted between CPU and GPU")
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
@@ -3555,7 +3560,7 @@ object GpuOverrides extends Logging {
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
       ExecChecks(pluginSupportedOrderableSig + (TypeSig.ARRAY + TypeSig.STRUCT +
-          TypeSig.MAP).nested(), TypeSig.all),
+          TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",

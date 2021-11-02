@@ -26,6 +26,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.QueryStageExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -51,6 +52,10 @@ final class NoRuleDataFromReplacementRule extends DataFromReplacementRule {
   override def confKey = "NOT_FOUND"
 
   override def getChecks: Option[TypeChecks[_]] = None
+}
+
+object RapidsMeta {
+  val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
 }
 
 /**
@@ -111,7 +116,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   def convertToCpu(): BASE = wrapped
 
-  private var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
+  protected var cannotBeReplacedReasons: Option[mutable.Set[String]] = None
   private var mustBeReplacedReasons: Option[mutable.Set[String]] = None
   private var cannotReplaceAnyOfPlanReasons: Option[mutable.Set[String]] = None
   private var shouldBeRemovedReasons: Option[mutable.Set[String]] = None
@@ -119,7 +124,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   protected var cannotRunOnGpuBecauseOfSparkPlan: Boolean = false
   protected var cannotRunOnGpuBecauseOfCost: Boolean = false
 
-  val gpuSupportedTag = TreeNodeTag[Set[String]]("rapids.gpu.supported")
+  import RapidsMeta.gpuSupportedTag
 
   /**
    * Recursively force a section of the plan back onto CPU, stopping once a plan
@@ -677,7 +682,19 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       willNotWorkOnGpu("not all data writing commands can be replaced")
     }
 
+    checkExistingTags()
+
     tagPlanForGpu()
+  }
+
+  /**
+   * When AQE is enabled and we are planning a new query stage, we need to look at meta-data
+   * previously stored on the spark plan to determine whether this operator can run on GPU
+   */
+  def checkExistingTags(): Unit = {
+    wrapped.getTagValue(RapidsMeta.gpuSupportedTag)
+      .foreach(_.diff(cannotBeReplacedReasons.get)
+      .foreach(willNotWorkOnGpu))
   }
 
   /**
