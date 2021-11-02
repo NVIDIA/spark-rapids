@@ -15,7 +15,7 @@
 # limitations under the License.
 #
 
-set -e
+set -ex
 
 SPARKSRCTGZ=$1
 # version of Apache Spark we are building against
@@ -38,7 +38,7 @@ echo "Base Spark version is $BASE_SPARK_VERSION"
 echo "build profiles $BUILD_PROFILES"
 echo "BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS is $BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS"
 
-sudo apt install -y maven
+sudo apt install -y maven rsync
 
 # this has to match the Databricks init script
 DB_JAR_LOC=/databricks/jars/

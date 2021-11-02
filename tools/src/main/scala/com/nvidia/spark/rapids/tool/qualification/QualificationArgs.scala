@@ -105,7 +105,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
     opt[Int](required = false,
       descr = "The percent the read format and datatypes apply to the score. Default is " +
         "20 percent.",
-      default = Some(20))
+      default = Some(QualificationArgs.DEFAULT_READ_SCORE_PERCENT))
   val reportReadSchema: ScallopOption[Boolean] =
     opt[Boolean](required = false,
       descr = "Whether to output the read formats and datatypes to the CSV file. This can " +
@@ -164,6 +164,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 }
 
 object QualificationArgs {
+  val DEFAULT_READ_SCORE_PERCENT = 20
+
   def isOrderAsc(order: String): Boolean = {
     order.toLowerCase.startsWith("asc")
   }

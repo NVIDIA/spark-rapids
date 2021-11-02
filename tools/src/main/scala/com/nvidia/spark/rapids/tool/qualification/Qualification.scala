@@ -47,7 +47,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     .asInstanceOf[ThreadPoolExecutor]
 
   private class QualifyThread(path: EventLogInfo) extends Runnable {
-    def run: Unit = qualifyApp(path, numRows, hadoopConf)
+    def run: Unit = qualifyApp(path, hadoopConf)
   }
 
   def qualifyApps(allPaths: Seq[EventLogInfo]): Seq[QualificationSummaryInfo] = {
@@ -89,11 +89,10 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
 
   private def qualifyApp(
       path: EventLogInfo,
-      numRows: Int,
       hadoopConf: Configuration): Unit = {
     try {
       val startTime = System.currentTimeMillis()
-      val app = QualAppInfo.createApp(path, numRows, hadoopConf, pluginTypeChecker,
+      val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker,
         readScorePercent)
       if (!app.isDefined) {
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")

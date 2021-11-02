@@ -569,6 +569,109 @@ distribution. Because the results are not bit-for-bit identical with the Apache 
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
 `spark.rapids.sql.expression.ApproximatePercentile=true`.
 
-There are known issues with the approximate percentile implementation
-([#3706](https://github.com/NVIDIA/spark-rapids/issues/3706),
-[#3692](https://github.com/NVIDIA/spark-rapids/issues/3692)) and the feature should be considered experimental.
+## RLike
+
+The GPU implementation of RLike has a number of known issues where behavior is not consistent with Apache Spark and
+this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
+
+A summary of known issues is shown below but this is not intended to be a comprehensive list. We recommend that you
+do your own testing to verify whether the GPU implementation of `RLike` is suitable for your use case.
+
+We plan on improving the RLike functionality over time to make it more compatible with Spark so this feature should
+be used at your own risk with the expectation that the behavior will change in future releases.
+
+### Multi-line handling
+
+The GPU implementation of RLike supports `^` and `$` to represent the start and end of lines within a string but
+Spark uses `^` and `$` to refer to the start and end of the entire string (equivalent to `\A` and `\Z`).
+
+| Pattern | Input  | Spark on CPU | Spark on GPU |
+|---------|--------|--------------|--------------|
+| `^A`    | `A\nB` | Match        | Match        |
+| `A$`    | `A\nB` | No Match     | Match        |
+| `^B`    | `A\nB` | No Match     | Match        |
+| `B$`    | `A\nB` | Match        | Match        |
+
+As a workaround, `\A` and `\Z` can be used instead of `^` and `$`.
+
+### Null character in input
+
+The GPU implementation of RLike will not match anything after a null character within a string.
+
+| Pattern   | Input     | Spark on CPU | Spark on GPU |
+|-----------|-----------|--------------|--------------|
+| `A`       | `\u0000A` | Match        | No Match     |
+
+### Qualifiers with nothing to repeat
+
+Spark supports qualifiers in cases where there is nothing to repeat. For example, Spark supports `a*+` and this
+will match all inputs. The GPU implementation of RLike does not support this syntax and will throw an exception with
+the message `nothing to repeat at position 0`.
+
+### Stricter escaping requirements
+
+The GPU implementation of RLike has stricter requirements around escaping special characters in some cases.
+
+| Pattern   | Input  | Spark on CPU | Spark on GPU |
+|-----------|--------|--------------|--------------|
+| `a[-+]`   | `a-`   | Match        | No Match     |
+| `a[\-\+]` | `a-`   | Match        | Match        |
+
+### Empty groups
+
+The GPU implementation of RLike does not support empty groups correctly.
+
+| Pattern   | Input  | Spark on CPU | Spark on GPU |
+|-----------|--------|--------------|--------------|
+| `z()?`    | `a`    | No Match     | Match        |
+| `z()*`    | `a`    | No Match     | Match        |
+
+## Conditionals and operations with side effects (ANSI mode)
+
+In Apache Spark condition operations like `if`, `coalesce`, and `case/when` lazily evaluate
+their parameters on a row by row basis. On the GPU it is generally more efficient to
+evaluate the parameters regardless of the condition and then select which result to return
+based on the condition. This is fine so long as there are no side effects caused by evaluating
+a parameter. For most expressions in Spark this is true, but in ANSI mode many expressions can
+throw exceptions, like for the `Add` expression if an overflow happens. This is also true of
+UDFs, because by their nature they are user defined and can have side effects like throwing
+exceptions.
+
+Currently, the RAPIDS Accelerator
+[assumes that there are no side effects](https://github.com/NVIDIA/spark-rapids/issues/3849).
+This can result it situations, specifically in ANSI mode, where the RAPIDS Accelerator will
+always throw an exception, but Spark on the CPU will not.  For example:
+
+```scala
+spark.conf.set("spark.sql.ansi.enabled", "true")
+
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val + 1) as ret")
+    .show()
+```
+
+If the above example is run on the CPU you will get a result like.
+```
++----+
+| ret|
++----+
+|   1|
+|null|
++----+
+```
+
+But if it is run on the GPU an overflow exception is thrown. As was explained before this
+is because the RAPIDS Accelerator will evaluate both `val + 1` and `null` regardless of
+the result of the condition. In some cases you can work around this. The above example
+could be re-written so the `if` happens before the `Add` operation.
+
+```scala
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val) + 1 as ret")
+    .show()
+```
+
+But this is not something that can be done generically and requires inner knowledge about
+what can trigger a side effect.

@@ -241,6 +241,8 @@ in the driver options, e.g.:
 The Spark process will wait upon launch for a remote debugger to attach via
 port 5005.
 
+You can also use [Compute Sanitizer](compute_sanitizer.md) to debug CUDA memory errors.
+
 ## Profiling Tips
 [NVIDIA Nsight Systems](https://developer.nvidia.com/nsight-systems) makes
 profiling easy.  In addition to showing where time is being spent in CUDA

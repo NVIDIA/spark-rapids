@@ -38,7 +38,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -109,7 +109,6 @@ trait SparkShims {
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isWindowFunctionExec(plan: SparkPlan): Boolean
-  def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
@@ -184,8 +183,6 @@ trait SparkShims {
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit
-
-  def sortOrderChildren(s: SortOrder): Seq[Expression]
 
   def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
     sortOrder(child, direction, direction.defaultNullOrdering)
@@ -281,8 +278,10 @@ trait SparkShims {
 
   def registerKryoClasses(kryo: Kryo): Unit
 
+  def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
+
   /**
-  * This Boolean variable set to `true` for Spark < 3.1.0, and set to 
+  * This Boolean variable set to `true` for Spark < 3.1.0, and set to
   * `SQLConf.get.legacyStatisticalAggregate` otherwise.
   * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
   */

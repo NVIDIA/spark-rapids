@@ -23,11 +23,11 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.RapidsConf.TEST_CONF
+import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.v2.{GpuSpecifiedWindowFrameMeta, GpuWindowExpressionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.rapids.TimeStamp
@@ -49,7 +49,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
@@ -507,44 +507,6 @@ object GpuOverrides extends Logging {
         wrapped.convertToGpu()
       } else {
         expr
-      }
-    }
-  }
-
-  private def gpuOrderingSemanticEquals(
-      found: Expression,
-      required: Expression,
-      conf: RapidsConf): Boolean =
-    found.deterministic &&
-        required.deterministic &&
-        convertExprToGpuIfPossible(found, conf).canonicalized ==
-            convertExprToGpuIfPossible(required, conf).canonicalized
-
-  private def orderingSatisfies(
-      found: SortOrder,
-      required: SortOrder,
-      conf: RapidsConf): Boolean = {
-    val foundChildren = ShimLoader.getSparkShims.sortOrderChildren(found)
-    found.direction == required.direction &&
-        found.nullOrdering == required.nullOrdering &&
-        foundChildren.exists(gpuOrderingSemanticEquals(_, required.child, conf))
-  }
-
-  private def orderingSatisfies(
-      ordering1: Seq[SortOrder],
-      ordering2: Seq[SortOrder],
-      conf: RapidsConf): Boolean = {
-    // We cannot use SortOrder.orderingSatisfies because there is a corner case where
-    // some operators like a Literal can be a part of SortOrder, which then results in errors
-    // because we may have converted it over to a GpuLiteral at that point and a Literal
-    // is not equivalent to a GpuLiteral, even though it should be.
-    if (ordering2.isEmpty) {
-      true
-    } else if (ordering2.length > ordering1.length) {
-      false
-    } else {
-      ordering2.zip(ordering1).forall {
-        case (o2, o1) => orderingSatisfies(o1, o2, conf)
       }
     }
   }
@@ -2984,6 +2946,14 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
       }),
+    expr[RLike](
+      "RLike",
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("str", TypeSig.STRING, TypeSig.STRING),
+        ("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+      (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
+      "The GPU implementation of rlike is not " +
+      "compatible with Apache Spark. See the compatibility guide for more information."),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
@@ -3229,8 +3199,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[CreateMap](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
       }
-    ),
-    GpuScalaUDF.exprMeta
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
@@ -3659,20 +3628,159 @@ object GpuOverrides extends Logging {
 
   val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
     "rapids.gpu.postColToRowProcessing")
+
+  def wrapAndTagPlan(plan: SparkPlan, conf: RapidsConf): SparkPlanMeta[SparkPlan] = {
+    val wrap = GpuOverrides.wrapPlan(plan, conf, None)
+    wrap.tagForGpu()
+    wrap
+  }
+
+  private def doConvertPlan(wrap: SparkPlanMeta[SparkPlan], conf: RapidsConf,
+      optimizations: Seq[Optimization]): SparkPlan = {
+    val convertedPlan = wrap.convertIfNeeded()
+    val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
+    GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
+    sparkPlan
+  }
+
+  private def getOptimizations(wrap: SparkPlanMeta[SparkPlan],
+      conf: RapidsConf): Seq[Optimization] = {
+    if (conf.optimizerEnabled) {
+      // we need to run these rules both before and after CBO because the cost
+      // is impacted by forcing operators onto CPU due to other rules that we have
+      wrap.runAfterTagRules()
+      val optimizer = try {
+        ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
+      } catch {
+        case e: Exception =>
+          throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
+      }
+      optimizer.optimize(conf, wrap)
+    } else {
+      Seq.empty
+    }
+  }
+
+  private def addSortsIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    plan.transformUp {
+      case operator: SparkPlan =>
+        ensureOrdering(operator, conf)
+    }
+  }
+
+  // copied from Spark EnsureRequirements but only does the ordering checks and
+  // check to convert any SortExec added to GpuSortExec
+  private def ensureOrdering(operator: SparkPlan, conf: RapidsConf): SparkPlan = {
+    val requiredChildOrderings: Seq[Seq[SortOrder]] = operator.requiredChildOrdering
+    var children: Seq[SparkPlan] = operator.children
+    assert(requiredChildOrderings.length == children.length)
+
+    // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
+    children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
+      // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
+      if (SortOrder.orderingSatisfies(child.outputOrdering, requiredOrdering)) {
+        child
+      } else {
+        val sort = SortExec(requiredOrdering, global = false, child = child)
+        // just specifically check Sort to see if we can change Sort to GPUSort
+        val sortMeta = new GpuSortMeta(sort, conf, None, new SortDataFromReplacementRule)
+        sortMeta.initReasons()
+        sortMeta.tagPlanForGpu()
+        if (sortMeta.canThisBeReplaced) {
+          sortMeta.convertToGpu()
+        } else {
+          sort
+        }
+      }
+    }
+    operator.withNewChildren(children)
+  }
+
+  private final class SortDataFromReplacementRule extends DataFromReplacementRule {
+    override val operationName: String = "Exec"
+    override def confKey = "spark.rapids.sql.exec.SortExec"
+
+    override def getChecks: Option[TypeChecks[_]] = None
+  }
+
+  // Only run the explain and don't actually convert or run on GPU.
+  def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
+    val plan = df.queryExecution.executedPlan
+    val conf = new RapidsConf(plan.conf)
+    val updatedPlan = prepareExplainOnly(plan)
+    // Here we look for subqueries to pull out and do the explain separately on them.
+    val subQueryExprs = getSubQueriesFromPlan(plan)
+    val preparedSubPlans = subQueryExprs.map(_.plan).map(prepareExplainOnly(_))
+    val subPlanExplains = preparedSubPlans.map(explainSinglePlan(_, conf, explain))
+    val topPlanExplain = explainSinglePlan(updatedPlan, conf, explain)
+    (subPlanExplains :+ topPlanExplain).mkString("\n")
+  }
+
+  private def explainSinglePlan(updatedPlan: SparkPlan, conf: RapidsConf,
+      explain: String): String = {
+    val wrap = wrapAndTagPlan(updatedPlan, conf)
+    val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
+    if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
+      "Can't replace any part of this plan due to: " +
+        s"${reasonsToNotReplaceEntirePlan.mkString(",")}"
+    } else {
+      wrap.runAfterTagRules()
+      wrap.tagForExplain()
+      val shouldExplainAll = explain.equalsIgnoreCase("ALL")
+      wrap.explain(shouldExplainAll)
+    }
+  }
+
+  private def getSubqueryExpressions(e: Expression): Seq[ExecSubqueryExpression] = {
+    val childExprs = e.children.flatMap(getSubqueryExpressions(_))
+    val res = e match {
+      case sq: ExecSubqueryExpression => Seq(sq)
+      case _ => Seq.empty
+    }
+    childExprs ++ res
+  }
+
+  private def getSubQueriesFromPlan(plan: SparkPlan): Seq[ExecSubqueryExpression] = {
+    val childPlans = plan.children.flatMap(getSubQueriesFromPlan)
+    val pSubs = plan.expressions.flatMap(getSubqueryExpressions)
+    childPlans ++ pSubs
+  }
+
+  private def prepareExplainOnly(plan: SparkPlan): SparkPlan = {
+    // Strip out things that would have been added after our GPU plugin would have
+    // processed the plan.
+    // AQE we look at the input plan so pretty much just like if AQE wasn't enabled.
+    val planAfter = plan.transformUp {
+      case ia: InputAdapter => prepareExplainOnly(ia.child)
+      case ws: WholeStageCodegenExec => prepareExplainOnly(ws.child)
+      case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
+      case re: ReusedExchangeExec => prepareExplainOnly(re.child)
+      case aqe: AdaptiveSparkPlanExec =>
+        prepareExplainOnly(ShimLoader.getSparkShims.getAdaptiveInputPlan(aqe))
+      case sub: SubqueryExec => prepareExplainOnly(sub.child)
+    }
+    planAfter
+  }
+}
+
+class ExplainPlanImpl extends ExplainPlanBase {
+  override def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
+    GpuOverrides.explainPotentialGpuPlan(df, explain)
+  }
 }
 
 // work around any GpuOverride failures
 object GpuOverrideUtil extends Logging {
   def tryOverride(fn: SparkPlan => SparkPlan): SparkPlan => SparkPlan = { plan =>
     val planOriginal = plan.clone()
-    val failOnError = TEST_CONF.get(plan.conf)
+    val failOnError = TEST_CONF.get(plan.conf) || !SUPPRESS_PLANNING_FAILURE.get(plan.conf)
     try {
       fn(plan)
     } catch {
       case NonFatal(t) if !failOnError =>
         logWarning("Failed to apply GPU overrides, falling back on the original plan: " + t, t)
         planOriginal
-      case fatal =>
+      case fatal: Throwable =>
         logError("Encountered an exception applying GPU overrides " + fatal, fatal)
         throw fatal
     }
@@ -3714,8 +3822,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   }(sparkPlan)
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    val wrap = GpuOverrides.wrapPlan(plan, conf, None)
-    wrap.tagForGpu()
+    val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
     if (conf.allowDisableEntirePlan && reasonsToNotReplaceEntirePlan.nonEmpty) {
       if (conf.shouldExplain) {
@@ -3724,20 +3831,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       }
       plan
     } else {
-      val optimizations = if (conf.optimizerEnabled) {
-        // we need to run these rules both before and after CBO because the cost
-        // is impacted by forcing operators onto CPU due to other rules that we have
-        wrap.runAfterTagRules()
-        val optimizer = try {
-          ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
-        } catch {
-          case e: Exception =>
-            throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)
-        }
-        optimizer.optimize(conf, wrap)
-      } else {
-        Seq.empty
-      }
+      val optimizations = GpuOverrides.getOptimizations(wrap, conf)
       wrap.runAfterTagRules()
       if (conf.shouldExplain) {
         wrap.tagForExplain()
@@ -3749,52 +3843,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           }
         }
       }
-      val convertedPlan = wrap.convertIfNeeded()
-      val sparkPlan = addSortsIfNeeded(convertedPlan, conf)
-      GpuOverrides.listeners.foreach(_.optimizedPlan(wrap, sparkPlan, optimizations))
-      sparkPlan
-    }
-  }
-
-  private final class SortDataFromReplacementRule extends DataFromReplacementRule {
-    override val operationName: String = "Exec"
-    override def confKey = "spark.rapids.sql.exec.SortExec"
-
-    override def getChecks: Option[TypeChecks[_]] = None
-  }
-
-  // copied from Spark EnsureRequirements but only does the ordering checks and
-  // check to convert any SortExec added to GpuSortExec
-  private def ensureOrdering(operator: SparkPlan, conf: RapidsConf): SparkPlan = {
-    val requiredChildOrderings: Seq[Seq[SortOrder]] = operator.requiredChildOrdering
-    var children: Seq[SparkPlan] = operator.children
-    assert(requiredChildOrderings.length == children.length)
-
-    // Now that we've performed any necessary shuffles, add sorts to guarantee output orderings:
-    children = children.zip(requiredChildOrderings).map { case (child, requiredOrdering) =>
-      // If child.outputOrdering already satisfies the requiredOrdering, we do not need to sort.
-      if (GpuOverrides.orderingSatisfies(child.outputOrdering, requiredOrdering, conf)) {
-        child
-      } else {
-        val sort = SortExec(requiredOrdering, global = false, child = child)
-        // just specifically check Sort to see if we can change Sort to GPUSort
-        val sortMeta = new GpuSortMeta(sort, conf, None, new SortDataFromReplacementRule)
-        sortMeta.initReasons()
-        sortMeta.tagPlanForGpu()
-        if (sortMeta.canThisBeReplaced) {
-          sortMeta.convertToGpu()
-        } else {
-          sort
-        }
-      }
-    }
-    operator.withNewChildren(children)
-  }
-
-  def addSortsIfNeeded(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
-    plan.transformUp {
-      case operator: SparkPlan =>
-        ensureOrdering(operator, conf)
+      GpuOverrides.doConvertPlan(wrap, conf, optimizations)
     }
   }
 }
