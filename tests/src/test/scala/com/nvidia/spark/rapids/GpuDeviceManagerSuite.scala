@@ -34,7 +34,6 @@ class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
   }
 
   test("RMM pool size") {
-    val freeGpuSize = Cuda.memGetInfo().free
     val poolFraction = 0.1
     val maxPoolFraction = 0.2
     // we need to reduce the minAllocFraction for this test since the
@@ -48,12 +47,14 @@ class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
         .set(RapidsConf.RMM_ALLOC_MAX_FRACTION.key, maxPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_RESERVE.key, "0")
     TestUtils.withGpuSparkSession(conf) { _ =>
+      val freeGpuSize = Cuda.memGetInfo().free
       val poolSize = (freeGpuSize * poolFraction).toLong
+      val allocSize = Math.max(poolSize - 1024 * 1024, 0)
       // initial allocation should fit within pool size
-      withResource(DeviceMemoryBuffer.allocate(poolSize)) { _ =>
+      withResource(DeviceMemoryBuffer.allocate(allocSize)) { _ =>
         assertThrows[OutOfMemoryError] {
           // this should exceed the specified pool size
-          DeviceMemoryBuffer.allocate(poolSize).close()
+          DeviceMemoryBuffer.allocate(allocSize).close()
         }
       }
     }

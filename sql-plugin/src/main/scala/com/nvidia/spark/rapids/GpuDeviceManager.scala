@@ -166,8 +166,10 @@ object GpuDeviceManager extends Logging {
   private def toMB(x: Long): Double = x / 1024 / 1024.0
 
   private def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
-    val minAllocation = (conf.rmmAllocMinFraction * info.total).toLong
-    val maxAllocation = (conf.rmmAllocMaxFraction * info.total).toLong
+    def truncateToAlignment(x: Long): Long = x & ~511L
+
+    val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
+    val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
     val reserveAmount = if (GpuShuffleEnv.shouldUseRapidsShuffle(conf)
         && conf.rmmPool.equalsIgnoreCase("ASYNC")) {
       // When using the async allocator, UCX calls `cudaMalloc` directly to allocate the
@@ -176,7 +178,8 @@ object GpuDeviceManager extends Logging {
     } else {
       conf.rmmAllocReserve
     }
-    var poolAllocation = (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong
+    var poolAllocation = truncateToAlignment(
+      (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
     if (poolAllocation < minAllocation) {
       throw new IllegalArgumentException(s"The pool allocation of " +
         s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
@@ -199,7 +202,7 @@ object GpuDeviceManager extends Logging {
           s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocFraction}) and " +
           s"${RapidsConf.RMM_ALLOC_RESERVE} (=$reserveAmount)")
     }
-    val adjustedMaxAllocation = maxAllocation - reserveAmount
+    val adjustedMaxAllocation = truncateToAlignment(maxAllocation - reserveAmount)
     if (poolAllocation > adjustedMaxAllocation) {
       logWarning(s"RMM pool allocation (${toMB(poolAllocation)} MB) does not leave enough free " +
           s"memory for reserve memory (${toMB(reserveAmount)} MB), lowering the pool size to " +
