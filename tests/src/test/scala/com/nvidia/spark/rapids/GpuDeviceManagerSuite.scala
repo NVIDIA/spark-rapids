@@ -53,7 +53,7 @@ class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
       withResource(DeviceMemoryBuffer.allocate(poolSize)) { _ =>
         assertThrows[OutOfMemoryError] {
           // this should exceed the specified pool size
-          DeviceMemoryBuffer.allocate(256).close()
+          DeviceMemoryBuffer.allocate(poolSize).close()
         }
       }
     }
