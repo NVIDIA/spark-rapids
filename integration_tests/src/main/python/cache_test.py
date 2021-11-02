@@ -54,7 +54,7 @@ double_special_cases = [
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
            pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
-           BooleanGen(), DateGen(), TimestampGen()] + decimal_gens
+           BooleanGen(), DateGen(), TimestampGen()] + decimal_gens + all_basic_map_gens
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
