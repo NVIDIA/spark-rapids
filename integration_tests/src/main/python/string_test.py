@@ -339,6 +339,25 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
                 'REGEXP_REPLACE(a, "TEST", NULL)'))
 
+def test_re_replace_null():
+    gen = mk_str_gen('[\u0000 ]{0,2}TE[\u0000 ]{0,2}ST[\u0000 ]{0,2}')\
+        .with_special_case("\u0000")\
+        .with_special_case("\u0000\u0000")
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'REGEXP_REPLACE(a, "\u0000", "")',
+                'REGEXP_REPLACE(a, "\000", "")',
+                'REGEXP_REPLACE(a, "\00", "")',
+                'REGEXP_REPLACE(a, "\x00", "")',
+                'REGEXP_REPLACE(a, "\0", "")',
+                'REGEXP_REPLACE(a, "\u0000", "NULL")',
+                'REGEXP_REPLACE(a, "\000", "NULL")',
+                'REGEXP_REPLACE(a, "\00", "NULL")',
+                'REGEXP_REPLACE(a, "\x00", "NULL")',
+                'REGEXP_REPLACE(a, "\0", "NULL")',
+                'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
+                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'))
+
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(
