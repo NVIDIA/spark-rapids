@@ -648,7 +648,13 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   static boolean typeConversionAllowed(ColumnView cv, DataType colType) {
     DType dt = cv.getType();
     if (!dt.isNestedType()) {
-      return getNonNestedRapidsType(colType).equals(dt);
+      boolean ret = getNonNestedRapidsType(colType).equals(dt);
+      if (!ret) {
+        System.err.println(colType);
+        System.err.println(getNonNestedRapidsType(colType));
+        System.err.println(dt);
+      }
+      return ret;
     }
     if (colType instanceof MapType) {
       MapType mType = (MapType) colType;

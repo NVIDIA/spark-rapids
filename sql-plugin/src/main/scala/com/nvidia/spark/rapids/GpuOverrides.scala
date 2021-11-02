@@ -809,10 +809,10 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())),
     (OrcFormatType, FileFormatChecks(
-      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_64 +
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.DECIMAL_64).nested(),
+          TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
@@ -3439,7 +3439,7 @@ object GpuOverrides extends Logging {
       "The backend for most file input",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_64).nested(),
+            TypeSig.DECIMAL_128_FULL).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
         override val childScans: scala.Seq[ScanMeta[_]] =
