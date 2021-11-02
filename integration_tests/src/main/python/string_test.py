@@ -451,7 +451,6 @@ def test_like_complex_escape():
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
-@pytest.mark.xfail(is_databricks_runtime(), reason='Fails on Azure Databricks 7.3 - https://github.com/NVIDIA/spark-rapids/issues/3866')
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -462,7 +461,6 @@ def test_rlike():
                 'a rlike "a[bc]d"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(is_databricks_runtime(), reason='Fails on Azure Databricks 7.3 - https://github.com/NVIDIA/spark-rapids/issues/3866')
 def test_rlike_escape():
     gen = mk_str_gen('[ab]{0,2}[\\-\\+]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
