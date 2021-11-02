@@ -163,12 +163,9 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def toKB(x: Long): Double = x / 1024.0
-
   private def toMB(x: Long): Double = x / 1024 / 1024.0
 
-  private def computeRmmInitSizes(conf: RapidsConf, info: CudaMemInfo): (Long, Long) = {
-    // Align workaround for https://github.com/rapidsai/rmm/issues/527
+  private def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
     def truncateToAlignment(x: Long): Long = x & ~511L
 
     val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
@@ -181,19 +178,19 @@ object GpuDeviceManager extends Logging {
     } else {
       conf.rmmAllocReserve
     }
-    var initialAllocation = truncateToAlignment(
+    var poolAllocation = truncateToAlignment(
       (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
-    if (initialAllocation < minAllocation) {
-      throw new IllegalArgumentException(s"The initial allocation of " +
-        s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
+    if (poolAllocation < minAllocation) {
+      throw new IllegalArgumentException(s"The pool allocation of " +
+        s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
         s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was less than " +
         s"the minimum allocation of ${toMB(minAllocation)} (calculated from " +
         s"${RapidsConf.RMM_ALLOC_MIN_FRACTION} (=${conf.rmmAllocMinFraction}) " +
         s"and ${toMB(info.total)} MB total memory)")
     }
-    if (maxAllocation < initialAllocation) {
-      throw new IllegalArgumentException(s"The initial allocation of " +
-        s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
+    if (maxAllocation < poolAllocation) {
+      throw new IllegalArgumentException(s"The pool allocation of " +
+        s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
         s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was more than " +
         s"the maximum allocation of ${toMB(maxAllocation)} (calculated from " +
         s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocMaxFraction}) " +
@@ -206,18 +203,14 @@ object GpuDeviceManager extends Logging {
           s"${RapidsConf.RMM_ALLOC_RESERVE} (=$reserveAmount)")
     }
     val adjustedMaxAllocation = truncateToAlignment(maxAllocation - reserveAmount)
-    if (initialAllocation > adjustedMaxAllocation) {
-      logWarning(s"Initial RMM allocation (${toMB(initialAllocation)} MB) is larger than " +
-          s"the adjusted maximum allocation (${toMB(adjustedMaxAllocation)} MB), " +
-          "lowering initial allocation to the adjusted maximum allocation.")
-      initialAllocation = adjustedMaxAllocation
+    if (poolAllocation > adjustedMaxAllocation) {
+      logWarning(s"RMM pool allocation (${toMB(poolAllocation)} MB) does not leave enough free " +
+          s"memory for reserve memory (${toMB(reserveAmount)} MB), lowering the pool size to " +
+          s"${toMB(adjustedMaxAllocation)} MB to accommodate the requested reserve amount.")
+      poolAllocation = adjustedMaxAllocation
     }
 
-    if (!conf.isPooledMemEnabled || "none".equalsIgnoreCase(conf.rmmPool)) {
-      (initialAllocation, 0)
-    } else {
-      (initialAllocation, adjustedMaxAllocation)
-    }
+    poolAllocation
   }
 
   private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
@@ -229,7 +222,7 @@ object GpuDeviceManager extends Logging {
       // async allocator, so initialize the shuffle environment first.
       GpuShuffleEnv.init(conf)
 
-      val (initialAllocation, maxAllocation) = computeRmmInitSizes(conf, info)
+      val poolAllocation = computeRmmPoolSize(conf, info)
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
@@ -281,8 +274,7 @@ object GpuDeviceManager extends Logging {
       deviceId = Some(gpuId)
 
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} " +
-          s"initial size = ${toMB(initialAllocation)} MB, " +
-          s"max size = ${toMB(maxAllocation)} MB on gpuId $gpuId")
+          s"pool size = ${toMB(poolAllocation)} MB on gpuId $gpuId")
 
       if (Cuda.isPtdsEnabled()) {
         logInfo("Using per-thread default stream")
@@ -292,7 +284,7 @@ object GpuDeviceManager extends Logging {
 
       try {
         Cuda.setDevice(gpuId)
-        Rmm.initialize(init, logConf, initialAllocation, maxAllocation)
+        Rmm.initialize(init, logConf, poolAllocation, poolAllocation)
         RapidsBufferCatalog.init(conf)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)

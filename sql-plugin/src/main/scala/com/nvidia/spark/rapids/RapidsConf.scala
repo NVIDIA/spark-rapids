@@ -324,10 +324,10 @@ object RapidsConf {
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
-    .doc("The fraction of available GPU memory that should be initially allocated " +
-      "for pooled memory. Extra memory will be allocated as needed, but it may " +
-      "result in more fragmentation. This must be less than or equal to the maximum limit " +
-      s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
+    .doc("The fraction of available (free) GPU memory that should be allocated for pooled " +
+      "memory. This must be less than or equal to the maximum limit configured via " +
+      s"$RMM_ALLOC_MAX_FRACTION_KEY, and greater than or equal to the minimum limit configured " +
+      s"via $RMM_ALLOC_MIN_FRACTION_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -1418,8 +1418,8 @@ object RapidsConf {
 
 class RapidsConf(conf: Map[String, String]) extends Logging {
 
-  import RapidsConf._
   import ConfHelper._
+  import RapidsConf._
 
   def this(sqlConf: SQLConf) = {
     this(sqlConf.getAllConfs)
