@@ -877,7 +877,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * before sending parquet-formatted buffer to cudf.
    *
    * @param readDataSchema Spark schema to read
-   * @param fileSchema  the schema of the dumped parquet-format buffer
+   * @param fileSchema  the schema of the dumped parquet-formatted buffer
    * @param isCaseSensitive if it is case sensitive
    * @return a sequence of column names following the order of readDataSchema
    */
