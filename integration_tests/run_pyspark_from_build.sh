@@ -70,6 +70,21 @@ else
         # to still launch a spark application.
         TEST_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2.3 * 1024)) - 1}'`
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
+
+        # adjust TEST_PARALLEL according to cpu cores and free memory
+        cpu_cores=$(nproc --all)
+        free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
+        max_parallel_for_cpu_cores=$(python -c "print($cpu_cores - 1)")
+        # assume 50M for each test thread
+        max_parallel_for_free_memory=$(python -c "print(int(($free_mem_mib - 1) / 50))")
+        if [[ TEST_PARALLEL -gt $max_parallel_for_cpu_cores ]]; then
+          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_cpu_cores according to cpu cores $cpu_cores"
+          TEST_PARALLEL=max_parallel_for_cpu_cores
+        fi
+        if [[ TEST_PARALLEL -gt $max_parallel_for_free_memory ]]; then
+          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_free_memory according to free memory $free_mem_mib mib"
+          TEST_PARALLEL=max_parallel_for_free_memory
+        fi
     fi
     if python -c 'import findspark';
     then
