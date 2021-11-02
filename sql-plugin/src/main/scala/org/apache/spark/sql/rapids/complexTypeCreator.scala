@@ -109,9 +109,9 @@ case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boole
         withResource(ColumnVector.makeList(numRows, DType.STRUCT, structs: _*)) { listOfStruct =>
           withResource(listOfStruct.dropListDuplicatesWithKeysValues()) { deduped =>
             if (SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-                SQLConf.MapKeyDedupPolicy.LAST_WIN.toString) {
-              GpuColumnVector.from(deduped.incRefCount(), dataType)
-            } else {
+                SQLConf.MapKeyDedupPolicy.EXCEPTION.toString) {
+              // compare child data row count before and after
+              // removing duplicates to determine if there were duplicates
               withResource(deduped.getChildColumnView(0)) { a =>
                 withResource(listOfStruct.getChildColumnView(0)) { b =>
                   if (a.getRowCount != b.getRowCount) {
@@ -119,8 +119,8 @@ case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boole
                   }
                 }
               }
-              GpuColumnVector.from(deduped.incRefCount(), dataType)
             }
+            GpuColumnVector.from(deduped.incRefCount(), dataType)
           }
         }
       }
