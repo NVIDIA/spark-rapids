@@ -112,9 +112,12 @@ case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boole
                 SQLConf.MapKeyDedupPolicy.LAST_WIN.toString) {
               GpuColumnVector.from(deduped.incRefCount(), dataType)
             } else {
-              if (deduped.getChildColumnView(0).getRowCount !=
-                  listOfStruct.getChildColumnView(0).getRowCount) {
-                throw GpuMapUtils.duplicateMapKeyFoundError
+              withResource(deduped.getChildColumnView(0)) { a =>
+                withResource(listOfStruct.getChildColumnView(0)) { b =>
+                  if (a.getRowCount != b.getRowCount) {
+                    throw GpuMapUtils.duplicateMapKeyFoundError
+                  }
+                }
               }
               GpuColumnVector.from(deduped.incRefCount(), dataType)
             }
