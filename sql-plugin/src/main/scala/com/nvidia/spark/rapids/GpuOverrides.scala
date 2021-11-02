@@ -575,20 +575,18 @@ object GpuOverrides extends Logging {
     lit.value == null
   }
 
-  def isNullOrEmptyOrRegex(exp: Expression): Boolean = {
-    val lit = extractLit(exp)
-    if (!isOfType(lit, StringType)) {
-      false
-    } else if (isNullLit(lit.get)) {
-      //isOfType check above ensures that this lit.get does not throw
-      true
-    } else {
-      val strLit = lit.get.value.asInstanceOf[UTF8String].toString
-      if (strLit.isEmpty) {
-        true
-      } else {
-        regexList.exists(pattern => strLit.contains(pattern))
-      }
+  def isSupportedStringReplacePattern(exp: Expression): Boolean = {
+    extractLit(exp) match {
+      case Some(Literal(null, _)) => false
+      case Some(Literal(value: UTF8String, DataTypes.StringType)) =>
+        val strLit = value.toString
+        if (strLit.isEmpty) {
+          false
+        } else {
+          // check for regex special characters, except for \u0000 which we can support
+          !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+        }
+      case _ => false
     }
   }
 
