@@ -92,13 +92,7 @@ class GpuBroadcastNestedLoopJoinMeta(
     verifyBuildSideWasReplaced(buildSide)
 
     val condition = conditionMeta.map(_.convertToGpu())
-    val isAstCondition = join.joinType match {
-      case _: InnerLike =>
-        // It appears to be faster to manifest the full cross join and post-filter than
-        // evaluate the AST during the join.
-        false
-      case _ => conditionMeta.forall(_.canThisBeAst)
-    }
+    val isAstCondition = conditionMeta.forall(_.canThisBeAst)
     join.joinType match {
       case _: InnerLike =>
       case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
