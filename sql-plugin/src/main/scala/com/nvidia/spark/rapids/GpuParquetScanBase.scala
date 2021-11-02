@@ -889,7 +889,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
     if (!isCaseSensitive) {
       val m = CaseInsensitiveMap(fields.zip(fields).toMap)
-      readDataSchema.fieldNames.map(m(_))
+      // The schemas may be different among parquet files, so some column names may not be existing
+      // in the CaseInsensitiveMap. In that case, we just use the field name of readDataSchema
+      readDataSchema.fieldNames.map { name => m.get(name).getOrElse(name) }
     } else {
       readDataSchema.fieldNames.toSeq
     }
