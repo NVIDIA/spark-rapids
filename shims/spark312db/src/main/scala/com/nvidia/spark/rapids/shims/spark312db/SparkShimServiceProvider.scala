@@ -22,7 +22,6 @@ import org.apache.spark.SparkEnv
 
 object SparkShimServiceProvider {
   val VERSION = DatabricksShimVersion(3, 1, 2)
-  val VERSIONNAMES = Seq(s"$VERSION")
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
