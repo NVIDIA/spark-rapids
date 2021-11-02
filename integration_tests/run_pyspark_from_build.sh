@@ -143,6 +143,18 @@ else
     # prevent cluster shape to change
     export PYSP_TEST_spark_dynamicAllocation_enabled='false'
 
+    # Extract Databricks version from deployed configs. This is set automatically on Databricks
+    # notebooks but not when running Spark manually.
+    DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
+    if [[ -f $DB_DEPLOY_CONF ]]; then
+      DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
+      if [[ -z $DB_VER ]]; then
+        echo >&2 "Unable to determine Databricks version"
+        exit 1
+      fi
+      export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
+    fi
+
     # Set spark.task.maxFailures for most schedulers.
     #
     # Local (non-cluster) mode is the exception and does not work with `spark.task.maxFailures`.

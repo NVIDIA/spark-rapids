@@ -22,10 +22,9 @@ SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.1'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VER//.}db
 
-# tests
+# Try to use the pip from the conda environment if it is available
 export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
-sudo /databricks/conda/envs/databricks-ml-gpu/bin/pip install pytest sre_yield requests pandas \
-	pyarrow findspark pytest-xdist pytest-ordering
+sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-ordering
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
@@ -64,7 +63,7 @@ PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 ## limit parallelism to avoid OOM kill
 export TEST_PARALLEL=4
 if [ -d "$LOCAL_JAR_PATH" ]; then
-    ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the denpedency repo
+    ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the dependency repo
     LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE
 
     ## Run cache tests
