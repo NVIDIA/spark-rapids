@@ -109,11 +109,11 @@ case class GpuCreateMap(children: Seq[Expression], useStringTypeWhenEmpty: Boole
         withResource(ColumnVector.makeList(numRows, DType.STRUCT, structs: _*)) { listOfStruct =>
           withResource(listOfStruct.dropListDuplicatesWithKeysValues()) { deduped =>
             if (SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY) ==
-              SQLConf.MapKeyDedupPolicy.LAST_WIN.toString) {
+                SQLConf.MapKeyDedupPolicy.LAST_WIN.toString) {
               GpuColumnVector.from(deduped.incRefCount(), dataType)
             } else {
               if (deduped.getChildColumnView(0).getRowCount !=
-                listOfStruct.getChildColumnView(0).getRowCount) {
+                  listOfStruct.getChildColumnView(0).getRowCount) {
                 throw GpuMapUtils.duplicateMapKeyFoundError
               }
               GpuColumnVector.from(deduped.incRefCount(), dataType)
