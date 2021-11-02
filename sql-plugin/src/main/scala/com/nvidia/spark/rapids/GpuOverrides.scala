@@ -47,7 +47,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
-import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
+import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
@@ -3592,7 +3592,7 @@ object GpuOverrides extends Logging {
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DropNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[SetCatalogAndNamespaceExec]("Namespace metadata operation"),
-    neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation"),
+    ShimLoader.getSparkShims.neverReplaceShowCurrentNamespaceCommand,
     neverReplaceExec[ShowNamespacesExec]("Namespace metadata operation"),
     neverReplaceExec[ExecutedCommandExec]("Table metadata operation"),
     neverReplaceExec[AlterTableExec]("Table metadata operation"),
@@ -3609,7 +3609,7 @@ object GpuOverrides extends Logging {
     neverReplaceExec[AdaptiveSparkPlanExec]("Wrapper for adaptive query plan"),
     neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
     neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
-  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs

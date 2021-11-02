@@ -597,6 +597,7 @@
                                         <source>${project.basedir}/src/main/311+-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
+                                        <source>${project.basedir}/src/main/330+/scala</source>
                                     </sources>
                                 </configuration>
                             </execution>

@@ -332,7 +332,8 @@ case class GpuCSVScan(
       maxReaderBatchSizeBytes, metrics)
   }
 
-  override def withFilters(
+  // overrides nothing in 330
+  def withFilters(
       partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 

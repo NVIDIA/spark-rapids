@@ -292,13 +292,6 @@ trait SparkShims {
   def dateFormatInRead(csvOpts: CSVOptions): Option[String]
 
   def timestampFormatInRead(csvOpts: CSVOptions): Option[String]
-}
 
-abstract class SparkCommonShims extends SparkShims {
-  override def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String],
-      explicitMetadata: Option[Metadata]): Alias = {
-    Alias(child, name)(exprId, qualifier, explicitMetadata)
-  }
+  def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 }
