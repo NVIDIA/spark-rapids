@@ -59,8 +59,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
     assert(!gse.global)
     assert(gse.sortType == SortEachBatch)
     val sortChild = gse.children.head
-    val proj = sortChild.asInstanceOf[GpuProjectExec]
-    assertResult(joinNode) { proj.child }
+    assertResult(joinNode) { sortChild }
   }
 
   test("should not insert sort after broadcast hash join") {

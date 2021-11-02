@@ -408,49 +408,45 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   // find
-  // GpuDataWritingCommandExec(GpuHashJoin)
-  // GpuDataWritingCommandExec(GpuHashAggregateExec)
-  // GpuDataWritingCommandExec(GpuProject(GpuHashJoin))
-  // GpuDataWritingCommandExec(GpuProject(GpuHashAggregateExec))
+  // GpuDataWritingCommandExec(......(GpuHashJoin))
+  // GpuDataWritingCommandExec(......(GpuHashAggregateExec))
   // from top to bottom and insert sort to optimize the file size
-  private def insertHashOptimizeSorts(plan: SparkPlan): SparkPlan = {
-    // Insert a sort after the last hash-based op before the query result if there are no
-    // intermediate nodes that have a specified sort order. This helps with the size of
-    // Parquet and ORC files.
-    // Note that this is using a GPU SortOrder expression as the CPU SortOrder which should
-    // normally be avoided. However since we have checked that no node later in the plan
-    // needs a particular sort order, it should not be a problem in practice that would
-    // trigger a redundant sort in the plan.
-    plan match {
-      case writingCommand: GpuDataWritingCommandExec =>
-        writingCommand.child match {
-          case hashJoin: GpuHashJoin =>
+  // such as: GpuDataWritingCommandExec(GpuProject(GpuHashAggregateExec))
+  private def insertHashOptimizeSorts(plan: SparkPlan,
+                                      hasWriteParent:Boolean = false): SparkPlan = {
+    if (rapidsConf.enableHashOptimizeSort) {
+      // insert a sort after the last hash-based op before the query result if there are no
+      // intermediate nodes that have a specified sort order. This helps with the size of
+      // Parquet and ORC files.
+      // Note that this is  ked that no node later in the plan
+      // needs a particular sort order, it should not be a problem in practice that would
+      // trigger a redundant sort in the plan.
+      plan match {
+        case _: GpuDataWritingCommandExec =>
+          plan.withNewChildren(plan.children.map(c => insertHashOptimizeSorts(c, true)))
+        case hashJoin: GpuHashJoin =>
+          if (hasWriteParent) {
             val gpuSortOrder = getOptimizedSortOrder(plan)
-            val sort = GpuSortExec(gpuSortOrder, false, hashJoin, SortEachBatch)(gpuSortOrder)
-            writingCommand.withNewChildren(Seq(sort))
-          case hashAgg: GpuHashAggregateExec =>
+            GpuSortExec(gpuSortOrder, false, hashJoin, SortEachBatch)(gpuSortOrder)
+          } else {
+            plan
+          }
+        case hashAgg: GpuHashAggregateExec =>
+          if (hasWriteParent) {
             val gpuSortOrder = getOptimizedSortOrder(plan)
-            val sort = GpuSortExec(gpuSortOrder, false, hashAgg, SortEachBatch)(gpuSortOrder)
-            writingCommand.withNewChildren(Seq(sort))
-          case project: GpuProjectExec =>
-            project.child match {
-              case _: GpuHashJoin |
-                   _: GpuHashAggregateExec =>
-                val gpuSortOrder = getOptimizedSortOrder(plan)
-                val sort = GpuSortExec(gpuSortOrder, false, project, SortEachBatch)(gpuSortOrder)
-                writingCommand.withNewChildren(Seq(sort))
-              case _ =>
-                writingCommand
-            }
-          case _ =>
-            writingCommand
-        }
-      case p =>
-        if (p.outputOrdering.isEmpty) {
-          plan.withNewChildren(plan.children.map(insertHashOptimizeSorts))
-        } else {
-          plan
-        }
+            GpuSortExec(gpuSortOrder, false, hashAgg, SortEachBatch)(gpuSortOrder)
+          } else {
+            plan
+          }
+        case p =>
+          if (p.outputOrdering.isEmpty) {
+            plan.withNewChildren(plan.children.map(c => insertHashOptimizeSorts(c, hasWriteParent)))
+          } else {
+            plan
+          }
+      }
+    } else {
+      plan
     }
   }
 
