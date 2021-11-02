@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.tool
 
 import java.util.Calendar
 import java.util.concurrent.{ConcurrentLinkedQueue, Executors, ThreadPoolExecutor, TimeUnit}
+import java.util.regex.PatternSyntaxException
 
 import scala.collection.JavaConverters._
 
@@ -222,10 +223,17 @@ class AppFilterImpl(
   private def containsAppName(app: AppFilterReturnParameters, filterAppName: String): Boolean = {
     val appNameOpt = app.appInfo.appStartInfo.map(_.appName)
     if (appNameOpt.isDefined) {
-      if (appNameOpt.get.contains(filterAppName) || appNameOpt.get.matches(filterAppName)) {
-        true
-      } else {
-        false
+      try {
+        if (appNameOpt.get.contains(filterAppName) || appNameOpt.get.matches(filterAppName)) {
+          true
+        } else {
+          false
+        }
+      } catch {
+        case _: PatternSyntaxException =>
+          logError(s" $filterAppName is not a valid regex pattern. The regular expression" +
+              s" provided should be based on java.util.regex.Pattern.")
+          sys.exit(1)
       }
     } else {
       // in complete log file
