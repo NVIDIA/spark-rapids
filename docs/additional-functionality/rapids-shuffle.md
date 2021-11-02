@@ -296,6 +296,7 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.1.2      | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
     | 3.1.3      | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
     | 3.2.0      | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
+    | 3.2.1      | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
 
 2. Settings for UCX 1.11.2+:
 
