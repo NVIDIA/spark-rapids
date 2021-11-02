@@ -298,7 +298,6 @@ In this section, we are using a docker container built using the sample dockerfi
     | 3.2.0         | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
     | 3.2.1         | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
     | Databricks 7.3| com.nvidia.spark.rapids.spark301db.RapidsShuffleManager  |
-    | Databricks 8.2| com.nvidia.spark.rapids.spark311db.RapidsShuffleManager  |
     | Databricks 9.1| com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
 
 2. Settings for UCX 1.11.2+:
