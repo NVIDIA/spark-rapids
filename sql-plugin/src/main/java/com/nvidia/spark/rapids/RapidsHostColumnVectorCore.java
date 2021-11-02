@@ -89,36 +89,57 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final boolean getBoolean(int rowId) {
+    if (isNullAt(rowId)) {
+      return false;
+    }
     return cudfCv.getBoolean(rowId);
   }
 
   @Override
   public final byte getByte(int rowId) {
+    if (isNullAt(rowId)) {
+      return 0;
+    }
     return cudfCv.getByte(rowId);
   }
 
   @Override
   public final short getShort(int rowId) {
+    if (isNullAt(rowId)) {
+      return 0;
+    }
     return cudfCv.getShort(rowId);
   }
 
   @Override
   public final int getInt(int rowId) {
+    if (isNullAt(rowId)) {
+      return 0;
+    }
     return cudfCv.getInt(rowId);
   }
 
   @Override
   public final long getLong(int rowId) {
+    if (isNullAt(rowId)) {
+      return 0L;
+    }
     return cudfCv.getLong(rowId);
   }
 
   @Override
   public final float getFloat(int rowId) {
+    if (isNullAt(rowId)) {
+      return 0.0f;
+    }
     return cudfCv.getFloat(rowId);
   }
 
   @Override
   public final double getDouble(int rowId) {
+    if (isNullAt(rowId)) {
+      return 0.0f;
+    }
     return cudfCv.getDouble(rowId);
   }
 
@@ -165,16 +186,19 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
         "Assert fetch decimal with its original scale " + scale + " expected " + (-cudfCv.getType().getScale());
     if (precision <= Decimal.MAX_INT_DIGITS()) {
       assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL32 : "type should be DECIMAL32";
-      return Decimal.createUnsafe(cudfCv.getInt(rowId), precision, scale);
+      return Decimal.createUnsafe(getInt(rowId), precision, scale);
     } else {
       assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL64 : "type should be DECIMAL64";
-      return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
+      return Decimal.createUnsafe(getLong(rowId), precision, scale);
     }
 
   }
 
   @Override
   public final UTF8String getUTF8String(int rowId) {
+    if (isNullAt(rowId)) {
+      return UTF8String.fromBytes(new byte[]{0});
+    }
     return UTF8String.fromBytes(cudfCv.getUTF8(rowId));
   }
 
