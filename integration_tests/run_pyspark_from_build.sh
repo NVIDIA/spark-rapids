@@ -72,11 +72,19 @@ else
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
 
         # adjust TEST_PARALLEL according to cpu cores and free memory
-        cpu_cores=$(nproc --all)
-        free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
+        if [[ "${PYSP_TEST_CPU_CORES}" != "" ]]; then
+          cpu_cores=PYSP_TEST_CPU_CORES
+        else
+          cpu_cores=$(nproc --all)
+        fi
+        if [[ "${PYSP_TEST_FREE_MEMORY}" != "" ]]; then
+          free_mem_mib=PYSP_TEST_FREE_MEMORY
+        else
+          free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
+        fi
         max_parallel_for_cpu_cores=$(($cpu_cores - 1))
-        # assume 50M for each test thread
-        max_parallel_for_free_memory=$(($free_mem_mib / 50))
+        # default heap size for spark is 1G, add reserve 50M for other processes in OS.
+        max_parallel_for_free_memory=$(($free_mem_mib - 50 / 1024))
         if [[ TEST_PARALLEL -gt $max_parallel_for_cpu_cores ]]; then
           echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_cpu_cores according to cpu cores $cpu_cores"
           TEST_PARALLEL=max_parallel_for_cpu_cores
