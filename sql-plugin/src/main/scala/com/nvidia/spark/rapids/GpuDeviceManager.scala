@@ -284,7 +284,7 @@ object GpuDeviceManager extends Logging {
 
       try {
         Cuda.setDevice(gpuId)
-        Rmm.initialize(init, logConf, poolAllocation, poolAllocation)
+        Rmm.initialize(init, logConf, poolAllocation)
         RapidsBufferCatalog.init(conf)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
