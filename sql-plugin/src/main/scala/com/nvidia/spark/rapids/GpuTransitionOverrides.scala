@@ -17,11 +17,8 @@
 package com.nvidia.spark.rapids
 
 import java.lang.reflect.Method
-
 import scala.annotation.tailrec
-
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
@@ -29,7 +26,7 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
-import org.apache.spark.sql.execution.command.ExecutedCommandExec
+import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
@@ -412,7 +409,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   // from top to bottom and insert sort to optimize the file size.
   // such as: GpuDataWritingCommandExec(GpuProject(GpuHashAggregateExec))
   private def insertHashOptimizeSorts(plan: SparkPlan,
-                                      hasWriteParent:Boolean = false): SparkPlan = {
+      hasWriteParent: Boolean = false): SparkPlan = {
     if (rapidsConf.enableHashOptimizeSort) {
       // Insert a sort after the last hash-based op before the query result if there are no
       // intermediate nodes that have a specified sort order. This helps with the size of
@@ -422,22 +419,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // needs a particular sort order, it should not be a problem in practice that would
       // trigger a redundant sort in the plan.
       plan match {
-        case _: GpuDataWritingCommandExec =>
+        // look for any writing command, not just a GPU writing command
+        case _: GpuDataWritingCommandExec | _: DataWritingCommandExec =>
           plan.withNewChildren(plan.children.map(c => insertHashOptimizeSorts(c, true)))
-        case hashJoin: GpuHashJoin =>
-          if (hasWriteParent) {
+        case _: GpuHashJoin | _: GpuHashAggregateExec if hasWriteParent =>
             val gpuSortOrder = getOptimizedSortOrder(plan)
-            GpuSortExec(gpuSortOrder, false, hashJoin, SortEachBatch)(gpuSortOrder)
-          } else {
-            plan
-          }
-        case hashAgg: GpuHashAggregateExec =>
-          if (hasWriteParent) {
-            val gpuSortOrder = getOptimizedSortOrder(plan)
-            GpuSortExec(gpuSortOrder, false, hashAgg, SortEachBatch)(gpuSortOrder)
-          } else {
-            plan
-          }
+            GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
+        case _: GpuHashJoin | _: GpuHashAggregateExec => plan
         case p =>
           if (p.outputOrdering.isEmpty) {
             plan.withNewChildren(plan.children.map(c => insertHashOptimizeSorts(c, hasWriteParent)))
