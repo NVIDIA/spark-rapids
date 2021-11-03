@@ -23,7 +23,7 @@ import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType, LeftOuter, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -55,10 +55,14 @@ abstract class AbstractGpuJoinIterator(
   }
 
   /**
+   * Called when a result batch is about to be produced. Any custom resources that were allocated
+   * to produce a result should be freed or made spillable here.
+   */
+  protected def freeIntermediateResources(): Unit = {}
+
+  /**
    * Called to setup the next join gatherer instance when the previous instance is done or
    * there is no previous instance.
-   * @param startNanoTime system nanoseconds timestamp at the top of the iterator loop, useful for
-   *                      calculating the time spent producing the next stream batch
    * @return some gatherer to use next or None if there is no next gatherer or the loop should try
    *         to build the gatherer again (e.g.: to skip a degenerate join result batch)
    */
@@ -130,6 +134,7 @@ abstract class AbstractGpuJoinIterator(
       if (ret.isDefined) {
         // We are about to return something. We got everything we need from it so now let it spill
         // if there is more to be gathered later on.
+        freeIntermediateResources()
         gathererStore.foreach(_.allowSpilling())
       }
       ret
@@ -183,10 +188,8 @@ abstract class SplittableJoinIterator(
   }
 
   override def setupNextGatherer(): Option[JoinGatherer] = {
-    val wasInitialJoin = isInitialJoin
-    isInitialJoin = false
-    if (pendingSplits.nonEmpty || stream.hasNext) {
-      val cb = if (pendingSplits.nonEmpty) {
+    val streamBatch = if (pendingSplits.nonEmpty || stream.hasNext) {
+      if (pendingSplits.nonEmpty) {
         withResource(pendingSplits.dequeue()) {
           _.getColumnarBatch()
         }
@@ -196,32 +199,36 @@ abstract class SplittableJoinIterator(
         }
         batch
       }
-      withResource(cb) { cb =>
-        val numJoinRows = computeNumJoinRows(cb)
-
-        // We want the gather maps size to be around the target size. There are two gather maps
-        // that are made up of ints, so compute how many rows on the stream side will produce the
-        // desired gather maps size.
-        val maxJoinRows = Math.max(1, targetSize / (2 * Integer.BYTES))
-        if (numJoinRows > maxJoinRows && cb.numRows() > 1) {
-          // Need to split the batch to reduce the gather maps size. This takes a simplistic
-          // approach of assuming the data is uniformly distributed in the stream table.
-          val numSplits = Math.min(cb.numRows(),
-            Math.ceil(numJoinRows.toDouble / maxJoinRows).toInt)
-          splitAndSave(cb, numSplits)
-
-          // Return no gatherer so the outer loop will try again
-          return None
-        }
-
-        createGatherer(cb, Some(numJoinRows))
-      }
     } else {
-      assert(wasInitialJoin)
+      assert(isInitialJoin)
       import scala.collection.JavaConverters._
-      withResource(GpuColumnVector.emptyBatch(streamAttributes.asJava)) { cb =>
-        createGatherer(cb, None)
+      GpuColumnVector.emptyBatch(streamAttributes.asJava)
+    }
+
+    isInitialJoin = false
+    withResource(streamBatch) { cb =>
+      val numJoinRows = computeNumJoinRows(cb)
+      if (numJoinRows == 0) {
+        // No join result for this batch, move on to the next batch.
+        return None
       }
+
+      // We want the gather maps size to be around the target size. There are two gather maps
+      // that are made up of ints, so compute how many rows on the stream side will produce the
+      // desired gather maps size.
+      val maxJoinRows = Math.max(1, targetSize / (2 * Integer.BYTES))
+      if (numJoinRows > maxJoinRows && cb.numRows() > 1) {
+        // Need to split the batch to reduce the gather maps size. This takes a simplistic
+        // approach of assuming the data is uniformly distributed in the stream table.
+        val numSplits = Math.min(cb.numRows(),
+          Math.ceil(numJoinRows.toDouble / maxJoinRows).toInt)
+        splitAndSave(cb, numSplits)
+
+        // Return no gatherer so the outer loop will try again
+        return None
+      }
+
+      createGatherer(cb, Some(numJoinRows))
     }
   }
 
@@ -239,25 +246,12 @@ abstract class SplittableJoinIterator(
    * the splits in the stream-side input
    * @param cb stream-side input batch to split
    * @param numBatches number of splits to produce with approximately the same number of rows each
-   * @param oom a prior OOM exception that this will try to recover from by splitting
    */
   protected def splitAndSave(
       cb: ColumnarBatch,
-      numBatches: Int,
-      oom: Option[OutOfMemoryError] = None): Unit = {
+      numBatches: Int): Unit = {
     val batchSize = cb.numRows() / numBatches
-    if (oom.isDefined && batchSize < 100) {
-      // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
-      // small but we want to at least give it a chance to work (mostly for tests where the
-      // targetSize can be set really small)
-      throw oom.get
-    }
-    val msg = s"Split stream batch into $numBatches batches of about $batchSize rows"
-    if (oom.isDefined) {
-      logWarning(s"OOM Encountered: $msg")
-    } else {
-      logInfo(msg)
-    }
+    logInfo(s"Split stream batch into $numBatches batches of about $batchSize rows")
     val splits = withResource(GpuColumnVector.from(cb)) { tab =>
       val splitIndexes = (1 until numBatches).map(num => num * batchSize)
       tab.contiguousSplit(splitIndexes: _*)
