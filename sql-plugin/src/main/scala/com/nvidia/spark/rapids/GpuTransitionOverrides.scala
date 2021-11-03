@@ -425,8 +425,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         case _: GpuDataWritingCommandExec | _: DataWritingCommandExec =>
           plan.withNewChildren(plan.children.map(c => insertHashOptimizeSorts(c, true)))
         case _: GpuHashJoin | _: GpuHashAggregateExec if hasWriteParent =>
-            val gpuSortOrder = getOptimizedSortOrder(plan)
-            GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
+          val gpuSortOrder = getOptimizedSortOrder(plan)
+          GpuSortExec(gpuSortOrder, false, plan, SortEachBatch)(gpuSortOrder)
         case _: GpuHashJoin | _: GpuHashAggregateExec => plan
         case p =>
           if (p.outputOrdering.isEmpty) {
