@@ -877,7 +877,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * before sending parquet-formatted buffer to cudf.
    *
    * @param readDataSchema Spark schema to read
-   * @param fileSchema  the schema of the dumped parquet-formatted buffer
+   * @param fileSchema the schema of the dumped parquet-formatted buffer
    * @param isCaseSensitive if it is case sensitive
    * @return a sequence of column names following the order of readDataSchema
    */
@@ -891,6 +891,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       val m = CaseInsensitiveMap(fields.zip(fields).toMap)
       // The schemas may be different among parquet files, so some column names may not be existing
       // in the CaseInsensitiveMap. In that case, we just use the field name of readDataSchema
+      //
+      // For hive special case, the readDataSchema is lower case, we need to do
+      // the case insensitive conversion
+      // See https://github.com/NVIDIA/spark-rapids/pull/3982#issue-770410779
       readDataSchema.fieldNames.map { name => m.get(name).getOrElse(name) }
     } else {
       readDataSchema.fieldNames.toSeq
