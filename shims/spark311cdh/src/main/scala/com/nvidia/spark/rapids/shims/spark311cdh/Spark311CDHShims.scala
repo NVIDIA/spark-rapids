@@ -32,7 +32,7 @@ import org.apache.spark.sql.rapids.shims.spark311cdh._
 import org.apache.spark.sql.rapids.shims.v2.{GpuColumnarToRowTransitionExec, GpuInMemoryTableScanExec}
 import org.apache.spark.sql.sources.BaseRelation
 
-class Spark311CDHShims extends SparkBaseShims with Spark30Xuntil32XShims {
+class Spark311CDHShims extends SparkBaseShims with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 

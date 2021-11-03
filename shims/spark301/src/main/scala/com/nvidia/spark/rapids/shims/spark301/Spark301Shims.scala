@@ -24,7 +24,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.internal.SQLConf
 
 class Spark301Shims extends SparkBaseShims
-  with Spark30Xuntil32XShims {
+  with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 

@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims.spark301db
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 
-class Spark301dbShims extends SparkBaseShims with Spark30Xuntil32XShims {
+class Spark301dbShims extends SparkBaseShims with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 }

@@ -19,6 +19,6 @@ package com.nvidia.spark.rapids.shims.spark321
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 
-class Spark321Shims extends Spark32XShims with Spark30Xuntil32XShims {
+class Spark321Shims extends Spark32XShims with Spark30Xuntil33XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 }
