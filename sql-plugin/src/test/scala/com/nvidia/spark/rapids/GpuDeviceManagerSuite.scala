@@ -42,6 +42,15 @@ class GpuDeviceManagerSuite extends FunSuite {
     assert(gpuAddr.isEmpty)
   }
 
+  test("Test Spark multiple GPUs throws") {
+    val sparkConf = new SparkConf()
+    val conf = new RapidsConf(sparkConf)
+    val gpu = new ResourceInformation("gpu", Array("2", "3"))
+    val resources = Map("gpu" -> gpu)
+    assertThrows[IllegalArgumentException](
+      GpuDeviceManager.getGPUAddrFromResources(resources, conf))
+  }
+
   test("Test Spark custom resource") {
     val sparkConf = new SparkConf()
     sparkConf.set(RapidsConf.SPARK_GPU_RESOURCE_NAME.toString, "nvidia/gpu")
