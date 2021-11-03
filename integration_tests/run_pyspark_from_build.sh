@@ -74,9 +74,9 @@ else
         # adjust TEST_PARALLEL according to cpu cores and free memory
         cpu_cores=$(nproc --all)
         free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
-        max_parallel_for_cpu_cores=$(python -c "print($cpu_cores - 1)")
+        max_parallel_for_cpu_cores=$(($cpu_cores - 1))
         # assume 50M for each test thread
-        max_parallel_for_free_memory=$(python -c "print(int(($free_mem_mib - 1) / 50))")
+        max_parallel_for_free_memory=$(($free_mem_mib / 50))
         if [[ TEST_PARALLEL -gt $max_parallel_for_cpu_cores ]]; then
           echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_cpu_cores according to cpu cores $cpu_cores"
           TEST_PARALLEL=max_parallel_for_cpu_cores
