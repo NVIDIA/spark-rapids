@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.TestUtils.{findOperator, getFinalPlan}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
