@@ -51,7 +51,7 @@
         <property environment="env"/>
         <echo level="info">Preparing parallel worlds with params:
             included_buildvers=${included_buildvers}
-            project.basedir=${project.base.dir}
+            project.basedir=${project.basedir}
             project.build.directory=${project.build.directory}
             spark.version.classifier=${spark.version.classifier}
             URM_URL=${env.URM_URL}

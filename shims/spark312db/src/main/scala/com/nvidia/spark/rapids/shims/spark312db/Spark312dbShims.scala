@@ -17,13 +17,13 @@
 package com.nvidia.spark.rapids.shims.spark312db
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
+import com.nvidia.spark.rapids.shims.v2._
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.internal.SQLConf
 
-class Spark312dbShims extends SparkBaseShims {
+class Spark312dbShims extends SparkBaseShims with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 

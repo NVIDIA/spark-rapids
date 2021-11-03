@@ -42,6 +42,8 @@ mvn -U -B -Dbuildver=320 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR
 mvn -B -Dbuildver=320 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 mvn -U -B -Dbuildver=321 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 mvn -B -Dbuildver=321 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -U -B -Dbuildver=330 clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
+mvn -B -Dbuildver=330 deploy -pl -dist $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 
 mvn -B -Dbuildver=301 -PsnapshotsWithDatabricks clean deploy $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 
