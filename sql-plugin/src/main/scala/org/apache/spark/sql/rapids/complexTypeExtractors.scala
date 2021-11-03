@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, DataTypeUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExpression
 
@@ -78,12 +78,8 @@ class GpuGetArrayItemMeta(
     extractLit(expr.ordinal).foreach { litOrd =>
       // Once literal array/struct types are supported this can go away
       val ord = litOrd.value
-      if (ord == null || ord.asInstanceOf[Int] < 0) {
-        expr.dataType match {
-          case ArrayType(_, _) | MapType(_, _, _) | StructType(_) =>
-            willNotWorkOnGpu("negative and null indexes are not supported for nested types")
-          case _ =>
-        }
+      if ((ord == null || ord.asInstanceOf[Int] < 0) && DataTypeUtils.isNestedType(expr.dataType)) {
+        willNotWorkOnGpu("negative and null indexes are not supported for nested types")
       }
     }
   }

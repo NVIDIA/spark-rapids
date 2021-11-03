@@ -324,10 +324,10 @@ object RapidsConf {
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
 
   val RMM_ALLOC_FRACTION = conf("spark.rapids.memory.gpu.allocFraction")
-    .doc("The fraction of available GPU memory that should be initially allocated " +
-      "for pooled memory. Extra memory will be allocated as needed, but it may " +
-      "result in more fragmentation. This must be less than or equal to the maximum limit " +
-      s"configured via $RMM_ALLOC_MAX_FRACTION_KEY.")
+    .doc("The fraction of available (free) GPU memory that should be allocated for pooled " +
+      "memory. This must be less than or equal to the maximum limit configured via " +
+      s"$RMM_ALLOC_MAX_FRACTION_KEY, and greater than or equal to the minimum limit configured " +
+      s"via $RMM_ALLOC_MIN_FRACTION_KEY.")
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -512,11 +512,11 @@ object RapidsConf {
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
     .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
-         "formats are fully supported on the GPU and some are unsupported and will fall back to " + 
+         "formats are fully supported on the GPU and some are unsupported and will fall back to " +
          "the CPU.  Some formats behave differently on the GPU than the CPU.  Spark on the CPU " +
          "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
          "the GPU will parse the date with invalid trailing characters. More detail can be found " +
-         "at [parsing strings as dates or timestamps]" + 
+         "at [parsing strings as dates or timestamps]" +
          "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
@@ -696,6 +696,16 @@ object RapidsConf {
       "spark.sql.parquet.outputTimestampType is set to INT96")
     .booleanConf
     .createWithDefault(true)
+
+  // This is an experimental feature now. And eventually, should be enabled or disabled depending
+  // on something that we don't know yet but would try to figure out.
+  val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
+    .doc("When set to true, optimizes a row-based UDF in a GPU operation by transferring " +
+      "only the data it needs between GPU and CPU inside a query operation, instead of falling " +
+      "this operation back to CPU. This is an experimental feature, and this config might be " +
+      "removed in the future.")
+    .booleanConf
+    .createWithDefault(false)
 
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
@@ -1298,6 +1308,14 @@ object RapidsConf {
     .stringConf
     .createWithDefault("gpu")
 
+  val SUPPRESS_PLANNING_FAILURE = conf("spark.rapids.sql.suppressPlanningFailure")
+    .doc("Option to fallback an individual query to CPU if an unexpected condition prevents the " +
+      "query plan from being converted to a GPU-enabled one. Note this is different from " +
+      "a normal CPU fallback for a yet-to-be-supported Spark SQL feature. If this happens " +
+      "the error should be reported and investigated as a GitHub issue.")
+    .booleanConf
+    .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1406,8 +1424,8 @@ object RapidsConf {
 
 class RapidsConf(conf: Map[String, String]) extends Logging {
 
-  import RapidsConf._
   import ConfHelper._
+  import RapidsConf._
 
   def this(sqlConf: SQLConf) = {
     this(sqlConf.getAllConfs)
@@ -1708,6 +1726,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
+
+  lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
