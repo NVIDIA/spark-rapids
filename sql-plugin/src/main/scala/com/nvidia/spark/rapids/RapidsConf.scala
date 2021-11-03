@@ -1293,8 +1293,8 @@ object RapidsConf {
     .createWithDefault(value = true)
 
   val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
-    .doc("The name of the Spark resource that represents a GPU")
-    .internal()
+    .doc("The name of the Spark resource that represents a GPU that you want the plugin to use "
+      "if using custom resources with Spark.")
     .stringConf
     .createWithDefault("gpu")
 

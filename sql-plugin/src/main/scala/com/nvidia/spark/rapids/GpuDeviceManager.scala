@@ -58,8 +58,6 @@ object GpuDeviceManager extends Logging {
 
   // Attempt to set and acquire the gpu, return true if acquired, false otherwise
   def tryToSetGpuDeviceAndAcquire(addr: Int): Boolean = {
-    logWarning(s"try to set: $addr")
-
     try {
       GpuDeviceManager.setGpuDeviceAndAcquire(addr)
     } catch {
@@ -82,7 +80,6 @@ object GpuDeviceManager extends Logging {
     // we couldn't acquire on first try
     var numRetries = 2
     val addrsToTry = ArrayBuffer.empty ++= (0 until deviceCount)
-    logWarning(s"find gpu and acquire: $addrsToTry")
     while (numRetries > 0) {
       val addr = addrsToTry.find(tryToSetGpuDeviceAndAcquire)
       if (addr.isDefined) {
@@ -107,7 +104,7 @@ object GpuDeviceManager extends Logging {
       conf: RapidsConf): Option[Int] = {
     val sparkGpuResourceName = conf.getSparkGpuResourceName
     if (resources.contains(sparkGpuResourceName)) {
-      logWarning(s"spark resources contains: $sparkGpuResourceName")
+      logDebug(s"Spark resources contain: $sparkGpuResourceName")
       val addrs = resources(sparkGpuResourceName).addresses
       if (addrs.length > 1) {
         // Throw an exception since we assume one GPU per executor.
@@ -118,7 +115,6 @@ object GpuDeviceManager extends Logging {
       }
       Some(addrs.head.toInt)
     } else {
-      logWarning(s"spark resources do NOT contain: $sparkGpuResourceName")
       None
     }
   }
