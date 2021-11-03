@@ -73,12 +73,12 @@ else
 
         # adjust TEST_PARALLEL according to cpu cores and free memory
         if [[ "${PYSP_TEST_CPU_CORES}" != "" ]]; then
-          cpu_cores=PYSP_TEST_CPU_CORES
+          cpu_cores=${PYSP_TEST_CPU_CORES}
         else
           cpu_cores=$(nproc --all)
         fi
         if [[ "${PYSP_TEST_FREE_MEMORY}" != "" ]]; then
-          free_mem_mib=PYSP_TEST_FREE_MEMORY
+          free_mem_mib=${PYSP_TEST_FREE_MEMORY}
         else
           free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
         fi
