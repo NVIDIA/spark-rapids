@@ -14,11 +14,26 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark320
+
+package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
 
-class Spark320Shims extends Spark32XShims with Spark30Xuntil32XShims {
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+import org.apache.spark.sql.catalyst.csv._
+import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.datasources.v2._
+
+
+trait Spark30Xuntil32XShims extends SparkShims {
+  def dateFormatInRead(csvOpts: CSVOptions): Option[String] = {
+    Option(csvOpts.dateFormat)
+  }
+
+  def timestampFormatInRead(csvOpts: CSVOptions): Option[String] = {
+    Option(csvOpts.timestampFormat)
+  }
+
+  def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
+    GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")
+  }
 }

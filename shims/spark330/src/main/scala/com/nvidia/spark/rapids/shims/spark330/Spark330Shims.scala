@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301db
+package com.nvidia.spark.rapids.shims.spark330
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 
-class Spark301dbShims extends SparkBaseShims with Spark30Xuntil32XShims {
-
+class Spark330Shims extends Spark33XShims {
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 }

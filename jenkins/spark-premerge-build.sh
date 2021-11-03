@@ -35,7 +35,8 @@ mvn_verify() {
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
-    # build all the versions but only run unit tests on one 3.0.X version (base version covers this), one 3.1.X version, and one 3.2.X version.
+    # build all the versions but only run unit tests on one build from each of the feature version lines
+    # 3.0.X version (base version covers this), 3.1.X version, 3.2.X version, and 3.3.X version.
     # All others shims test should be covered in nightly pipelines
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=302 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=303 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
@@ -48,6 +49,8 @@ mvn_verify() {
     # don't skip tests
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS=''
     env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=321 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    # don't skip tests
+    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS=''
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.

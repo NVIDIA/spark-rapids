@@ -77,6 +77,6 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
 
   override private[spark] def getLocalProperties = new Properties()
 
-  override def cpus(): Int = 2
+  def cpus(): Int = 2
 }
 
