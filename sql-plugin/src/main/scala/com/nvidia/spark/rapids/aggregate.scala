@@ -520,8 +520,15 @@ class GpuHashAggregateIterator(
         batch
       }
 
+      val finalNumRows = finalBatch.numRows()
+
       // Perform the last project to get the correct shape that Spark expects. Note this may
       // add things like literals that were not part of the aggregate into the batch.
+      //
+      // If `resultCvs` empty, it means we don't have any `resultExpressions` for this
+      // aggregate. In these cases, the row count is the only important piece of information
+      // that this aggregate exec needs to report up, so it will return batches that have no columns
+      // but that do have a row count.
       val resultCvs = withResource(finalBatch) { _ =>
         boundExpressions.boundResultReferences.safeMap { ref =>
           // Result references can be virtually anything, we need to coerce
@@ -530,10 +537,9 @@ class GpuHashAggregateIterator(
         }
       }
       closeOnExcept(resultCvs) { _ =>
-        val rowCount = if (resultCvs.isEmpty) 0 else resultCvs.head.getRowCount.toInt
-        metrics.numOutputRows += rowCount
+        metrics.numOutputRows += finalNumRows
         metrics.numOutputBatches += 1
-        new ColumnarBatch(resultCvs.toArray, rowCount)
+        new ColumnarBatch(resultCvs.toArray, finalNumRows)
       }
     }
   }
@@ -555,7 +561,7 @@ class GpuHashAggregateIterator(
           }
         }
       }
-      new ColumnarBatch(cols.toArray, cols.head.getRowCount.toInt)
+      new ColumnarBatch(cols.toArray, batch.numRows())
     }
   }
 
@@ -727,6 +733,10 @@ class GpuHashAggregateIterator(
       }
     }
 
+    if (aggDataType.isEmpty) {
+      aggDataType.append(LongType)
+    }
+
     // a bound expression that is applied before the cuDF aggregate
     private val preStepBound =
       GpuBindReferences.bindGpuReferences(preStep, aggBufferAttributes)
@@ -868,9 +878,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    if (agg.resultExpressions.isEmpty) {
-      willNotWorkOnGpu("result expressions is empty")
-    }
     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
     // we need to run recursive type check on the structs.
     val allTypesAreSupported = agg.groupingExpressions.forall(e =>
