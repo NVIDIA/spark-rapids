@@ -73,8 +73,12 @@ case class ClouderaShimVersion(major: Int, minor: Int, patch: Int, clouderaVersi
   override def toString(): String = s"$major.$minor.$patch.$clouderaVersion"
 }
 
-case class DatabricksShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-databricks"
+case class DatabricksShimVersion(
+    major: Int,
+    minor: Int,
+    patch: Int,
+    dbver: String = "") extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch-databricks$dbver"
 }
 
 case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
@@ -109,7 +113,6 @@ trait SparkShims {
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isWindowFunctionExec(plan: SparkPlan): Boolean
-  def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
@@ -282,7 +285,7 @@ trait SparkShims {
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 
   /**
-  * This Boolean variable set to `true` for Spark < 3.1.0, and set to 
+  * This Boolean variable set to `true` for Spark < 3.1.0, and set to
   * `SQLConf.get.legacyStatisticalAggregate` otherwise.
   * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
   */
