@@ -293,6 +293,18 @@ def test_hash_reduction_sum(data_gen, conf):
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
         conf = copy_and_update(allow_negative_scale_of_decimal_conf, conf))
 
+#TODO when we can support sum on larger types https://github.com/NVIDIA/spark-rapids/issues/3944
+# we should move to a larger type and use a smaller count so we can avoid the long CPU run
+# then we should look at splitting the reduction up so we do half on the CPU and half on the GPU
+# So we can test compatabiliy too (but without spending even longer computing)
+def test_hash_reduction_decimal_overflow_sum():
+    assert_gpu_and_cpu_are_equal_collect(
+        # Spark adds +10 to precision so we need 10-billion entries before overflow is even possible.
+        # we use 10-billion and 2 to make sure we hit the overflow.
+        lambda spark: spark.range(10000000002)\
+                .selectExpr("CAST('9999999999' as Decimal(10, 0)) as a")\
+                .selectExpr("SUM(a)"))
+
 @approximate_float
 @ignore_order
 @incompat

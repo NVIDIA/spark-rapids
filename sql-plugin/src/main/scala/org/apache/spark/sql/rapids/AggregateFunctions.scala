@@ -339,16 +339,8 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate with Arm {
   //
   @transient val rapidsSumType: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 
-  override val reductionAggregate: cudf.ColumnVector => cudf.Scalar = {
-    dataType match {
-      case _: DecimalType =>
-        (col: cudf.ColumnVector) => withResource(col.castTo(rapidsSumType)) { tmp =>
-          tmp.sum(rapidsSumType)
-        }
-      case _ =>
-        (col: cudf.ColumnVector) => col.sum(rapidsSumType)
-    }
-  }
+  override val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
+    (col: cudf.ColumnVector) => col.sum(rapidsSumType)
 
   override lazy val groupByAggregate: GroupByAggregation =
     GroupByAggregation.sum()
@@ -609,7 +601,7 @@ case class GpuCheckOverflowAfterSum(
       val dataBase = dataCol.getBase
       withResource(GpuProjectExec.projectSingle(batch, isEmpty)) { isEmptyCol =>
         val isEmptyBase = isEmptyCol.getBase
-        if (nullOnOverflow) {
+        if (!nullOnOverflow) {
           // ANSI mode
           val problem = withResource(dataBase.isNull) { isNull =>
             withResource(isEmptyBase.not()) { notEmpty =>
@@ -662,17 +654,17 @@ case class GpuSum(child: Expression,
     case _ => Seq(GpuCast(child, resultType))
   }
 
-  override lazy val updateAggregates: Seq[CudfAggregate] = resultType match {
-    case _: DecimalType => Seq(new CudfSum(resultType), new CudfMin(BooleanType))
-    case _ => Seq(new CudfSum(resultType))
-  }
+  private lazy val updateSum = new CudfSum(resultType)
+  private lazy val updateIsEmpty = new CudfMin(BooleanType)
 
-  private lazy val postUpdateSum = updateAggregates.head.attr
-  private lazy val postUpdateIsEmpty = updateAggregates(1).attr
+  override lazy val updateAggregates: Seq[CudfAggregate] = resultType match {
+    case _: DecimalType => Seq(updateSum, updateIsEmpty)
+    case _ => Seq(updateSum)
+  }
 
   override lazy val postUpdate: Seq[Expression] = resultType match {
     case dt: DecimalType =>
-      Seq(GpuCheckOverflow(postUpdateSum, dt, !failOnErrorOverride), postUpdateIsEmpty)
+      Seq(GpuCheckOverflow(updateSum.attr, dt, !failOnErrorOverride), updateIsEmpty.attr)
     case _ => postUpdateAttr
   }
 
@@ -690,23 +682,23 @@ case class GpuSum(child: Expression,
     case _ => aggBufferAttributes
   }
 
+  private lazy val mergeSum = new CudfSum(resultType)
+  private lazy val mergeIsEmpty = new CudfMin(BooleanType)
+  private lazy val mergeIsOverflow = new CudfMax(BooleanType)
+
   // To be able to do decimal overflow detection, we need a CudfSum that does **not** ignore nulls.
   // Cudf does not have such an aggregation, so for merge we have to work around that similar to
   // what happens with isEmpty
   override lazy val mergeAggregates: Seq[CudfAggregate] = resultType match {
     case _: DecimalType =>
-      Seq(new CudfSum(resultType), new CudfMin(BooleanType), new CudfMax(BooleanType))
-    case _ => Seq(new CudfSum(resultType))
+      Seq(mergeSum, mergeIsEmpty, mergeIsOverflow)
+    case _ => Seq(mergeSum)
   }
-
-  private lazy val postMergeSum = mergeAggregates.head.attr
-  private lazy val postMergeIsEmpty = mergeAggregates(1).attr
-  private lazy val postMergeIsOverflow = mergeAggregates(2).attr
 
   override lazy val postMerge: Seq[Expression] = resultType match {
     case _: DecimalType =>
-      Seq(GpuIf(postMergeIsOverflow, GpuLiteral.create(null, resultType), postMergeSum),
-        postMergeIsEmpty)
+      Seq(GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, resultType), mergeSum.attr),
+        mergeIsEmpty.attr)
     case _ => postMergeAttr
   }
 
@@ -963,20 +955,19 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
     GpuLiteral.default(sumDataType),
     GpuLiteral(0L, LongType))
 
+  private lazy val updateSum = new CudfSum(sumDataType)
+  private lazy val updateCount = new CudfSum(LongType)
+
   // The count input projection will need to be collected as a sum (of counts) instead of
   // counts (of counts) as the GpuIsNotNull o/p is casted to count=0 for null and 1 otherwise, and
   // the total count can be correctly evaluated only by summing them. eg. avg(col(null, 27))
   // should be 27, with count column projection as (0, 1) and total count for dividing the
   // average = (0 + 1) and not 2 which is the rowcount of the projected column.
-  override lazy val updateAggregates: Seq[CudfAggregate] =
-    Seq(new CudfSum(inputProjection.head.dataType), new CudfSum(LongType))
-
-  private lazy val postUpdateSum = updateAggregates.head.attr
-  private lazy val postUpdateCount = updateAggregates(1).attr
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateSum, updateCount)
 
   override lazy val postUpdate: Seq[Expression] = sumDataType match {
     case dt: DecimalType =>
-      Seq(GpuCheckOverflow(postUpdateSum, dt, nullOnOverflow = true), postUpdateCount)
+      Seq(GpuCheckOverflow(updateSum.attr, dt, nullOnOverflow = true), updateCount.attr)
     case _ => postUpdateAttr
   }
 
@@ -993,24 +984,22 @@ case class GpuAverage(child: Expression) extends GpuAggregateFunction
     case _ => aggBufferAttributes
   }
 
-  override lazy val mergeAggregates: Seq[CudfAggregate] = resultType match {
-    case _: DecimalType =>
-      Seq(new CudfSum(sumDataType), new CudfSum(LongType), new CudfMax(BooleanType))
-    case _ =>
-      Seq(new CudfSum(sumDataType), new CudfSum(LongType))
-  }
+  private lazy val mergeSum = new CudfSum(sumDataType)
+  private lazy val mergeCount = new CudfSum(LongType)
+  private lazy val mergeIsOverflow = new CudfMax(BooleanType)
 
-  private lazy val postMergeSum = mergeAggregates.head.attr
-  private lazy val postMergeCount = mergeAggregates(1).attr
-  private lazy val postMergeIsOverflow = mergeAggregates(2).attr
+  override lazy val mergeAggregates: Seq[CudfAggregate] = resultType match {
+    case _: DecimalType =>  Seq(mergeSum, mergeCount, mergeIsOverflow)
+    case _ => Seq(mergeSum, mergeCount)
+  }
 
   override lazy val postMerge: Seq[Expression] = sumDataType match {
     case dt: DecimalType =>
       Seq(
         GpuCheckOverflow(
-          GpuIf(postMergeIsOverflow, GpuLiteral.create(null, sumDataType), postMergeSum),
+          GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, sumDataType), mergeSum.attr),
           dt, nullOnOverflow = true),
-        postMergeCount)
+        mergeCount.attr)
     case _ => postMergeAttr
   }
 
