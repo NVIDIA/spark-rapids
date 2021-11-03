@@ -74,8 +74,12 @@ case class ClouderaShimVersion(major: Int, minor: Int, patch: Int, clouderaVersi
   override def toString(): String = s"$major.$minor.$patch.$clouderaVersion"
 }
 
-case class DatabricksShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-databricks"
+case class DatabricksShimVersion(
+    major: Int,
+    minor: Int,
+    patch: Int,
+    dbver: String = "") extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch-databricks$dbver"
 }
 
 case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
