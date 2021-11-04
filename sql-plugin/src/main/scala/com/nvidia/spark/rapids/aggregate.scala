@@ -751,7 +751,7 @@ class GpuHashAggregateIterator(
      * @param preProcessed - a batch after the "pre" step
      * @return
      */
-    def performReduction(preProcessed: ColumnarBatch): Table = {
+    def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
       val cvs = mutable.ArrayBuffer[GpuColumnVector]()
       cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
         val aggFn = cudfAgg.reductionAggregate
@@ -762,27 +762,7 @@ class GpuHashAggregateIterator(
             cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
         }
       }
-      if (cvs.isEmpty) {
-        // If cvs is empty, we add a single row with zero value. The value in the row is
-        // meaningless as it doesn't matter what we put in it. The projection will add a zero
-        // column to the result set in case of a parameter-less count.
-        // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
-        // desired result compared to Spark-CPU.
-        // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
-        withResource(Scalar.fromLong(0L)) { ZERO =>
-          cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
-        }
-        // a reduction has no grouping keys, and in this case we also have no aggregate functions
-        // this means that we have an empty dataType collection. We need to add the LongType
-        // to the types, since we are producing batches with a new Long column.
-        require(postStepDataTypes.isEmpty,
-          s"Invalid aggregate batch data types ($postStepDataTypes) for a reduction with " +
-            s"no aggregate functions")
-        postStepDataTypes.append(LongType)
-      }
-      withResource(cvs) { _ =>
-        GpuColumnVector.from(new ColumnarBatch(cvs.toArray, 1))
-      }
+      new ColumnarBatch(cvs.toArray, 1)
     }
 
     /**
@@ -790,7 +770,7 @@ class GpuHashAggregateIterator(
      * @param preProcessed the batch after the "pre" step
      * @return a Table that has been cuDF aggregated
      */
-    def performGroupByAggregation(preProcessed: ColumnarBatch): Table = {
+    def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
       withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
         val groupOptions = cudf.GroupByOptions.builder()
           .withIgnoreNullKeys(false)
@@ -802,9 +782,13 @@ class GpuHashAggregateIterator(
         }
 
         // perform the aggregate
-        preProcessedTbl
+        val aggTbl = preProcessedTbl
           .groupBy(groupOptions, groupingExpressions.indices: _*)
           .aggregate(cudfAggsOnColumn: _*)
+
+        withResource(aggTbl) { _ =>
+          GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+        }
       }
     }
 
@@ -814,14 +798,12 @@ class GpuHashAggregateIterator(
      * stage.
      * It takes a cuDF aggregated batch and applies the "post" step:
      * postUpdate for update, or postMerge for merge
-     * @param resultTbl - cuDF aggregated table
+     * @param resultBatch - cuDF aggregated batch
      * @return output batch from the aggregate
      */
-    def postProcess(resultTbl: cudf.Table): ColumnarBatch = {
-      withResource(resultTbl) { result =>
-        withResource(GpuColumnVector.from(result, postStepDataTypes.toArray)) { resultBatch =>
-          GpuProjectExec.project(resultBatch, postStepBound)
-        }
+    def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
+      withResource(resultBatch) { _ =>
+        GpuProjectExec.project(resultBatch, postStepBound)
       }
     }
   }
@@ -840,7 +822,7 @@ class GpuHashAggregateIterator(
       // a pre-processing step required before we go into the cuDF aggregate, in some cases
       // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
       withResource(helper.preProcess(toAggregateBatch)) { preProcessed =>
-        val resultTbl = if (groupingExpressions.nonEmpty) {
+        val resultBatch = if (groupingExpressions.nonEmpty) {
           helper.performGroupByAggregation(preProcessed)
         } else {
           helper.performReduction(preProcessed)
@@ -848,7 +830,7 @@ class GpuHashAggregateIterator(
 
         // a post-processing step required in some scenarios, casting or picking
         // apart a struct
-        helper.postProcess(resultTbl)
+        helper.postProcess(resultBatch)
       }
     }
   }
