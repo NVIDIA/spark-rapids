@@ -29,7 +29,7 @@ function print_usage() {
   echo "        print this help message"
   echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
   echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
-  echo "        snapshotsWithDataBricks, and noSnapshotsWithDataBricks. NOTE: the Databricks-related spark3XYdb shims"
+  echo "        snapshotsWithDatabricks, and noSnapshotsWithDatabricks. NOTE: the Databricks-related spark3XYdb shims"
   echo "        are not built locally, the jars are fetched prebuilt from a remote Maven repo."
   echo "        You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will build only"
   echo "        the distribution jar only for 3.2.0 and 3.3.0"
@@ -37,7 +37,7 @@ function print_usage() {
   echo "        after finishing parallel builds, resume from dist and build up to and including module MODULE."
   echo "        E.g., --module=integration_tests"
   echo "   -P=N, --parallel=N"
-  echo "        Build in parallel, N is passed via -P to xargs."
+  echo "        Build in parallel, N (4 by default) is passed via -P to xargs"
 }
 
 case "$1" in
