@@ -462,26 +462,7 @@ abstract class SparkBaseShims extends Spark30XShims {
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
             + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
-        (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            if (!scan.relation.cacheBuilder.serializer
-                .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-              willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
-              if (SQLConf.get.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-                  .equals("com.nvidia.spark.ParquetCachedBatchSerializer")) {
-                throw new IllegalStateException("Cache serializer failed to load! " +
-                    "Something went wrong while loading ParquetCachedBatchSerializer class")
-              }
-            }
-          }
-
-          /**
-           * Convert InMemoryTableScanExec to a GPU enabled version.
-           */
-          override def convertToGpu(): GpuExec = {
-            GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
-          }
-        }),
+        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         JoinTypeChecks.equiJoinExecChecks,
