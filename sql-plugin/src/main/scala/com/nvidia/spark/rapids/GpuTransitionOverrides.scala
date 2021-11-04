@@ -406,10 +406,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-  // Find  GpuDataWritingCommandExec(......(GpuHashJoin)),
-  //       GpuDataWritingCommandExec(......(GpuHashAggregateExec))
-  // from top to bottom and insert sort to optimize the file size.
-  // such as: GpuDataWritingCommandExec(GpuProject(GpuHashAggregateExec))
+  // If a GPU hash-based operation, such as GpuHashJoin or GpuHashAggregateExec,
+  // is followed eventually by a data writing command without an intermediate node
+  // changing the sort order, insert a sort to optimize the output file size.
   private def insertHashOptimizeSorts(plan: SparkPlan,
       hasWriteParent: Boolean = false): SparkPlan = {
     if (rapidsConf.enableHashOptimizeSort) {
