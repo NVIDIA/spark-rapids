@@ -30,6 +30,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
+import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -290,13 +291,11 @@ trait SparkShims {
   * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
   */
   def getLegacyStatisticalAggregate(): Boolean
-}
 
-abstract class SparkCommonShims extends SparkShims {
-  override def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String],
-      explicitMetadata: Option[Metadata]): Alias = {
-    Alias(child, name)(exprId, qualifier, explicitMetadata)
-  }
+
+  def dateFormatInRead(csvOpts: CSVOptions): Option[String]
+
+  def timestampFormatInRead(csvOpts: CSVOptions): Option[String]
+
+  def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 }

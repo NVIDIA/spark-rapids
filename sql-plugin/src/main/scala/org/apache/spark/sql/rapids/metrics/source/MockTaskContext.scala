@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,5 +76,7 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
   override private[spark] def fetchFailed = None
 
   override private[spark] def getLocalProperties = new Properties()
+
+  def cpus(): Int = 2
 }
 

@@ -63,7 +63,7 @@ case class GpuOrcScan(
     super.description() + ", PushedFilters: " + seqToString(pushedFilters)
   }
 
-  override def withFilters(
+  def withFilters(
       partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): FileScan =
     this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }

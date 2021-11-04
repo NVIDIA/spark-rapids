@@ -1302,6 +1302,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
+  val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
+    .doc("The name of the Spark resource that represents a GPU that you want the plugin to use " +
+      "if using custom resources with Spark.")
+    .stringConf
+    .createWithDefault("gpu")
+
   val SUPPRESS_PLANNING_FAILURE = conf("spark.rapids.sql.suppressPlanningFailure")
     .doc("Option to fallback an individual query to CPU if an unexpected condition prevents the " +
       "query plan from being converted to a GPU-enabled one. Note this is different from " +
@@ -1718,6 +1724,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 

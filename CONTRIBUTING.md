@@ -50,31 +50,35 @@ You can find all available build versions in the top level pom.xml file. If you 
 for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
 the version you want.
 
-To get an uber jar with more than 1 version you have to `mvn install` each version
-and then use one of the defined profiles in the dist module. See the next section
-for more details.
+To get an uber jar with more than 1 version you have to `mvn package` each version
+and then use one of the defined profiles in the dist module, or a comma-separated list of
+build versions. See the next section for more details.
 
 ### Building a Distribution for Multiple Versions of Spark
 
 By default the distribution jar only includes code for a single version of Spark. If you want
-to create a jar with multiple versions we currently have 4 options.
+to create a jar with multiple versions we have the following options.
 
 1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
 2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
 3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
 4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
+5. Build for an arbitrary combination of comma-separated build versions using `-Dincluded_buildvers=<CSV list of build versions>`.
+   E.g., `-Dincluded_buildvers=312,330`
 
-You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
+You must first build each of the versions of Spark and then build one final time using the profile for the option you want.
 
 You can also install some manually and build a combined jar. For instance to build non-snapshot versions:
 
 ```shell script
-mvn -Dbuildver=301 clean install -DskipTests
-mvn -Dbuildver=302 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=303 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=311 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=312 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
+mvn clean
+mvn -Dbuildver=301 package -DskipTests
+mvn -Dbuildver=302 package -Drat.skip=true -DskipTests
+mvn -Dbuildver=303 package -Drat.skip=true -DskipTests
+mvn -Dbuildver=311 package -Drat.skip=true -DskipTests
+mvn -Dbuildver=312 package -Drat.skip=true -DskipTests
+mvn -Dbuildver=320 package -Drat.skip=true -DskipTests
+mvn -Dbuildver=311cdh package -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
 #### Building with buildall script
@@ -84,11 +88,11 @@ There is a build script `build/buildall` that automates the local build process.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots`
-- `minimumFeatureVersionMix` that currently includes 302, 311cdh, 312, 320 is recommended for catching incompatibilites already in the local development cycle
+- `minimumFeatureVersionMix` that currently includes 302, 311cdh, 312, 320 is recommended for catching incompatibilities already in the local development cycle
 
-For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `-Dbuildver=320` for Spark 3.2.0
+For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=301` for Spark 3.0.1.
 
-The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
+The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need for the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
 
 By default, `buildall` builds up to 4 shims in parallel using `xargs -P <n>`. This can be adjusted by
 specifying the environment variable `BUILD_PARALLEL=<n>`.
