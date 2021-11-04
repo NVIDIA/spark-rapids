@@ -335,8 +335,7 @@ In the above example, two application event logs were analyzed. “app-202105071
 than the “app-20210507174503-1704” because the score(in the csv output) for “app-20210507174503-2538”   
 is higher than  “app-20210507174503-1704”. 
 Here the `Problematic Duration` is zero but please keep in mind that we are only able to detect certain issues. 
-This currently includes some UDFs, some decimal operations, using JDBC data source for reading and
-nested complex types.
+This currently includes some UDFs, some decimal operations and nested complex types.
 The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
 
 Please refer to [supported_ops.md](./supported_ops.md) 
@@ -359,7 +358,7 @@ Here is a brief description of each of column that is in the CSV:
 2. App ID: Spark Application ID.
 3. Score :  A score calculated based on SQL Dataframe Task Duration and gets negatively affected for any unsupported operators.
    Please refer to [Qualification tool score algorithm](#Qualification-tool-score-algorithm) for more details.
-4. Potential Problems : Some UDFs, some decimal operations, JDBC data source and nested complex types.
+4. Potential Problems : Some UDFs, some decimal operations and nested complex types.
 5. SQL DF Duration: Time duration that includes only SQL/Dataframe queries.
 6. SQL Dataframe Task Duration: Amount of time spent in tasks of SQL Dataframe operations.
 7. App Duration: Total Application time.
@@ -376,7 +375,7 @@ Here is a brief description of each of column that is in the CSV:
 13. Read File Format Score: A score given based on whether the read file formats and types are supported.
 14. Unsupported Read File Formats and Types: Looks at the Read Schema and
     reports the file formats along with types which may not be fully supported.
-    Example: Parquet[decimal]. Note that this is based on the current version of the plugin and
+    Example: Parquet[decimal], JDBC[*]. Note that this is based on the current version of the plugin and
     future versions may add support for more file formats and types.
 15. Unsupported Write Data Format: Reports the data format which we currently don’t support, i.e.
     if the result is written in JSON or CSV format.

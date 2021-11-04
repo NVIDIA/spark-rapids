@@ -137,10 +137,8 @@ abstract class AppBase(
 
   private val UDFKeywords = Map(".*UDF.*" -> "UDF")
 
-  private val JDBCkeywords = Map(".*JDBCRelation.*" -> "JDBCRelation")
-
   protected def findPotentialIssues(desc: String): Set[String] =  {
-    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords ++ JDBCkeywords
+    val potentialIssuesRegexs = UDFKeywords ++ decimalKeyWords
     val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
     issues.values.toSet
   }
@@ -148,6 +146,15 @@ abstract class AppBase(
   def getPlanMetaWithSchema(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
     val childRes = planInfo.children.flatMap(getPlanMetaWithSchema(_))
     if (planInfo.metadata != null && planInfo.metadata.contains("ReadSchema")) {
+      childRes :+ planInfo
+    } else {
+      childRes
+    }
+  }
+
+  def getJdbcInPlan(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
+    val childRes = planInfo.children.flatMap(getJdbcInPlan(_))
+    if (planInfo.simpleString != null && planInfo.simpleString.contains("Scan JDBCRelation")) {
       childRes :+ planInfo
     } else {
       childRes
@@ -173,6 +180,13 @@ abstract class AppBase(
         meta.getOrElse("PushedFilters", "unknown"),
         readSchema
       )
+    }
+  }
+
+  protected def checkJdbcScan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
+    val allJdbcScan = getJdbcInPlan(planInfo)
+    if (allJdbcScan.nonEmpty) {
+      dataSourceInfo += DataSourceCase(sqlID, "JDBC", "unknown", "unknown", "")
     }
   }
 
