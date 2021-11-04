@@ -31,7 +31,7 @@ SOURCE_WITH_ARGS="--sourcefiles "$(echo $SOURCE_DIRS | sed -e 's/:/ --sourcefile
 rm -rf "$TMP_CLASS"
 mkdir -p "$TMP_CLASS"
 pushd "$TMP_CLASS"
-jar xf "$DIST_JAR"
+jar xf "$DIST_JAR" com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-301}/"
 rm -rf com/nvidia/shaded/ org/openucx/
 popd
 

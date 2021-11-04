@@ -55,6 +55,16 @@ mvn_verify() {
     mvn -B $MVN_URM_MIRROR '-Psnapshots,pre-merge' clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
         -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
 
+    # The jacoco coverage should have been collected, but because of how the shade plugin
+    # works and jacoco we need to clean some things up so jacoco will only report for the
+    # things we care about
+    mkdir -p target/jacoco_classes/
+    FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
+    pushd target/jacoco_classes/
+    jar xf $FILE com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-301}/"
+    rm -rf com/nvidia/shaded/ org/openucx/
+    popd
+
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
 }
