@@ -346,7 +346,7 @@ if they aren’t in the event logs.
 The second output is a more detailed output.
 Here is a sample output requesting csv style output:
 ```
-App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Unsupported Nested Complex Types
+App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types
 job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,"",JSON,array<struct<city:string;state:string>>;map<string;string>,array<struct<city:string;state:string>>
 job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]",JSON;CSV,"",""
 ```
@@ -380,7 +380,7 @@ Here is a brief description of each of column that is in the CSV:
 15. Unsupported Write Data Format: Reports the data format which we currently don’t support, i.e.
     if the result is written in JSON or CSV format.
 16. Complex Types: Looks at the Read Schema and reports if there are any complex types(array, struct or maps) in the schema.
-17. Unsupported Nested Complex Types: Nested complex types are complex types which
+17. Nested Complex Types: Nested complex types are complex types which
     contain other complex types (Example: `array<struct<string,string>>`). 
     Note that it can read all the schemas for DataSource V1. The Data Source V2 truncates the schema,
     so if you see ..., then the full schema is not available.
