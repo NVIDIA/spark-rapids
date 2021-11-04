@@ -18,7 +18,6 @@
 package com.nvidia.spark.rapids;
 
 import ai.rapids.cudf.DType;
-import ai.rapids.cudf.HostColumnVector;
 import ai.rapids.cudf.HostColumnVectorCore;
 
 import org.apache.spark.sql.types.ArrayType;
@@ -128,7 +127,8 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
     if (cachedChildren[0] == null) {
       // cache the child data
       ArrayType at = (ArrayType) dataType();
-      cachedChildren[0] = createChildColumnView(0, at.elementType());
+      HostColumnVectorCore data = cudfCv.getChildColumnView(0);
+      cachedChildren[0] = new RapidsHostColumnVectorCore(at.elementType(), data);
     }
     RapidsHostColumnVectorCore data = cachedChildren[0];
     int startOffset = (int) cudfCv.getStartListOffset(rowId);
@@ -143,9 +143,12 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
       MapType mt = (MapType) dataType();
       HostColumnVectorCore structHcv = cudfCv.getChildColumnView(0);
       // keys
-      cachedChildren[0] = createChildColumnView(structHcv, 0, mt.keyType());
+      HostColumnVectorCore firstHcvCore = structHcv.getChildColumnView(0);
       // values
-      cachedChildren[1] = createChildColumnView(structHcv, 1, mt.valueType());
+      HostColumnVectorCore secondHcvCore = structHcv.getChildColumnView(1);
+
+      cachedChildren[0] = new RapidsHostColumnVectorCore(mt.keyType(), firstHcvCore);
+      cachedChildren[1] = new RapidsHostColumnVectorCore(mt.valueType(), secondHcvCore);
     }
     RapidsHostColumnVectorCore keys = cachedChildren[0];
     RapidsHostColumnVectorCore values = cachedChildren[1];
@@ -179,7 +182,8 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
   public final byte[] getBinary(int rowId) {
     if (cachedChildren[0] == null) {
       // cache the child data
-      cachedChildren[0] = createChildColumnView(0, DataTypes.ByteType);
+      HostColumnVectorCore data = cudfCv.getChildColumnView(0);
+      cachedChildren[0] = new RapidsHostColumnVectorCore(DataTypes.ByteType, data);
     }
     RapidsHostColumnVectorCore data = cachedChildren[0];
     int startOffset = (int) cudfCv.getStartListOffset(rowId);
@@ -193,25 +197,11 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
       StructType st = (StructType) dataType();
       StructField[] fields = st.fields();
       for (int i = 0; i < fields.length; i++) {
-        cachedChildren[i] = createChildColumnView(i, fields[i].dataType());
+        HostColumnVectorCore tmp = cudfCv.getChildColumnView(i);
+        cachedChildren[i] = new RapidsHostColumnVectorCore(fields[i].dataType(), tmp);
       }
     }
     return cachedChildren[ordinal];
-  }
-
-  private RapidsHostColumnVectorCore createChildColumnView(int childIndex, DataType dataType) {
-    return createChildColumnView(getBase(), childIndex, dataType);
-  }
-
-  private static RapidsHostColumnVectorCore createChildColumnView(
-      HostColumnVectorCore cv,
-      int childIndex,
-      DataType dataType) {
-    HostColumnVectorCore child = cv.getChildColumnView(childIndex);
-    if (child instanceof HostColumnVector) {
-      ((HostColumnVector) child).incRefCount();
-    }
-    return new RapidsHostColumnVectorCore(dataType, child);
   }
 
   public HostColumnVectorCore getBase() {
