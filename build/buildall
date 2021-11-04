@@ -25,16 +25,19 @@ while [[ "$1" != "" ]] ; do
 function print_usage() {
   echo "Usage: buildall [OPTION]"
   echo "Options:"
-  echo "   --profile=DIST_PROFILE   profile for the dist module, default: noSnapshots,"
-  echo "                            also supported: snapshots, minimumFeatureVersionMix, snapshotsWithDataBricks,"
-  echo "                            and noSnapshotsWithDataBricks. NOTE: the Databricks-related spark3XYdb shims"
-  echo "                            are not built locally, the jars are fetched prebuilt from a remote Maven repo."
-  echo "   --profile=BUILDVER       builds a single Spark shim, e.g. --profile=320"
-  echo "   --module=MODULE          after finishing parallel builds, resume from dist and build"
-  echo "                            up to and including module MODULE, e.g., integration_tests"
-  echo "   --parallel=N             build in parallel, N is passed via -P to xargs. NOTE: standard maven does not support"
-  echo "                            concurrent installs. If you see an error related to a maven-metadata-local.xml in"
-  echo "                            your local m2 cache, delete its parent directory and retry."
+  echo "   -h, --help"
+  echo "        print this help message"
+  echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
+  echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
+  echo "        snapshotsWithDatabricks, and noSnapshotsWithDatabricks. NOTE: the Databricks-related spark3XYdb shims"
+  echo "        are not built locally, the jars are fetched prebuilt from a remote Maven repo."
+  echo "        You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will build only"
+  echo "        the distribution jar only for 3.2.0 and 3.3.0"
+  echo "   -m=MODULE, --module=MODULE"
+  echo "        after finishing parallel builds, resume from dist and build up to and including module MODULE."
+  echo "        E.g., --module=integration_tests"
+  echo "   -P=N, --parallel=N"
+  echo "        Build in parallel, N (4 by default) is passed via -P to xargs"
 }
 
 case "$1" in
@@ -88,6 +91,8 @@ case $DIST_PROFILE in
       312
       313
       320
+      321
+      330
     )
     ;;
 
@@ -113,7 +118,8 @@ case $DIST_PROFILE in
     ;;
 
   3*)
-    SPARK_SHIM_VERSIONS=($DIST_PROFILE)
+    <<< $DIST_PROFILE IFS="," read -ra SPARK_SHIM_VERSIONS
+    INCLUDED_BUILDVERS_OPT="-Dincluded_buildvers=$DIST_PROFILE"
     unset DIST_PROFILE
     ;;
 
@@ -145,7 +151,7 @@ build_single_shim() {
   SKIP_CHECKS=$( [[ "$BUILD_VER" == "$BASE_VER" ]] && echo false || echo true )
 
   echo "#### REDIRECTING mvn output to $LOG_FILE ####"
-  mvn -U install \
+  mvn -U package \
       -DskipTests \
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
@@ -176,7 +182,7 @@ time (
     xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
     bash -c 'build_single_shim "$@"' _ %
   echo "Resuming from dist build only using $BASE_VER"
-  mvn install --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT \
+  mvn package --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
     -Dbuildver="$BASE_VER" \
-    -DskipTests
+    -DskipTests -Dskip -Dmaven.javadoc.skip
 )
