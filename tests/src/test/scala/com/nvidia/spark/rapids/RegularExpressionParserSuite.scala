@@ -19,7 +19,7 @@ import scala.collection.mutable.ListBuffer
 
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.rapids.{QuantifierFixedLength, RegexAST, RegexChar, RegexParser, RegexRepetition, RegexSequence, SimpleQuantifier}
+import org.apache.spark.sql.rapids.{QuantifierFixedLength, RegexAST, RegexChar, RegexCharacterClass, RegexCharacterRange, RegexChoice, RegexGroup, RegexParser, RegexRepetition, RegexSequence, SimpleQuantifier}
 
 class RegularExpressionParserSuite extends FunSuite {
 
@@ -40,7 +40,30 @@ class RegularExpressionParserSuite extends FunSuite {
       RegexSequence(ListBuffer(
         RegexRepetition(
           RegexRepetition(RegexChar('a'), SimpleQuantifier('*')),
-          SimpleQuantifier('+')))))
+            SimpleQuantifier('+')))))
+  }
+
+  test("choice") {
+    assert(parse("a|b") ===
+      RegexChoice(RegexSequence(ListBuffer(RegexChar('a'))),
+        RegexSequence(ListBuffer(RegexChar('b')))))
+  }
+
+  test("group") {
+      assert(parse("(a)(b)") ===
+        RegexSequence(ListBuffer(
+          RegexGroup(RegexSequence(ListBuffer(RegexChar('a')))),
+          RegexGroup(RegexSequence(ListBuffer(RegexChar('b')))))))
+  }
+
+  test("character class") {
+    assert(parse("[a-z+A-Z]") ===
+      RegexSequence(ListBuffer(
+        RegexCharacterClass(negated = false,
+          ListBuffer(
+            RegexCharacterRange('a', 'z'),
+            RegexChar('+'),
+            RegexCharacterRange('A', 'Z'))))))
   }
 
   private def parse(pattern: String): RegexAST = {
