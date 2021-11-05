@@ -22,22 +22,12 @@ import java.math.RoundingMode
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer, Table}
 import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.{spy, times, verify}
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, StringType}
 
-class RapidsDiskStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with MockitoSugar {
-  val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
-
-  override def beforeEach(): Unit = {
-    TEST_FILES_ROOT.mkdirs()
-  }
-
-  override def afterEach(): Unit = {
-    org.apache.commons.io.FileUtils.deleteDirectory(TEST_FILES_ROOT)
-  }
+class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
 
   private def buildContiguousTable(): ContiguousTable = {
     withResource(new Table.TestBuilder()
