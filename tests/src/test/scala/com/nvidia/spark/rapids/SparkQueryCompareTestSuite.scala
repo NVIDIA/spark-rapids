@@ -1852,7 +1852,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     val sparkShimVersion = ShimLoader.getSparkShims.getSparkShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
-      case DatabricksShimVersion(a, b, c) => (a, b, c)
+      case DatabricksShimVersion(a, b, c, _) => (a, b, c)
       case ClouderaShimVersion(a, b, c, _) => (a, b, c)
       case EMRShimVersion(a, b, c) => (a, b, c)
     }

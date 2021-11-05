@@ -17,20 +17,15 @@
 package com.nvidia.spark.rapids.shims.spark311db
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
-import com.nvidia.spark.rapids.spark311db.RapidsShuffleManager
+import com.nvidia.spark.rapids.shims.v2._
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.internal.SQLConf
 
-class Spark311dbShims extends SparkBaseShims {
+class Spark311dbShims extends SparkBaseShims with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
-
-  override def getRapidsShuffleManagerClass: String = {
-    classOf[RapidsShuffleManager].getCanonicalName
-  }
 
   override def getParquetFilters(
       schema: MessageType,

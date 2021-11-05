@@ -90,6 +90,8 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
     elif isinstance(cpu, Decimal):
         assert cpu == gpu, "GPU and CPU decimal values are different at {}".format(path)
+    elif isinstance(cpu, bytearray):
+        assert cpu == gpu, "GPU and CPU bytearray values are different at {}".format(path)
     elif (cpu == None):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:

@@ -905,3 +905,38 @@ def test_window_ride_along(ride_along):
             ' row_number() over (order by a) as row_num '
             'from window_agg_table ',
             conf = allow_negative_scale_of_decimal_conf)
+
+@approximate_float
+@ignore_order
+@pytest.mark.parametrize('preceding', [Window.unboundedPreceding, -4], ids=idfn)
+@pytest.mark.parametrize('following', [Window.unboundedFollowing, 3], ids=idfn)
+def test_window_range_stddev(preceding, following):
+    window_spec_agg = Window.partitionBy("_1").orderBy("_2").rangeBetween(preceding, following)
+
+    def do_it(spark):
+        # rangBetween uses the actual value of the column on which we are doing the aggregation
+        # which is why we are generating values between LONG_MIN_VALUE - min(preceding) and LONG_MAX_VALUE - max(following)
+        # otherwise it will cause an overflow
+        gen = LongGen(min_val=-(1 << 63) + 4, max_val=(1 << 63) - 4)
+        data_gen = [('_1', RepeatSeqGen(gen, length=20)), ('_2', gen)]
+        df = gen_df(spark, data_gen)
+        return df.withColumn("standard_dev", f.stddev("_2").over(window_spec_agg)) \
+            .selectExpr("standard_dev")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={ 'spark.rapids.sql.window.range.long.enabled': 'true'})
+
+@approximate_float
+@ignore_order
+@pytest.mark.parametrize('preceding', [Window.unboundedPreceding, -4], ids=idfn)
+@pytest.mark.parametrize('following', [Window.unboundedFollowing, 3], ids=idfn)
+def test_window_rows_stddev(preceding, following):
+    window_spec_agg = Window.partitionBy("_1").orderBy("_2").rowsBetween(preceding, following)
+
+    def do_it(spark):
+        data_gen = [('_1', RepeatSeqGen(IntegerGen(), length=20)), ('_2', DoubleGen())]
+        df = gen_df(spark, data_gen)
+        return df.withColumn("standard_dev", f.stddev("_2").over(window_spec_agg)) \
+            .selectExpr("standard_dev")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
