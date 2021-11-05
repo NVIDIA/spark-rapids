@@ -43,10 +43,6 @@ class RegularExpressionParserSuite extends FunSuite {
           SimpleQuantifier('+')))))
   }
 
-  test("adhoc") {
-    println(parse("ab*$}\\B? "))
-  }
-
   private def parse(pattern: String): RegexAST = {
     new RegexParser(pattern).parse()
   }
