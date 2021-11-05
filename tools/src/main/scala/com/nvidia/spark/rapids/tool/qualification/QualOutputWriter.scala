@@ -111,7 +111,7 @@ object QualOutputWriter {
   val READ_FILE_FORMAT_TYPES_STR = "Unsupported Read File Formats and Types"
   val WRITE_DATA_FORMAT_STR = "Unsupported Write Data Format"
   val COMPLEX_TYPES_STR = "Complex Types"
-  val NESTED_TYPES_STR = "Unsupported Nested Types"
+  val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size

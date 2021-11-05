@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql,\
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,\
+    assert_gpu_and_cpu_are_equal_sql,\
     assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
     assert_cpu_and_gpu_are_equal_collect_with_capture, run_with_cpu, run_with_cpu_and_gpu
 from conftest import is_databricks_runtime
@@ -256,6 +257,17 @@ _grpkey_small_decimals = [
 
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
+
+@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
+def test_hash_grpby_sum_count_action(data_gen):
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
+    )
+@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
+def test_hash_reduction_sum_count_action(data_gen):
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark: gen_df(spark, data_gen, length=100).agg(f.sum('b'))
+    )
 
 @shuffle_test
 @approximate_float
@@ -598,7 +610,6 @@ _replace_modes_single_distinct = [
     # Databricks runtime: GPU(Final&Complete) -> CPU(PartialMerge)
     'final|partialMerge&partial|final&complete',
 ]
-# TODO: add param of use_obj_hash_agg after https://github.com/NVIDIA/spark-rapids/issues/3367 getting fixed
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
@@ -608,11 +619,14 @@ _replace_modes_single_distinct = [
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
                                                                      replace_mode,
-                                                                     aqe_enabled):
+                                                                     aqe_enabled,
+                                                                     use_obj_hash_agg):
     conf = {'spark.rapids.sql.hashAgg.replaceMode': replace_mode,
-            'spark.sql.adaptive.enabled': aqe_enabled}
+            'spark.sql.adaptive.enabled': aqe_enabled,
+            'spark.sql.execution.useObjectHashAggregateExec': use_obj_hash_agg}
     # test with single Distinct
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -1163,6 +1177,24 @@ def test_hash_groupby_approx_percentile_double_scalar():
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
         0.05)
+
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+@ignore_order(local=True)
+@allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
+    'ApproximatePercentile', 'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'CollectLimitExec')
+def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {
+        'spark.rapids.sql.hashAgg.replaceMode': 'partial',
+        'spark.sql.adaptive.enabled': aqe_enabled
+    })
+
+    def approx_percentile_query(spark):
+        df = gen_df(spark, [('k', StringGen(nullable=False)),
+                            ('v', DoubleGen())], length=100)
+        df.createOrReplaceTempView("t")
+        return spark.sql("select k, approx_percentile(v, array(0.1, 0.2)) from t group by k")
+
+    assert_gpu_fallback_collect(lambda spark: approx_percentile_query(spark), 'ApproximatePercentile', conf)
 
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then

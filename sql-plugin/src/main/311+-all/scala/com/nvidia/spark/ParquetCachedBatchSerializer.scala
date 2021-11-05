@@ -41,14 +41,14 @@ trait GpuCachedBatchSerializer extends CachedBatchSerializer {
  */
 class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
-  val minSupportedVer = "3.1.1"
+  val minSupportedVer = "3.1.0"
   val sparkVersion = ShimLoader.getSparkVersion
   // Note that since the config to set the serializer wasn't added until
   // Spark 3.1.0 (https://issues.apache.org/jira/browse/SPARK-32274) this shouldn't
   // ever throw.
   if (sparkVersion < minSupportedVer) {
     throw new IllegalArgumentException("ParquetCachedBaatchSerializer only supported for Spark " +
-      s"versions > 3.1.1, version found was: $sparkVersion")
+      s"versions > 3.1.0, version found was: $sparkVersion")
   }
 
   private lazy val realSerializer: GpuCachedBatchSerializer = {

@@ -580,13 +580,10 @@ do your own testing to verify whether the GPU implementation of `RLike` is suita
 We plan on improving the RLike functionality over time to make it more compatible with Spark so this feature should
 be used at your own risk with the expectation that the behavior will change in future releases.
 
-### Null character in input
+### Null support
 
-The GPU implementation of RLike will not match anything after a null character within a string.
-
-| Pattern   | Input     | Spark on CPU | Spark on GPU |
-|-----------|-----------|--------------|--------------|
-| `A`       | `\u0000A` | Match        | No Match     |
+The GPU implementation of RLike supports null characters in the input but does not support null characters in 
+the regular expression and will fall back to the CPU in this case.
 
 ### Qualifiers with nothing to repeat
 
