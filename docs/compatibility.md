@@ -265,6 +265,48 @@ If a null char '\0' is in a string that is being matched by a regular expression
 the end of the string.  This will be fixed in a future release. The issue is
 [here](https://github.com/NVIDIA/spark-rapids/issues/119).
 
+### RLike
+
+The GPU implementation of RLike has a number of known issues where behavior is not consistent with Apache Spark and
+this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
+
+A summary of known issues is shown below but this is not intended to be a comprehensive list. We recommend that you
+do your own testing to verify whether the GPU implementation of `RLike` is suitable for your use case.
+
+We plan on improving the RLike functionality over time to make it more compatible with Spark so this feature should
+be used at your own risk with the expectation that the behavior will change in future releases.
+
+
+#### Null support
+
+The GPU implementation of RLike supports null characters in the input but does not support null characters in
+the regular expression and will fall back to the CPU in this case.
+
+#### Qualifiers with nothing to repeat
+
+Spark supports qualifiers in cases where there is nothing to repeat. For example, Spark supports `a*+` and this
+will match all inputs. The GPU implementation of RLike does not support this syntax and will throw an exception with
+the message `nothing to repeat at position 0`.
+
+#### Stricter escaping requirements
+
+The GPU implementation of RLike has stricter requirements around escaping special characters in some cases.
+
+| Pattern   | Input  | Spark on CPU | Spark on GPU |
+|-----------|--------|--------------|--------------|
+| `a[-+]`   | `a-`   | Match        | No Match     |
+| `a[\-\+]` | `a-`   | Match        | Match        |
+
+#### Empty groups
+
+The GPU implementation of RLike does not support empty groups correctly.
+
+| Pattern   | Input  | Spark on CPU | Spark on GPU |
+|-----------|--------|--------------|--------------|
+| `z()?`    | `a`    | No Match     | Match        |
+| `z()*`    | `a`    | No Match     | Match        |
+
+
 ## Timestamps
 
 Spark stores timestamps internally relative to the JVM time zone.  Converting an arbitrary timestamp
@@ -568,60 +610,6 @@ The GPU implementation of `approximate_percentile` uses
 distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
 `spark.rapids.sql.expression.ApproximatePercentile=true`.
-
-## RLike
-
-The GPU implementation of RLike has a number of known issues where behavior is not consistent with Apache Spark and
-this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
-
-A summary of known issues is shown below but this is not intended to be a comprehensive list. We recommend that you
-do your own testing to verify whether the GPU implementation of `RLike` is suitable for your use case.
-
-We plan on improving the RLike functionality over time to make it more compatible with Spark so this feature should
-be used at your own risk with the expectation that the behavior will change in future releases.
-
-### Multi-line handling
-
-The GPU implementation of RLike supports `^` and `$` to represent the start and end of lines within a string but
-Spark uses `^` and `$` to refer to the start and end of the entire string (equivalent to `\A` and `\Z`).
-
-| Pattern | Input  | Spark on CPU | Spark on GPU |
-|---------|--------|--------------|--------------|
-| `^A`    | `A\nB` | Match        | Match        |
-| `A$`    | `A\nB` | No Match     | Match        |
-| `^B`    | `A\nB` | No Match     | Match        |
-| `B$`    | `A\nB` | Match        | Match        |
-
-As a workaround, `\A` and `\Z` can be used instead of `^` and `$`.
-
-### Null support
-
-The GPU implementation of RLike supports null characters in the input but does not support null characters in 
-the regular expression and will fall back to the CPU in this case.
-
-### Qualifiers with nothing to repeat
-
-Spark supports qualifiers in cases where there is nothing to repeat. For example, Spark supports `a*+` and this
-will match all inputs. The GPU implementation of RLike does not support this syntax and will throw an exception with
-the message `nothing to repeat at position 0`.
-
-### Stricter escaping requirements
-
-The GPU implementation of RLike has stricter requirements around escaping special characters in some cases.
-
-| Pattern   | Input  | Spark on CPU | Spark on GPU |
-|-----------|--------|--------------|--------------|
-| `a[-+]`   | `a-`   | Match        | No Match     |
-| `a[\-\+]` | `a-`   | Match        | Match        |
-
-### Empty groups
-
-The GPU implementation of RLike does not support empty groups correctly.
-
-| Pattern   | Input  | Spark on CPU | Spark on GPU |
-|-----------|--------|--------------|--------------|
-| `z()?`    | `a`    | No Match     | Match        |
-| `z()*`    | `a`    | No Match     | Match        |
 
 ## Conditionals and operations with side effects (ANSI mode)
 
