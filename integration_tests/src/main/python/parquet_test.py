@@ -675,3 +675,32 @@ def test_reading_from_unaligned_pages_basic_filters_with_nulls(spark_tmp_path, r
         assert_gpu_and_cpu_are_equal_collect(
                 lambda spark : spark.read.parquet(data_path).filter(filter_str),
                 all_confs)
+
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_user_defined_schema_with_case_insensitive(spark_tmp_path, reader_confs, v1_enabled_list):
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+
+    data_gens = [string_gen, int_gen, long_gen]
+    gen_list = [('c_' + str(i), gen) for i, gen in enumerate(data_gens)]
+    gen = StructGen([['struct', StructGen(gen_list, nullable=False)]], nullable=False)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.parquet(data_path))
+
+    schema = StructType([StructField('struct', StructType([StructField('c_1', IntegerType())]))])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).parquet(data_path), all_confs)
+
+    schema = StructType([StructField('STRUCT', StructType([StructField('c_1', IntegerType())]))])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).parquet(data_path), all_confs)
+
+    schema = StructType([StructField('struct', StructType([StructField('C_1', IntegerType())]))])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).parquet(data_path), all_confs)
+
+    schema = StructType([StructField('stRUCt', StructType([StructField('C_1', IntegerType())]))])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).parquet(data_path), all_confs)
