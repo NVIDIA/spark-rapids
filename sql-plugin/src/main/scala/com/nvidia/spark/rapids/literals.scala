@@ -73,18 +73,9 @@ object GpuScalar extends Arm with Logging {
    * Resolves a cudf `HostColumnVector.DataType` from a Spark `DataType`.
    * The returned type will be used by the `ColumnVector.fromXXX` family.
    */
-  private[rapids] def resolveElementType(dt: DataType): HostColumnVector.DataType = dt match {
-    case ArrayType(elementType, _) =>
-      new HostColumnVector.ListType(true, resolveElementType(elementType))
-    case StructType(fields) =>
-      new HostColumnVector.StructType(true, fields.map(f => resolveElementType(f.dataType)): _*)
-    case MapType(keyType, valueType, _) =>
-      new HostColumnVector.ListType(true,
-        new HostColumnVector.StructType(true,
-          resolveElementType(keyType),
-          resolveElementType(valueType)))
-    case other =>
-      new HostColumnVector.BasicType(true, GpuColumnVector.getNonNestedRapidsType(other))
+  private[rapids] def resolveElementType(dt: DataType,
+      nullable: Boolean = true): HostColumnVector.DataType = {
+    GpuColumnVector.convertFrom(dt, nullable)
   }
 
   /*

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301db
+package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2.SparkBaseShims
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 
-class Spark301dbShims extends SparkBaseShims {
+object DataTypeUtils {
+  def isNestedType(dataType: DataType): Boolean = dataType match {
+    case _: ArrayType | _: MapType | _: StructType => true
+    case _ => false
+  }
 
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+  def hasNestedTypes(schema: StructType): Boolean =
+    schema.exists(f => isNestedType(f.dataType))
 }
