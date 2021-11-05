@@ -55,13 +55,11 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
 #E                   	at org.apache.orc.TypeDescription.parseInt(TypeDescription.java:244)
 #E                   	at org.apache.orc.TypeDescription.parseType(TypeDescription.java:362)
 # ...
-orc_basic_gens = [decimal_gen_38_0] # decimal_128_gens_no_neg
-"""
-[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
     TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
                   ] + decimal_gens_no_neg + decimal_128_gens_no_neg
-"""
+
 orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
 
 # Some array gens, but not all because of nesting
@@ -124,19 +122,15 @@ def test_orc_fallback(spark_tmp_path, read_func, disable_conf):
                 "spark.sql.sources.useV1SourceList": "orc"})
 
 @pytest.mark.order(2)
-@pytest.mark.parametrize('orc_gens', orc_gens_list[:1], ids=idfn)
-@pytest.mark.parametrize('read_func', [read_orc_df])
-@pytest.mark.parametrize('reader_confs', reader_opt_confs[:1], ids=idfn)
-@pytest.mark.parametrize('v1_enabled_list', [""])
-def test_read_round_trip_1(spark_tmp_path, orc_gens, read_func, reader_confs, v1_enabled_list):
+@pytest.mark.parametrize('orc_gens', orc_gens_list, ids=idfn)
+@pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+def test_read_round_trip(spark_tmp_path, orc_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
-    def fn(spark):
-        df = gen_df(spark, gen_list, length=10)
-        print(df.collect())
-        df.write.orc(data_path)
     with_cpu_session(
-            lambda spark : fn(spark))
+            lambda spark : gen_df(spark, gen_list).write.orc(data_path))
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
             read_func(data_path),
