@@ -70,6 +70,36 @@ else
         # to still launch a spark application.
         TEST_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2.3 * 1024)) - 1}'`
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
+
+        # adjust TEST_PARALLEL according to cpu cores and free memory;
+        # first read from ENV; Note it's hardly to get CPU cores and real free memory in docker.
+        # So in docker Env, Please set TEST_PARALLEL or set PYSP_TEST_CPU_CORES and PYSP_TEST_FREE_MEMORY
+        if [[ "${PYSP_TEST_CPU_CORES}" != "" ]]; then
+          cpu_cores=${PYSP_TEST_CPU_CORES}
+        else
+          # "nproc" get the number of processing units available
+          # "nproc" will get right number in docker created by "docker run --cpuset-cpus" command,
+          # but not work with "--cpus" or "--cpu-period" or "--cpu-quota".
+          cpu_cores=$(nproc)
+        fi
+        if [[ "${PYSP_TEST_FREE_MEMORY}" != "" ]]; then
+          free_mem_mib=${PYSP_TEST_FREE_MEMORY}
+        else
+          free_mem_mib=$(awk '/MemFree/ { printf "%d\n", $2/1024 }' /proc/meminfo)
+        fi
+
+        # reserve one to avoid 100% usages of all CPU cores
+        max_parallel_for_cpu_cores=$((${cpu_cores} - 1))
+        # default heap size for spark is 1G, add reserve 50M for other processes in OS.
+        max_parallel_for_free_memory=$(( (${free_mem_mib} - 50) / 1024 ))
+        if [[ TEST_PARALLEL -gt $max_parallel_for_cpu_cores ]]; then
+          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_cpu_cores according to cpu cores $cpu_cores"
+          TEST_PARALLEL=${max_parallel_for_cpu_cores}
+        fi
+        if [[ TEST_PARALLEL -gt ${max_parallel_for_free_memory} ]]; then
+          echo "set TEST_PARALLEL from $TEST_PARALLEL to $max_parallel_for_free_memory according to free memory $free_mem_mib mib"
+          TEST_PARALLEL=${max_parallel_for_free_memory}
+        fi
     fi
     if python -c 'import findspark';
     then
