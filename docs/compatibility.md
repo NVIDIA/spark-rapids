@@ -259,7 +259,7 @@ case.
 
 ## LIKE
 
-If a null char '\0' is in a string that is being matched by a regular expression, 'LIKE' sees it as
+If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
 the end of the string.  This will be fixed in a future release. The issue is
 [here](https://github.com/NVIDIA/spark-rapids/issues/119).
 
