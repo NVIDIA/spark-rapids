@@ -277,13 +277,18 @@ class HashJoinIterator(
   override def computeNumJoinRows(cb: ColumnarBatch): Long = {
     withResource(new NvtxWithMetrics("hash join build", NvtxColor.ORANGE, joinTime)) { _ =>
       joinType match {
-        case LeftSemi | LeftAnti | FullOuter =>
+        case LeftSemi | LeftAnti =>
           // Semi or Anti joins do not explode, worst-case they return the same number of rows.
+          buildSide match {
+            case GpuBuildRight => cb.numRows
+            case GpuBuildLeft => built.getBatch.numRows
+          }
+        case FullOuter =>
           // For full joins, currently we only support the entire stream table at once. There's no
           // reason to predict the output rows since the stream batch is not splittable.
           // The cudf API to return a full outer join row count performs excess computation, so
-          // just returns an answer here that will be ignored later.
-          cb.numRows()
+          // just return an answer here that will be ignored later.
+          cb.numRows.max(built.getBatch.numRows)
         case _: InnerLike if built.getBatch.numRows == 0 || cb.numRows == 0 =>
           0
         case _: InnerLike if built.getBatch.numRows > cb.numRows =>
