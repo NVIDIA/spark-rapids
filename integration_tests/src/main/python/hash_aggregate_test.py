@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql,\
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,\
+    assert_gpu_and_cpu_are_equal_sql,\
     assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_sql_with_capture,\
     assert_cpu_and_gpu_are_equal_collect_with_capture, run_with_cpu, run_with_cpu_and_gpu
 from conftest import is_databricks_runtime
@@ -256,6 +257,17 @@ _grpkey_small_decimals = [
 
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
     _grpkey_small_decimals]
+
+@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
+def test_hash_grpby_sum_count_action(data_gen):
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
+    )
+@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
+def test_hash_reduction_sum_count_action(data_gen):
+    assert_gpu_and_cpu_row_counts_equal(
+        lambda spark: gen_df(spark, data_gen, length=100).agg(f.sum('b'))
+    )
 
 @shuffle_test
 @approximate_float

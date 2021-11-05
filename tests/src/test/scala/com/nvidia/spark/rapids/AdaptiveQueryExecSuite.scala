@@ -18,9 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import com.nvidia.spark.rapids.AdaptiveQueryExecSuite.TEST_FILES_ROOT
-import org.scalatest.BeforeAndAfterEach
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
@@ -34,23 +31,11 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
-object AdaptiveQueryExecSuite {
-  val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
-}
-
 class AdaptiveQueryExecSuite
     extends SparkQueryCompareTestSuite
     with AdaptiveSparkPlanHelper
-    with BeforeAndAfterEach
+    with FunSuiteWithTempDir
     with Logging {
-
-  override def beforeEach(): Unit = {
-    TEST_FILES_ROOT.mkdirs()
-  }
-
-  override def afterEach(): Unit = {
-    org.apache.commons.io.FileUtils.deleteDirectory(TEST_FILES_ROOT)
-  }
 
   private def runAdaptiveAndVerifyResult(
       spark: SparkSession, query: String): (SparkPlan, SparkPlan) = {
