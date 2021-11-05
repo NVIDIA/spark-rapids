@@ -73,10 +73,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF does not support OR at BOL / EOL") {
     val patterns = Seq("$|a", "^|a")
-    // "a|$" ?
-    // "a|^" ?
     patterns.foreach(pattern => {
-      println(pattern)
       assertUnsupported(pattern, "nothing to repeat")
     })
   }
@@ -88,7 +85,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("nothing to repeat") {
-    val patterns = Seq("$*", "^+", ".*")
+    val patterns = Seq("$*", "^+")
     patterns.foreach(pattern =>
       assertUnsupported(pattern, "nothing to repeat"))
   }
