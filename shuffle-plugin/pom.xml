@@ -65,7 +65,7 @@
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                 </dependency>
             </dependencies>
         </profile>
@@ -80,7 +80,7 @@
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
                     <exclusions>
                         <exclusion>
@@ -114,15 +114,7 @@
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-core_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                 </dependency>
             </dependencies>
         </profile>

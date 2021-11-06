@@ -29,13 +29,7 @@
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
     <version>21.12.0-SNAPSHOT</version>
     <dependencies>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <classifier>${spark.version.classifier}</classifier>
-            <scope>provided</scope>
-        </dependency>
+        
     </dependencies>
 
     <properties>
@@ -305,13 +299,7 @@
                     </execution>
                 </executions>
                 <dependencies>
-                    <dependency>
-                        <groupId>com.nvidia</groupId>
-                        <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-                        <version>${project.version}</version>
-                        <classifier>${spark.version.classifier}</classifier>
-                        <scope>compile</scope>
-                    </dependency>
+                    
                     <dependency>
                         <groupId>org.apache.spark</groupId>
                         <artifactId>spark-hive_${scala.binary.version}</artifactId>

@@ -40,10 +40,6 @@
             <artifactId>scala-library</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
@@ -81,21 +77,8 @@
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-core_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-annotation_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.javaassist</groupId>
@@ -106,18 +89,6 @@
                 <dependency>
                     <groupId>org.json4s</groupId>
                     <artifactId>JsonAST</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
-                    <version>${spark.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
@@ -134,7 +105,7 @@
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
                     <exclusions>
                         <exclusion>
@@ -143,17 +114,6 @@
                         </exclusion>
                     </exclusions>
                     <scope>provided</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.apache.spark</groupId>
-                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
-                    <version>${spark311cdh.version}</version>
-                    <exclusions>
-                        <exclusion>
-                            <groupId>org.apache.spark</groupId>
-                            <artifactId>spark-core_${scala.binary.version}</artifactId>
-                        </exclusion>
-                    </exclusions>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.curator</groupId>
