@@ -76,12 +76,12 @@ RUNTIME_MAP = [
                 'databricks301,!snapshot-shims',
                 '3.0.1'
         ],
-        '8.2': [
-                '8.2.x-gpu-ml-scala2.12',
-                '3.1.1',
+        '9.1': [
+                '9.1.x-gpu-ml-scala2.12',
+                '3.1.2',
                 'init_cudf_udf.sh',
-                'databricks311,!snapshot-shims',
-                '3.1.1'
+                'databricks312,!snapshot-shims',
+                '3.1.2'
         ]
 ]
 
@@ -390,7 +390,7 @@ pipeline {
                     }
                 } // end of DB runtime 7.3
 
-                stage('DB runtime 8.2') {
+                stage('DB runtime 9.1') {
                     when {
                         beforeAgent true
                         expression {
@@ -400,13 +400,13 @@ pipeline {
 
                     agent {
                         kubernetes {
-                            label "premerge-ci-db-8.2-${BUILD_NUMBER}"
+                            label "premerge-ci-db-9.1-${BUILD_NUMBER}"
                             cloud 'sc-ipp-blossom-prod'
                             yaml "${IMAGE_DB}"
                         }
                     }
                     environment {
-                        DB_RUNTIME = '8.2'
+                        DB_RUNTIME = '9.1'
                         DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
                         BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
                         BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
@@ -422,7 +422,7 @@ pipeline {
                             }
                         }
                     }
-                } // end of DB runtime 8.2
+                } // end of DB runtime 9.1
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {

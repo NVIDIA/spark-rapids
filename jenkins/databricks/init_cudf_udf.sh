@@ -20,6 +20,12 @@
 
 CUDF_VER=${CUDF_VER:-21.12}
 
+# Need to explictly add conda into PATH environment if it is not set.
+if [ -z $(command -v conda) ]; then
+    export PATH=/databricks/conda/bin:$PATH
+    conda --version
+fi
+
 # Use mamba to install cudf-udf packages to speed up conda resolve time
 base=$(conda info --base)
 conda create -y -n mamba -c conda-forge mamba

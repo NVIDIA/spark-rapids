@@ -57,7 +57,7 @@
         </snapshot.buildvers>
         <databricks.buildvers>
             301db,
-            311db
+            312db
         </databricks.buildvers>
     </properties>
     <profiles>
