@@ -72,13 +72,13 @@ You can also install some manually and build a combined jar. For instance to bui
 
 ```shell script
 mvn clean
-mvn -Dbuildver=301 package -DskipTests
-mvn -Dbuildver=302 package -Drat.skip=true -DskipTests
-mvn -Dbuildver=303 package -Drat.skip=true -DskipTests
-mvn -Dbuildver=311 package -Drat.skip=true -DskipTests
-mvn -Dbuildver=312 package -Drat.skip=true -DskipTests
-mvn -Dbuildver=320 package -Drat.skip=true -DskipTests
-mvn -Dbuildver=311cdh package -Drat.skip=true -DskipTests
+mvn -Dbuildver=301 install -DskipTests
+mvn -Dbuildver=302 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=303 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=312 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311cdh install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
 #### Building with buildall script

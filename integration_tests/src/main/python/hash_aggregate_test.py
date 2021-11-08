@@ -1138,45 +1138,61 @@ def test_agg_nested_map():
         return df.groupBy('a').agg(f.min(df.b[1]["a"]))
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
-@ignore_order(local=True)
-def test_hash_groupby_approx_percentile_long_repeated_keys():
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_byte(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', ByteGen())], length=100),
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
+
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
+    compare_percentile_approx(
+        lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
+                                     ('v', ByteGen())], length=100),
+        0.5, conf)
+
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(LongGen(), length=20)),
                                      ('v', LongRangeGen())], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
-@ignore_order(local=True)
-def test_hash_groupby_approx_percentile_long():
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_long(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
-@ignore_order(local=True)
-def test_hash_groupby_approx_percentile_long_scalar():
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_long_scalar(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', LongRangeGen())], length=100),
-        0.5)
+        0.5, conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
-@ignore_order(local=True)
-def test_hash_groupby_approx_percentile_double():
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_double(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/3692")
-@ignore_order(local=True)
-def test_hash_groupby_approx_percentile_double_scalar():
+@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
+def test_hash_groupby_approx_percentile_double_scalar(aqe_enabled):
+    conf = copy_and_update(_approx_percentile_conf, {'spark.sql.adaptive.enabled': aqe_enabled})
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', StringGen(nullable=False)),
                                      ('v', DoubleGen())], length=100),
-        0.05)
+        0.05, conf)
 
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
@@ -1200,7 +1216,7 @@ def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
 # compute approximate percentiles on CPU and GPU and assert that the GPU numbers are accurate within some percentage
 # of the CPU numbers
-def compare_percentile_approx(df_fun, percentiles):
+def compare_percentile_approx(df_fun, percentiles, conf):
 
     # create SQL statements for exact and approx percentiles
     p_exact_sql = create_percentile_sql("percentile", percentiles)
@@ -1222,23 +1238,35 @@ def compare_percentile_approx(df_fun, percentiles):
     # run approx_percentile on CPU and GPU
     approx_cpu, approx_gpu = run_with_cpu_and_gpu(run_approx, 'COLLECT', _approx_percentile_conf)
 
-    for result in zip(exact, approx_cpu, approx_gpu):
+    assert len(exact) == len(approx_cpu)
+    assert len(exact) == len(approx_gpu)
+
+    for i in range(len(exact)):
+        cpu_exact_result = exact[i]
+        cpu_approx_result = approx_cpu[i]
+        gpu_approx_result = approx_gpu[i]
+
         # assert that keys match
-        assert result[0]['k'] == result[1]['k']
-        assert result[1]['k'] == result[2]['k']
+        assert cpu_exact_result['k'] == cpu_approx_result['k']
+        assert cpu_exact_result['k'] == gpu_approx_result['k']
 
-        exact = result[0]['the_percentile']
-        cpu = result[1]['the_percentile']
-        gpu = result[2]['the_percentile']
+        # extract the percentile result column
+        exact_percentile = cpu_exact_result['the_percentile']
+        cpu_approx_percentile = cpu_approx_result['the_percentile']
+        gpu_approx_percentile = gpu_approx_result['the_percentile']
 
-        if exact is not None:
-            if isinstance(exact, list):
-                for x in zip(exact, cpu, gpu):
-                    exact = x[0]
-                    cpu = x[1]
-                    gpu = x[2]
-                    gpu_delta = abs(float(gpu) - float(exact))
-                    cpu_delta = abs(float(cpu) - float(exact))
+        if exact_percentile is None:
+            assert cpu_approx_percentile is None
+            assert gpu_approx_percentile is None
+        else:
+            assert cpu_approx_percentile is not None
+            assert gpu_approx_percentile is not None
+            if isinstance(exact_percentile, list):
+                for j in range(len(exact_percentile)):
+                    assert cpu_approx_percentile[j] is not None
+                    assert gpu_approx_percentile[j] is not None
+                    gpu_delta = abs(float(gpu_approx_percentile[j]) - float(exact_percentile[j]))
+                    cpu_delta = abs(float(cpu_approx_percentile[j]) - float(exact_percentile[j]))
                     if gpu_delta > cpu_delta:
                         # GPU is less accurate so make sure we are within some tolerance
                         if gpu_delta == 0:
@@ -1246,8 +1274,8 @@ def compare_percentile_approx(df_fun, percentiles):
                         else:
                             assert abs(cpu_delta / gpu_delta) - 1 < 0.001
             else:
-                gpu_delta = abs(float(gpu) - float(exact))
-                cpu_delta = abs(float(cpu) - float(exact))
+                gpu_delta = abs(float(gpu_approx_percentile) - float(exact_percentile))
+                cpu_delta = abs(float(cpu_approx_percentile) - float(exact_percentile))
                 if gpu_delta > cpu_delta:
                     # GPU is less accurate so make sure we are within some tolerance
                     if gpu_delta == 0:
@@ -1257,10 +1285,10 @@ def compare_percentile_approx(df_fun, percentiles):
 
 def create_percentile_sql(func_name, percentiles):
     if isinstance(percentiles, list):
-        return """select k, {}(v, array({})) as the_percentile from t group by k""".format(
+        return """select k, {}(v, array({})) as the_percentile from t group by k order by k""".format(
             func_name, ",".join(str(i) for i in percentiles))
     else:
-        return """select k, {}(v, {}) as the_percentile from t group by k""".format(
+        return """select k, {}(v, {}) as the_percentile from t group by k order by k""".format(
             func_name, percentiles)
 
 @ignore_order

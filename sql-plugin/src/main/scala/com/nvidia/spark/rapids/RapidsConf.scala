@@ -352,7 +352,7 @@ object RapidsConf {
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
           "system use such as memory needed for kernels and kernel launches.")
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(ByteUnit.MiB.toBytes(1024))
+      .createWithDefault(ByteUnit.MiB.toBytes(256))
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
