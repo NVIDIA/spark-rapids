@@ -185,8 +185,11 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   @transient private var cb: ColumnarBatch = null
   private var it: java.util.Iterator[InternalRow] = null
 
-  private[this] lazy val toHost = (gpuCV: GpuColumnVector) =>
-    if (nullSafe) gpuCV.copyToNullSafeHost() else gpuCV.copyToHost()
+  private[this] lazy val toHost = if (nullSafe) {
+    (gpuCV: GpuColumnVector) => gpuCV.copyToNullSafeHost()
+  } else{
+    (gpuCV: GpuColumnVector) => gpuCV.copyToHost()
+  }
 
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 

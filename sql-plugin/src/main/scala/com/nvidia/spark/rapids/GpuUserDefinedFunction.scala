@@ -114,7 +114,7 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
    * And more details can be found from
    *     https://github.com/NVIDIA/spark-rapids/pull/3997#issuecomment-957650846
    */
-  private[this] lazy val nullSafe = GpuUserDefinedFunction.isAssertionEnabled && checkNull
+  private[this] lazy val nullSafe: Boolean = GpuUserDefinedFunction.isAssertionEnabled && checkNull
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 

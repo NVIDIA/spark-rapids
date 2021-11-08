@@ -95,6 +95,15 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(noopUDF(array("ints", "ints")))
   }
 
+  testSparkResultsAreEqual("Row Based Scala UDF-Array(Array(Int))",
+    mixedDfWithNulls,
+    cpuEnabledConf,
+    decimalTypeEnabled = false) { frame =>
+    val noopUDF = frame.sparkSession.udf.register("NoopUDF",
+      new NoopUDF[Seq[Seq[java.lang.Integer]]]())
+    frame.select(noopUDF(array(array("ints", "ints"))))
+  }
+
   testSparkResultsAreEqual("Row Based Scala UDF-Struct(Int, Double, String)",
       mixedDfWithNulls,
       cpuEnabledConf,
