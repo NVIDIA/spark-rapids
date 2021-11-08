@@ -75,6 +75,17 @@ object GpuUserDefinedFunction {
   // UDFs can support all types except UDT which does not have a clear columnar representation.
   val udfTypeSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
       TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+
+  /**
+   * Detect whether the assertion in a JVM where the method is called is enabled.
+   * (Yes, this is an ugly solution, but I fail to figure out a better way.)
+   */
+  def isAssertionEnabled: Boolean = try {
+    assert(false)
+    false
+  } catch {
+    case _: AssertionError => true
+  }
 }
 
 /**
@@ -89,11 +100,21 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
   /** True if the UDF is deterministic */
   val udfDeterministic: Boolean
 
+  /** True if the UDF needs null check when converting input columns to rows */
+  def checkNull: Boolean
+
   /** The row based function of the UDF. */
   protected def evaluateRow(childrenRow: InternalRow): Any
 
   private[this] lazy val inputTypesString = children.map(_.dataType.catalogString).mkString(", ")
   private[this] lazy val outputType = dataType.catalogString
+  /**
+   * FIXME This should be called per JVM (aka process), not sure the `lazy` can help here.
+   * This is for https://github.com/NVIDIA/spark-rapids/issues/3942.
+   * And more details can be found from
+   *     https://github.com/NVIDIA/spark-rapids/pull/3997#issuecomment-957650846
+   */
+  private[this] lazy val nullSafe = GpuUserDefinedFunction.isAssertionEnabled && checkNull
 
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 
@@ -115,7 +136,8 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
             NoopMetric,
             NoopMetric,
             NoopMetric,
-            NoopMetric).foreach { row =>
+            NoopMetric,
+            nullSafe).foreach { row =>
           retRow.update(0, evaluateRow(row))
           retConverter.append(retRow, 0, builder)
         }

@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow, ScalaUDF}
 import org.apache.spark.sql.rapids.{GpuRowBasedScalaUDFBase, ScalaUDFMetaBase}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{ArrayType, DataType}
 
 /** Run a row-based UDF in a GPU operation */
 case class GpuRowBasedScalaUDF(
@@ -72,6 +72,17 @@ case class GpuRowBasedScalaUDF(
       (converter, true)
     } else { // use CatalystTypeConverters
       (CatalystTypeConverters.createToScalaConverter(dataType), false)
+    }
+  }
+
+  /**
+   *  Need nulls check when there are array types with nulls in the input.
+   *  This is for `https://github.com/NVIDIA/spark-rapids/issues/3942`.
+   */
+  override val checkNull: Boolean = children.exists { child =>
+    child.dataType match {
+      case ArrayType(_, containsNull) => containsNull
+      case _ => false
     }
   }
 }
