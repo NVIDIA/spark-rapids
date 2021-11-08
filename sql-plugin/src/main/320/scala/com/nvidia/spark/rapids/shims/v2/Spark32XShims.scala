@@ -399,17 +399,17 @@ trait Spark32XShims extends SparkShims  with Logging {
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
             TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Seq(
           ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
                 TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
           ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all)
         )
@@ -422,17 +422,17 @@ trait Spark32XShims extends SparkShims  with Logging {
     GpuOverrides.expr[Lag](
       "Window function that returns N entries behind this one",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
             TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all,
         Seq(
           ParamCheck("input",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
                 TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all),
           ParamCheck("offset", TypeSig.INT, TypeSig.INT),
           ParamCheck("default",
-            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
                 TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all)
         )
@@ -513,9 +513,9 @@ trait Spark32XShims extends SparkShims  with Logging {
       "Holds a static value from the query",
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.CALENDAR
+        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.CALENDAR
           + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.DAYTIME)
-          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+          .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
@@ -561,11 +561,11 @@ trait Spark32XShims extends SparkShims  with Logging {
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
       ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
           TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
         TypeSig.all,
         Seq(ParamCheck("windowFunction",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
             TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
           TypeSig.all),
           ParamCheck("windowSpec",
