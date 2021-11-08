@@ -1393,8 +1393,27 @@ case class GpuStddevPop(child: Expression, nullOnDivideByZero: Boolean)
   override def prettyName: String = "stddev_pop"
 }
 
+case class WindowStddevSamp(
+    child: Expression,
+    nullOnDivideByZero: Boolean)
+    extends GpuAggregateWindowFunction {
+
+  override def dataType: DataType = DoubleType
+  override def children: Seq[Expression] = Seq(child)
+  override def nullable: Boolean = true
+
+  /**
+   * Using child references, define the shape of the vectors sent to the window operations
+   */
+  override val windowInputProjection: Seq[Expression] = Seq(child)
+
+  override def windowAggregation(inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn = {
+    RollingAggregation.standardDeviation().onColumn(inputs.head._2)
+  }
+}
+
 case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
-  extends GpuM2(child, nullOnDivideByZero) {
+    extends GpuM2(child, nullOnDivideByZero) with GpuReplaceWindowFunction {
 
   override lazy val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
@@ -1408,6 +1427,22 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
   }
 
   override def prettyName: String = "stddev_samp"
+
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    // calculate n
+    val count = GpuCast(GpuWindowExpression(GpuCount(Seq(child)), spec), DoubleType)
+    val stddev = GpuWindowExpression(WindowStddevSamp(child, nullOnDivideByZero), spec)
+    // if (n == 0.0)
+    GpuIf(GpuEqualTo(count, GpuLiteral(0.0)),
+      // return null
+      GpuLiteral(null, DoubleType),
+      // else if (n == 1.0)
+      GpuIf(GpuEqualTo(count, GpuLiteral(1.0)),
+        // return divideByZeroEval
+        divideByZeroEvalResult,
+        // else return stddev
+        stddev))
+  }
 }
 
 case class GpuVariancePop(child: Expression, nullOnDivideByZero: Boolean)

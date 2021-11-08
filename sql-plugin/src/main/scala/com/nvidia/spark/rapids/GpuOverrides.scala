@@ -47,7 +47,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
-import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowCurrentNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
+import org.apache.spark.sql.execution.datasources.v2.{AlterNamespaceSetPropertiesExec, AlterTableExec, AtomicReplaceTableExec, BatchScanExec, CreateNamespaceExec, CreateTableExec, DeleteFromTableExec, DescribeNamespaceExec, DescribeTableExec, DropNamespaceExec, DropTableExec, RefreshTableExec, RenameTableExec, ReplaceTableExec, SetCatalogAndNamespaceExec, ShowNamespacesExec, ShowTablePropertiesExec, ShowTablesExec}
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
@@ -572,20 +572,18 @@ object GpuOverrides extends Logging {
     lit.value == null
   }
 
-  def isNullOrEmptyOrRegex(exp: Expression): Boolean = {
-    val lit = extractLit(exp)
-    if (!isOfType(lit, StringType)) {
-      false
-    } else if (isNullLit(lit.get)) {
-      //isOfType check above ensures that this lit.get does not throw
-      true
-    } else {
-      val strLit = lit.get.value.asInstanceOf[UTF8String].toString
-      if (strLit.isEmpty) {
-        true
-      } else {
-        regexList.exists(pattern => strLit.contains(pattern))
-      }
+  def isSupportedStringReplacePattern(exp: Expression): Boolean = {
+    extractLit(exp) match {
+      case Some(Literal(null, _)) => false
+      case Some(Literal(value: UTF8String, DataTypes.StringType)) =>
+        val strLit = value.toString
+        if (strLit.isEmpty) {
+          false
+        } else {
+          // check for regex special characters, except for \u0000 which we can support
+          !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+        }
+      case _ => false
     }
   }
 
@@ -812,7 +810,8 @@ object GpuOverrides extends Logging {
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL +
           TypeSig.STRUCT + TypeSig.MAP).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested(),
+          // Note Map is not put into nested, now CUDF only support single level map
+          TypeSig.STRUCT + TypeSig.DECIMAL_128_FULL).nested() + TypeSig.MAP,
       sparkSig = (TypeSig.atomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT).nested())))
 
@@ -3178,15 +3177,16 @@ object GpuOverrides extends Logging {
       }),
     expr[StddevSamp](
       "Aggregation computing sample standard deviation",
-      ExprChecks.groupByOnly(
-        TypeSig.DOUBLE, TypeSig.DOUBLE,
-        Seq(ParamCheck("input", TypeSig.DOUBLE, TypeSig.DOUBLE))),
-      (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
-          val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
-          GpuStddevSamp(childExprs.head, !legacyStatisticalAggregate)
-        }
-      }),
+      ExprChecks.aggNotReduction(
+          TypeSig.DOUBLE, TypeSig.DOUBLE,
+          Seq(ParamCheck("input", TypeSig.DOUBLE,
+            TypeSig.DOUBLE))),
+        (a, conf, p, r) => new AggExprMeta[StddevSamp](a, conf, p, r) {
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
+            val legacyStatisticalAggregate = ShimLoader.getSparkShims.getLegacyStatisticalAggregate
+            GpuStddevSamp(childExprs.head, !legacyStatisticalAggregate)
+          }
+        }),
     expr[VariancePop](
       "Aggregation computing population variance",
       ExprChecks.groupByOnly(
@@ -3622,9 +3622,13 @@ object GpuOverrides extends Logging {
     exec[ObjectHashAggregateExec](
       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
       ExecChecks(
+        // note that binary input is allowed here but there are additional checks later on to
+        // check that we have can support binary in the context of aggregate buffer conversions
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
+            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
+              "converted between CPU and GPU")
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
@@ -3635,8 +3639,10 @@ object GpuOverrides extends Logging {
       "The backend for sort based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
-            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
             .nested()
+            .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
+              "converted between CPU and GPU")
             .withPsNote(TypeEnum.ARRAY, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
@@ -3647,8 +3653,8 @@ object GpuOverrides extends Logging {
       "The backend for the sort operator",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
       // The types below are allowed as inputs and outputs.
-      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+      ExecChecks((pluginSupportedOrderableSig + TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + 
+          TypeSig.STRUCT +TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (sort, conf, p, r) => new GpuSortMeta(sort, conf, p, r)),
     exec[ExpandExec](
       "The backend for the expand operator",
@@ -3685,7 +3691,7 @@ object GpuOverrides extends Logging {
     neverReplaceExec[DescribeNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[DropNamespaceExec]("Namespace metadata operation"),
     neverReplaceExec[SetCatalogAndNamespaceExec]("Namespace metadata operation"),
-    neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation"),
+    ShimLoader.getSparkShims.neverReplaceShowCurrentNamespaceCommand,
     neverReplaceExec[ShowNamespacesExec]("Namespace metadata operation"),
     neverReplaceExec[ExecutedCommandExec]("Table metadata operation"),
     neverReplaceExec[AlterTableExec]("Table metadata operation"),
@@ -3702,7 +3708,7 @@ object GpuOverrides extends Logging {
     neverReplaceExec[AdaptiveSparkPlanExec]("Wrapper for adaptive query plan"),
     neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
     neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
-  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     commonExecs ++ ShimLoader.getSparkShims.getExecs
