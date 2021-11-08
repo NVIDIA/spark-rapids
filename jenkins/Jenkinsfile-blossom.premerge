@@ -394,7 +394,7 @@ pipeline {
                     when {
                         beforeAgent true
                         expression {
-                            db_build && major_ver >= 21 && minor_ver >= 6
+                            db_build && major_ver >= 21 && minor_ver >= 12
                         }
                     }
 
