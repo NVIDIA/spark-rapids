@@ -151,6 +151,14 @@ build_single_shim() {
 
   if [[ "$BUILD_VER" == "$BASE_VER" ]]; then
     SKIP_CHECKS="false"
+    # WORKAROUND:
+    # maven build on L193 currently relies on aggregator dependency which
+    # will removed by
+    # https://github.com/NVIDIA/spark-rapids/issues/3932
+    #
+    # if it were a single maven invocation Maven would register and give
+    # precedence package-phase artifacts
+    #
     MVN_PHASE="install"
   else
     SKIP_CHECKS="true"
