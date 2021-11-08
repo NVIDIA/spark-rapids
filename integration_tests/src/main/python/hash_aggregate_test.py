@@ -1301,42 +1301,42 @@ def test_hash_groupby_approx_percentile_decimal32():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(6, 2))]),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
 
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(6, 2))]),
-        0.05)
+        0.05, conf = _approx_percentile_conf)
 
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal64():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(10, 9))]),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
 
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal64_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(10, 9))]),
-        0.05)
+        0.05, conf = _approx_percentile_conf)
 
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal128():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(19, 18))]),
-        [0.05, 0.25, 0.5, 0.75, 0.95])
+        [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
 
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal128_single():
     compare_percentile_approx(
         lambda spark: gen_df(spark, [('k', RepeatSeqGen(ByteGen(nullable=False), length=2)),
                                      ('v', DecimalGen(19, 18))]),
-        0.05)
+        0.05, conf = _approx_percentile_conf)
 
 # The percentile approx tests differ from other tests because we do not expect the CPU and GPU to produce the same
 # results due to the different algorithms being used. Instead we compute an exact percentile on the CPU and then
