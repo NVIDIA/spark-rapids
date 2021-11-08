@@ -57,8 +57,7 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
 # ...
 orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
-                  ] + decimal_gens_no_neg + decimal_128_gens_no_neg
+    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))] + decimal_gens_no_neg
 
 orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
 

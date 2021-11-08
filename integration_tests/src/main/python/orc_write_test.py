@@ -23,7 +23,7 @@ from pyspark.sql.types import *
 orc_write_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
         TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)) ] + \
-        decimal_gens_no_neg + decimal_128_gens_no_neg
+        decimal_gens_no_neg
 
 orc_write_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_write_basic_gens)])
 
