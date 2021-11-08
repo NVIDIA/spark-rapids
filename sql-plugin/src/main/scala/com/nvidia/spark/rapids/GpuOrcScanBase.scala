@@ -1224,7 +1224,7 @@ private case class GpuOrcFileFilterHandler(
       val searchArg = readerOpts.getSearchArgument
       if (searchArg != null && orcReader.getRowIndexStride != 0) {
         val sa = new SargApplier(searchArg, orcReader.getRowIndexStride, evolution,
-          orcReader.getWriterVersion, useUTCTimestamp)
+          orcReader.getWriterVersion, useUTCTimestamp, false, false)
         // SargApplier.sargColumns is unfortunately not visible so we redundantly compute it here.
         val filterCols = RecordReaderImpl.mapSargColumnsToOrcInternalColIdx(searchArg.getLeaves,
           evolution)
