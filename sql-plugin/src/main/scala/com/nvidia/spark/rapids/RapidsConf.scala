@@ -385,24 +385,6 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.MiB.toBytes(8))
 
-  val GDS_SPILL_ALIGNED_IO =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.alignedIO")
-    .doc("When GDS spill is enabled, should I/O be 4 KiB aligned. GDS is more efficient when " +
-        "reads and writes are 4 KiB aligned, but aligning has some additional memory overhead " +
-        "with the padding.")
-    .internal()
-    .booleanConf
-    .createWithDefault(true)
-
-  val GDS_SPILL_ALIGNMENT_THRESHOLD =
-    conf("spark.rapids.memory.gpu.direct.storage.spill.alignmentThreshold")
-    .doc("GPU memory buffers with size above this threshold will be aligned to 4 KiB. Setting " +
-        "this value to 0 means every allocation will be 4 KiB aligned. A low threshold may " +
-        "cause more memory consumption because of padding.")
-    .internal()
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(ByteUnit.KiB.toBytes(64))
-
   val POOLED_MEM = conf("spark.rapids.memory.gpu.pooling.enabled")
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
@@ -530,11 +512,11 @@ object RapidsConf {
 
   val INCOMPATIBLE_DATE_FORMATS = conf("spark.rapids.sql.incompatibleDateFormats.enabled")
     .doc("When parsing strings as dates and timestamps in functions like unix_timestamp, some " +
-         "formats are fully supported on the GPU and some are unsupported and will fall back to " + 
+         "formats are fully supported on the GPU and some are unsupported and will fall back to " +
          "the CPU.  Some formats behave differently on the GPU than the CPU.  Spark on the CPU " +
          "interprets date formats with unsupported trailing characters as nulls, while Spark on " +
          "the GPU will parse the date with invalid trailing characters. More detail can be found " +
-         "at [parsing strings as dates or timestamps]" + 
+         "at [parsing strings as dates or timestamps]" +
          "(compatibility.md#parsing-strings-as-dates-or-timestamps).")
       .booleanConf
       .createWithDefault(false)
@@ -713,6 +695,16 @@ object RapidsConf {
       "spark.sql.parquet.outputTimestampType is set to INT96")
     .booleanConf
     .createWithDefault(true)
+
+  // This is an experimental feature now. And eventually, should be enabled or disabled depending
+  // on something that we don't know yet but would try to figure out.
+  val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
+    .doc("When set to true, optimizes a row-based UDF in a GPU operation by transferring " +
+      "only the data it needs between GPU and CPU inside a query operation, instead of falling " +
+      "this operation back to CPU. This is an experimental feature, and this config might be " +
+      "removed in the future.")
+    .booleanConf
+    .createWithDefault(false)
 
   object ParquetReaderType extends Enumeration {
     val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
@@ -1309,6 +1301,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
+  val SUPPRESS_PLANNING_FAILURE = conf("spark.rapids.sql.suppressPlanningFailure")
+    .doc("Option to fallback an individual query to CPU if an unexpected condition prevents the " +
+      "query plan from being converted to a GPU-enabled one. Note this is different from " +
+      "a normal CPU fallback for a yet-to-be-supported Spark SQL feature. If this happens " +
+      "the error should be reported and investigated as a GitHub issue.")
+    .booleanConf
+    .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1486,10 +1486,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
-
-  lazy val isGdsSpillAlignedIO: Boolean = get(GDS_SPILL_ALIGNED_IO)
-
-  lazy val gdsSpillAlignmentThreshold: Long = get(GDS_SPILL_ALIGNMENT_THRESHOLD)
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
@@ -1721,6 +1717,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

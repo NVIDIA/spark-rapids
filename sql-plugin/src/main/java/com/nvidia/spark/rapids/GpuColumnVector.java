@@ -231,7 +231,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
-  private static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
+  static HostColumnVector.DataType convertFrom(DataType spark, boolean nullable) {
     if (spark instanceof ArrayType) {
       ArrayType arrayType = (ArrayType) spark;
       return new HostColumnVector.ListType(nullable,

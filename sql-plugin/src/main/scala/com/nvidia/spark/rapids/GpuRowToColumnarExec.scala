@@ -65,7 +65,7 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable w
   }
 }
 
-private object GpuRowToColumnConverter {
+private[rapids] object GpuRowToColumnConverter {
   // Sizes estimates for different things
   /*
    * size of an offset entry.  In general we have 1 more offset entry than rows, so
@@ -75,7 +75,7 @@ private object GpuRowToColumnConverter {
   private[this] val VALIDITY = 0.125 // 1/8th of a byte (1 bit)
   private[this] val VALIDITY_N_OFFSET = OFFSET + VALIDITY
 
-  private abstract class TypeConverter extends Serializable {
+  private[rapids] abstract class TypeConverter extends Serializable {
     /** Append row value to the column builder and return the number of data bytes written */
     def append(row: SpecializedGetters,
       column: Int,
@@ -92,7 +92,7 @@ private object GpuRowToColumnConverter {
   private def getConverterFor(field: StructField): TypeConverter =
     getConverterForType(field.dataType, field.nullable)
 
-  private def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
+  private[rapids] def getConverterForType(dataType: DataType, nullable: Boolean): TypeConverter = {
     (dataType, nullable) match {
       case (BooleanType, true) => BooleanConverter
       case (BooleanType, false) => NotNullBooleanConverter

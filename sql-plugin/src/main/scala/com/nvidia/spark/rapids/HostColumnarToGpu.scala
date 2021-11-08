@@ -212,15 +212,29 @@ object HostColumnarToGpu extends Logging {
         }
       case (dt: DecimalType, nullable) =>
         if (nullable) {
-          for (i <- 0 until rows) {
-            if (cv.isNullAt(i)) {
-              b.appendNull()
-            } else {
-              // The precision here matters for cpu column vectors (such as OnHeapColumnVector).
-              if (DecimalType.is32BitDecimalType(dt)) {
+          if (DecimalType.is32BitDecimalType(dt)) {
+            for (i <- 0 until rows) {
+              if (cv.isNullAt(i)) {
+                b.appendNull()
+              } else {
+                // The precision here matters for cpu column vectors (such as OnHeapColumnVector).
                 b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
+              }
+            }
+          } else if (DecimalType.is64BitDecimalType(dt)) {
+            for (i <- 0 until rows) {
+              if (cv.isNullAt(i)) {
+                b.appendNull()
               } else {
                 b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+              }
+            }
+          } else {
+            for (i <- 0 until rows) {
+              if (cv.isNullAt(i)) {
+                b.appendNull()
+              } else {
+                b.append(cv.getDecimal(i, dt.precision, dt.scale).toJavaBigDecimal)
               }
             }
           }
@@ -229,9 +243,13 @@ object HostColumnarToGpu extends Logging {
             for (i <- 0 until rows) {
               b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong.toInt)
             }
-          } else {
+          } else if (DecimalType.is64BitDecimalType(dt)) {
             for (i <- 0 until rows) {
               b.append(cv.getDecimal(i, dt.precision, dt.scale).toUnscaledLong)
+            }
+          } else {
+            for (i <- 0 until rows) {
+              b.append(cv.getDecimal(i, dt.precision, dt.scale).toJavaBigDecimal)
             }
           }
         }
