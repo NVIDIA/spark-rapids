@@ -18,15 +18,16 @@ package com.nvidia.spark.rapids.shims.spark311db
 
 import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShims}
 
+import org.apache.spark.SparkEnv
+
 object SparkShimServiceProvider {
   val VERSION = DatabricksShimVersion(3, 1, 1)
-  val VERSIONNAMES = Seq(s"$VERSION")
 }
 
 class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
 
   def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+    SparkEnv.get.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "").startsWith("8.2.")
   }
 
   def buildShim: SparkShims = {

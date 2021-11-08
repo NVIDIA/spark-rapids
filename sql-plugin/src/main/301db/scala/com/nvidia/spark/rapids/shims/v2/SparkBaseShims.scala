@@ -360,7 +360,7 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
         (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
-            if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
+            if (!GpuOverrides.isSupportedStringReplacePattern(a.regexp)) {
               willNotWorkOnGpu(
                 "Only non-null, non-empty String literals that are not regex patterns " +
                     "are supported by RegExpReplace on the GPU")

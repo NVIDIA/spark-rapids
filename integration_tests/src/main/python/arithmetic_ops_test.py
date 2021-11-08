@@ -19,7 +19,7 @@ from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311, is_before_spark_320
+from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311, is_before_spark_320, is_databricks91_or_later
 import pyspark.sql.functions as f
 from pyspark.sql.utils import IllegalArgumentException
 
@@ -749,7 +749,7 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
 
 # Only run this test before Spark v3.2.0 to verify IntegralDivide will NOT
 # throw exceptions for overflow even ANSI mode is enabled.
-@pytest.mark.skipif(not is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.skipif(not is_before_spark_320() or is_databricks91_or_later(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', div_overflow_exprs)
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):
