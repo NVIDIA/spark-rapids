@@ -19,7 +19,7 @@ set -ex
 
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
-BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.1'}
+BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.2'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VER//.}db
 
 # Try to use the pip from the conda environment if it is available
