@@ -152,6 +152,15 @@ abstract class AppBase(
     }
   }
 
+  def getJdbcInPlan(planInfo: SparkPlanInfo): Seq[SparkPlanInfo] = {
+    val childRes = planInfo.children.flatMap(getJdbcInPlan(_))
+    if (planInfo.simpleString != null && planInfo.simpleString.contains("Scan JDBCRelation")) {
+      childRes :+ planInfo
+    } else {
+      childRes
+    }
+  }
+
   // strip off the struct<> part that Spark adds to the ReadSchema
   private def formatSchemaStr(schema: String): String = {
     schema.stripPrefix("struct<").stripSuffix(">")
@@ -171,6 +180,13 @@ abstract class AppBase(
         meta.getOrElse("PushedFilters", "unknown"),
         readSchema
       )
+    }
+  }
+
+  protected def checkJdbcScan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
+    val allJdbcScan = getJdbcInPlan(planInfo)
+    if (allJdbcScan.nonEmpty) {
+      dataSourceInfo += DataSourceCase(sqlID, "JDBC", "unknown", "unknown", "")
     }
   }
 

@@ -409,6 +409,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     runQualificationTest(logFiles, "decimal_part_expectation.csv")
   }
 
+  test("test jdbc problematic") {
+    val logFiles = Array(s"$logDir/jdbc_eventlog.zstd")
+    runQualificationTest(logFiles, "jdbc_expectation.csv")
+  }
+
   private def createDecFile(spark: SparkSession, dir: String): Unit = {
     import spark.implicits._
     val dfGen = Seq("1.32").toDF("value")

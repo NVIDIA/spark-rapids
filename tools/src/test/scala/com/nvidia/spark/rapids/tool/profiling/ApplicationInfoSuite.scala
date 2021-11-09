@@ -289,6 +289,27 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     }
   }
 
+  test("test jdbc read") {
+    TrampolineUtil.withTempDir { tempOutputDir =>
+      var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
+      val appArgs = new ProfileArgs(Array(s"$qualLogDir/jdbc_eventlog.zstd"))
+      var index: Int = 1
+      val eventlogPaths = appArgs.eventlog()
+      for (path <- eventlogPaths) {
+        apps += new ApplicationInfo(hadoopConf,
+          EventLogPathProcessor.getEventLogInfo(path,
+            sparkSession.sparkContext.hadoopConfiguration).head._1, index)
+        index += 1
+      }
+      assert(apps.size == 1)
+      val collect = new CollectInformation(apps)
+      val dsRes = collect.getDataSourceInfo
+      val format = dsRes.map(r => r.format).toSet.mkString
+      val expectedFormat = "JDBC"
+      assert(format.equals(expectedFormat))
+    }
+  }
+
   test("test printJobInfo") {
     var apps: ArrayBuffer[ApplicationInfo] = ArrayBuffer[ApplicationInfo]()
     val appArgs =

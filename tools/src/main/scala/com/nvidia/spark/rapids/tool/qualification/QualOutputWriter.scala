@@ -278,7 +278,8 @@ object QualOutputWriter {
       appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
       appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
-      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(SQL_DUR_POT_PROBLEMS),
+      stringIfempty(appInfo.sqlDurationForProblematic.toString) ->
+          headersAndSizes(SQL_DUR_POT_PROBLEMS),
       stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
       appInfo.readScorePercent.toString -> headersAndSizes(READ_SCORE_PERCENT_STR),
       stringIfempty(appInfo.readFileFormatScore.toString) ->
