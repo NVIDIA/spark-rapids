@@ -17,7 +17,6 @@ package com.nvidia.spark.rapids
 
 import java.sql.SQLException
 
-import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 /**
