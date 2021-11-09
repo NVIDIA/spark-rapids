@@ -41,7 +41,7 @@ import scala.collection.mutable.ListBuffer
 class RegexParser(pattern: String) {
 
   /** index of current position within the string being parsed */
-  private var i = 0
+  private var pos = 0
 
   def parse(): RegexAST = {
     val ast = parseInternal()
@@ -76,10 +76,10 @@ class RegexParser(pattern: String) {
 
   private def isValidQuantifierAhead(): Boolean = {
     if (peek().contains('{')) {
-      val bookmark = i
+      val bookmark = pos
       consumeExpected('{')
       val q = parseQuantifierOrLiteralBrace()
-      i = bookmark
+      pos = bookmark
       q match {
         case _: QuantifierFixedLength | _: QuantifierVariableLength => true
         case _ => false
@@ -92,14 +92,15 @@ class RegexParser(pattern: String) {
   private def parseFactor(): RegexAST = {
     var base = parseBase()
     while (!eof() && (peek().exists(ch => ch == '*' || ch == '+' || ch == '?')
-      || isValidQuantifierAhead())) {
+        || isValidQuantifierAhead())) {
 
-      if (peek().contains('{')) {
+      val quantifier = if (peek().contains('{')) {
         consumeExpected('{')
-        base = RegexRepetition(base, parseQuantifierOrLiteralBrace().asInstanceOf[RegexQuantifier])
+        parseQuantifierOrLiteralBrace().asInstanceOf[RegexQuantifier]
       } else {
-        base = RegexRepetition(base, SimpleQuantifier(consume()))
+        SimpleQuantifier(consume())
       }
+      base = RegexRepetition(base, quantifier)
     }
     base
   }
@@ -114,7 +115,7 @@ class RegexParser(pattern: String) {
         parseEscapedCharacter()
       case '\u0000' =>
         throw new RegexUnsupportedException(
-          "cuDF does not support null characters in regular expressions", Some(i))
+          "cuDF does not support null characters in regular expressions", Some(pos))
       case other =>
         RegexChar(other)
     }
@@ -127,7 +128,7 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
-    val start = i
+    val start = pos
     val characterClass = RegexCharacterClass(negated = false, characters = ListBuffer())
     // loop until the end of the character class or EOF
     var characterClassComplete = false
@@ -139,18 +140,18 @@ class RegexParser(pattern: String) {
           characterClass.append(ch)
         case ']' =>
           characterClassComplete = true
-        case '^' if i == start + 1 =>
+        case '^' if pos == start + 1 =>
           // Negates the character class, causing it to match a single character not listed in
           // the character class. Only valid immediately after the opening '['
           characterClass.negated = true
-        case '\n' | '\r' | '\t' | '\b' | '\f' | '\007' =>
+        case '\n' | '\r' | '\t' | '\b' | '\f' | '\u0007' =>
           // treat as a literal character and add to the character class
           characterClass.append(ch)
         case '\\' =>
           peek() match {
             case None =>
               throw new RegexUnsupportedException(
-                s"unexpected EOF while parsing escaped character", Some(i))
+                s"unexpected EOF while parsing escaped character", Some(pos))
             case Some(ch) =>
               ch match {
                 case '\\' | '^' | '-' | ']' | '+' =>
@@ -160,7 +161,7 @@ class RegexParser(pattern: String) {
           }
         case '\u0000' =>
           throw new RegexUnsupportedException(
-            "cuDF does not support null characters in regular expressions", Some(i))
+            "cuDF does not support null characters in regular expressions", Some(pos))
         case _ =>
           // check for range
           val start = ch
@@ -184,7 +185,7 @@ class RegexParser(pattern: String) {
     }
     if (!characterClassComplete) {
       throw new RegexUnsupportedException(
-        s"unexpected EOF while parsing character class", Some(i))
+        s"unexpected EOF while parsing character class", Some(pos))
     }
     characterClass
   }
@@ -200,11 +201,11 @@ class RegexParser(pattern: String) {
   private def parseQuantifierOrLiteralBrace(): RegexAST = {
 
     // assumes that '{' has already been consumed
-    val start = i
+    val start = pos
 
     def treatAsLiteralBrace() = {
       // this was not a quantifier, just a literal '{'
-      i = start + 1
+      pos = start + 1
       RegexChar('{')
     }
 
@@ -243,84 +244,112 @@ class RegexParser(pattern: String) {
   private def parseEscapedCharacter(): RegexAST = {
     peek() match {
       case None =>
-        throw new RegexUnsupportedException("escape at end of string", Some(i))
+        throw new RegexUnsupportedException("escape at end of string", Some(pos))
       case Some(ch) =>
-        consumeExpected(ch)
         ch match {
           case 'A' | 'Z' =>
             // BOL / EOL anchors
+            consumeExpected(ch)
             RegexEscaped(ch)
           case 's' | 'S' | 'd' | 'D' | 'w' | 'W' =>
             // meta sequences
+            consumeExpected(ch)
             RegexEscaped(ch)
           case 'B' | 'b' =>
             // word boundaries
+            consumeExpected(ch)
             RegexEscaped(ch)
           case '[' | '\\' | '^' | '$' | '.' | '⎮' | '?' | '*' | '+' | '(' | ')' | '{' | '}' =>
             // escaped metacharacter
+            consumeExpected(ch)
             RegexEscaped(ch)
           case 'x' =>
+            consumeExpected(ch)
             parseHexDigit
-          case _ if ch.isDigit =>
+          case _ if Character.isDigit(ch) =>
             parseOctalDigit
           case other =>
             throw new RegexUnsupportedException(
-              s"invalid or unsupported escape character '$other'", Some(i - 1))
+              s"invalid or unsupported escape character '$other'", Some(pos - 1))
         }
     }
   }
 
-  private def parseHexDigit: RegexAST = {
+  private def isHexDigit(ch: Char): Boolean = ch.isDigit ||
+    (ch >= 'a' && ch <= 'f') ||
+    (ch >= 'A' && ch <= 'F')
 
-    def isHexDigit(ch: Char): Boolean = ch.isDigit ||
-      (ch >= 'a' && ch <= 'f') ||
-      (ch >= 'A' && ch <= 'F')
+  private def parseHexDigit: RegexHexDigit = {
+    // \xhh      The character with hexadecimal value 0xhh
+    // \x{h...h} The character with hexadecimal value 0xh...h
+    //           (Character.MIN_CODE_POINT  <= 0xh...h <=  Character.MAX_CODE_POINT)
 
-    if (i + 1 < pattern.length
-      && isHexDigit(pattern.charAt(i))
-      && isHexDigit(pattern.charAt(i+1))) {
-      val hex = pattern.substring(i, i + 2)
-      i += 2
-      RegexHexChar(hex)
-    } else {
-      throw new RegexUnsupportedException(
-        "Invalid hex digit", Some(i))
+    val start = pos
+    while (!eof() && isHexDigit(pattern.charAt(pos))) {
+      pos += 1
     }
+    val hexDigit = pattern.substring(start, pos)
+
+    if (hexDigit.length < 2) {
+      throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
+    }
+
+    val value = Integer.parseInt(hexDigit, 16)
+    if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
+      throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit")
+    }
+
+    RegexHexDigit(hexDigit)
   }
 
-  private def parseOctalDigit = {
+  private def isOctalDigit(ch: Char): Boolean = ch >= '0' && ch <= '7'
 
-    if (i + 2 < pattern.length
-        && pattern.charAt(i).isDigit
-        && pattern.charAt(i+1).isDigit
-        && pattern.charAt(i+2).isDigit) {
-        val hex = pattern.substring(i, i + 2)
-      i += 3
-      RegexOctalChar(hex)
+  private def parseOctalDigit: RegexOctalChar = {
+    // \0n   The character with octal value 0n (0 <= n <= 7)
+    // \0nn  The character with octal value 0nn (0 <= n <= 7)
+    // \0mnn The character with octal value 0mnn (0 <= m <= 3, 0 <= n <= 7)
+
+    def parseOctalDigits(n: Integer): RegexOctalChar = {
+      val octal = pattern.substring(pos, pos + n)
+      pos += n
+      RegexOctalChar(octal)
+    }
+
+    if (!eof() && isOctalDigit(pattern.charAt(pos))) {
+      if (pos + 1 < pattern.length && isOctalDigit(pattern.charAt(pos + 1))) {
+        if (pos + 2 < pattern.length && isOctalDigit(pattern.charAt(pos + 2))
+            && pattern.charAt(pos) <= '3') {
+          parseOctalDigits(3)
+        } else {
+          parseOctalDigits(2)
+        }
+      } else {
+        parseOctalDigits(1)
+      }
     } else {
       throw new RegexUnsupportedException(
-        "Invalid octal digit", Some(i))
+        "Invalid octal digit", Some(pos))
     }
   }
 
   /** Determine if we are at the end of the input */
-  private def eof(): Boolean = i == pattern.length
+  private def eof(): Boolean = pos == pattern.length
 
   /** Advance the index by one */
   private def skip(): Unit = {
     if (eof()) {
-      throw new RegexUnsupportedException("Unexpected EOF", Some(i))
+      throw new RegexUnsupportedException("Unexpected EOF", Some(pos))
     }
-    i += 1
+    pos += 1
   }
 
   /** Get the next character and advance the index by one */
   private def consume(): Char = {
     if (eof()) {
-      throw new RegexUnsupportedException("Unexpected EOF", Some(i))
+      throw new RegexUnsupportedException("Unexpected EOF", Some(pos))
     } else {
-      i += 1
-      pattern.charAt(i - 1)
+      pos += 1
+      pattern.charAt(pos - 1)
     }
   }
 
@@ -329,7 +358,7 @@ class RegexParser(pattern: String) {
     val consumed = consume()
     if (consumed != expected) {
       throw new RegexUnsupportedException(
-        s"Expected '$expected' but found '$consumed'", Some(i-1))
+        s"Expected '$expected' but found '$consumed'", Some(pos-1))
     }
     consumed
   }
@@ -339,19 +368,19 @@ class RegexParser(pattern: String) {
     if (eof()) {
       None
     } else {
-      Some(pattern.charAt(i))
+      Some(pattern.charAt(pos))
     }
   }
 
   private def consumeInt(): Option[Int] = {
-    val start = i
+    val start = pos
     while (!eof() && peek().exists(_.isDigit)) {
       skip()
     }
-    if (start == i) {
+    if (start == pos) {
       None
     } else {
-      Some(pattern.substring(start, i).toInt)
+      Some(pattern.substring(start, pos).toInt)
     }
   }
 
@@ -377,6 +406,11 @@ class CudfRegexTranspiler {
 
   private def validate(regex: RegexAST): Unit = {
     regex match {
+      case RegexOctalChar(_) =>
+        // cuDF produced different results compared to Spark in some cases
+        // example: "a\141|.$"
+        throw new RegexUnsupportedException(
+          s"cuDF does not support octal digits consistently with Spark")
       case RegexGroup(RegexSequence(parts)) if parts.isEmpty =>
         // example: "()"
         throw new RegexUnsupportedException("cuDF does not support empty groups")
@@ -521,7 +555,7 @@ sealed case class QuantifierVariableLength(minLength: Int, maxLength: Option[Int
 
 sealed trait RegexCharacterClassComponent extends RegexAST
 
-sealed case class RegexHexChar(a: String) extends RegexCharacterClassComponent {
+sealed case class RegexHexDigit(a: String) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"\\x$a"
 }
@@ -534,6 +568,11 @@ sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent
 sealed case class RegexChar(a: Char) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"$a"
+}
+
+sealed case class RegexUnicodeChar(a: String) extends RegexCharacterClassComponent {
+  override def children(): Seq[RegexAST] = Seq.empty
+  override def toRegexString: String = s"\\u$a"
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{

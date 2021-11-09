@@ -19,7 +19,6 @@ import scala.collection.mutable.ListBuffer
 
 import org.scalatest.FunSuite
 
-
 class RegularExpressionParserSuite extends FunSuite {
 
   test("simple quantifier") {
@@ -63,6 +62,27 @@ class RegularExpressionParserSuite extends FunSuite {
             RegexCharacterRange('a', 'z'),
             RegexChar('+'),
             RegexCharacterRange('A', 'Z'))))))
+  }
+
+  test("hex digit") {
+    assert(parse(raw"\xFF") ===
+      RegexSequence(ListBuffer(RegexHexDigit("FF"))))
+  }
+
+  test("octal digit") {
+    val digits = Seq("1", "76", "123", "377")
+    for (digit <- digits) {
+      assert(parse(raw"\$digit") ===
+        RegexSequence(ListBuffer(RegexOctalChar(digit))))
+    }
+
+    // parsing of the octal digit should terminate after parsing "\1"
+    assert(parse(raw"\18") ===
+      RegexSequence(ListBuffer(RegexOctalChar("1"), RegexChar('8'))))
+
+    // parsing of the octal digit should terminate after parsing "\47"
+    assert(parse(raw"\477") ===
+      RegexSequence(ListBuffer(RegexOctalChar("47"), RegexChar('7'))))
   }
 
   private def parse(pattern: String): RegexAST = {

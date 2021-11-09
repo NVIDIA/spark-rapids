@@ -99,7 +99,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val pattern = "1."
     // '.' matches '\r' on GPU but not on CPU
     assertCpuGpuContainsMatches(Seq(pattern), Seq("1\r2", "1\n2", "1\r\n2"))
+  }
 
+  ignore("known issue - octal digit") {
+    val pattern = "a\\141|.$" // using hex works fine e.g. "a\\x61|.$"
+    assertCpuGpuContainsMatches(Seq(pattern), Seq("] b["))
   }
 
   test("character class with ranges") {
@@ -224,8 +228,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private def assertCpuGpuContainsMatches(javaPatterns: Seq[String], input: Seq[String]) = {
     for (javaPattern <- javaPatterns) {
-      val cudfPattern = new CudfRegexTranspiler().transpile(javaPattern)
       val cpu = cpuContains(javaPattern, input)
+      val cudfPattern = new CudfRegexTranspiler().transpile(javaPattern)
       val gpu = gpuContains(cudfPattern, input)
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
