@@ -844,11 +844,6 @@
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>
-        <!--
-            to enable varying handling of cudf and spark dependencies for
-            the shade plugin.
-        -->
-        <dist.dependency.scope>provided</dist.dependency.scope>
     </properties>
 
     <dependencyManagement>
@@ -882,19 +877,19 @@
               <groupId>org.apache.spark</groupId>
               <artifactId>spark-annotation_${scala.binary.version}</artifactId>
               <version>${spark.version}</version>
-              <scope>${dist.dependency.scope}</scope>
+              <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
               <artifactId>spark-hive_${scala.binary.version}</artifactId>
               <version>${spark.version}</version>
-              <scope>${dist.dependency.scope}</scope>
+              <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
               <artifactId>spark-sql_${scala.binary.version}</artifactId>
               <version>${spark.version}</version>
-              <scope>${dist.dependency.scope}</scope>
+              <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.orc</groupId>
