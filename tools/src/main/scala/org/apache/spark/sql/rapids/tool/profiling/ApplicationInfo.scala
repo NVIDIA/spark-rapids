@@ -264,6 +264,7 @@ class ApplicationInfo(
   def processSQLPlanMetrics(): Unit = {
     for ((sqlID, planInfo) <- sqlPlan) {
       checkMetadataForReadSchema(sqlID, planInfo)
+      checkJdbcScan(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
