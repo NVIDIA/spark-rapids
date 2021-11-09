@@ -798,7 +798,7 @@
         <cudf.version>21.12.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.8</scala.version>
-        <orc.version>1.5.12</orc.version>
+        <orc.version>1.5.10</orc.version>
         <orc.classifier/>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
