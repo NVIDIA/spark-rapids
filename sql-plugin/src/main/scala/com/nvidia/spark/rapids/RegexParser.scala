@@ -411,9 +411,13 @@ class CudfRegexTranspiler {
         // example: "a\141|.$"
         throw new RegexUnsupportedException(
           s"cuDF does not support octal digits consistently with Spark")
-      case RegexGroup(RegexSequence(parts)) if parts.isEmpty =>
-        // example: "()"
-        throw new RegexUnsupportedException("cuDF does not support empty groups")
+      case RegexEscaped(ch) if ch == 'b' || ch == 'B' =>
+        // example: "a\Bb"
+        // this needs further analysis to determine why words boundaries behave
+        // differently between Java and cuDF
+        throw new RegexUnsupportedException("word boundaries are not supported")
+      case RegexSequence(parts) if parts.isEmpty =>
+        throw new RegexUnsupportedException("empty sequence not supported")
       case RegexRepetition(RegexEscaped(_), _) =>
         // example: "\B?"
         throw new RegexUnsupportedException(nothingToRepeat)
@@ -468,14 +472,6 @@ class CudfRegexTranspiler {
           // note that we could choose to escape this in the transpiler rather than
           // falling back to CPU
           throw new RegexUnsupportedException(nothingToRepeat)
-        }
-        parts.foreach {
-          case RegexEscaped(ch) if ch == 'b' || ch == 'B' =>
-            // example: "a\Bb"
-            // this needs further analysis to determine why words boundaries behave
-            // differently between Java and cuDF
-            throw new RegexUnsupportedException("word boundaries are not supported")
-          case _ =>
         }
       case RegexCharacterClass(_, characters) =>
         characters.foreach {

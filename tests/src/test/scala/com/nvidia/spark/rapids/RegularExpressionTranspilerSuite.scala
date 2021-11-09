@@ -56,8 +56,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF does not support empty groups") {
-    assertUnsupported("a()?", "cuDF does not support empty groups")
+  test("cuDF does not support empty sequence") {
+    val patterns = Seq("", "a|", "()")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, "empty sequence not supported")
+    )
   }
 
   test("cuDF does not support quantifier syntax when not quantifying anything") {
