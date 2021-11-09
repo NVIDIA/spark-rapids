@@ -276,7 +276,6 @@ is provided.
 The GPU implementation of `RLike` has the following known issues where behavior is not consistent with Apache Spark and
 this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
 
-- `.` matches `\r` on the GPU but not on the CPU ([cuDF issue #9619](https://github.com/rapidsai/cudf/issues/9619))
 - `$` does not match the end of string if the string ends with a line-terminator 
   ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
 
