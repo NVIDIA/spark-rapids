@@ -80,7 +80,7 @@
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-sql_${scala.binary.version}</artifactId>
       <version>${spark321.version}</version>
-      <scope>provided</scope>
+      <scope>${dist.dependency.scope}</scope>
     </dependency>
   </dependencies>
 </project>

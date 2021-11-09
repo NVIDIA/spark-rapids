@@ -735,8 +735,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
          */
         private def convertCachedBatchToInternalRowIter: Iterator[InternalRow] = {
           val parquetCachedBatch = cbIter.next().asInstanceOf[ParquetCachedBatch]
-          val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer)
-          withResource(ParquetFileReader.open(inputFile, options)) { parquetFileReader =>
+          val inputFile = new ByteArrayInputFile(parquetCachedBatch.buffer) withResource(ParquetFileReader.open(inputFile, options)) { parquetFileReader =>
             val parquetSchema = parquetFileReader.getFooter.getFileMetaData.getSchema
             val hasUnsupportedType = origCacheSchema.exists { field =>
               !isTypeSupportedByParquet(field.dataType)

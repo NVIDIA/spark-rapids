@@ -90,6 +90,7 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.test.version}</version>
+            <scope>${dist.dependency.scope}</scope>
         </dependency>
     </dependencies>
 
@@ -115,13 +116,13 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
+                    <scope>${dist.dependency.scope}</scope>
                     <exclusions>
                         <exclusion>
                             <groupId>org.apache.curator</groupId>
                             <artifactId>curator-recipes</artifactId>
                         </exclusion>
                     </exclusions>
-                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.curator</groupId>
@@ -148,25 +149,25 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
-                    <scope>provided</scope>
+                    <scope>${dist.dependency.scope}</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-core_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
-                    <scope>provided</scope>
+                    <scope>${dist.dependency.scope}</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-annotation_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
-                    <scope>provided</scope>
+                    <scope>${dist.dependency.scope}</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
-                    <scope>provided</scope>
+                    <scope>${dist.dependency.scope}</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.scala-lang</groupId>

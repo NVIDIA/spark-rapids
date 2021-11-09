@@ -86,6 +86,7 @@
                 <configuration>
                     <artifactSet>
                         <excludes>org.slf4j:*</excludes>
+                        <excludes>ai.rapids:*</excludes>
                     </artifactSet>
                     <transformers>
                         <transformer
@@ -140,7 +141,6 @@
                     <createDependencyReducedPom>true</createDependencyReducedPom>
                     <generateUniqueDependencyReducedPom>true</generateUniqueDependencyReducedPom>
                     <promoteTransitiveDependencies>true</promoteTransitiveDependencies>
-                    <keepDependenciesWithProvidedScope>false</keepDependenciesWithProvidedScope>
                 </configuration>
                 <executions>
                     <execution>

@@ -29,7 +29,39 @@
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
     <version>21.12.0-SNAPSHOT</version>
     <dependencies>
-        
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+            <scope>compile</scope>
+        </dependency>
+
+        <!--
+            manually promoting provided aggregator dependencies
+            - cudf
+            - spark-hive
+            - spark-sql
+        -->
+        <dependency>
+            <groupId>ai.rapids</groupId>
+            <artifactId>cudf</artifactId>
+            <version>${cudf.version}</version>
+            <classifier>${cuda.version}</classifier>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-hive_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <properties>
@@ -134,13 +166,13 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-sql_${scala.binary.version}</artifactId>
                     <version>${spark311cdh.version}</version>
+                    <scope>${dist.dependency.scope}</scope>
                     <exclusions>
                         <exclusion>
                             <groupId>org.apache.curator</groupId>
                             <artifactId>curator-recipes</artifactId>
                         </exclusion>
                     </exclusions>
-                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.curator</groupId>
@@ -299,11 +331,11 @@
                     </execution>
                 </executions>
                 <dependencies>
-                    
                     <dependency>
                         <groupId>org.apache.spark</groupId>
                         <artifactId>spark-hive_${scala.binary.version}</artifactId>
                         <version>${spark.version}</version>
+                        <scope>compile</scope>
                         <exclusions>
                             <exclusion>
                                 <groupId>org.apache.curator</groupId>

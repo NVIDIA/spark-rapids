@@ -79,25 +79,25 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark301db.version}</version>
-            <scope>provided</scope>
+            <scope>${dist.dependency.scope}</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
             <version>${spark301db.version}</version>
-            <scope>provided</scope>
+            <scope>${dist.dependency.scope}</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_${scala.binary.version}</artifactId>
             <version>${spark301db.version}</version>
-            <scope>provided</scope>
+            <scope>${dist.dependency.scope}</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-annotation_${scala.binary.version}</artifactId>
             <version>${spark301db.version}</version>
-            <scope>provided</scope>
+            <scope>${dist.dependency.scope}</scope>
         </dependency>
 
             <!--
@@ -110,7 +110,7 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
                     <version>${spark301db.version}</version>
-                    <scope>provided</scope>
+                    <scope>${dist.dependency.scope}</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.hadoop</groupId>
