@@ -23,8 +23,6 @@ import scala.util.{Random, Try}
 import ai.rapids.cudf.{ColumnVector, CudfException}
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.rapids.{CudfRegexTranspiler, RegexAST, RegexParser, RegexUnsupportedException}
-
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF does not support choice with nothing to repeat") {
@@ -36,7 +34,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF unsupported choice cases") {
     val input = Seq("cat", "dog")
-    val supportedPatterns = Seq("cat|d*")
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
     patterns.foreach(pattern => {
       val e = intercept[CudfException] {

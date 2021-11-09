@@ -19,7 +19,6 @@ import scala.collection.mutable.ListBuffer
 
 import org.scalatest.FunSuite
 
-import org.apache.spark.sql.rapids.{QuantifierFixedLength, RegexAST, RegexChar, RegexCharacterClass, RegexCharacterRange, RegexChoice, RegexGroup, RegexParser, RegexRepetition, RegexSequence, SimpleQuantifier}
 
 class RegularExpressionParserSuite extends FunSuite {
 
