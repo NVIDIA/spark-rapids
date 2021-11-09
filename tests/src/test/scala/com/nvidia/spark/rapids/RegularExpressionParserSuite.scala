@@ -85,6 +85,80 @@ class RegularExpressionParserSuite extends FunSuite {
       RegexSequence(ListBuffer(RegexOctalChar("47"), RegexChar('7'))))
   }
 
+  test("complex expression") {
+    val ast = parse(
+      "^" +            // start of line
+      "[+\\-]?" +               // optional + or - at start of string
+      "(" +
+      "(" +
+      "(" +
+      "([0-9]+)|" +             // digits, OR
+      "([0-9]*\\.[0-9]+)|" +    // decimal with optional leading and mandatory trailing, OR
+      "([0-9]+\\.[0-9]*)" +     // decimal with mandatory leading and optional trailing
+      ")" +
+      "([eE][+\\-]?[0-9]+)?" +  // exponent
+      "[fFdD]?" +               // floating-point designator
+      ")" +
+      "|Inf" +                  // Infinity
+      "|[nN][aA][nN]" +         // NaN
+      ")" +
+      "$"                       // end of line
+    )
+    assert(ast ===
+      RegexSequence(ListBuffer(
+        RegexChar('^'),
+        RegexRepetition(
+          RegexCharacterClass(negated = false,
+            ListBuffer(RegexChar('+'), RegexEscaped('-'))), SimpleQuantifier('?')),
+        RegexGroup(RegexSequence(ListBuffer(
+          RegexGroup(RegexSequence(ListBuffer(
+            RegexGroup(RegexSequence(ListBuffer(
+              RegexGroup(RegexSequence(ListBuffer(
+                RegexRepetition(
+                  RegexCharacterClass(negated = false,
+                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+'))))),
+                RegexChar('|'),
+              RegexGroup(RegexSequence(ListBuffer(
+                RegexRepetition(
+                  RegexCharacterClass(negated = false,
+                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('*')),
+                RegexEscaped('.'),
+                RegexRepetition(RegexCharacterClass(negated = false,
+                  ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+'))))),
+                RegexChar('|'),
+                RegexGroup(RegexSequence(ListBuffer(RegexRepetition(
+                  RegexCharacterClass(negated = false,
+                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+')),
+                  RegexEscaped('.'),
+                  RegexRepetition(
+                    RegexCharacterClass(negated = false,
+                      ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('*')))))))),
+                  RegexRepetition(RegexGroup(RegexSequence(ListBuffer(
+                    RegexCharacterClass(negated = false,
+                      ListBuffer(RegexChar('e'),
+                  RegexChar('E'))),
+                  RegexRepetition(RegexCharacterClass(negated = false,
+                    ListBuffer(RegexChar('+'), RegexEscaped('-'))),SimpleQuantifier('?')),
+                  RegexRepetition(RegexCharacterClass(negated = false,
+                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+'))))),
+                SimpleQuantifier('?')),
+            RegexRepetition(RegexCharacterClass(negated = false,
+              ListBuffer(RegexChar('f'), RegexChar('F'),
+                RegexChar('d'), RegexChar('D'))),SimpleQuantifier('?'))))),
+            RegexChar('|'), RegexChar('I'), RegexChar('n'), RegexChar('f'), RegexChar('|'),
+          RegexCharacterClass(negated = false, ListBuffer(RegexChar('n'), RegexChar('N'))),
+          RegexCharacterClass(negated = false, ListBuffer(RegexChar('a'), RegexChar('A'))),
+          RegexCharacterClass(negated = false, ListBuffer(RegexChar('n'), RegexChar('N')))))
+      ),
+    RegexChar('$'))))
+  }
+  
+  /*
+Expected :RegexSequence(ListBuffer(RegexChar(^), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexChar(+), RegexEscaped(-))),SimpleQuantifier(?)), RegexGroup(RegexSequence(ListBuffer(RegexGroup(RegexSequence(ListBuffer(RegexGroup(RegexSequence(ListBuffer(RegexGroup(RegexSequence(ListBuffer(RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange( ,	))),SimpleQuantifier(+))))), RegexChar(|), RegexGroup(RegexSequence(ListBuffer(RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange( ,	))),SimpleQuantifier(*)), RegexEscaped(.), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange( ,	))),SimpleQuantifier(+))))), RegexChar(|), RegexGroup(RegexSequence(ListBuffer(RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange( ,	))),SimpleQuantifier(+)), RegexEscaped(.), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange( ,	))),SimpleQuantifier(*)))))))), RegexRepetition(RegexGroup(RegexSequence(ListBuffer(RegexCharacterClass(false,ListBuffer(RegexChar(e), RegexChar(E))), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexChar(+), RegexEscaped(-))),SimpleQuantifier(?)), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange( ,	))),SimpleQuantifier(+))))),SimpleQuantifier(?)), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexChar(f), RegexChar(F), RegexChar(d), RegexChar(D))),SimpleQuantifier(?))))), RegexChar(|), RegexChar(I), RegexChar(n), RegexChar(f), RegexChar(|), RegexCharacterClass(false,ListBuffer(RegexChar(n), RegexChar(N))), RegexCharacterClass(false,ListBuffer(RegexChar(a), RegexChar(A))), RegexCharacterClass(false,ListBuffer(RegexChar(n), RegexChar(N)))))), RegexChar($)))
+Actual   :RegexSequence(ListBuffer(RegexChar(^), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexChar(+), RegexEscaped(-))),SimpleQuantifier(?)), RegexGroup(RegexSequence(ListBuffer(RegexGroup(RegexSequence(ListBuffer(RegexGroup(RegexSequence(ListBuffer(RegexGroup(RegexSequence(ListBuffer(RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(0,9))),SimpleQuantifier(+))))), RegexChar(|), RegexGroup(RegexSequence(ListBuffer(RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(0,9))),SimpleQuantifier(*)), RegexEscaped(.), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(0,9))),SimpleQuantifier(+))))), RegexChar(|), RegexGroup(RegexSequence(ListBuffer(RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(0,9))),SimpleQuantifier(+)), RegexEscaped(.), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(0,9))),SimpleQuantifier(*)))))))), RegexRepetition(RegexGroup(RegexSequence(ListBuffer(RegexCharacterClass(false,ListBuffer(RegexChar(e), RegexChar(E))), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexChar(+), RegexEscaped(-))),SimpleQuantifier(?)), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexCharacterRange(0,9))),SimpleQuantifier(+))))),SimpleQuantifier(?)), RegexRepetition(RegexCharacterClass(false,ListBuffer(RegexChar(f), RegexChar(F), RegexChar(d), RegexChar(D))),SimpleQuantifier(?))))), RegexChar(|), RegexChar(I), RegexChar(n), RegexChar(f), RegexChar(|), RegexCharacterClass(false,ListBuffer(RegexChar(n), RegexChar(N))), RegexCharacterClass(false,ListBuffer(RegexChar(a), RegexChar(A))), RegexCharacterClass(false,ListBuffer(RegexChar(n), RegexChar(N)))))), RegexChar($)))
+
+   */
+
   private def parse(pattern: String): RegexAST = {
     new RegexParser(pattern).parse()
   }
