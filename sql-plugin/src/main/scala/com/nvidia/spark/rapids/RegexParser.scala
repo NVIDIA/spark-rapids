@@ -417,6 +417,7 @@ class CudfRegexTranspiler {
         // differently between Java and cuDF
         throw new RegexUnsupportedException("word boundaries are not supported")
       case RegexSequence(parts) if parts.isEmpty =>
+        // examples: "", "()", "a|", "|b"
         throw new RegexUnsupportedException("empty sequence not supported")
       case RegexRepetition(RegexEscaped(_), _) =>
         // example: "\B?"
@@ -461,10 +462,6 @@ class CudfRegexTranspiler {
         }
 
       case RegexSequence(parts) =>
-        if (isRegexChar(parts.head, '|') || isRegexChar(parts.last, '|')) {
-          // examples: "a|", "|b"
-          throw new RegexUnsupportedException(nothingToRepeat)
-        }
         if (isRegexChar(parts.head, '{')) {
           // example: "{"
           // cuDF would treat this as a quantifier even though in this
