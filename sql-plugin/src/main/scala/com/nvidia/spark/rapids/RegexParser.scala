@@ -462,6 +462,10 @@ class CudfRegexTranspiler {
         }
 
       case RegexSequence(parts) =>
+        if (isRegexChar(parts.head, '|') || isRegexChar(parts.last, '|')) {
+          // examples: "a|", "|b"
+          throw new RegexUnsupportedException(nothingToRepeat)
+        }
         if (isRegexChar(parts.head, '{')) {
           // example: "{"
           // cuDF would treat this as a quantifier even though in this

@@ -233,7 +233,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     for (javaPattern <- javaPatterns) {
       val cpu = cpuContains(javaPattern, input)
       val cudfPattern = new CudfRegexTranspiler().transpile(javaPattern)
-      val gpu = gpuContains(cudfPattern, input)
+      val gpu = try {
+        gpuContains(cudfPattern, input)
+      } catch {
+        case e: CudfException =>
+          fail(s"cuDF failed to compile pattern: $cudfPattern", e)
+      }
       for (i <- input.indices) {
         if (cpu(i) != gpu(i)) {
           fail(s"javaPattern=${toReadableString(javaPattern)}, " +
