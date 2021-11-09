@@ -273,7 +273,7 @@ is provided.
 
 ### RLike
 
-The GPU implementation of RLike has the following known issues where behavior is not consistent with Apache Spark and
+The GPU implementation of `RLike` has the following known issues where behavior is not consistent with Apache Spark and
 this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
 
 - `.` matches `\r` on the GPU but not on the CPU ([cuDF issue #9619](https://github.com/rapidsai/cudf/issues/9619))
