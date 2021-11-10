@@ -158,7 +158,7 @@ single aggregation result, and even then all the values would need to be either 
 or the smallest value possible to be stored in the type before the overflow is no longer detected.
 
 For the RAPIDS Accelerator we only have access to at most a 128-bit value to store the results
-in and still detect overflow. Because of this we cannot guarantee overflow detention in all
+in and still detect overflow. Because of this we cannot guarantee overflow detection in all
 cases. In some cases we can guarantee unlimited overflow detection because of the maximum number of
 values that RAPIDS will aggregate in a single batch. But even in the worst cast for a decimal value
 with a precision of 28 the user would still have to aggregate so many values that it overflows 2.4
