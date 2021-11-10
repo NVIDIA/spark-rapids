@@ -354,7 +354,8 @@ class HashJoinIterator(
         case _: InnerLike if isHashTableFromStreamSide =>
           assert(hashTable.isDefined, "missing hash table from stream side")
           val builtKeys = maybeProjectBuiltKeys()
-          val maps = builtKeys.innerJoinGatherMaps(hashTable.get)
+          val maps = numJoinRows.map(builtKeys.innerJoinGatherMaps(hashTable.get, _))
+              .getOrElse(builtKeys.innerJoinGatherMaps(hashTable.get))
           if (buildSide == GpuBuildRight) maps.reverse else maps
         case _ =>
           val hashTable = maybeBuildHashTable()
