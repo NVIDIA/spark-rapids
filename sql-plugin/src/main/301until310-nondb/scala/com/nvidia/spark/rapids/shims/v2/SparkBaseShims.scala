@@ -41,7 +41,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, FileScanRDD, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
@@ -275,7 +275,7 @@ abstract class SparkBaseShims extends Spark30XShims {
             GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
           }
 
-          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = 
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
             GpuAverage(childExprs.head)
 
           // Average is not supported in ANSI mode right now, no matter the type
@@ -298,7 +298,7 @@ abstract class SparkBaseShims extends Spark30XShims {
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
         (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
-            if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
+            if (!GpuOverrides.isSupportedStringReplacePattern(a.regexp)) {
               willNotWorkOnGpu(
                 "Only non-null, non-empty String literals that are not regex patterns " +
                     "are supported by RegExpReplace on the GPU")
@@ -306,7 +306,8 @@ abstract class SparkBaseShims extends Spark30XShims {
           }
           override def convertToGpu(lhs: Expression, regexp: Expression,
               rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
-        })
+        }),
+      GpuScalaUDFMeta.exprMeta
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 
@@ -467,10 +468,6 @@ abstract class SparkBaseShims extends Spark30XShims {
       colType: String,
       resolver: Resolver): Unit = {
     GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
-  }
-
-  override def sortOrderChildren(s: SortOrder): Seq[Expression] = {
-    (s.sameOrderExpressions + s.child).toSeq
   }
 
   override def sortOrder(
@@ -646,5 +643,9 @@ abstract class SparkBaseShims extends Spark30XShims {
       new KryoJavaSerializer())
     kryo.register(classOf[SerializeBatchDeserializeHostBuffer],
       new KryoJavaSerializer())
+  }
+
+  override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
+    adaptivePlan.initialPlan
   }
 }

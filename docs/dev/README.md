@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Developer Overview
-nav_order: 10
+nav_order: 11
 has_children: true
 permalink: /developer-overview/
 ---
@@ -240,6 +240,8 @@ in the driver options, e.g.:
 
 The Spark process will wait upon launch for a remote debugger to attach via
 port 5005.
+
+You can also use [Compute Sanitizer](compute_sanitizer.md) to debug CUDA memory errors.
 
 ## Profiling Tips
 [NVIDIA Nsight Systems](https://developer.nvidia.com/nsight-systems) makes

@@ -318,9 +318,8 @@ class Analysis(apps: Seq[ApplicationInfo]) {
   def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTimeProfileResult] = {
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>
-        // Potential problems not properly track, add it later
         SQLDurationExecutorTimeProfileResult(app.index, app.appId, sqlId, sqlCase.duration,
-          sqlCase.hasDataset, app.appInfo.duration, sqlCase.problematic,
+          sqlCase.hasDatasetOrRDD, app.appInfo.duration, sqlCase.problematic,
           sqlCase.sqlCpuTimePercent)
       }
     }

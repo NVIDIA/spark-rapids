@@ -26,7 +26,9 @@
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
     <version>21.12.0-SNAPSHOT</version>
-
+    <properties>
+        <target.classifier/>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -60,6 +62,14 @@
             <groupId>com.nvidia</groupId>
             <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- use aggregator jar because accessing internal classes -->
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -202,6 +212,32 @@
                 </configuration>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>1.8</version>
+                <executions>
+                    <execution>
+                        <id>generate-build-info</id>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <!-- Execute the shell script to generate the plugin build information. -->
+                            <target>
+                                <mkdir dir="${project.build.directory}/extra-resources"/>
+                                <mkdir dir="${project.build.directory}/tmp"/>
+                                <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
+                                    <arg value="${user.dir}/build/build-info"/>
+                                    <arg value="${project.version}"/>
+                                    <arg value="${cudf.version}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <configuration>
                     <finalName>rapids-4-spark-integration-tests_${scala.binary.version}-${project.version}-${spark.version.classifier}</finalName>
@@ -291,5 +327,12 @@
                 </executions>
             </plugin>
         </plugins>
+
+        <resources>
+            <resource>
+                <!-- Include the properties file to provide the build information. -->
+                <directory>${project.build.directory}/extra-resources</directory>
+            </resource>
+        </resources>
     </build>
 </project>

@@ -33,31 +33,29 @@ class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
     TrampolineUtil.cleanupAnyExistingSession()
   }
 
-  test("RMM pool limit") {
-    val totalGpuSize = Cuda.memGetInfo().total
-    val initPoolFraction = 0.1
+  test("RMM pool size") {
+    val freeGpuSize = Cuda.memGetInfo().free
+    val poolFraction = 0.1
     val maxPoolFraction = 0.2
     // we need to reduce the minAllocFraction for this test since the
-    // initial allocation here is less than the default minimum
+    // pool allocation here is less than the default minimum
     val minPoolFraction = 0.01
     val conf = new SparkConf()
         .set(RapidsConf.POOLED_MEM.key, "true")
         .set(RapidsConf.RMM_POOL.key, "ARENA")
-        .set(RapidsConf.RMM_ALLOC_FRACTION.key, initPoolFraction.toString)
+        .set(RapidsConf.RMM_ALLOC_FRACTION.key, poolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_MIN_FRACTION.key, minPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_MAX_FRACTION.key, maxPoolFraction.toString)
         .set(RapidsConf.RMM_ALLOC_RESERVE.key, "0")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      val initPoolSize = (totalGpuSize * initPoolFraction).toLong
-      val allocSize = Math.max(initPoolSize - 1024 * 1024, 0)
-      // initial allocation should fit within initial pool size
+      val poolSize = (freeGpuSize * poolFraction).toLong
+      val allocSize = poolSize * 3 / 4
+      assert(allocSize > 0)
+      // initial allocation should fit within pool size
       withResource(DeviceMemoryBuffer.allocate(allocSize)) { _ =>
-        // this should grow the pool
-        withResource(DeviceMemoryBuffer.allocate(allocSize / 2)) { _ =>
-          assertThrows[OutOfMemoryError] {
-            // this should exceed the specified pool limit
-            DeviceMemoryBuffer.allocate(allocSize).close()
-          }
+        assertThrows[OutOfMemoryError] {
+          // this should exceed the specified pool size
+          DeviceMemoryBuffer.allocate(allocSize).close()
         }
       }
     }
@@ -71,7 +69,7 @@ class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
     }
   }
 
-  test("RMM init equals max") {
+  test("RMM pool size equals max") {
     val rapidsConf = new RapidsConf(Map(
       RapidsConf.RMM_ALLOC_RESERVE.key -> "0",
       RapidsConf.RMM_ALLOC_FRACTION.key -> "0.3",

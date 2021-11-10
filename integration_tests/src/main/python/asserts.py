@@ -90,6 +90,8 @@ def _assert_equal(cpu, gpu, float_check, path):
         assert cpu == gpu, "GPU and CPU boolean values are different at {}".format(path)
     elif isinstance(cpu, Decimal):
         assert cpu == gpu, "GPU and CPU decimal values are different at {}".format(path)
+    elif isinstance(cpu, bytearray):
+        assert cpu == gpu, "GPU and CPU bytearray values are different at {}".format(path)
     elif (cpu == None):
         assert cpu == gpu, "GPU and CPU are not both null at {}".format(path)
     else:
@@ -324,10 +326,12 @@ def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
     from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
     gpu_end = time.time()
     jvm = spark_jvm()
-    for clz in exist_classes.split(','):
-        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
-    for clz in non_exist_classes.split(','):
-        jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
+    if exist_classes:
+        for clz in exist_classes.split(','):
+            jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
+    if non_exist_classes:
+        for clz in non_exist_classes.split(','):
+            jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():

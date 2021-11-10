@@ -30,6 +30,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
+import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, ExprId, NullOrdering, SortDirection, SortOrder}
 import org.apache.spark.sql.catalyst.plans.JoinType
@@ -38,7 +39,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -73,8 +74,12 @@ case class ClouderaShimVersion(major: Int, minor: Int, patch: Int, clouderaVersi
   override def toString(): String = s"$major.$minor.$patch.$clouderaVersion"
 }
 
-case class DatabricksShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
-  override def toString(): String = s"$major.$minor.$patch-databricks"
+case class DatabricksShimVersion(
+    major: Int,
+    minor: Int,
+    patch: Int,
+    dbver: String = "") extends ShimVersion {
+  override def toString(): String = s"$major.$minor.$patch-databricks$dbver"
 }
 
 case class EMRShimVersion(major: Int, minor: Int, patch: Int) extends ShimVersion {
@@ -109,7 +114,6 @@ trait SparkShims {
   def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean
   def isGpuShuffledHashJoin(plan: SparkPlan): Boolean
   def isWindowFunctionExec(plan: SparkPlan): Boolean
-  def getRapidsShuffleManagerClass: String
   def getBuildSide(join: HashJoin): GpuBuildSide
   def getBuildSide(join: BroadcastNestedLoopJoinExec): GpuBuildSide
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
@@ -184,8 +188,6 @@ trait SparkShims {
       schema: StructType,
       colType: String,
       resolver: Resolver): Unit
-
-  def sortOrderChildren(s: SortOrder): Seq[Expression]
 
   def sortOrder(child: Expression, direction: SortDirection): SortOrder = {
     sortOrder(child, direction, direction.defaultNullOrdering)
@@ -281,14 +283,19 @@ trait SparkShims {
 
   def registerKryoClasses(kryo: Kryo): Unit
 
-  def getCentralMomentDivideByZeroEvalResult(): Expression
-}
+  def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 
-abstract class SparkCommonShims extends SparkShims {
-  override def alias(child: Expression, name: String)(
-      exprId: ExprId,
-      qualifier: Seq[String],
-      explicitMetadata: Option[Metadata]): Alias = {
-    Alias(child, name)(exprId, qualifier, explicitMetadata)
-  }
+  /**
+  * This Boolean variable set to `true` for Spark < 3.1.0, and set to
+  * `SQLConf.get.legacyStatisticalAggregate` otherwise.
+  * This is because the `legacyStatisticalAggregate` config was introduced in Spark 3.1.0.
+  */
+  def getLegacyStatisticalAggregate(): Boolean
+
+
+  def dateFormatInRead(csvOpts: CSVOptions): Option[String]
+
+  def timestampFormatInRead(csvOpts: CSVOptions): Option[String]
+
+  def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
 }

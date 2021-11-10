@@ -183,7 +183,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // on executor startup.
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
-        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf)
         if (GpuShuffleEnv.isRapidsShuffleAvailable) {
           GpuShuffleEnv.initShuffleManager()
           if (conf.shuffleTransportEarlyStart) {
@@ -325,9 +325,8 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertContains(gpuPlan: SparkPlan, className: String): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
-    assert(containsPlan(executedPlan, className),
-      s"Could not find $className in the Spark plan\n$executedPlan")
+    assert(containsPlan(gpuPlan, className),
+      s"Could not find $className in the Spark plan\n$gpuPlan")
   }
 
   def assertContains(df: DataFrame, gpuClass: String): Unit = {
@@ -336,9 +335,8 @@ object ExecutionPlanCaptureCallback {
   }
 
   def assertNotContain(gpuPlan: SparkPlan, className: String): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
-    assert(!containsPlan(executedPlan, className),
-      s"We found $className in the Spark plan\n$executedPlan")
+    assert(!containsPlan(gpuPlan, className),
+      s"We found $className in the Spark plan\n$gpuPlan")
   }
 
   def assertNotContain(df: DataFrame, gpuClass: String): Unit = {
@@ -360,20 +358,22 @@ object ExecutionPlanCaptureCallback {
     executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
-  private def containsExpression(exp: Expression, className: String): Boolean = {
-    PlanUtils.getBaseNameFromClass(exp.getClass.getName) == className ||
-        exp.children.exists(containsExpression(_, className))
-  }
+  private def containsExpression(exp: Expression, className: String): Boolean = exp.find {
+    case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
+    case e: ExecSubqueryExpression => containsPlan(e.plan, className)
+    case _ => false
+  }.nonEmpty
 
-  private def containsPlan(plan: SparkPlan, className: String): Boolean = {
-    val p = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan)) match {
-      case p: QueryStageExec => p.plan
-      case p => p
-    }
-    PlanUtils.sameClass(p, className) ||
-        p.expressions.exists(containsExpression(_, className)) ||
-        p.children.exists(containsPlan(_, className))
-  }
+  private def containsPlan(plan: SparkPlan, className: String): Boolean = plan.find {
+    case p if PlanUtils.sameClass(p, className) =>
+      true
+    case p: AdaptiveSparkPlanExec =>
+      containsPlan(p.executedPlan, className)
+    case p: QueryStageExec =>
+      containsPlan(p.plan, className)
+    case p =>
+      p.expressions.exists(containsExpression(_, className))
+  }.nonEmpty
 }
 
 /**

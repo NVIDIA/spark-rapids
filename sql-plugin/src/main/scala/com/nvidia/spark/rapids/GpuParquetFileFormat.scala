@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.ParquetColumnWriterOptions._
 import com.nvidia.spark.RebaseHelper
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
@@ -32,7 +31,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, DateType, Decimal, DecimalType, MapType, StructField, StructType, TimestampType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 import scala.reflect.internal.annotations
@@ -116,68 +115,6 @@ object GpuParquetFileFormat {
     } else {
       None
     }
-  }
-
-  def parquetWriterOptionsFromField[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions](
-      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
-      dataType: DataType,
-      name: String,
-      writeInt96: Boolean,
-      nullable: Boolean): T = {
-    dataType match {
-      case dt: DecimalType =>
-        builder.withDecimalColumn(name, dt.precision, nullable)
-      case TimestampType =>
-        builder.withTimestampColumn(name, writeInt96, nullable)
-      case s: StructType =>
-        builder.withStructColumn(
-          parquetWriterOptionsFromSchema(
-            // we are setting this to nullable, in case the parent is a Map's key and wants to
-            // set this to false
-            structBuilder(name, nullable),
-            s,
-            writeInt96).build())
-      case a: ArrayType =>
-        builder.withListColumn(
-          parquetWriterOptionsFromField(
-            // we are setting this to nullable, in case the parent is a Map's key and wants to
-            // set this to false
-            listBuilder(name, nullable),
-            a.elementType,
-            name,
-            writeInt96,
-            true).build())
-      case m: MapType =>
-        builder.withMapColumn(
-          mapColumn(name,
-            parquetWriterOptionsFromField(
-              ParquetWriterOptions.builder(),
-              m.keyType,
-              "key",
-              writeInt96,
-              false).build().getChildColumnOptions()(0),
-            parquetWriterOptionsFromField(
-              ParquetWriterOptions.builder(),
-              m.valueType,
-              "value",
-              writeInt96,
-              nullable).build().getChildColumnOptions()(0)))
-      case _ =>
-        builder.withColumns(nullable, name)
-    }
-    builder.asInstanceOf[T]
-  }
-
-  def parquetWriterOptionsFromSchema[T <: NestedBuilder[_, _], V <: ParquetColumnWriterOptions](
-      builder: ParquetColumnWriterOptions.NestedBuilder[T, V],
-      schema: StructType,
-      writeInt96: Boolean): T = {
-    // TODO once https://github.com/rapidsai/cudf/issues/7654 is fixed go back to actually
-    // setting if the output is nullable or not everywhere we have hard-coded nullable=true
-    schema.foreach(field =>
-      parquetWriterOptionsFromField(builder, field.dataType, field.name, writeInt96, true)
-    )
-    builder.asInstanceOf[T]
   }
 
   def parseCompressionType(compressionType: String): Option[CompressionType] = {
@@ -403,8 +340,8 @@ class GpuParquetWriter(
 
   override val tableWriter: TableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
-    val builder = GpuParquetFileFormat
-      .parquetWriterOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+    val builder = SchemaUtils
+      .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
         ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)

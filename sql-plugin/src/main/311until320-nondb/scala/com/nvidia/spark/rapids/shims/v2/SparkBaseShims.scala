@@ -21,6 +21,7 @@ import java.nio.ByteBuffer
 
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
+import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
@@ -41,7 +42,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
@@ -57,7 +58,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
-import org.apache.spark.sql.rapids.shims.v2.{GpuColumnarToRowTransitionExec, GpuInMemoryTableScanExec, GpuSchemaUtils, HadoopFSUtilsShim}
+import org.apache.spark.sql.rapids.shims.v2.{GpuColumnarToRowTransitionExec, GpuSchemaUtils, HadoopFSUtilsShim}
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -233,7 +234,7 @@ abstract class SparkBaseShims extends Spark31XShims {
             TypeSig.lit(TypeEnum.INT)))),
       (a, conf, p, r) => new ExprMeta[RegExpReplace](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (GpuOverrides.isNullOrEmptyOrRegex(a.regexp)) {
+          if (!GpuOverrides.isSupportedStringReplacePattern(a.regexp)) {
             willNotWorkOnGpu(
               "Only non-null, non-empty String literals that are not regex patterns " +
                   "are supported by RegExpReplace on the GPU")
@@ -365,7 +366,8 @@ abstract class SparkBaseShims extends Spark31XShims {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
           GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
         }
-      })
+      }),
+    GpuScalaUDFMeta.exprMeta
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -433,27 +435,8 @@ abstract class SparkBaseShims extends Spark31XShims {
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
-            + TypeSig.ARRAY).nested(), TypeSig.all),
-        (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            if (!scan.relation.cacheBuilder.serializer
-                .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
-              willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
-              if (SQLConf.get.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
-                  .equals("com.nvidia.spark.ParquetCachedBatchSerializer")) {
-                throw new IllegalStateException("Cache serializer failed to load! " +
-                    "Something went wrong while loading ParquetCachedBatchSerializer class")
-              }
-            }
-          }
-
-          /**
-           * Convert InMemoryTableScanExec to a GPU enabled version.
-           */
-          override def convertToGpu(): GpuExec = {
-            GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
-          }
-        }),
+            + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
+        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         JoinTypeChecks.equiJoinExecChecks,
@@ -665,8 +648,6 @@ abstract class SparkBaseShims extends Spark31XShims {
     queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
   }
 
-  override def sortOrderChildren(s: SortOrder): Seq[Expression] = s.children
-
   override def sortOrder(
       child: Expression,
       direction: SortDirection,
@@ -845,8 +826,10 @@ abstract class SparkBaseShims extends Spark31XShims {
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
 
-  override def getCentralMomentDivideByZeroEvalResult(): Expression = {
-    val nullOnDivideByZero: Boolean = !SQLConf.get.legacyStatisticalAggregate
-    GpuLiteral(if (nullOnDivideByZero) null else Double.NaN, DoubleType)
+  override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
+    adaptivePlan.inputPlan
   }
+
+  override def getLegacyStatisticalAggregate(): Boolean =
+    SQLConf.get.legacyStatisticalAggregate
 }

@@ -257,13 +257,31 @@ The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files an
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.
 
-## Regular Expressions
-The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard
-matches.
+## LIKE
 
 If a null char '\0' is in a string that is being matched by a regular expression, `LIKE` sees it as
 the end of the string.  This will be fixed in a future release. The issue is
 [here](https://github.com/NVIDIA/spark-rapids/issues/119).
+
+## Regular Expressions
+
+### regexp_replace
+
+The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard
+matches for the `regexp_replace` function and will fall back to CPU if a regular expression pattern 
+is provided.
+
+### RLike
+
+The GPU implementation of `RLike` has the following known issues where behavior is not consistent with Apache Spark and
+this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
+
+- `.` matches `\r` on the GPU but not on the CPU ([cuDF issue #9619](https://github.com/rapidsai/cudf/issues/9619))
+- `$` does not match the end of string if the string ends with a line-terminator 
+  ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
+
+`RLike` will fall back to CPU if any regular expressions are detected that are not supported on the GPU 
+or would produce different results on the GPU.
 
 ## Timestamps
 
@@ -567,8 +585,54 @@ The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
 distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.approxPercentileEnabled=true`.
+`spark.rapids.sql.expression.ApproximatePercentile=true`.
 
-There are known issues with the approximate percentile implementation
-([#3706](https://github.com/NVIDIA/spark-rapids/issues/3706),
-[#3692](https://github.com/NVIDIA/spark-rapids/issues/3692)) and the feature should be considered experimental.
+## Conditionals and operations with side effects (ANSI mode)
+
+In Apache Spark condition operations like `if`, `coalesce`, and `case/when` lazily evaluate
+their parameters on a row by row basis. On the GPU it is generally more efficient to
+evaluate the parameters regardless of the condition and then select which result to return
+based on the condition. This is fine so long as there are no side effects caused by evaluating
+a parameter. For most expressions in Spark this is true, but in ANSI mode many expressions can
+throw exceptions, like for the `Add` expression if an overflow happens. This is also true of
+UDFs, because by their nature they are user defined and can have side effects like throwing
+exceptions.
+
+Currently, the RAPIDS Accelerator
+[assumes that there are no side effects](https://github.com/NVIDIA/spark-rapids/issues/3849).
+This can result it situations, specifically in ANSI mode, where the RAPIDS Accelerator will
+always throw an exception, but Spark on the CPU will not.  For example:
+
+```scala
+spark.conf.set("spark.sql.ansi.enabled", "true")
+
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val + 1) as ret")
+    .show()
+```
+
+If the above example is run on the CPU you will get a result like.
+```
++----+
+| ret|
++----+
+|   1|
+|null|
++----+
+```
+
+But if it is run on the GPU an overflow exception is thrown. As was explained before this
+is because the RAPIDS Accelerator will evaluate both `val + 1` and `null` regardless of
+the result of the condition. In some cases you can work around this. The above example
+could be re-written so the `if` happens before the `Add` operation.
+
+```scala
+Seq(0L, Long.MaxValue).toDF("val")
+    .repartition(1) // The repartition makes Spark not optimize selectExpr away
+    .selectExpr("IF(val > 1000, null, val) + 1 as ret")
+    .show()
+```
+
+But this is not something that can be done generically and requires inner knowledge about
+what can trigger a side effect.

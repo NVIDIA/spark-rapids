@@ -90,6 +90,21 @@ def auto_merge(number, sha):
 ```
 {r.json()}
 ```
+
+Please use the following steps to fix the merge conflicts manually:
+```
+# Assume upstream is NVIDIA/spark-rapids remote
+git fetch upstream {HEAD} {BASE}
+git checkout -b fix-auto-merge-conflict-{number} upstream/{BASE}
+git merge upstream/{HEAD}
+# Fix any merge conflicts caused by this merge
+git commit -am "Merge {HEAD} into {BASE}"
+git push <personal fork> fix-auto-merge-conflict-{number}
+# Open a PR targets NVIDIA/spark-rapids {BASE}
+```
+**IMPORTANT:** Before merging this PR, be sure to change the merging strategy to `Create a merge commit` (repo admin only).
+
+Once this PR is merged, the auto-merge PR should automatically be closed since it contains the same commit hashes
 """)
         print(f'status code: {r.status_code}')
         print(r.json())

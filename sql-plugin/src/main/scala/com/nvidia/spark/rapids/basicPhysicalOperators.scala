@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, Scalar, Table}
+import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.{ShimSparkPlan, ShimUnaryExecNode}
@@ -30,11 +30,12 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SparkPlan}
-import org.apache.spark.sql.rapids.GpuPredicateHelper
+import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SampleExec, SparkPlan}
+import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler, GpuPredicateHelper}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.util.random.BernoulliCellSampler
 
 class GpuProjectExecMeta(
     proj: ProjectExec,
@@ -366,6 +367,99 @@ case class GpuFilterExec(
   }
 }
 
+class GpuSampleExecMeta(sample: SampleExec, conf: RapidsConf, p: Option[RapidsMeta[_, _, _]],
+    r: DataFromReplacementRule) extends SparkPlanMeta[SampleExec](sample, conf, p, r)
+  with Logging {
+  override def convertToGpu(): GpuExec = {
+    val gpuChild = childPlans.head.convertIfNeeded()
+    GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
+      sample.seed, gpuChild)
+  }
+}
+
+case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement: Boolean,
+                         seed: Long, child: SparkPlan)
+  extends ShimUnaryExecNode with GpuExec {
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+
+  override def output: Seq[Attribute] = {
+    child.output
+  }
+
+  // add one coalesce exec to avoid empty batch and small batch,
+  // because sample will shrink the batch
+  override val coalesceAfter: Boolean = true
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val opTime = gpuLongMetric(OP_TIME)
+    val rdd = child.executeColumnar()
+    if (withReplacement) {
+      new GpuPartitionwiseSampledRDD(
+        rdd,
+        new GpuPoissonSampler(upperBound - lowerBound, useGapSamplingIfPossible = false,
+          numOutputRows, numOutputBatches, opTime),
+        preservesPartitioning = true,
+        seed)
+    } else {
+      rdd.mapPartitionsWithIndex(
+        (index, iterator) => {
+          // use CPU sampler generate filter
+          val sampler = new BernoulliCellSampler(lowerBound, upperBound)
+          sampler.setSeed(seed + index)
+          iterator.map[ColumnarBatch] { batch =>
+            numOutputBatches += 1
+            withResource(batch) { b => // will generate new columnar column, close this
+              val numRows = b.numRows()
+              val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
+                builder =>
+                  (0 until numRows).foreach { _ =>
+                    val n = sampler.sample()
+                    if (n > 0) {
+                      builder.append(1.toByte)
+                      numOutputRows += 1
+                    } else {
+                      builder.append(0.toByte)
+                    }
+                  }
+                  builder.buildAndPutOnDevice()
+              }
+
+              // use GPU filer rows
+              val colTypes = GpuColumnVector.extractTypes(b)
+              withResource(filter) { filter =>
+                withResource(GpuColumnVector.from(b)) { tbl =>
+                  withResource(tbl.filter(filter)) { filteredData =>
+                    if (filteredData.getRowCount == 0) {
+                      GpuColumnVector.emptyBatchFromTypes(colTypes)
+                    } else {
+                      GpuColumnVector.from(filteredData, colTypes)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        ,preservesPartitioning = true
+      )
+    }
+  }
+}
+
 /**
  * Physical plan for range (generating a range of 64 bit numbers).
  */
@@ -524,7 +618,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     children.map(_.output).transpose.map { attrs =>
       val firstAttr = attrs.head
       val nullable = attrs.exists(_.nullable)
-      val newDt = attrs.map(_.dataType).reduce(TrampolineUtil.structTypeMerge)
+      val newDt = attrs.map(_.dataType).reduce(TrampolineUtil.unionLikeMerge)
       if (firstAttr.dataType == newDt) {
         firstAttr.withNullability(nullable)
       } else {

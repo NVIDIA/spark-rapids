@@ -21,7 +21,8 @@ import java.util.Optional
 import scala.collection.mutable.ArrayBuffer
 import scala.language.implicitConversions
 
-import ai.rapids.cudf.{ColumnView, Table}
+import ai.rapids.cudf._
+import ai.rapids.cudf.ColumnWriterOptions._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.orc.TypeDescription
 
@@ -207,5 +208,71 @@ object SchemaUtils extends Arm {
         col.castTo(DecimalUtil.createCudfDecimal(dt))
       case _ => col
     }
+  }
+
+  private def writerOptionsFromField[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
+      builder: NestedBuilder[T, V],
+      dataType: DataType,
+      name: String,
+      nullable: Boolean,
+      writeInt96: Boolean): T = {
+    dataType match {
+      case dt: DecimalType =>
+        builder.withDecimalColumn(name, dt.precision, nullable)
+      case TimestampType =>
+        builder.withTimestampColumn(name, writeInt96, nullable)
+      case s: StructType =>
+        builder.withStructColumn(
+          writerOptionsFromSchema(
+            structBuilder(name, nullable),
+            s,
+            writeInt96).build())
+      case a: ArrayType =>
+        builder.withListColumn(
+          writerOptionsFromField(
+            listBuilder(name, nullable),
+            a.elementType,
+            name,
+            a.containsNull,
+            writeInt96).build())
+      case m: MapType =>
+        // It is ok to use `StructBuilder` here for key and value, since either
+        // `OrcWriterOptions.Builder` or `ParquetWriterOptions.Builder` is actually an
+        // `AbstractStructBuilder`, and here only handles the common column metadata things.
+        builder.withMapColumn(
+          mapColumn(name,
+            writerOptionsFromField(
+              structBuilder(name, nullable),
+              m.keyType,
+              "key",
+              nullable = false,
+              writeInt96).build().getChildColumnOptions()(0),
+            writerOptionsFromField(
+              structBuilder(name, nullable),
+              m.valueType,
+              "value",
+              m.valueContainsNull,
+              writeInt96).build().getChildColumnOptions()(0)))
+      case _ =>
+        builder.withColumns(nullable, name)
+    }
+    builder.asInstanceOf[T]
+  }
+
+  /**
+   * Build writer options from schema for both ORC and Parquet writers.
+   *
+   * (There is an open issue "https://github.com/rapidsai/cudf/issues/7654" for Parquet writer,
+   * but it is circumvented by https://github.com/rapidsai/cudf/pull/9061, so the nullable can
+   * go back to the actual setting, instead of the hard-coded nullable=true before.)
+   */
+  def writerOptionsFromSchema[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](
+      builder: NestedBuilder[T, V],
+      schema: StructType,
+      writeInt96: Boolean = false): T = {
+    schema.foreach(field =>
+      writerOptionsFromField(builder, field.dataType, field.name, field.nullable, writeInt96)
+    )
+    builder.asInstanceOf[T]
   }
 }

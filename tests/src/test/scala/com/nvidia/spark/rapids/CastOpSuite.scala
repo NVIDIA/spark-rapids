@@ -674,7 +674,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast long to decimal") {
-    List(-18, -10, -3, 0, 1, 5, 15).foreach { scale =>
+    // negative scale decimal is not supported
+    List(0, 1, 5, 15).foreach { scale =>
       testCastToDecimal(DataTypes.LongType, scale,
         customRandGenerator = Some(new scala.util.Random(1234L)))
     }
@@ -842,8 +843,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     // Test 2: overflow caused by out of range integers
     nonOverflowCase(DataTypes.IntegerType, precision = 9, scale = -1,
       generator = intGenerator(Seq(Int.MinValue, Int.MaxValue)))
-    nonOverflowCase(DataTypes.LongType, precision = 18, scale = -1,
-      generator = longGenerator(Seq(Long.MinValue, Long.MaxValue)))
 
     overflowCase(DataTypes.IntegerType, precision = 9, scale = 0,
       generator = intGenerator(Seq(Int.MaxValue)))
@@ -1005,7 +1004,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
         val (cpuResult, gpuResult) = dataType match {
           case ShortType | IntegerType | LongType | _: DecimalType =>
-            fromCpu.map(r => Row(r.getDecimal(1))) -> fromGpu.map(r => Row(r.getDecimal(1)))
+            (fromCpu, fromGpu)
           case FloatType | DoubleType | StringType =>
             // There may be tiny difference between CPU and GPU result when casting from double
             val fetchFromRow = (r: Row) => {
@@ -1019,7 +1018,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         withGpuSparkSession((ss: SparkSession) => execFun(createDF(ss)).collect(), conf)
       }
     } finally {
-      dir.delete()
+      org.apache.commons.io.FileUtils.deleteQuietly(dir)
     }
   }
 

@@ -182,7 +182,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
         case GpuColumnarToRowExec(plan, _, _) => // codegen disabled
-          assert(plan.isInstanceOf[GpuSortExec])
+          assert(plan.isInstanceOf[GpuHashAggregateExec])
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))

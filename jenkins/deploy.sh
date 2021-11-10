@@ -82,12 +82,20 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
 # Distribution jar is a shaded artifact so use the reduced dependency pom.
 $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             $SRC_DOC_JARS \
-            -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER
+            -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER -DpomFile=./dist/target/dependency-reduced-pom.xml
 
 ###### Deploy integration tests jar(s) ######
 TESTS_ART_ID=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.artifactId -DforceStdout`
 TESTS_ART_VER=`mvn help:evaluate -q -pl $TESTS_PL -Dexpression=project.version -DforceStdout`
 TESTS_DOC_JARS="-Dsources=deployjars/$TESTS_ART_ID-$TESTS_ART_VER-sources.jar -Djavadoc=deployjars/$TESTS_ART_ID-$TESTS_ART_VER-javadoc.jar"
+# Deploy default integration tests jar (spark301)
+TESTS_FPATH="deployjars/$TESTS_ART_ID-$TESTS_ART_VER"
+cp $TESTS_FPATH-spark301.jar $TESTS_FPATH.jar
+$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
+        $TESTS_DOC_JARS \
+        -Dfile=$TESTS_FPATH.jar -DpomFile=${TESTS_PL}/pom.xml
+
+# Deploy integration tests jars with classifier 'spark301/spark302/...'
 VERSIONS_LIST=${VERSIONS_BUILT//','/' '}
 for VER in ${VERSIONS_LIST}; do
     TESTS_FPATH="deployjars/$TESTS_ART_ID-$TESTS_ART_VER-spark$VER"
