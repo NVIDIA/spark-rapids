@@ -97,10 +97,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuContainsMatches(Seq(pattern), Seq("2", "2\n", "2\r", "\2\r\n"))
   }
 
-  ignore("known issue - dot matches CR on GPU but not on CPU") {
+  test("dot matches CR on GPU but not on CPU") {
     // see https://github.com/rapidsai/cudf/issues/9619
     val pattern = "1."
-    // '.' matches '\r' on GPU but not on CPU
     assertCpuGpuContainsMatches(Seq(pattern), Seq("1\r2", "1\n2", "1\r\n2"))
   }
 
@@ -125,6 +124,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val transpiler = new CudfRegexTranspiler()
     val transpiled = patterns.map(transpiler.transpile)
     assert(transpiled === expected)
+  }
+
+  test("transpile dot") {
+    assert(new CudfRegexTranspiler().transpile(".+") === "[^\r\n]+")
   }
 
   test("transpile complex regex 1") {
@@ -155,8 +158,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
       "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
 
-    // input and output should be identical
-    doTranspileTest(TIMESTAMP_TRUNCATE_REGEX, TIMESTAMP_TRUNCATE_REGEX)
+    // input and output should be identical except for `.` being replaced with `[^\r\n]`
+    doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
+      TIMESTAMP_TRUNCATE_REGEX.replaceAll("\\.", "[^\r\n]"))
 
   }
 
@@ -187,21 +191,20 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("compare CPU and GPU: fuzz test with limited chars") {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
-    // CR and LF has been excluded due to known issues
-    doFuzzTest(Some("|()[]{},.^$*+?abc123x\\ \tB"))
+    // LF has been excluded due to known issues
+    doFuzzTest(Some("|()[]{},.^$*+?abc123x\\ \r\tB"))
   }
 
-  test("compare CPU and GPU: fuzz test printable ASCII chars plus TAB") {
+  test("compare CPU and GPU: fuzz test printable ASCII chars plus CR and TAB") {
     // CR and LF has been excluded due to known issues
-    doFuzzTest(Some((0x20 to 0x7F).map(_.toChar) + "\t"))
+    doFuzzTest(Some((0x20 to 0x7F).map(_.toChar) + "\r\t"))
   }
 
   test("compare CPU and GPU: fuzz test ASCII chars") {
-    // CR and LF has been excluded due to known issues
+    // LF has been excluded due to known issues
     val chars = (0x00 to 0x7F)
       .map(_.toChar)
       .filterNot(_ == '\n')
-      .filterNot(_ == '\r')
     doFuzzTest(Some(chars.mkString))
   }
 
@@ -215,7 +218,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val r = new EnhancedRandom(new Random(seed = 0L),
       options = FuzzerOptions(validChars, maxStringLen = 12))
 
-    val data = Range(0, 1000).map(_ => r.nextString())
+    val data = Range(0, 1000)
+      // remove trailing newlines as workaround for https://github.com/rapidsai/cudf/issues/9620
+      .map(_ => removeTrailingNewlines(r.nextString()))
 
     // generate patterns that are valid on both CPU and GPU
     val patterns = ListBuffer[String]()
@@ -227,6 +232,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     }
 
     assertCpuGpuContainsMatches(patterns, data)
+  }
+
+  private def removeTrailingNewlines(input: String): String = {
+    var s = input
+    while (s.endsWith("\r") || s.endsWith("\n")) {
+      s = s.substring(0, s.length - 1)
+    }
+    s
   }
 
   private def assertCpuGpuContainsMatches(javaPatterns: Seq[String], input: Seq[String]) = {

@@ -398,36 +398,95 @@ class CudfRegexTranspiler {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // validate that the regex is supported by cuDF
-    validate(regex)
+    val cudfRegex = rewrite(regex)
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
-    regex.toRegexString
+    cudfRegex.toRegexString
   }
 
-  private def validate(regex: RegexAST): Unit = {
+  private def rewrite(regex: RegexAST): RegexAST = {
     regex match {
+
+      case RegexChar(ch) => ch match {
+        case '.' =>
+          // workaround for https://github.com/rapidsai/cudf/issues/9619
+          RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
+        case _ =>
+          regex
+      }
+
       case RegexOctalChar(_) =>
         // cuDF produced different results compared to Spark in some cases
         // example: "a\141|.$"
         throw new RegexUnsupportedException(
           s"cuDF does not support octal digits consistently with Spark")
-      case RegexEscaped(ch) if ch == 'b' || ch == 'B' =>
-        // example: "a\Bb"
-        // this needs further analysis to determine why words boundaries behave
-        // differently between Java and cuDF
-        throw new RegexUnsupportedException("word boundaries are not supported")
-      case RegexSequence(parts) if parts.isEmpty =>
-        // examples: "", "()", "a|", "|b"
-        throw new RegexUnsupportedException("empty sequence not supported")
-      case RegexRepetition(RegexEscaped(_), _) =>
-        // example: "\B?"
-        throw new RegexUnsupportedException(nothingToRepeat)
-      case RegexRepetition(RegexChar(a), _) if "$^".contains(a) =>
-        // example: "$*"
-        throw new RegexUnsupportedException(nothingToRepeat)
-      case RegexRepetition(RegexRepetition(_, _), _) =>
-        // example: "a*+"
-        throw new RegexUnsupportedException(nothingToRepeat)
+
+      case RegexHexDigit(_) =>
+        regex
+
+      case RegexEscaped(ch) => ch match {
+        case 'b' | 'B' =>
+          // example: "a\Bb"
+          // this needs further analysis to determine why words boundaries behave
+          // differently between Java and cuDF
+          throw new RegexUnsupportedException("word boundaries are not supported")
+        case _ =>
+          regex
+      }
+
+      case RegexCharacterRange(_, _) =>
+        regex
+
+      case RegexCharacterClass(negated, characters) =>
+        characters.foreach {
+          case RegexChar(ch) if ch == '[' || ch == ']' =>
+            // examples:
+            // - "[a[]" should match the literal characters "a" and "["
+            // - "[a-b[c-d]]" is supported by Java but not cuDF
+            throw new RegexUnsupportedException("nested character classes are not supported")
+          case _ =>
+
+        }
+        val components: Seq[RegexCharacterClassComponent] = characters
+          .map(ch => rewrite(ch).asInstanceOf[RegexCharacterClassComponent])
+        RegexCharacterClass(negated, ListBuffer(components: _*))
+
+      case RegexSequence(parts) =>
+        if (parts.isEmpty) {
+          // examples: "", "()", "a|", "|b"
+          throw new RegexUnsupportedException("empty sequence not supported")
+        }
+        if (isRegexChar(parts.head, '|') || isRegexChar(parts.last, '|')) {
+          // examples: "a|", "|b"
+          throw new RegexUnsupportedException(nothingToRepeat)
+        }
+        if (isRegexChar(parts.head, '{')) {
+          // example: "{"
+          // cuDF would treat this as a quantifier even though in this
+          // context (being at the start of a sequence) it is not quantifying anything
+          // note that we could choose to escape this in the transpiler rather than
+          // falling back to CPU
+          throw new RegexUnsupportedException(nothingToRepeat)
+        }
+        RegexSequence(parts.map(rewrite))
+
+      case RegexRepetition(base, quantifier) => (base, quantifier) match {
+        case (RegexEscaped(_), _) =>
+          // example: "\B?"
+          throw new RegexUnsupportedException(nothingToRepeat)
+
+        case (RegexChar(a), _) if "$^".contains(a) =>
+          // example: "$*"
+          throw new RegexUnsupportedException(nothingToRepeat)
+
+        case (RegexRepetition(_, _), _) =>
+          // example: "a*+"
+          throw new RegexUnsupportedException(nothingToRepeat)
+
+        case _ =>
+          RegexRepetition(rewrite(base), quantifier)
+      }
+
       case RegexChoice(l, r) =>
         (l, r) match {
           // check for empty left-hand side caused by ^ or $ or a repetition
@@ -443,6 +502,7 @@ class CudfRegexTranspiler {
                 // example: "a*|a"
                 throw new RegexUnsupportedException(nothingToRepeat)
               case _ =>
+                RegexChoice(rewrite(l), rewrite(r))
             }
           // check for empty right-hand side caused by ^ or $
           case (_, RegexSequence(b)) =>
@@ -454,41 +514,23 @@ class CudfRegexTranspiler {
                 // example: "a|$"
                 throw new RegexUnsupportedException(nothingToRepeat)
               case _ =>
+                RegexChoice(rewrite(l), rewrite(r))
             }
           case (RegexRepetition(_, _), _) =>
             // example: "a*|a"
             throw new RegexUnsupportedException(nothingToRepeat)
           case _ =>
+            RegexChoice(rewrite(l), rewrite(r))
         }
 
-      case RegexSequence(parts) =>
-        if (isRegexChar(parts.head, '|') || isRegexChar(parts.last, '|')) {
-          // examples: "a|", "|b"
+      case RegexGroup(term) => term match {
+        case RegexSequence(ListBuffer(RegexChar(ch))) if "?*+".contains(ch) =>
           throw new RegexUnsupportedException(nothingToRepeat)
-        }
-        if (isRegexChar(parts.head, '{')) {
-          // example: "{"
-          // cuDF would treat this as a quantifier even though in this
-          // context (being at the start of a sequence) it is not quantifying anything
-          // note that we could choose to escape this in the transpiler rather than
-          // falling back to CPU
-          throw new RegexUnsupportedException(nothingToRepeat)
-        }
-      case RegexCharacterClass(_, characters) =>
-        characters.foreach {
-          case RegexChar(ch) if ch == '[' || ch == ']' =>
-            // examples:
-            // - "[a[]" should match the literal characters "a" and "["
-            // - "[a-b[c-d]]" is supported by Java but not cuDF
-            throw new RegexUnsupportedException("nested character classes are not supported")
-          case _ =>
-        }
+        case _ =>
+          RegexGroup(rewrite(term))
+      }
 
-      case _ =>
     }
-
-    // walk down the tree and validate children
-    regex.children().foreach(validate)
   }
 
   private def isRegexChar(expr: RegexAST, value: Char): Boolean = expr match {
@@ -565,11 +607,6 @@ sealed case class RegexOctalChar(a: String) extends RegexCharacterClassComponent
 sealed case class RegexChar(a: Char) extends RegexCharacterClassComponent {
   override def children(): Seq[RegexAST] = Seq.empty
   override def toRegexString: String = s"$a"
-}
-
-sealed case class RegexUnicodeChar(a: String) extends RegexCharacterClassComponent {
-  override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"\\u$a"
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{
