@@ -65,7 +65,7 @@ public class DecimalFraction extends GenericUDF implements RapidsUDF {
   }
 
   @Override
-  public Object evaluate(DeferredObject[] arguments) throws HiveException {
+  public Object evaluate(GenericUDF.DeferredObject[] arguments) throws HiveException {
     if (arguments[0] == null || arguments[0].get() == null) {
       return null;
     }
