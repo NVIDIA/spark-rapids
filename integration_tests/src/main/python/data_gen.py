@@ -244,9 +244,9 @@ LONG_MIN = -(1 << 63)
 LONG_MAX = (1 << 63) - 1
 class LongGen(DataGen):
     """Generate Longs, which some built in corner cases."""
-    def __init__(self, nullable=True, min_val =LONG_MIN, max_val = LONG_MAX,
-                 special_cases = [LONG_MIN, LONG_MAX, 0, 1, -1]):
-        super().__init__(LongType(), nullable=nullable, special_cases=special_cases)
+    def __init__(self, nullable=True, min_val = LONG_MIN, max_val = LONG_MAX, special_cases = []):
+        _special_cases = [min_val, max_val, 0, 1, -1] if not special_cases else special_cases
+        super().__init__(LongType(), nullable=nullable, special_cases=_special_cases)
         self._min_val = min_val
         self._max_val = max_val
 

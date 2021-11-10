@@ -62,10 +62,10 @@ object SchemaUtils extends Arm {
 
   /**
    * Now the schema evolution covers only two things. (Full type casting is not supported yet).
-   *  1) Cast decimal columns to DTypes which fit the corresponding DataTypes in terms of Spark.
-   *     The cast operation is necessary when there exists DecimalType whose precision <= 18 in
-   *     the readSchema. DecimalTypes with precision <= 18 are mapping to DECIMAL32 or DECIMAL64
-   *     in cuDF. Meanwhile, the ORC reader of cuDF always extracts decimals as DECIMAL128.
+   *  1) Cast decimal columns with precision that can be stored in an int to DECIMAL32.
+   *     The reason to do this is the plugin requires decimals being stored as DECIMAL32 if the
+   *     precision is small enough to fit in an int. And getting this wrong may lead to a number
+   *     of problems later on. For example, the cuDF ORC reader always read decimals as DECIMAL64.
    *  2) Add columns for names are in the "readSchema" but not in the "tableSchema".
    *     It will create a new column with nulls for each missing name instead of throwing an
    *     exception.
@@ -87,9 +87,9 @@ object SchemaUtils extends Arm {
       isCaseSensitive: Boolean): Table = {
     assert(table.getNumberOfColumns == tableSchema.length)
     // Check if schema evolution is needed. It is true when
-    //   there are columns of DECIMAL32 or DECIMAL64, or
+    //   there are columns with precision can be stored in an int, or
     //   "readSchema" is not equal to "tableSchema".
-    val isDecCastNeeded = getPrecisionsList(tableSchema).exists(_ <= Decimal.MAX_LONG_DIGITS)
+    val isDecCastNeeded = getPrecisionsList(tableSchema).exists(p => p <= Decimal.MAX_INT_DIGITS)
     val isAddOrPruneColNeeded = readSchema != tableSchema
     if (isDecCastNeeded || isAddOrPruneColNeeded) {
       val name2TypeIdMap = buildTypeIdMapFromSchema(tableSchema, isCaseSensitive)

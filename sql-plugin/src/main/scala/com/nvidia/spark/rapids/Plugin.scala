@@ -183,7 +183,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // on executor startup.
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
-        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap)
+        GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf)
         if (GpuShuffleEnv.isRapidsShuffleAvailable) {
           GpuShuffleEnv.initShuffleManager()
           if (conf.shuffleTransportEarlyStart) {
