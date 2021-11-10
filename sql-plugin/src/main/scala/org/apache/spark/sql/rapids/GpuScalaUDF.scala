@@ -120,7 +120,7 @@ abstract class GpuRowBasedScalaUDFBase(
    * converter for typed ScalaUDF only, since its the only case where we know the type tag
    * of the return data type of udf function.
    */
-  private def catalystConverter: Any => Any = outputEncoder.map { enc =>
+  private[this] lazy val catalystConverter: Any => Any = outputEncoder.map { enc =>
     val toRow = enc.createSerializer().asInstanceOf[Any => Any]
     if (enc.isSerializedAsStructForTopLevel) {
       value: Any =>

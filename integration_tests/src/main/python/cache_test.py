@@ -288,20 +288,6 @@ def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     # NOTE: we aren't comparing cpu and gpu results, we are comparing the cached and non-cached results.
     assert_equal(reg_result, cached_result)
 
-
-@pytest.mark.parametrize('enable_vectorized', enable_vectorized_confs, ids=idfn)
-def test_cache_array(enable_vectorized):
-    def helper(spark):
-        data = [("aaa", "123 456 789"), ("bbb", "444 555 666"), ("ccc", "777 888 999")]
-        columns = ["a","b"]
-        df = spark.createDataFrame(data).toDF(*columns)
-        newdf = df.withColumn('newb', f.split(f.col('b'),' '))
-        newdf.persist()
-        return newdf.count()
-
-    with_gpu_session(helper, conf = enable_vectorized)
-
-
 def function_to_test_on_cached_df(with_x_session, func, data_gen, test_conf):
     def with_cache(cached):
         def helper(spark):
@@ -345,3 +331,13 @@ def test_cache_multi_batch(data_gen, with_x_session, enable_vectorized_conf, bat
             batch_size)
 
     function_to_test_on_cached_df(with_x_session, lambda df: df.collect(), data_gen, test_conf)
+
+@pytest.mark.parametrize('data_gen', all_basic_map_gens + single_level_array_gens_no_null, ids=idfn)
+@pytest.mark.parametrize('enable_vectorized', enable_vectorized_confs, ids=idfn)
+def test_cache_map_and_array(data_gen, enable_vectorized):
+    def helper(spark):
+        df = gen_df(spark, StructGen([['a', data_gen]], nullable=False))
+        df.persist()
+        return df.selectExpr("a")
+
+    assert_gpu_and_cpu_are_equal_collect(helper)
