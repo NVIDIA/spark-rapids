@@ -39,25 +39,39 @@ def load_hive_udf_or_skip_test(spark, udfname, udfclass):
 
 def test_hive_simple_udf():
     with_spark_session(skip_if_no_hive)
-    data_gens = [["i", int_gen], ["s", encoded_url_gen]]
     def evalfn(spark):
         load_hive_udf_or_skip_test(spark, "urldecode", "com.nvidia.spark.rapids.udf.hive.URLDecode")
-        return gen_df(spark, data_gens)
+        return gen_df(spark, [["i", int_gen], ["s", encoded_url_gen]])
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
         "hive_simple_udf_test_table",
         "SELECT i, urldecode(s) FROM hive_simple_udf_test_table")
 
+    def evalfn_decimal(spark):
+        load_hive_udf_or_skip_test(spark, "fraction", "com.nvidia.spark.rapids.udf.hive.DecimalFraction")
+        return gen_df(spark, [["i", int_gen], ["dec", DecimalGen(38, 18)]])
+    assert_gpu_and_cpu_are_equal_sql(
+        evalfn_decimal,
+        "hive_simple_udf_test_table",
+        "SELECT i, fraction(dec) FROM hive_simple_udf_test_table")
+
 def test_hive_generic_udf():
     with_spark_session(skip_if_no_hive)
-    data_gens = [["s", StringGen('.{0,30}')]]
     def evalfn(spark):
         load_hive_udf_or_skip_test(spark, "urlencode", "com.nvidia.spark.rapids.udf.hive.URLEncode")
-        return gen_df(spark, data_gens)
+        return gen_df(spark, [["s", StringGen('.{0,30}')]])
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
         "hive_generic_udf_test_table",
         "SELECT urlencode(s) FROM hive_generic_udf_test_table")
+
+    def evalfn_decimal(spark):
+        load_hive_udf_or_skip_test(spark, "fraction", "com.nvidia.spark.rapids.udf.hive.DecimalFractionGeneric")
+        return gen_df(spark, [["dec", DecimalGen(38, 18)]])
+    assert_gpu_and_cpu_are_equal_sql(
+        evalfn_decimal,
+        "hive_generic_udf_test_table",
+        "SELECT fraction(dec) FROM hive_generic_udf_test_table")
 
 @rapids_udf_example_native
 def test_hive_simple_udf_native(enable_rapids_udf_example_native):
@@ -71,10 +85,10 @@ def test_hive_simple_udf_native(enable_rapids_udf_example_native):
         "hive_native_udf_test_table",
         "SELECT wordcount(s) FROM hive_native_udf_test_table")
 
-def load_java_udf_or_skip_test(spark, udfname, udfclass):
+def load_java_udf_or_skip_test(spark, udfname, udfclass, udf_return_type=None):
     drop_udf(spark, udfname)
     try:
-        spark.udf.registerJavaFunction(udfname, udfclass)
+        spark.udf.registerJavaFunction(udfname, udfclass, udf_return_type)
     except AnalysisException:
         skip_unless_precommit_tests("UDF {} failed to load, udf-examples jar is probably missing".format(udfname))
 
@@ -88,6 +102,21 @@ def test_java_url_encode():
     def evalfn(spark):
         load_java_udf_or_skip_test(spark, 'urlencode', 'com.nvidia.spark.rapids.udf.java.URLEncode')
         return unary_op_df(spark, StringGen('.{0,30}')).selectExpr("urlencode(a)")
+    assert_gpu_and_cpu_are_equal_collect(evalfn)
+
+def test_java_decimal_fraction():
+    def evalfn(spark):
+        from pyspark.sql.types import DecimalType
+        load_java_udf_or_skip_test(spark, 'fraction',
+                                   'com.nvidia.spark.rapids.udf.java.DecimalFraction')
+        load_java_udf_or_skip_test(spark, 'fraction_dec64_s10',
+                                   'com.nvidia.spark.rapids.udf.java.DecimalFraction',
+                                   DecimalType(18, 10))
+        load_java_udf_or_skip_test(spark, 'fraction_dec32_s3',
+                                   'com.nvidia.spark.rapids.udf.java.DecimalFraction',
+                                   DecimalType(8, 3))
+        return three_col_df(spark, DecimalGen(38, 18), DecimalGen(18, 10), DecimalGen(8, 3)
+                            ).selectExpr("fraction(a)", "fraction_dec64_s10(b)", "fraction_dec32_s3(c)")
     assert_gpu_and_cpu_are_equal_collect(evalfn)
 
 @rapids_udf_example_native
