@@ -86,7 +86,6 @@
                 <configuration>
                     <artifactSet>
                         <excludes>org.slf4j:*</excludes>
-                        <excludes>ai.rapids:*</excludes>
                     </artifactSet>
                     <transformers>
                         <transformer
@@ -138,9 +137,7 @@
                             </excludes>
                         </filter>
                     </filters>
-                    <createDependencyReducedPom>true</createDependencyReducedPom>
-                    <generateUniqueDependencyReducedPom>true</generateUniqueDependencyReducedPom>
-                    <promoteTransitiveDependencies>true</promoteTransitiveDependencies>
+                    <createDependencyReducedPom>false</createDependencyReducedPom>
                 </configuration>
                 <executions>
                     <execution>
@@ -214,6 +211,7 @@
                 <artifactId>apache-rat-plugin</artifactId>
             </plugin>
             <plugin>
+                <!-- keep for the case dependency-reduced pom is enabled -->
                 <artifactId>maven-clean-plugin</artifactId>
                 <version>3.1.0</version>
                 <executions>
@@ -229,7 +227,7 @@
                                 <fileset>
                                     <directory>${project.basedir}</directory>
                                     <includes>
-                                        <include>dependency-reduced-pom-*.xml</include>
+                                        <include>dependency-reduced-pom*.xml</include>
                                     </includes>
                                 </fileset>
                             </filesets>
