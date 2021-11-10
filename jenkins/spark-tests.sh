@@ -217,7 +217,8 @@ else
   run_test all
 fi
 # cudf_udf_test
-run_test cudf_udf_test
+# disable cudf_udf test until https://github.com/rapidsai/cudf/issues/9622 get fixed
+#run_test cudf_udf_test
 
 # Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
 if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
