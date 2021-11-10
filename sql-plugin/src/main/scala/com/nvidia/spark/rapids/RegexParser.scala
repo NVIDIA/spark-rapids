@@ -177,7 +177,9 @@ class RegexParser(pattern: String) {
                   skip()
                   characterClass.appendRange(start, end)
                 case _ =>
-                  throw new RegexUnsupportedException("unexpected EOF while parsing character range", Some(pos))
+                  throw new RegexUnsupportedException(
+                    "unexpected EOF while parsing character range",
+                    Some(pos))
               }
             case _ =>
               // treat as supported literal character
