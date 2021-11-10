@@ -111,7 +111,7 @@ a few operations that we cannot support to the same degree as Spark can on the C
 
 When Apache Spark does a sum aggregation on decimal values it will store the result in a value
 with a precision that is the input precision + 10, but with a maximum precision of 38. The table
-below summarizes the number of rows/values in an aggregation before an overflow is possible,
+below shows the number of rows/values in an aggregation before an overflow is possible,
 and the number of rows/values in the aggregation before an overflow might not be detected.
 Please note that these are for the worst case situations, meaning all the values in the sum were
 either the largest or smallest values possible to be stored in the input type. In the common
@@ -120,9 +120,25 @@ rows/values can be processed without any issues.
 
 |Input Precision|Number of values before overflow is possible|Maximum number of values for guaranteed overflow detection (Spark CPU)|Maximum number of values for guaranteed overflow detection (RAPIDS GPU)|
 |---------------|------------------------------|------------|-------------|
-|8 and below    |10,000,000,000                |~97-billion+|~97-billion+ |
-|9 to 27        |10,000,000,000                |Unlimited   |100-billion+ |
-|28             |10,000,000,000                |Unlimited   |Falls back to CPU |
+|1              |11,111,111,111                |2,049,638,219,301,061,290 |Same as CPU |
+|2              |10,101,010,101                |186,330,738,118,278,299 |Same as CPU |
+|3              |10,010,010,010                |18,465,199,272,982,534 |Same as CPU |
+|4              |10,001,000,100                |1,844,848,892,260,181 |Same as CPU |
+|5              |10,000,100,001                |184,459,285,329,948 |Same as CPU |
+|6              |10,000,010,000                |18,436,762,510,472 |Same as CPU |
+|7              |10,000,001,000                |1,834,674,590,838 |Same as CPU |
+|8              |10,000,000,100                |174,467,442,481 |Same as CPU |
+|9              |10,000,000,010                |Unlimited   |Unlimited |
+|10 - 19        |10,000,000,000                |Unlimited   |Unlimited |
+|20             |10,000,000,000                |Unlimited   |3,402,823,659,209,384,634 |
+|21             |10,000,000,000                |Unlimited   |340,282,356,920,938,463 |
+|22             |10,000,000,000                |Unlimited   |34,028,226,692,093,846 |
+|23             |10,000,000,000                |Unlimited   |3,402,813,669,209,384 |
+|24             |10,000,000,000                |Unlimited   |340,272,366,920,938 |
+|25             |10,000,000,000                |Unlimited   |34,018,236,692,093 |
+|26             |10,000,000,000                |Unlimited   |3,392,823,669,209 |
+|27             |10,000,000,000                |Unlimited   |330,282,366,920 |
+|28             |10,000,000,000                |Unlimited   |24,028,236,692 |
 |29             |1,000,000,000                 |Unlimited   |Falls back to CPU |
 |30             |100,000,000                   |Unlimited   |Falls back to CPU |
 |31             |10,000,000                    |Unlimited   |Falls back to CPU |
@@ -137,18 +153,16 @@ rows/values can be processed without any issues.
 For an input precision of 9 and above, Spark will do the aggregations as a `BigDecimal` 
 value which is slow, but guarantees that any overflow can be detected. For inputs with a 
 precision of 8 or below Spark will internally do the calculations as a long value, 64-bits.
-This lets Spark detect overflows on effectively all sum aggregations. When the precision is 8,
-you would need at least 97-billion values/rows contributing to a single aggregation result,
-and even then all the values would need to be either the largest or the smallest value possible
-to be stored in the type before the overflow is no longer detected. For input types with a
-smaller precision the number of rows/values before data corruption can happen is even larger.
+When the precision is 8, you would need at least 174-billion values/rows contributing to a
+single aggregation result, and even then all the values would need to be either the largest
+or the smallest value possible to be stored in the type before the overflow is no longer detected.
 
 For the RAPIDS Accelerator we only have access to at most a 128-bit value to store the results
-in and still detect overflow. Because of this we follow Spark by guaranteeing at least 
-100-billion rows/values before we can no longer detect overflow on a sum and data corruption
-might occur. This means that for sum aggregations with a precision above 27 we will fall back
-to doing the aggregation on the CPU. Just like with Spark on the CPU, in practice we can
-aggregate even more rows than this and still get the correct answer.
+in and still detect overflow. Because of this we cannot guarantee overflow detention in all
+cases. In some cases we can guarantee unlimited overflow detection because of the maximum number of
+values that RAPIDS will aggregate in a single batch. But even in the worst cast for a decimal value
+with a precision of 28 the user would still have to aggregate so many values that it overflows 2.4
+times over before we are no longer able to detect it.
 
 ### Decimal Average
 
