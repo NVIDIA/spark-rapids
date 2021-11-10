@@ -23,6 +23,11 @@ import org.apache.spark.sql.api.java.UDF1;
 
 import java.math.BigDecimal;
 
+/**
+ * A simple Java UDF demo for DecimalType, which extracts and returns the
+ * fraction part of the input Decimal data. So, the output data has the
+ * same precision and scale as the input one.
+ */
 public class DecimalFraction implements UDF1<BigDecimal, BigDecimal>, RapidsUDF {
 
   @Override

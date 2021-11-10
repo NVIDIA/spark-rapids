@@ -39,21 +39,14 @@ def load_hive_udf_or_skip_test(spark, udfname, udfclass):
 
 def test_hive_simple_udf():
     with_spark_session(skip_if_no_hive)
+    data_gens = [["i", int_gen], ["s", encoded_url_gen]]
     def evalfn(spark):
         load_hive_udf_or_skip_test(spark, "urldecode", "com.nvidia.spark.rapids.udf.hive.URLDecode")
-        return gen_df(spark, [["i", int_gen], ["s", encoded_url_gen]])
+        return gen_df(spark, data_gens)
     assert_gpu_and_cpu_are_equal_sql(
         evalfn,
         "hive_simple_udf_test_table",
         "SELECT i, urldecode(s) FROM hive_simple_udf_test_table")
-
-    def evalfn_decimal(spark):
-        load_hive_udf_or_skip_test(spark, "fraction", "com.nvidia.spark.rapids.udf.hive.DecimalFraction")
-        return gen_df(spark, [["i", int_gen], ["dec", DecimalGen(38, 18)]])
-    assert_gpu_and_cpu_are_equal_sql(
-        evalfn_decimal,
-        "hive_simple_udf_test_table",
-        "SELECT i, fraction(dec) FROM hive_simple_udf_test_table")
 
 def test_hive_generic_udf():
     with_spark_session(skip_if_no_hive)
@@ -66,7 +59,7 @@ def test_hive_generic_udf():
         "SELECT urlencode(s) FROM hive_generic_udf_test_table")
 
     def evalfn_decimal(spark):
-        load_hive_udf_or_skip_test(spark, "fraction", "com.nvidia.spark.rapids.udf.hive.DecimalFractionGeneric")
+        load_hive_udf_or_skip_test(spark, "fraction", "com.nvidia.spark.rapids.udf.hive.DecimalFraction")
         return gen_df(spark, [["dec", DecimalGen(38, 18)]])
     assert_gpu_and_cpu_are_equal_sql(
         evalfn_decimal,
