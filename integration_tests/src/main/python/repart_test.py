@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from spark_session import is_before_spark_311
+from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
@@ -122,6 +122,23 @@ def test_union_by_missing_col_name(data_gen):
         lambda spark : binary_op_df(spark, data_gen).withColumnRenamed("a", "x")
                                 .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True),
         conf=allow_negative_scale_of_decimal_conf)
+
+
+
+@pytest.mark.parametrize('data_gen', all_gen)
+@pytest.mark.skipif(is_before_spark_330(), reason="This is supported only in Spark 3.3.0+")
+
+def test_union_by_missing_col_name_in_arrays_of_structs(data_gen):
+    """
+    This tests the union of two DFs of arrays of structs with missing column names.
+    The missing column will be replaced be nulls in the output DF. This is a feature added in 3.3+
+    This test is for https://github.com/NVIDIA/spark-rapids/issues/3953 
+    """
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: binary_op_df(spark, data_gen)
+    )
+
+
 
 @pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
