@@ -48,19 +48,19 @@
             <artifactId>cudf</artifactId>
             <version>${cudf.version}</version>
             <classifier>${cuda.version}</classifier>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-hive_${scala.binary.version}</artifactId>
             <version>${spark.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 
@@ -335,6 +335,7 @@
                         <groupId>com.nvidia</groupId>
                         <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
                         <version>${project.version}</version>
+                        <classifier>${spark.version.classifier}</classifier>
                     </dependency>
                     <dependency>
                         <groupId>org.apache.spark</groupId>
@@ -368,9 +369,18 @@
                 <executions>
                     <execution>
                         <id>default-install</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>install-with-dependency-reduced-pom</id>
                         <phase>install</phase>
+                        <goals>
+                            <goal>install-file</goal>
+                        </goals>
                         <configuration>
+                            <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
                             <pomFile>${project.build.directory}/dependency-reduced-pom.xml</pomFile>
+                            <generatePom>false</generatePom>
                         </configuration>
                     </execution>
                 </executions>
