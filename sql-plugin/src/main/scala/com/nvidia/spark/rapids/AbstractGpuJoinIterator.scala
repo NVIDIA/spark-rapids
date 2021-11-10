@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
+import ai.rapids.cudf.{GatherMap, NvtxColor, NvtxRange, OutOfBoundsPolicy}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -179,6 +179,13 @@ abstract class SplittableJoinIterator(
   protected def createGatherer(cb: ColumnarBatch, numJoinRows: Option[Long]): Option[JoinGatherer]
 
   override def hasNextStreamBatch: Boolean = {
+    // make built batch spillable
+    if (isInitialJoin) {
+      withResource(new NvtxRange("allow batch spill", NvtxColor.PURPLE)) { _ =>
+        builtBatch.allowSpilling()
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
+      }
+    }
     isInitialJoin || pendingSplits.nonEmpty || stream.hasNext
   }
 
