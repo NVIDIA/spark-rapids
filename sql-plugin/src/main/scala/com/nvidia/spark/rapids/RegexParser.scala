@@ -177,7 +177,7 @@ class RegexParser(pattern: String) {
                   skip()
                   characterClass.appendRange(start, end)
                 case _ =>
-                  // TODO https://github.com/NVIDIA/spark-rapids/issues/4075
+                  throw new RegexUnsupportedException("unexpected EOF while parsing character range", Some(pos))
               }
             case _ =>
               // treat as supported literal character
