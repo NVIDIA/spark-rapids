@@ -176,6 +176,8 @@ class RegexParser(pattern: String) {
                 case Some(end) =>
                   skip()
                   characterClass.appendRange(start, end)
+                case _ =>
+                  // TODO @andygrove
               }
             case _ =>
               // treat as supported literal character

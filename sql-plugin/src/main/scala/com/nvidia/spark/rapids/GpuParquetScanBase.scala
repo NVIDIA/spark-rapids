@@ -326,7 +326,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     }
   }
 
-  @scala.annotation.nowarn
+  @scala.annotation.nowarn(
+    "msg=constructor ParquetFileReader in class ParquetFileReader is deprecated"
+  )
   def filterBlocks(
       file: PartitionedFile,
       conf : Configuration,
@@ -608,6 +610,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * @param copyRangesToUpdate optional buffer to update with ranges of column data to copy
    * @return updated block metadata
    */
+  @scala.annotation.nowarn(
+    "msg=method getPath in class ColumnChunkMetaData is deprecated"
+  )
   protected def computeBlockMetaData(
       blocks: Seq[BlockMetaData],
       realStartOffset: Long,
@@ -1554,6 +1559,9 @@ object ParquetPartitionReader {
    * @param blocks the block metadata from the original Parquet file
    * @return the updated block metadata with undesired column chunks removed
    */
+  @scala.annotation.nowarn(
+    "msg=method getPath in class ColumnChunkMetaData is deprecated"
+  )
   private[spark] def clipBlocks(columnPaths: Seq[ColumnPath],
       blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
     val pathSet = columnPaths.toSet
