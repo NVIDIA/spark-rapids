@@ -40,7 +40,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
-import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
+import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, LongType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -520,6 +520,13 @@ class GpuHashAggregateIterator(
         batch
       }
 
+      // If `resultCvs` empty, it means we don't have any `resultExpressions` for this
+      // aggregate. In these cases, the row count is the only important piece of information
+      // that this aggregate exec needs to report up, so it will return batches that have no columns
+      // but that do have a row count. If `resultCvs` is non-empty, the row counts match
+      // `finalBatch.numRows` since `columnarEvalToColumn` cannot change the number of rows.
+      val finalNumRows = finalBatch.numRows()
+
       // Perform the last project to get the correct shape that Spark expects. Note this may
       // add things like literals that were not part of the aggregate into the batch.
       val resultCvs = withResource(finalBatch) { _ =>
@@ -530,10 +537,9 @@ class GpuHashAggregateIterator(
         }
       }
       closeOnExcept(resultCvs) { _ =>
-        val rowCount = if (resultCvs.isEmpty) 0 else resultCvs.head.getRowCount.toInt
-        metrics.numOutputRows += rowCount
+        metrics.numOutputRows += finalNumRows
         metrics.numOutputBatches += 1
-        new ColumnarBatch(resultCvs.toArray, rowCount)
+        new ColumnarBatch(resultCvs.toArray, finalNumRows)
       }
     }
   }
@@ -555,7 +561,7 @@ class GpuHashAggregateIterator(
           }
         }
       }
-      new ColumnarBatch(cols.toArray, cols.head.getRowCount.toInt)
+      new ColumnarBatch(cols.toArray, batch.numRows())
     }
   }
 
@@ -667,18 +673,15 @@ class GpuHashAggregateIterator(
    *                   as an optimization hint
    */
   class AggHelper(merge: Boolean, isSorted: Boolean = false) {
-    // `CudfAggregate` instances to apply for groupBy aggregates
-    private val groupByAggregates = new mutable.ArrayBuffer[GroupByAggregation]()
-
-    // Reduction function (outputs a cuDF scalar) for non-groupBy aggs
-    private val reductionAggregates = new mutable.ArrayBuffer[cudf.ColumnVector => cudf.Scalar]()
+    // `CudfAggregate` instances to apply, either update or merge aggregates
+    private val cudfAggregates = new mutable.ArrayBuffer[CudfAggregate]()
 
     // integers for each column the aggregate is operating on
     private val aggOrdinals = new mutable.ArrayBuffer[Int]
 
     // the resulting data type from the cuDF aggregate (from
     // the update or merge aggregate, be it reduction or group by)
-    private val aggDataType = new mutable.ArrayBuffer[DataType]()
+    private val postStepDataTypes = new mutable.ArrayBuffer[DataType]()
 
     private val groupingAttributes = groupingExpressions.map(_.toAttribute)
     private val aggBufferAttributes = groupingAttributes ++
@@ -696,7 +699,7 @@ class GpuHashAggregateIterator(
     postStep ++= GpuBindReferences.bindGpuReferences(
       groupingAttributes, groupingAttributes)
     postStepAttr ++= groupingAttributes
-    aggDataType ++=
+    postStepDataTypes ++=
       groupingExpressions.map(_.dataType)
 
     private var ix = groupingAttributes.length
@@ -707,9 +710,8 @@ class GpuHashAggregateIterator(
         aggOrdinals ++= ordinals
         ix += ordinals.length
         val updateAggs = aggFn.updateAggregates
-        aggDataType ++= updateAggs.map(_.dataType)
-        groupByAggregates ++= updateAggs.map(_.groupByAggregate)
-        reductionAggregates ++= updateAggs.map(_.reductionAggregate)
+        postStepDataTypes ++= updateAggs.map(_.dataType)
+        cudfAggregates ++= updateAggs
         preStep ++= aggFn.aggBufferAttributes
         postStep ++= aggFn.postUpdate
         postStepAttr ++= aggFn.postUpdateAttr
@@ -718,9 +720,8 @@ class GpuHashAggregateIterator(
         aggOrdinals ++= ordinals
         ix += ordinals.length
         val mergeAggs = aggFn.mergeAggregates
-        aggDataType ++= mergeAggs.map(_.dataType)
-        groupByAggregates ++= mergeAggs.map(_.groupByAggregate)
-        reductionAggregates ++= mergeAggs.map(_.reductionAggregate)
+        postStepDataTypes ++= mergeAggs.map(_.dataType)
+        cudfAggregates ++= mergeAggs
         preStep ++= aggFn.preMerge
         postStep ++= aggFn.postMerge
         postStepAttr ++= aggFn.postMergeAttr
@@ -750,31 +751,18 @@ class GpuHashAggregateIterator(
      * @param preProcessed - a batch after the "pre" step
      * @return
      */
-    def performReduction(preProcessed: ColumnarBatch): Table = {
+    def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
       val cvs = mutable.ArrayBuffer[GpuColumnVector]()
-      reductionAggregates.zip(aggDataType)
-        .zipWithIndex.foreach { case ((aggFn, dataType), ix) =>
+      cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
+        val aggFn = cudfAgg.reductionAggregate
         val cols = GpuColumnVector.extractColumns(preProcessed)
         val reductionCol = cols(aggOrdinals(ix))
         withResource(aggFn(reductionCol.getBase)) { res =>
           cvs += GpuColumnVector.from(
-            cudf.ColumnVector.fromScalar(res, 1), dataType)
+            cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
         }
       }
-      if (cvs.isEmpty) {
-        // If cvs is empty, we add a single row with zero value. The value in the row is
-        // meaningless as it doesn't matter what we put in it. The projection will add a zero
-        // column to the result set in case of a parameter-less count.
-        // This is to fix a bug in the plugin where a paramater-less count wasn't returning the
-        // desired result compared to Spark-CPU.
-        // For more details go to https://github.com/NVIDIA/spark-rapids/issues/1737
-        withResource(Scalar.fromLong(0L)) { ZERO =>
-          cvs += GpuColumnVector.from(cudf.ColumnVector.fromScalar(ZERO, 1), LongType)
-        }
-      }
-      withResource(cvs) { _ =>
-        GpuColumnVector.from(new ColumnarBatch(cvs.toArray, 1))
-      }
+      new ColumnarBatch(cvs.toArray, 1)
     }
 
     /**
@@ -782,21 +770,25 @@ class GpuHashAggregateIterator(
      * @param preProcessed the batch after the "pre" step
      * @return a Table that has been cuDF aggregated
      */
-    def performGroupByAggregation(preProcessed: ColumnarBatch): Table = {
+    def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
       withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
         val groupOptions = cudf.GroupByOptions.builder()
           .withIgnoreNullKeys(false)
           .withKeysSorted(isSorted)
           .build()
 
-        val cudfAggsOnColumn = groupByAggregates.zip(aggOrdinals).map {
-          case (cudfAgg, ord) => cudfAgg.onColumn(ord)
+        val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
+          case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
         }
 
         // perform the aggregate
-        preProcessedTbl
+        val aggTbl = preProcessedTbl
           .groupBy(groupOptions, groupingExpressions.indices: _*)
           .aggregate(cudfAggsOnColumn: _*)
+
+        withResource(aggTbl) { _ =>
+          GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+        }
       }
     }
 
@@ -806,14 +798,12 @@ class GpuHashAggregateIterator(
      * stage.
      * It takes a cuDF aggregated batch and applies the "post" step:
      * postUpdate for update, or postMerge for merge
-     * @param resultTbl - cuDF aggregated table
+     * @param resultBatch - cuDF aggregated batch
      * @return output batch from the aggregate
      */
-    def postProcess(resultTbl: cudf.Table): ColumnarBatch = {
-      withResource(resultTbl) { result =>
-        withResource(GpuColumnVector.from(result, aggDataType.toArray)) { resultBatch =>
-          GpuProjectExec.project(resultBatch, postStepBound)
-        }
+    def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
+      withResource(resultBatch) { _ =>
+        GpuProjectExec.project(resultBatch, postStepBound)
       }
     }
   }
@@ -832,7 +822,7 @@ class GpuHashAggregateIterator(
       // a pre-processing step required before we go into the cuDF aggregate, in some cases
       // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
       withResource(helper.preProcess(toAggregateBatch)) { preProcessed =>
-        val resultTbl = if (groupingExpressions.nonEmpty) {
+        val resultBatch = if (groupingExpressions.nonEmpty) {
           helper.performGroupByAggregation(preProcessed)
         } else {
           helper.performReduction(preProcessed)
@@ -840,7 +830,7 @@ class GpuHashAggregateIterator(
 
         // a post-processing step required in some scenarios, casting or picking
         // apart a struct
-        helper.postProcess(resultTbl)
+        helper.postProcess(resultBatch)
       }
     }
   }
@@ -868,9 +858,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    if (agg.resultExpressions.isEmpty) {
-      willNotWorkOnGpu("result expressions is empty")
-    }
     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
     // we need to run recursive type check on the structs.
     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>

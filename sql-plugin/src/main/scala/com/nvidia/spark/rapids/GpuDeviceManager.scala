@@ -100,9 +100,12 @@ object GpuDeviceManager extends Logging {
     addr
   }
 
-  def getGPUAddrFromResources(resources: Map[String, ResourceInformation]): Option[Int] = {
-    if (resources.contains("gpu")) {
-      val addrs = resources("gpu").addresses
+  def getGPUAddrFromResources(resources: Map[String, ResourceInformation],
+      conf: RapidsConf): Option[Int] = {
+    val sparkGpuResourceName = conf.getSparkGpuResourceName
+    if (resources.contains(sparkGpuResourceName)) {
+      logDebug(s"Spark resources contain: $sparkGpuResourceName")
+      val addrs = resources(sparkGpuResourceName).addresses
       if (addrs.length > 1) {
         // Throw an exception since we assume one GPU per executor.
         // If multiple GPUs are allocated by spark, then different tasks could get assigned
@@ -118,16 +121,17 @@ object GpuDeviceManager extends Logging {
 
   // Initializes the GPU if Spark assigned one.
   // Returns either the GPU addr Spark assigned or None if Spark didn't assign one.
-  def initializeGpu(resources: Map[String, ResourceInformation]): Option[Int] = {
-    getGPUAddrFromResources(resources).map(setGpuDeviceAndAcquire(_))
+  def initializeGpu(resources: Map[String, ResourceInformation], conf: RapidsConf): Option[Int] = {
+    getGPUAddrFromResources(resources, conf).map(setGpuDeviceAndAcquire(_))
   }
 
-  def initializeGpuAndMemory(resources: Map[String, ResourceInformation]): Unit = {
+  def initializeGpuAndMemory(resources: Map[String, ResourceInformation],
+      conf: RapidsConf): Unit = {
     // Set the GPU before RMM is initialized if spark provided the GPU address so that RMM
     // uses that GPU. We only need to initialize RMM once per Executor because we are relying on
     // only 1 GPU per executor.
     // If Spark didn't provide the address we just use the default GPU.
-    val addr = initializeGpu(resources)
+    val addr = initializeGpu(resources, conf)
     initializeMemory(addr)
   }
 
@@ -153,22 +157,20 @@ object GpuDeviceManager extends Logging {
   def initializeFromTask(): Unit = {
     if (threadGpuInitialized.get() == false) {
       val resources = getResourcesFromTaskContext
+      val conf = new RapidsConf(SparkEnv.get.conf)
       if (rmmTaskInitEnabled) {
-        initializeGpuAndMemory(resources)
+        initializeGpuAndMemory(resources, conf)
       } else {
         // just set the device if provided so task thread uses right GPU
-        initializeGpu(resources)
+        initializeGpu(resources, conf)
       }
       threadGpuInitialized.set(true)
     }
   }
 
-  private def toKB(x: Long): Double = x / 1024.0
-
   private def toMB(x: Long): Double = x / 1024 / 1024.0
 
-  private def computeRmmInitSizes(conf: RapidsConf, info: CudaMemInfo): (Long, Long) = {
-    // Align workaround for https://github.com/rapidsai/rmm/issues/527
+  private def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
     def truncateToAlignment(x: Long): Long = x & ~511L
 
     val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
@@ -181,19 +183,19 @@ object GpuDeviceManager extends Logging {
     } else {
       conf.rmmAllocReserve
     }
-    var initialAllocation = truncateToAlignment(
+    var poolAllocation = truncateToAlignment(
       (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
-    if (initialAllocation < minAllocation) {
-      throw new IllegalArgumentException(s"The initial allocation of " +
-        s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
+    if (poolAllocation < minAllocation) {
+      throw new IllegalArgumentException(s"The pool allocation of " +
+        s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
         s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was less than " +
         s"the minimum allocation of ${toMB(minAllocation)} (calculated from " +
         s"${RapidsConf.RMM_ALLOC_MIN_FRACTION} (=${conf.rmmAllocMinFraction}) " +
         s"and ${toMB(info.total)} MB total memory)")
     }
-    if (maxAllocation < initialAllocation) {
-      throw new IllegalArgumentException(s"The initial allocation of " +
-        s"${toMB(initialAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
+    if (maxAllocation < poolAllocation) {
+      throw new IllegalArgumentException(s"The pool allocation of " +
+        s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
         s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was more than " +
         s"the maximum allocation of ${toMB(maxAllocation)} (calculated from " +
         s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocMaxFraction}) " +
@@ -206,18 +208,14 @@ object GpuDeviceManager extends Logging {
           s"${RapidsConf.RMM_ALLOC_RESERVE} (=$reserveAmount)")
     }
     val adjustedMaxAllocation = truncateToAlignment(maxAllocation - reserveAmount)
-    if (initialAllocation > adjustedMaxAllocation) {
-      logWarning(s"Initial RMM allocation (${toMB(initialAllocation)} MB) is larger than " +
-          s"the adjusted maximum allocation (${toMB(adjustedMaxAllocation)} MB), " +
-          "lowering initial allocation to the adjusted maximum allocation.")
-      initialAllocation = adjustedMaxAllocation
+    if (poolAllocation > adjustedMaxAllocation) {
+      logWarning(s"RMM pool allocation (${toMB(poolAllocation)} MB) does not leave enough free " +
+          s"memory for reserve memory (${toMB(reserveAmount)} MB), lowering the pool size to " +
+          s"${toMB(adjustedMaxAllocation)} MB to accommodate the requested reserve amount.")
+      poolAllocation = adjustedMaxAllocation
     }
 
-    if (!conf.isPooledMemEnabled || "none".equalsIgnoreCase(conf.rmmPool)) {
-      (initialAllocation, 0)
-    } else {
-      (initialAllocation, adjustedMaxAllocation)
-    }
+    poolAllocation
   }
 
   private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf] = None): Unit = {
@@ -229,7 +227,7 @@ object GpuDeviceManager extends Logging {
       // async allocator, so initialize the shuffle environment first.
       GpuShuffleEnv.init(conf)
 
-      val (initialAllocation, maxAllocation) = computeRmmInitSizes(conf, info)
+      val poolAllocation = computeRmmPoolSize(conf, info)
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
       if (conf.isPooledMemEnabled) {
@@ -281,8 +279,7 @@ object GpuDeviceManager extends Logging {
       deviceId = Some(gpuId)
 
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} " +
-          s"initial size = ${toMB(initialAllocation)} MB, " +
-          s"max size = ${toMB(maxAllocation)} MB on gpuId $gpuId")
+          s"pool size = ${toMB(poolAllocation)} MB on gpuId $gpuId")
 
       if (Cuda.isPtdsEnabled()) {
         logInfo("Using per-thread default stream")
@@ -292,7 +289,7 @@ object GpuDeviceManager extends Logging {
 
       try {
         Cuda.setDevice(gpuId)
-        Rmm.initialize(init, logConf, initialAllocation, maxAllocation)
+        Rmm.initialize(init, logConf, poolAllocation)
         RapidsBufferCatalog.init(conf)
       } catch {
         case e: Exception => logError("Could not initialize RMM", e)
