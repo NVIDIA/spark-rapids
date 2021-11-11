@@ -530,6 +530,8 @@ class CudfRegexTranspiler {
           RegexGroup(rewrite(term))
       }
 
+      case other =>
+        throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
     }
   }
 
