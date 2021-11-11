@@ -105,6 +105,17 @@ class RegularExpressionParserSuite extends FunSuite {
         RegexSequence(ListBuffer(RegexChar('a'))))))))
   }
 
+  test("group containing quantifier") {
+    val e = intercept[RegexUnsupportedException] {
+      parse("(?)")
+    }
+    assert(e.getMessage.startsWith("base expression cannot start with quantifier"))
+
+    assert(parse("(?:a?)") === RegexSequence(ListBuffer(
+      RegexGroup(capture = false, RegexSequence(ListBuffer(
+        RegexRepetition(RegexChar('a'), SimpleQuantifier('?'))))))))
+  }
+
   test("complex expression") {
     val ast = parse(
       "^" +            // start of line
