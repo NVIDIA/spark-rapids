@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostColumnVector, HostColumnVectorCore, NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -76,16 +76,9 @@ object GpuUserDefinedFunction {
   val udfTypeSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
       TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
-  /** Detect whether the Java assertion is going to be enabled for the `clsName`. */
-  def isClassAssertionEnabled(clsName: String): Boolean = try {
-    Class.forName(clsName).desiredAssertionStatus()
-  } catch {
-    case _: ClassNotFoundException => false
-  }
-
   /** (This will be initialized once per process) */
   lazy val hostColumnAssertionEnabled: Boolean =
-    isClassAssertionEnabled("ai.rapids.cudf.HostColumnVectorCore")
+    classOf[HostColumnVectorCore].desiredAssertionStatus()
 }
 
 /**
