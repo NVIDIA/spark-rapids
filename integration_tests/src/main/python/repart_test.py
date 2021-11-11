@@ -124,19 +124,33 @@ def test_union_by_missing_col_name(data_gen):
         conf=allow_negative_scale_of_decimal_conf)
 
 
+# the first number ('1' and '2') is the nest level
+# the second number ('one' and 'two') is the fields number in the struct
+base_one = (ArrayGen(StructGen([["ba", StringGen()]]), 1, 1), ArrayGen(StructGen([["bb", StringGen()]]), 1, 1))
+base_two = (ArrayGen(StructGen([["ba", StringGen()], ["bb", StringGen()]]), 1, 1), ArrayGen(StructGen([["bb", StringGen()], ["ba", StringGen()]]), 1, 1))
+nest_1_one = (StructGen([('b', base_one[0])]), StructGen([('b', base_one[1])]))
+nest_1_two = (StructGen([('b', base_two[0])]), StructGen([('b', base_two[1])]))
+nest_2_one = (StructGen([('b', ArrayGen(base_one[0], 1, 1))]), StructGen([('b', ArrayGen(base_one[1],1,1))]))
+nest_2_two = (StructGen([('b', ArrayGen(base_two[0], 1, 1))]), StructGen([('b', ArrayGen(base_two[1],1,1))]))
 
-@pytest.mark.parametrize('data_gen', all_gen)
+@pytest.mark.parametrize('gen_pair', [base_one,   base_two,
+                                      nest_1_one, nest_1_two,
+                                      nest_2_one, nest_2_two])
 @pytest.mark.skipif(is_before_spark_330(), reason="This is supported only in Spark 3.3.0+")
-
-def test_union_by_missing_col_name_in_arrays_of_structs(data_gen):
+def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
     """
-    This tests the union of two DFs of arrays of structs with missing column names.
-    The missing column will be replaced be nulls in the output DF. This is a feature added in 3.3+
-    This test is for https://github.com/NVIDIA/spark-rapids/issues/3953 
+    This tests the union of two DFs of arrays of structs with missing field names.
+    The missing field will be replaced be nulls in the output DF. This is a feature added in 3.3+
+    This test is for https://github.com/NVIDIA/spark-rapids/issues/3953
+    Test cases are copies from https://github.com/apache/spark/commit/5241d98800 
     """
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: binary_op_df(spark, data_gen)
-    )
+    def assert_union_equal(gen1, gen2):
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen1).unionByName(unary_op_df(spark, gen2), True)
+        )
+    
+    assert_union_equal(gen_pair[0], gen_pair[1])
+    assert_union_equal(gen_pair[1], gen_pair[0])
 
 
 
