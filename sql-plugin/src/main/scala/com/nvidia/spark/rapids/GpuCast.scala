@@ -772,6 +772,11 @@ object GpuCast extends Arm {
       input: ColumnView,
       ansiEnabled: Boolean,
       dt: DecimalType): ColumnVector = {
+    // 1. Sanitize strings to make sure all are floating points
+    // 2. Identify all fixed point values
+    // 3. Cast String to newDt (newDt = dt.scale + 1). Promote precision if needed. This step is
+    //    required so we can round up if needed in the final step
+    // 4. Now cast to newDt to dt (Decimal to Decimal)
     def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
       if (dt.scale + 1 > dt.precision) {
         // promote if possible or throw
@@ -799,8 +804,10 @@ object GpuCast extends Arm {
                 }
               }
             }
+            // intermediate step needed so we can make sure we can round up
             withResource(input.castTo(interimDt)) { interimDecimals =>
               withResource(isFixedPoints.ifElse(interimDecimals, nulls)) { decimals =>
+                // cast Decimal to the Decimal that's needed
                 castDecimalToDecimal(decimals, interimSparkDt, dt, ansiEnabled)
               }
             }
