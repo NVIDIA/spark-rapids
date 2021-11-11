@@ -74,31 +74,41 @@ case class GpuMakeDecimal(
     sparkScale: Int,
     nullOnOverflow: Boolean) extends GpuUnaryExpression {
 
-  override def dataType: DataType = DecimalType(precision, sparkScale)
+  override def dataType: DecimalType = DecimalType(precision, sparkScale)
   override def nullable: Boolean = child.nullable || nullOnOverflow
   override def toString: String = s"MakeDecimal($child,$precision,$sparkScale)"
 
-  private lazy val cudfScale = -sparkScale
-  private lazy val maxValue = BigDecimal(("9"*precision) + "e" + cudfScale.toString)
-      .bigDecimal.unscaledValue().longValue()
+  private lazy val (minValue, maxValue) = {
+    val (minDec, maxDec) = DecimalUtil.bounds(dataType)
+    (minDec.bigDecimal.unscaledValue().longValue(), maxDec.bigDecimal.unscaledValue().longValue())
+  }
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val base = input.getBase
     val outputType = DecimalUtil.createCudfDecimal(precision, sparkScale)
-    if (nullOnOverflow) {
-      val overflowed = withResource(Scalar.fromLong(maxValue)) { limit =>
-        base.greaterThan(limit)
-      }
-      withResource(overflowed) { overflowed =>
-        withResource(Scalar.fromNull(outputType)) { nullVal =>
-          withResource(base.bitCastTo(outputType)) { view =>
-            overflowed.ifElse(nullVal, view)
+    val base = input.getBase
+    val outOfBounds = withResource(Scalar.fromLong(maxValue)) { maxScalar =>
+      withResource(base.greaterThan(maxScalar)) { over =>
+        withResource(Scalar.fromLong(minValue)) { minScalar =>
+          withResource(base.lessThan(minScalar)) { under =>
+            over.or(under)
           }
         }
       }
-    } else {
-      withResource(base.bitCastTo(outputType)) { view =>
-        view.copyToColumnVector()
+    }
+    withResource(outOfBounds) { outOfBounds =>
+      withResource(base.bitCastTo(outputType)) { outputView =>
+        if (!nullOnOverflow) {
+          withResource(outOfBounds.any()) { isAny =>
+            if (isAny.isValid && isAny.getBoolean) {
+              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
+          }
+          outputView.copyToColumnVector()
+        } else {
+          withResource(Scalar.fromNull(outputType)) { nullVal =>
+            outOfBounds.ifElse(nullVal, outputView)
+          }
+        }
       }
     }
   }
