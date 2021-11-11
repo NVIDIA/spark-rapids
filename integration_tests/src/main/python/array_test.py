@@ -214,6 +214,17 @@ def test_array_min(data_gen):
                 'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
                 'spark.rapids.sql.hasNans': 'false'})
 
+
+@pytest.mark.parametrize('data_gen', decimal_128_gens + decimal_gens, ids=idfn)
+def test_array_concat_decimal(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : debug_df(unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+            'concat(a, a)')),
+        conf={
+            'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true',
+            'spark.rapids.sql.hasNans': 'false'})
+
+
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
