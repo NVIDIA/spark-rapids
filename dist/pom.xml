@@ -34,7 +34,11 @@
             <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
-            <scope>compile</scope>
+            <!--
+                provided such that the 3rd party project depending on this will drop it
+                https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html#Dependency_Scope
+            -->
+            <scope>provided</scope>
         </dependency>
 
         <!--
@@ -249,7 +253,14 @@
                 <executions>
                     <execution>
                         <id>default-jar</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>create-parallel-worlds-jar</id>
                         <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
                         <configuration>
                             <classesDirectory>${project.build.directory}/parallel-world</classesDirectory>
                         </configuration>
@@ -361,29 +372,6 @@
                         <exclude>*.md</exclude>
                     </excludes>
                 </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-install-plugin</artifactId>
-                <version>3.0.0-M1</version>
-                <executions>
-                    <execution>
-                        <id>default-install</id>
-                        <phase>none</phase>
-                    </execution>
-                    <execution>
-                        <id>install-with-dependency-reduced-pom</id>
-                        <phase>install</phase>
-                        <goals>
-                            <goal>install-file</goal>
-                        </goals>
-                        <configuration>
-                            <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
-                            <pomFile>${project.build.directory}/dependency-reduced-pom.xml</pomFile>
-                            <generatePom>false</generatePom>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
