@@ -286,6 +286,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
     dataType match {
       case a: ArrayType => isSupportedByCudf(a.elementType)
       case s: StructType => s.forall(field => isSupportedByCudf(field.dataType))
+      case m: MapType => isSupportedByCudf(m.keyType) && isSupportedByCudf(m.valueType)
       case _ => GpuColumnVector.isNonNestedSupportedType(dataType)
     }
   }

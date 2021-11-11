@@ -48,7 +48,7 @@
                             <target>
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/spark-${spark303.version}-info.properties">
-                                    <arg value="${user.dir}/build/dependency-info.sh"/>
+                                    <arg value="${spark.rapids.source.basedir}/build/dependency-info.sh"/>
                                     <arg value="${cudf.version}"/>
                                     <arg value="${cuda.version}"/>
                                     <arg value="${spark303.version}"/>

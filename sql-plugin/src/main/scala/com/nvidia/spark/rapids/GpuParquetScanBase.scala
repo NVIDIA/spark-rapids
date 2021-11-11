@@ -50,6 +50,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile}
@@ -871,6 +872,34 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     currentChunk
   }
 
+  /**
+   * Take case-sensitive into consideration when getting the data reading column names
+   * before sending parquet-formatted buffer to cudf.
+   *
+   * @param readDataSchema Spark schema to read
+   * @param fileSchema the schema of the dumped parquet-formatted buffer
+   * @param isCaseSensitive if it is case sensitive
+   * @return a sequence of column names following the order of readDataSchema
+   */
+  protected def toCudfColumnNames(
+      readDataSchema: StructType,
+      fileSchema: MessageType,
+      isCaseSensitive: Boolean): Seq[String] = {
+
+    if (!isCaseSensitive) {
+      val fields = fileSchema.asGroupType().getFields.asScala.map(_.getName).toSet
+      val m = CaseInsensitiveMap(fields.zip(fields).toMap)
+      // The schemas may be different among parquet files, so some column names may not be existing
+      // in the CaseInsensitiveMap. In that case, we just use the field name of readDataSchema
+      //
+      // For hive special case, the readDataSchema is lower case, we need to do
+      // the case insensitive conversion
+      // See https://github.com/NVIDIA/spark-rapids/pull/3982#issue-770410779
+      readDataSchema.fieldNames.map { name => m.get(name).getOrElse(name) }
+    } else {
+      readDataSchema.fieldNames.toSeq
+    }
+  }
 }
 
 // Singleton threadpool that is used across all the tasks.
@@ -1047,10 +1076,12 @@ class MultiFileParquetPartitionReader(
     // Dump parquet data into a file
     dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
 
+    val includeColumns = toCudfColumnNames(readDataSchema, clippedSchema,
+      isSchemaCaseSensitive)
     val parseOpts = ParquetOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
       .enableStrictDecimalType(true)
-      .includeColumn(readDataSchema.fieldNames: _*).build()
+      .includeColumn(includeColumns: _*).build()
 
     // About to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -1304,10 +1335,12 @@ class MultiFileCloudParquetPartitionReader(
       // Dump parquet data into a file
       dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("parquet"))
 
+      val includeColumns = toCudfColumnNames(readDataSchema, clippedSchema,
+        isSchemaCaseSensitive)
       val parseOpts = ParquetOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
         .enableStrictDecimalType(true)
-        .includeColumn(readDataSchema.fieldNames: _*).build()
+        .includeColumn(includeColumns: _*).build()
 
       // about to start using the GPU
       GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -1443,10 +1476,12 @@ class ParquetPartitionReader(
         // Dump parquet data into a file
         dumpDataToFile(dataBuffer, dataSize, Array(split), Option(debugDumpPrefix), Some("parquet"))
 
+        val includeColumns = toCudfColumnNames(readDataSchema, clippedParquetSchema,
+          isSchemaCaseSensitive)
         val parseOpts = ParquetOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .enableStrictDecimalType(true)
-          .includeColumn(readDataSchema.fieldNames:_*).build()
+          .includeColumn(includeColumns: _*).build()
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))

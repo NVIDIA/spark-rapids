@@ -976,8 +976,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
     case _ => ExpressionContext.getRegularOperatorContext(this)
   }
 
+  val isFoldableNonLitAllowed: Boolean = false
+
   final override def tagSelfForGpu(): Unit = {
-    if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
+    if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
       willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
         s"$wrapped is foldable and operates on non literals")
     }
