@@ -85,7 +85,7 @@ object GpuUserDefinedFunction {
 
   /** (This will be initialized once per process) */
   lazy val hostColumnAssertionEnabled: Boolean =
-    GpuUserDefinedFunction.isClassAssertionEnabled("ai.rapids.cudf.HostColumnVector")
+    isClassAssertionEnabled("ai.rapids.cudf.HostColumnVectorCore")
 }
 
 /**
