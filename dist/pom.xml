@@ -42,28 +42,13 @@
         </dependency>
 
         <!--
-            manually promoting provided aggregator dependencies
-            - cudf
-            - spark-hive
-            - spark-sql
+            manually promoting provided cudf as a direct dependency
         -->
         <dependency>
             <groupId>ai.rapids</groupId>
             <artifactId>cudf</artifactId>
             <version>${cudf.version}</version>
             <classifier>${cuda.version}</classifier>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-hive_${scala.binary.version}</artifactId>
-            <version>${spark.version}</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
-            <version>${spark.version}</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>

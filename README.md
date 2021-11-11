@@ -78,11 +78,3 @@ as a `provided` dependency.
     <scope>provided</scope>
 </dependency>
 ```
-
-This artifact supports multiple versions of Apache Spark. You can review the dependency tree in the context
-of a particular versions by supplying a `-Dbuilver=3xy` flag as explained in
-the [contributing guide](CONTRIBUTING.md), e.g.,
-
-```shell
-mvn dependency:tree -Dverbose -Ddetail -Dbuildver=320
-```
