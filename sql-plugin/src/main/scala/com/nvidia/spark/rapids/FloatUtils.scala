@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 
+import org.apache.spark.sql.types.DecimalType
+
 object FloatUtils extends Arm {
 
   def nanToZero(cv: ColumnView): ColumnVector = {
@@ -40,8 +42,10 @@ object FloatUtils extends Arm {
   def getNanScalar(dType: DType): Scalar = {
     if (dType == DType.FLOAT64) {
       Scalar.fromDouble(Double.NaN)
-    } else {
+    } else if (dType == DType.FLOAT32) {
       Scalar.fromFloat(Float.NaN)
+    } else {
+      throw new IllegalArgumentException("NaNs are only supported for Float types")
     }
   }
 
