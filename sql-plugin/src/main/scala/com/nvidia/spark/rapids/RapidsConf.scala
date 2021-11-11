@@ -740,10 +740,11 @@ object RapidsConf {
 
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
-      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. Cloud based stores " +
-      "generally would be total separate from the executors and likely have a higher I/O read " +
-      "cost. Many times the cloud filesystems also get better throughput when you have multiple " +
-      "readers in parallel. This is used with spark.rapids.sql.format.parquet.reader.type")
+      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs, abfs, abfss. Cloud " +
+      "based stores generally would be total separate from the executors and likely have a " +
+      "higher I/O read cost. Many times the cloud filesystems also get better throughput when " +
+      "you have multiple readers in parallel. This is used with " +
+      "spark.rapids.sql.format.parquet.reader.type")
     .stringConf
     .toSequence
     .createOptional
