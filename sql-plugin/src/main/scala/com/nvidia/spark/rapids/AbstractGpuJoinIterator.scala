@@ -179,14 +179,20 @@ abstract class SplittableJoinIterator(
   protected def createGatherer(cb: ColumnarBatch, numJoinRows: Option[Long]): Option[JoinGatherer]
 
   override def hasNextStreamBatch: Boolean = {
-    // make built batch spillable
-    if (isInitialJoin) {
+    if (pendingSplits.nonEmpty) {
+      // there's at least one cached stream-side batch ready to go
+      true
+    } else {
+      // Querying the stream side may involve network or other non-GPU computation,
+      // so ensure our memory buffers are spillable and release the GPU to allow other
+      // threads to use the GPU in the interim. The stream iterator will re-grab the GPU
+      // semaphore when it's ready to produce a batch.
       withResource(new NvtxRange("allow batch spill", NvtxColor.PURPLE)) { _ =>
         builtBatch.allowSpilling()
         GpuSemaphore.releaseIfNecessary(TaskContext.get())
       }
+      stream.hasNext || isInitialJoin
     }
-    isInitialJoin || pendingSplits.nonEmpty || stream.hasNext
   }
 
   override def setupNextGatherer(): Option[JoinGatherer] = {
