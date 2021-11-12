@@ -83,6 +83,9 @@ trait MultiFileReaderFunctions extends Arm {
     }
   }
 
+  @scala.annotation.nowarn(
+    "msg=method getAllStatistics in class FileSystem is deprecated"
+  )
   protected def fileSystemBytesRead(): Long = {
     FileSystem.getAllStatistics.asScala.map(_.getThreadStatistics.getBytesRead).sum
   }

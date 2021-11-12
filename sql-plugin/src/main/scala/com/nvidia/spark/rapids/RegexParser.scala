@@ -190,6 +190,10 @@ class RegexParser(pattern: String) {
                 case Some(end) =>
                   skip()
                   characterClass.appendRange(start, end)
+                case _ =>
+                  throw new RegexUnsupportedException(
+                    "unexpected EOF while parsing character range",
+                    Some(pos))
               }
             case _ =>
               // treat as supported literal character
