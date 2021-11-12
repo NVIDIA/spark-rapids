@@ -404,10 +404,18 @@ class RegexParser(pattern: String) {
  * Transpile Java/Spark regular expression to a format that cuDF supports, or throw an exception
  * if this is not possible.
  */
-class CudfRegexTranspiler {
+class CudfRegexTranspiler(replace: Boolean) {
 
   val nothingToRepeat = "nothing to repeat"
 
+  /**
+   * Parse Java regular expression and translate into cuDF regular expression.
+   *
+   * @param pattern Regular expression that is valid in Java's engine
+   * @param replace True if performing a replacement (regexp_replace), false
+   *                if matching only (rlike)
+   * @return Regular expression in cuDF format
+   */
   def transpile(pattern: String): String = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
@@ -425,6 +433,11 @@ class CudfRegexTranspiler {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
+        case '^' | '$' if replace =>
+          // this is a bit extreme and it would be good to replace with finer-grained
+          // rules
+          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
+
         case _ =>
           regex
       }
@@ -459,10 +472,9 @@ class CudfRegexTranspiler {
             // - "[a-b[c-d]]" is supported by Java but not cuDF
             throw new RegexUnsupportedException("nested character classes are not supported")
           case _ =>
-
         }
         val components: Seq[RegexCharacterClassComponent] = characters
-          .map(ch => rewrite(ch).asInstanceOf[RegexCharacterClassComponent])
+          .map(x => rewrite(x).asInstanceOf[RegexCharacterClassComponent])
         RegexCharacterClass(negated, ListBuffer(components: _*))
 
       case RegexSequence(parts) =>
@@ -482,9 +494,20 @@ class CudfRegexTranspiler {
           // falling back to CPU
           throw new RegexUnsupportedException(nothingToRepeat)
         }
+        if (replace && parts.length == 1 && (isRegexChar(parts.head, '^')
+            || isRegexChar(parts.head, '$'))) {
+          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
+        }
         RegexSequence(parts.map(rewrite))
 
       case RegexRepetition(base, quantifier) => (base, quantifier) match {
+        case (_, SimpleQuantifier(ch)) if replace && "?*".contains(ch) =>
+          // example: pattern " ?", input "] b[", replace with "X":
+          // java: X]XXbX[X
+          // cuDF: XXXX] b[
+          throw new RegexUnsupportedException(
+            "regexp_replace on GPU does not support repetition with ? or *")
+
         case (RegexEscaped(_), _) =>
           // example: "\B?"
           throw new RegexUnsupportedException(nothingToRepeat)
@@ -499,6 +522,7 @@ class CudfRegexTranspiler {
 
         case _ =>
           RegexRepetition(rewrite(base), quantifier)
+
       }
 
       case RegexChoice(l, r) =>

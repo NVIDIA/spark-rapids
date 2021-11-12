@@ -52,7 +52,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPythonExec, FlatMapGroupsInPandasExec, MapInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
+import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuRegExpReplaceMeta, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
@@ -293,20 +293,11 @@ abstract class SparkBaseShims extends Spark30XShims {
         "RegExpReplace support for string literal input patterns",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
-                .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-        (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            if (!GpuOverrides.isSupportedStringReplacePattern(a.regexp)) {
-              willNotWorkOnGpu(
-                "Only non-null, non-empty String literals that are not regex patterns " +
-                    "are supported by RegExpReplace on the GPU")
-            }
-          }
-          override def convertToGpu(lhs: Expression, regexp: Expression,
-              rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
-        }),
+        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
+        "The GPU implementation of regexp_replace is disabled by default. " +
+          "See the compatibility guide for more information."),
       GpuScalaUDFMeta.exprMeta
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }

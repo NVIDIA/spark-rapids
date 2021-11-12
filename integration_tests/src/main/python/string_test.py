@@ -470,6 +470,17 @@ def test_like_complex_escape():
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
+def test_regexp_replace():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "a", "A")',
+                'regexp_replace(a, "[^xyz]", "A")',
+                'regexp_replace(a, "([^x])|([^y])", "A")',
+                'regexp_replace(a, "(?:aa)+", "A")',
+                'regexp_replace(a, "a|b|c", "A")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(

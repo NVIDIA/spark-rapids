@@ -368,33 +368,12 @@ trait Spark32XShims extends SparkShims {
       "RegExpReplace support for string literal input patterns",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
-              .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
           ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
               .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
             TypeSig.lit(TypeEnum.INT)))),
-      (a, conf, p, r) => new ExprMeta[RegExpReplace](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (!GpuOverrides.isSupportedStringReplacePattern(a.regexp)) {
-            willNotWorkOnGpu(
-              "Only non-null, non-empty String literals that are not regex patterns " +
-                  "are supported by RegExpReplace on the GPU")
-          }
-          GpuOverrides.extractLit(a.pos).foreach { lit =>
-            if (lit.value.asInstanceOf[Int] != 1) {
-              willNotWorkOnGpu("Only a search starting position of 1 is supported")
-            }
-          }
-        }
-        override def convertToGpu(): GpuExpression = {
-          // ignore the pos expression which must be a literal 1 after tagging check
-          require(childExprs.length == 4,
-            s"Unexpected child count for RegExpReplace: ${childExprs.length}")
-          val Seq(subject, regexp, rep) = childExprs.take(3).map(_.convertToGpu())
-          GpuStringReplace(subject, regexp, rep)
-        }
-      }),
+      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)),
     // Spark 3.2.0-specific LEAD expression, using custom OffsetWindowFunctionMeta.
     GpuOverrides.expr[Lead](
       "Window function that returns N entries ahead of this one",
