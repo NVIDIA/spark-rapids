@@ -398,6 +398,12 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     }.getOrElse(schema)
   }
 
+  /**
+   * Extracts all fields(columns) of DECIMAL128, including child columns of nested types,
+   * and returns the names of all fields.
+   * The names of nested children are prefixed with their parents' information, which is the
+   * acceptable format of cuDF reader options.
+   */
   protected def filterDecimal128Fields(readColumns: Array[String],
       readSchema: StructType): Array[String] = {
     val buffer = mutable.ArrayBuffer.empty[String]
