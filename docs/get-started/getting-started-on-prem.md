@@ -307,10 +307,9 @@ any MIG device on YARN means only 1 GPU per container is allowed. See the limita
 referred to below for the specific YARN version you are using.
 
 #### YARN version 3.3.0+
-YARN version 3.3.0 and newer support a pluggable device framework so we have a
-[NVIDIA GPU Plugin for YARN with MIG support](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-21.10/hadoop/device-plugins/gpu-mig/README.md).
-See the documentation for that plugin. If you are using that plugin with a Spark version older than 3.2.1 and/or specifying the resource
-as `nvidia/miggpu` you will also need to specify the config:
+YARN version 3.3.0 and newer support a pluggable device framework which allows adding support for MIG devices via a plugin.
+See [NVIDIA GPU Plugin for YARN with MIG support](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-21.10/hadoop/device-plugins/gpu-mig/README.md).
+If you are using that plugin with a Spark version older than 3.2.1 and/or specifying the resource as `nvidia/miggpu` you will also need to specify the config:
 
 ```shell
 --conf spark.rapids.gpu.resourceName=nvidia/miggpu
@@ -320,10 +319,10 @@ so that the RAPIDS Accelerator for Spark plugin knows to look for the Spark GPU 
 If you are using the Spark config `spark.yarn.resourceGpuDeviceName` and using the normal `gpu` Spark resource name, this is not required.
 
 #### YARN version 3.1.2 until 3.3.0
-If you are using YARN version from 3.1.2 up until 3.3.0 (not including 3.3.0), it requires you to
-make modifications to YARN.
+If you are using YARN version from 3.1.2 up until 3.3.0, it requires making modifications to YARN and deploying
+a version that adds support for MIG to the built-in YARN GPU resource plugin.
 
-See [NVIDIA Support for GPU for YARN with MIG support for Hadoop 3.1.2 until Hadoop 3.3.0](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-21.10/hadoop/resource-types/gpu-mig/README.md)
+See [NVIDIA Support for GPU for YARN with MIG support for YARN 3.1.2 until YARN 3.3.0](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-21.10/hadoop/resource-types/gpu-mig/README.md)
 for details.
 
 ## Running on Kubernetes
