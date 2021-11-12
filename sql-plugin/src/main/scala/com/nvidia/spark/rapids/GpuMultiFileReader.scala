@@ -128,9 +128,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
 
   protected val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
-  private val configCloudSchemes = rapidsConf.getCloudSchemes
-  private val CLOUD_SCHEMES = HashSet("dbfs", "s3", "s3a", "s3n", "wasbs", "gs", "abfs", "abfss")
-  private val allCloudSchemes = CLOUD_SCHEMES ++ configCloudSchemes.getOrElse(Seq.empty)
+  private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     throw new IllegalStateException("GPU column parser called to read rows")
