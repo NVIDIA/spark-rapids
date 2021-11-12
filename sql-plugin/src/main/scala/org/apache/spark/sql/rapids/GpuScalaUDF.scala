@@ -19,13 +19,13 @@ package org.apache.spark.sql.rapids
 import java.lang.invoke.SerializedLambda
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuExpression, GpuRowBasedUserDefinedFunction, GpuUserDefinedFunction, RapidsConf, RapidsMeta, VersionUtils}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuExpression, GpuRowBasedUserDefinedFunction, GpuUserDefinedFunction, RapidsConf, RapidsMeta}
 
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF, SpecializedGetters}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, DataType}
 
 case class GpuScalaUDF(
     function: RapidsUDF,

@@ -68,6 +68,7 @@ object GpuMetric extends Logging {
   val SPILL_AMOUNT_DISK = "spillDisk"
   val SPILL_AMOUNT_HOST = "spillHost"
   val NUM_TASKS_FALL_BACKED = "numTasksFallBacked"
+  val ROW_BASED_UDF_RUN_TIME = "rowBasedUdfRunTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -95,6 +96,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_SPILL_AMOUNT_DISK = "bytes spilled to disk"
   val DESCRIPTION_SPILL_AMOUNT_HOST = "bytes spilled to host"
   val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
+  val DESCRIPTION_ROW_BASED_UDF_RUN_TIME = "row-based UDFs run time"
 
   def unwrap(input: GpuMetric): SQLMetric = input match {
     case w :WrappedGpuMetric => w.sqlMetric
@@ -260,7 +262,7 @@ trait GpuExec extends SparkPlan with Arm {
   lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES)) ++
-      additionalMetrics
+      udfRunTimeMetrics ++ additionalMetrics
 
   def gpuLongMetric(name: String): GpuMetric = allMetrics(name)
 
@@ -277,6 +279,25 @@ trait GpuExec extends SparkPlan with Arm {
   protected def semaphoreMetrics: Map[String, GpuMetric] = Map(
     SEMAPHORE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SEMAPHORE_WAIT_TIME)
   )
+
+  // FIXME Will it be better to call this in child execs where UDFs may exist, instead of
+  // always iterating the expressions in every exec.
+  private def udfRunTimeMetrics: Map[String, GpuMetric] = {
+    var metric: Option[GpuMetric] = None
+    expressions.foreach { expr =>
+      expr.foreach {
+        case udf: GpuRowBasedUserDefinedFunction =>
+          if (metric.isEmpty) {
+            metric = Some(createTimingMetric(DEBUG_LEVEL, DESCRIPTION_ROW_BASED_UDF_RUN_TIME))
+          }
+          // Set the metric to each row-based udf, which means one metric records
+          // the total run time for all the UDFs in this op.
+          udf.runTime = metric.get
+        case _ => // noop
+      }
+    }
+    metric.map(m => Map(ROW_BASED_UDF_RUN_TIME -> m)).getOrElse(Map.empty)
+  }
 
   /**
    * Returns true if there is something in the exec that cannot work when batches between

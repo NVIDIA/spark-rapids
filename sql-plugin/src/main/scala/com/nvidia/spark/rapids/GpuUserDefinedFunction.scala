@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{HostColumnVector, HostColumnVectorCore, NvtxColor, NvtxRange}
-import com.nvidia.spark.RapidsUDF
+import com.nvidia.spark.{RapidsUDF, TimingUtils}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
@@ -96,6 +96,9 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
   /** True if the UDF needs null check when converting input columns to rows */
   val checkNull: Boolean
 
+  /** metric to append how long the udf runs, will be set by plans */
+  var runTime: GpuMetric
+
   /** The row based function of the UDF. */
   protected def evaluateRow(childrenRow: InternalRow): Any
 
@@ -105,42 +108,41 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
   override lazy val deterministic: Boolean = udfDeterministic && children.forall(_.deterministic)
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val cpuUDFStart = System.nanoTime
     // These child columns will be closed by `ColumnarToRowIterator`.
     val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
-    val prepareArgsEnd = System.nanoTime
     try {
-      // 1 Convert the argument columns to row.
-      // 2 Evaluate the CPU UDF row by row and cache the result.
-      // 3 Build a result column from the cache.
-      val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
-      val retType = GpuColumnVector.convertFrom(dataType, nullable)
-      val retRow = new GenericInternalRow(size = 1)
-      closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
-        /**
-         * This `nullSafe` is for https://github.com/NVIDIA/spark-rapids/issues/3942.
-         * And more details can be found from
-         *     https://github.com/NVIDIA/spark-rapids/pull/3997#issuecomment-957650846
-         */
-        val nullSafe = checkNull && GpuUserDefinedFunction.hostColumnAssertionEnabled
-        new ColumnarToRowIterator(
-            Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
-            NoopMetric,
-            NoopMetric,
-            NoopMetric,
-            NoopMetric,
-            nullSafe).foreach { row =>
-          retRow.update(0, evaluateRow(row))
-          retConverter.append(retRow, 0, builder)
+      val (retColumn, udfRunTime) = TimingUtils.timeTakenMs {
+        // 1 Convert the argument columns to row.
+        // 2 Evaluate the CPU UDF row by row and cache the result.
+        // 3 Build a result column from the cache.
+        val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
+        val retType = GpuColumnVector.convertFrom(dataType, nullable)
+        val retRow = new GenericInternalRow(size = 1)
+        closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
+          /**
+           * This `nullSafe` is for https://github.com/NVIDIA/spark-rapids/issues/3942.
+           * And more details can be found from
+           *     https://github.com/NVIDIA/spark-rapids/pull/3997#issuecomment-957650846
+           */
+          val nullSafe = checkNull && GpuUserDefinedFunction.hostColumnAssertionEnabled
+          new ColumnarToRowIterator(
+              Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
+              NoopMetric,
+              NoopMetric,
+              NoopMetric,
+              NoopMetric,
+              nullSafe).foreach { row =>
+            retRow.update(0, evaluateRow(row))
+            retConverter.append(retRow, 0, builder)
+          }
+          closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
+            GpuColumnVector.from(resultCol, dataType)
+          }
         }
-        closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
-          val cpuRunningTime = System.nanoTime - prepareArgsEnd
-          // Use log to record the eclipsed time for the UDF running before
-          // figuring out how to support Spark metrics in this expression.
-          logDebug(s"It took ${cpuRunningTime} ns to run UDF $name, and " +
-            s"${prepareArgsEnd - cpuUDFStart} ns to get the input from children.")
-          GpuColumnVector.from(resultCol, dataType)
-        }
+      }
+      closeOnExcept(retColumn) { col =>
+        runTime += udfRunTime
+        col
       }
     } catch {
       case e: Exception =>

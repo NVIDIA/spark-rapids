@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuOverrides, GpuUserDefinedFunction, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuMetric, GpuOverrides, GpuUserDefinedFunction, NoopMetric, RepeatingParamCheck, TypeSig}
 
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
@@ -33,7 +33,8 @@ case class GpuRowBasedScalaUDF(
     outputEncoder: Option[ExpressionEncoder[_]],
     udfName: Option[String],
     nullable: Boolean,
-    udfDeterministic: Boolean)
+    udfDeterministic: Boolean,
+    var runTime: GpuMetric = NoopMetric)
   extends GpuRowBasedScalaUDFBase(sparkFunc, dataType, children, inputEncoders, outputEncoder,
     udfName) {
 
