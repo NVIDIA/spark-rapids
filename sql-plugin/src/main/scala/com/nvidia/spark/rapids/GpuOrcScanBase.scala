@@ -27,6 +27,7 @@ import java.util.concurrent.{Callable, ThreadPoolExecutor}
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
+import scala.collection.mutable
 import scala.language.implicitConversions
 import scala.math.max
 
@@ -59,7 +60,7 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -397,6 +398,29 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
     }.getOrElse(schema)
   }
 
+  protected def filterDecimal128Fields(readColumns: Array[String],
+      readSchema: StructType): Array[String] = {
+    val buffer = mutable.ArrayBuffer.empty[String]
+
+    def findImpl(prefix: String, fieldName: String, fieldType: DataType): Unit = fieldType match {
+      case dt: DecimalType if DecimalType.isByteArrayDecimalType(dt) =>
+        buffer.append(prefix + fieldName)
+      case dt: StructType =>
+        dt.fields.foreach(f => findImpl(prefix + fieldName + ".", f.name, f.dataType))
+      case dt: ArrayType =>
+        findImpl(prefix + fieldName + ".", "1", dt.elementType)
+      case _ =>
+    }
+
+    val rootFields = readColumns.toSet
+    readSchema.fields.foreach {
+      case f if rootFields.contains(f.name) => findImpl("", f.name, f.dataType)
+      case _ =>
+    }
+
+    buffer.toArray
+  }
+
 }
 
 /**
@@ -625,10 +649,12 @@ class GpuOrcPartitionReader(
         dumpDataToFile(dataBuffer, dataSize, Array(partFile), Option(debugDumpPrefix), Some("orc"))
         val tableSchema = resolveTableSchema(ctx.updatedReadSchema, ctx.requestedMapping)
         val includedColumns = tableSchema.getFieldNames.asScala
+        val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
         val parseOpts = ORCOptions.builder()
           .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
           .withNumPyTypes(false)
           .includeColumn(includedColumns:_*)
+          .decimal128Column(decimal128Fields:_*)
           .build()
 
         // about to start using the GPU
@@ -1432,10 +1458,12 @@ class MultiFileCloudOrcPartitionReader(
 
       val tableSchema = resolveTableSchema(updatedReadSchema, requestedMapping)
       val includedColumns = tableSchema.getFieldNames.asScala
+      val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
       val parseOpts = ORCOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
         .withNumPyTypes(false)
         .includeColumn(includedColumns:_*)
+        .decimal128Column(decimal128Fields:_*)
         .build()
 
       // about to start using the GPU
@@ -1840,10 +1868,12 @@ class MultiFileOrcPartitionReader(
 
     val tableSchema = resolveTableSchema(clippedSchema, extraInfo.requestedMapping)
     val includedColumns = tableSchema.getFieldNames.asScala
+    val decimal128Fields = filterDecimal128Fields(includedColumns.toArray, readDataSchema)
     val parseOpts = ORCOptions.builder()
       .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
       .withNumPyTypes(false)
       .includeColumn(includedColumns: _*)
+      .decimal128Column(decimal128Fields:_*)
       .build()
 
     // about to start using the GPU
