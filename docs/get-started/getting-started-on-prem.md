@@ -317,6 +317,7 @@ as `nvidia/miggpu` you will also need to specify the config:
 ```
 
 so that the RAPIDS Accelerator for Spark plugin knows to look for the Spark GPU resource assigned to it using the name `nvidia/miggpu`.
+If you are using the Spark config `spark.yarn.resourceGpuDeviceName` and using the normal `gpu` Spark resource name, this is not required.
 
 #### YARN version 3.1.2 until 3.3.0
 If you are using YARN version from 3.1.2 up until 3.3.0 (not including 3.3.0), it requires you to
