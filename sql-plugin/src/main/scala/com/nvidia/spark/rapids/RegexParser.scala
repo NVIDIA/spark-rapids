@@ -403,17 +403,20 @@ class RegexParser(pattern: String) {
 /**
  * Transpile Java/Spark regular expression to a format that cuDF supports, or throw an exception
  * if this is not possible.
+ *
+ * @param replace True if performing a replacement (regexp_replace), false
+ *                if matching only (rlike)
  */
 class CudfRegexTranspiler(replace: Boolean) {
 
-  val nothingToRepeat = "nothing to repeat"
+  // cuDF throws a "nothing to repeat" exception for many of the edge cases that are
+  // rejected by the transpiler
+  private val nothingToRepeat = "nothing to repeat"
 
   /**
    * Parse Java regular expression and translate into cuDF regular expression.
    *
    * @param pattern Regular expression that is valid in Java's engine
-   * @param replace True if performing a replacement (regexp_replace), false
-   *                if matching only (rlike)
    * @return Regular expression in cuDF format
    */
   def transpile(pattern: String): String = {

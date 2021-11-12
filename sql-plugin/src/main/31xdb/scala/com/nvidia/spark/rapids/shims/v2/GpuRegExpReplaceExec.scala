@@ -41,7 +41,7 @@ class GpuRegExpReplaceMeta(
         }
 
         try {
-          new CudfRegexTranspiler().transpile(pattern, replace = true)
+          new CudfRegexTranspiler(replace = true).transpile(pattern)
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)
