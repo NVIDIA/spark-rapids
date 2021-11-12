@@ -136,7 +136,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // see https://github.com/rapidsai/cudf/issues/9620
     val pattern = "2$"
     // this matches "2" but not "2\n" on the GPU
-    assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("2", "2\n", "2\r", "\2\r\n"))
+    assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("2", "2\n", "2\r", "2\r\n"))
   }
 
   test("dot matches CR on GPU but not on CPU") {

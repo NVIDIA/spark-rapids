@@ -31,6 +31,9 @@ import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 /**
  * Tests for writing Parquet files with the GPU.
  */
+@scala.annotation.nowarn(
+  "msg=method readFooters in class ParquetFileReader is deprecated"
+)
 class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   test("file metadata") {
     val tempFile = File.createTempFile("stats", ".parquet")

@@ -326,6 +326,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     }
   }
 
+  @scala.annotation.nowarn(
+    "msg=constructor ParquetFileReader in class ParquetFileReader is deprecated"
+  )
   def filterBlocks(
       file: PartitionedFile,
       conf : Configuration,
@@ -525,6 +528,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
   val copyBufferSize = conf.getInt("parquet.read.allocation.size", 8 * 1024 * 1024)
 
+  @scala.annotation.nowarn(
+    "msg=constructor NullOutputStream in class NullOutputStream is deprecated"
+  )
   protected def calculateParquetFooterSize(
       currentChunkedBlocks: Seq[BlockMetaData],
       schema: MessageType): Long = {
@@ -605,6 +611,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    * @param copyRangesToUpdate optional buffer to update with ranges of column data to copy
    * @return updated block metadata
    */
+  @scala.annotation.nowarn(
+    "msg=method getPath in class ColumnChunkMetaData is deprecated"
+  )
   protected def computeBlockMetaData(
       blocks: Seq[BlockMetaData],
       realStartOffset: Long,
@@ -701,6 +710,9 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     }
   }
 
+  @scala.annotation.nowarn(
+    "msg=method getDecimalMetadata in class PrimitiveType is deprecated"
+  )
   def getPrecisionsList(fields: Seq[Type]): Seq[Int] = {
     fields.filter(field => field.getOriginalType == OriginalType.DECIMAL || !field.isPrimitive())
       .flatMap { field =>
@@ -1549,6 +1561,9 @@ object ParquetPartitionReader {
    * @param isCaseSensitive indicate if it is case sensitive
    * @return the updated block metadata with undesired column chunks removed
    */
+  @scala.annotation.nowarn(
+    "msg=method getPath in class ColumnChunkMetaData is deprecated"
+  )
   private[spark] def clipBlocks(columnPaths: Seq[ColumnPath],
       blocks: Seq[BlockMetaData], isCaseSensitive: Boolean): Seq[BlockMetaData] = {
     val pathSet = if (isCaseSensitive) {

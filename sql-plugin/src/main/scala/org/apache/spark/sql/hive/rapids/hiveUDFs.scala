@@ -47,6 +47,9 @@ case class GpuHiveSimpleUDF(
     children: Seq[Expression],
     dataType: DataType,
     udfDeterministic: Boolean) extends GpuHiveUDFBase {
+  @scala.annotation.nowarn(
+    "msg=class UDF in package exec is deprecated"
+  )
   @transient
   override lazy val function: RapidsUDF = funcWrapper.createFunction[UDF]().asInstanceOf[RapidsUDF]
 
