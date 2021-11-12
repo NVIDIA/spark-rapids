@@ -33,14 +33,6 @@ trait ShimTernaryExpression extends TernaryExpression {
   final def children: Seq[Expression] = IndexedSeq(first, second, third)
 }
 
-//trait ShimQuaternaryExpression extends TernaryExpression {
-//  def first: Expression
-//  def second: Expression
-//  def third: Expression
-//  def fourth: Expression
-//  final def children: Seq[Expression] = IndexedSeq(first, second, third, fourth)
-//}
-
 trait ShimSparkPlan extends SparkPlan
 
 trait ShimUnaryExecNode extends UnaryExecNode
