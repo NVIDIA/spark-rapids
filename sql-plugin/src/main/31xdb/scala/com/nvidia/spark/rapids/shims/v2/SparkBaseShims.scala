@@ -233,7 +233,7 @@ abstract class SparkBaseShims extends Spark30XShims {
           ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
             .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
             TypeSig.lit(TypeEnum.INT)))),
-      (a, conf, p, r) => new GpuRegExpReplaceMeta[RegExpReplace](a, conf, p, r)).disabledByDefault(
+      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
       "The GPU implementation of regexp_replace is disabled by default. " +
         "See the compatibility guide for more information."),
     // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
