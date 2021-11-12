@@ -907,7 +907,9 @@ private case class GpuOrcFileFilterHandler(
         isCaseSensitive)
       val evolution = new SchemaEvolution(orcReader.getSchema, updatedReadSchema, readerOpts)
       val (sargApp, sargColumns) = getSearchApplier(evolution,
-        orcFileReaderOpts.getUseUTCTimestamp)
+        orcFileReaderOpts.getUseUTCTimestamp,
+        orcReader.writerUsedProlepticGregorian(), orcFileReaderOpts.getConvertToProlepticGregorian)
+
       val splitStripes = orcReader.getStripes.asScala.filter(s =>
         s.getOffset >= partFile.start && s.getOffset < partFile.start + partFile.length)
       val stripes = buildOutputStripes(splitStripes, evolution,
@@ -1220,11 +1222,14 @@ private case class GpuOrcFileFilterHandler(
      */
     private def getSearchApplier(
         evolution: SchemaEvolution,
-        useUTCTimestamp: Boolean): (SargApplier, Array[Boolean]) = {
+        useUTCTimestamp: Boolean,
+        writerUsedProlepticGregorian: Boolean,
+        convertToProlepticGregorian: Boolean): (SargApplier, Array[Boolean]) = {
       val searchArg = readerOpts.getSearchArgument
       if (searchArg != null && orcReader.getRowIndexStride != 0) {
         val sa = new SargApplier(searchArg, orcReader.getRowIndexStride, evolution,
-          orcReader.getWriterVersion, useUTCTimestamp)
+          orcReader.getWriterVersion, useUTCTimestamp,
+          writerUsedProlepticGregorian, convertToProlepticGregorian)
         // SargApplier.sargColumns is unfortunately not visible so we redundantly compute it here.
         val filterCols = RecordReaderImpl.mapSargColumnsToOrcInternalColIdx(searchArg.getLeaves,
           evolution)
