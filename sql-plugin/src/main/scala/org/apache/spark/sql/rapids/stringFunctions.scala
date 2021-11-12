@@ -831,9 +831,9 @@ case class GpuRegExpReplace(
 
   override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
 
-  def first: Expression = srcExpr
-  def second: Expression = searchExpr
-  def third: Expression = replaceExpr
+  override def first: Expression = srcExpr
+  override def second: Expression = searchExpr
+  override def third: Expression = replaceExpr
 
   def this(srcExpr: Expression, searchExpr: Expression) = {
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
