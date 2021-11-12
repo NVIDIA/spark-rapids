@@ -19,11 +19,15 @@ set -ex
 
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
-BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.1'}
+BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.2'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VER//.}db
 
+# Try to use "cudf-udf" conda environment for the python cudf-udf tests.
+if [ -d "/databricks/conda/envs/cudf-udf" ]; then
+    export PATH=/databricks/conda/envs/cudf-udf/bin:/databricks/conda/bin:$PATH
+    export PYSPARK_PYTHON=/databricks/conda/envs/cudf-udf/bin/python
+fi
 # Try to use the pip from the conda environment if it is available
-export PATH=/databricks/conda/envs/databricks-ml-gpu/bin:/databricks/conda/condabin:$PATH
 sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-ordering
 
 export SPARK_HOME=/databricks/spark

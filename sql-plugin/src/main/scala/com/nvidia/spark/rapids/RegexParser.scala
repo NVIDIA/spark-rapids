@@ -44,18 +44,18 @@ class RegexParser(pattern: String) {
   private var pos = 0
 
   def parse(): RegexAST = {
-    val ast = parseInternal()
+    val ast = parseUntil(() => eof())
     if (!eof()) {
       throw new RegexUnsupportedException("failed to parse full regex")
     }
     ast
   }
 
-  private def parseInternal(): RegexAST = {
-    val term = parseTerm(() => peek().contains('|'))
+  private def parseUntil(until: () => Boolean): RegexAST = {
+    val term = parseTerm(() => until() || peek().contains('|'))
     if (!eof() && peek().contains('|')) {
       consumeExpected('|')
-      RegexChoice(term, parseInternal())
+      RegexChoice(term, parseUntil(until))
     } else {
       term
     }
@@ -64,7 +64,7 @@ class RegexParser(pattern: String) {
   private def parseTerm(until: () => Boolean): RegexAST = {
     val sequence = RegexSequence(new ListBuffer())
     while (!eof() && !until()) {
-      parseFactor() match {
+      parseFactor(until) match {
         case RegexSequence(parts) =>
           sequence.parts ++= parts
         case other =>
@@ -89,9 +89,10 @@ class RegexParser(pattern: String) {
     }
   }
 
-  private def parseFactor(): RegexAST = {
+  private def parseFactor(until: () => Boolean): RegexAST = {
     var base = parseBase()
-    while (!eof() && (peek().exists(ch => ch == '*' || ch == '+' || ch == '?')
+    while (!eof() && !until()
+        && (peek().exists(ch => ch == '*' || ch == '+' || ch == '?')
         || isValidQuantifierAhead())) {
 
       val quantifier = if (peek().contains('{')) {
@@ -116,15 +117,26 @@ class RegexParser(pattern: String) {
       case '\u0000' =>
         throw new RegexUnsupportedException(
           "cuDF does not support null characters in regular expressions", Some(pos))
+      case '*' | '+' | '?' =>
+        throw new RegexUnsupportedException(
+          "base expression cannot start with quantifier", Some(pos))
       case other =>
         RegexChar(other)
     }
   }
 
   private def parseGroup(): RegexAST = {
-    val term = parseTerm(() => peek().contains(')'))
+    val captureGroup = if (pos + 1 < pattern.length
+        && pattern.charAt(pos) == '?'
+        && pattern.charAt(pos+1) == ':') {
+      pos += 2
+      false
+    } else {
+      true
+    }
+    val term = parseUntil(() => peek().contains(')'))
     consumeExpected(')')
-    RegexGroup(term)
+    RegexGroup(captureGroup, term)
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
@@ -138,7 +150,9 @@ class RegexParser(pattern: String) {
         case '[' =>
           // treat as a literal character and add to the character class
           characterClass.append(ch)
-        case ']' =>
+        case ']' if pos > start + 1 =>
+          // "[]" is not a valid character class
+          // "[]a]" is a valid character class containing the characters "]" and "a"
           characterClassComplete = true
         case '^' if pos == start + 1 =>
           // Negates the character class, causing it to match a single character not listed in
@@ -527,13 +541,11 @@ class CudfRegexTranspiler {
             RegexChoice(rewrite(l), rewrite(r))
         }
 
-      case RegexGroup(term) => term match {
-        case RegexSequence(ListBuffer(RegexChar(ch))) if "?*+".contains(ch) =>
-          throw new RegexUnsupportedException(nothingToRepeat)
-        case _ =>
-          RegexGroup(rewrite(term))
-      }
+      case RegexGroup(capture, term) =>
+        RegexGroup(capture, rewrite(term))
 
+      case other =>
+        throw new RegexUnsupportedException(s"Unhandled expression in transpiler: $other")
     }
   }
 
@@ -553,9 +565,13 @@ sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 }
 
-sealed case class RegexGroup(term: RegexAST) extends RegexAST {
+sealed case class RegexGroup(capture: Boolean, term: RegexAST) extends RegexAST {
   override def children(): Seq[RegexAST] = Seq(term)
-  override def toRegexString: String = s"(${term.toRegexString})"
+  override def toRegexString: String = if (capture) {
+    s"(${term.toRegexString})"
+  } else {
+    s"(?:${term.toRegexString})"
+  }
 }
 
 sealed case class RegexChoice(a: RegexAST, b: RegexAST) extends RegexAST {

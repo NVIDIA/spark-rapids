@@ -90,9 +90,10 @@ echo -e "\n==================== ARTIFACTS BUILD INFO ====================\n" >> 
 set -x
 cat "$tmp_info" || true
 
-if [[ -z "$c_ver" || -z "$p_ver"|| \
-      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver" || "$p_ver" != "$u_ver"  ]]; then
-  echo "Artifacts versions are inconsistent!"
+SKIP_REVISION_CHECK=${SKIP_REVISION_CHECK:-'false'}
+if [[ "$SKIP_REVISION_CHECK" != "true" && (-z "$c_ver" || -z "$p_ver"|| \
+      "$p_ver" != "$it_ver" || "$p_ver" != "$pt_ver" || "$p_ver" != "$u_ver") ]]; then
+  echo "Artifacts revisions are inconsistent!"
   exit 1
 fi
 

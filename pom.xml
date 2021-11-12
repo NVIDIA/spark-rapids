@@ -798,7 +798,7 @@
         <cudf.version>21.12.0-SNAPSHOT</cudf.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.version>2.12.15</scala.version>
-        <orc.version>1.5.8</orc.version>
+        <orc.version>1.5.10</orc.version>
         <orc.classifier/>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
@@ -839,7 +839,7 @@
         <guava.cdh.version>30.0-jre</guava.cdh.version>
         <shim.module.name>${spark.version.classifier}</shim.module.name>
         <slf4j.version>1.7.30</slf4j.version>
-        <hive.storage.api.version>2.6.0</hive.storage.api.version>
+        <hive.storage.api.version>2.7.1</hive.storage.api.version>
         <protobuf.java.version>2.5.0</protobuf.java.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>

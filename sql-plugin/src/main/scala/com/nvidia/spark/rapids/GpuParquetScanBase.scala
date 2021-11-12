@@ -381,7 +381,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
     val clippedSchema = GpuParquetPartitionReaderFactoryBase.filterClippedSchema(clippedSchemaTmp,
       fileSchema, isCaseSensitive)
     val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
-    val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala)
+    val clipped = ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala, isCaseSensitive)
+
     ParquetFileInfoWithBlockMeta(filePath, clipped, file.partitionValues,
       clippedSchema, isCorrectedInt96RebaseForThisFile, isCorrectedRebaseForThisFile,
       hasInt96Timestamps)
@@ -1557,17 +1558,28 @@ object ParquetPartitionReader {
    *
    * @param columnPaths the paths of columns to preserve
    * @param blocks the block metadata from the original Parquet file
+   * @param isCaseSensitive indicate if it is case sensitive
    * @return the updated block metadata with undesired column chunks removed
    */
   @scala.annotation.nowarn(
     "msg=method getPath in class ColumnChunkMetaData is deprecated"
   )
   private[spark] def clipBlocks(columnPaths: Seq[ColumnPath],
-      blocks: Seq[BlockMetaData]): Seq[BlockMetaData] = {
-    val pathSet = columnPaths.toSet
+      blocks: Seq[BlockMetaData], isCaseSensitive: Boolean): Seq[BlockMetaData] = {
+    val pathSet = if (isCaseSensitive) {
+      columnPaths.map(cp => cp.toDotString).toSet
+    } else {
+      columnPaths.map(cp => cp.toDotString.toLowerCase(Locale.ROOT)).toSet
+    }
     blocks.map(oldBlock => {
       //noinspection ScalaDeprecation
-      val newColumns = oldBlock.getColumns.asScala.filter(c => pathSet.contains(c.getPath))
+      val newColumns = if (isCaseSensitive) {
+        oldBlock.getColumns.asScala.filter(c =>
+          pathSet.contains(c.getPath.toDotString))
+      } else {
+        oldBlock.getColumns.asScala.filter(c =>
+          pathSet.contains(c.getPath.toDotString.toLowerCase(Locale.ROOT)))
+      }
       ParquetPartitionReader.newParquetBlock(oldBlock.getRowCount, newColumns)
     })
   }
