@@ -471,7 +471,7 @@ def test_like_complex_escape():
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
 def test_regexp_replace():
-    gen = mk_str_gen('[abcd]{1,3}')
+    gen = mk_str_gen('[abcd]{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_replace(a, "a", "A")',

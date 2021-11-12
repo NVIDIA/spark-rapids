@@ -265,22 +265,28 @@ the end of the string.  This will be fixed in a future release. The issue is
 
 ## Regular Expressions
 
+The following regular expression functions and expressions are supported on the GPU but are disabled by default.
+
+- `RLike`
+- `regexp_replace()`
+
+These expressions are disabled by default because they can potentially have high memory requirements on 
+the GPU and also because of the following issue that can result in different results between CPU and GPU: 
+
+- `$` does not match the end of string if the string ends with a line-terminator
+  ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
+
+When these expressions are enabled, they will run on the GPU for all supported regular expressions and will fall 
+back to CPU for any regular expressions that are not yet supported or are known to produce different results
+between CPU and GPU.
+
 ### regexp_replace
 
-The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard
-matches for the `regexp_replace` function and will fall back to CPU if a regular expression pattern 
-is provided.
+`regexp_replace` can be enabled by setting `spark.rapids.sql.expression.RegExprReplace=true`.
 
 ### RLike
 
-The GPU implementation of `RLike` has the following known issues where behavior is not consistent with Apache Spark and
-this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
-
-- `$` does not match the end of string if the string ends with a line-terminator 
-  ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
-
-`RLike` will fall back to CPU if any regular expressions are detected that are not supported on the GPU 
-or would produce different results on the GPU.
+`RLike` can be enabled by setting `spark.rapids.sql.expression.RLike=true`.
 
 ## Timestamps
 
