@@ -228,7 +228,7 @@ pipeline {
             steps {
                 script {
                     unstash "source_tree"
-                    // Retrieve PROJECT_VER from version-def.sh, e.g, '21.12.0-SNAPSHOT'
+                    // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
                     PROJECT_VER = sh(returnStdout: true, script: "bash $JENKINS_ROOT/version-def.sh | cut -d ',' -f 3 | cut -d ' ' -f 3")
                     PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
                     echo PROJECT_VER
