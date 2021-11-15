@@ -79,6 +79,9 @@ class CastExprMeta[INPUT <: CastBase](
             "converting floating point data types to strings and this can produce results that " +
             "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
             s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
+      case (_: StringType, dt: DecimalType) if (dt.precision + 1 > Decimal.MAX_LONG_DIGITS) =>
+        willNotWorkOnGpu(s"Converting to $dt will result in a 128-bit temporary type that is " +
+            s"not supported on the GPU")
       case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
         willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
             "that casting from string to float types on the GPU returns incorrect results when " +
@@ -151,10 +154,60 @@ object GpuCast extends Arm {
 
   val INVALID_FLOAT_CAST_MSG: String = "At least one value is either null or is an invalid number"
 
+  def sanitizeStringToDecimal(
+      input: ColumnView,
+      ansiEnabled: Boolean): ColumnVector = {
+
+    // This regex gets applied to filter out known edge cases that would result in incorrect
+    // values. We further filter out invalid values using the cuDF isFixedPoint method.
+    val VALID_DEC_REGEX =
+      "^" +                         // start of line
+      "[+\\-]?" +                   // optional + or - at start of string
+      "(" +
+        "(" +
+          "(" +
+            "([0-9]+)|" +           // digits, OR
+            "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
+            "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
+          ")" +
+          "([eE][+\\-]?[0-9]+)?" +  // exponent
+        ")" +
+      ")" +
+      "$"                           // end of line
+
+    withResource(input.strip()) { stripped =>
+      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
+        // filter out strings containing breaking whitespace
+        val withoutWhitespace = withResource(ColumnVector.fromStrings("\r", "\n")) {
+          verticalWhitespace =>
+            withResource(stripped.contains(verticalWhitespace)) {
+              _.ifElse(nullString, stripped)
+            }
+        }
+        // filter out any strings that are not valid fixed-point numbers according
+        // to the regex pattern
+        withResource(withoutWhitespace) { _ =>
+          withResource(withoutWhitespace.matchesRe(VALID_DEC_REGEX)) { isFixedPoint =>
+            if (ansiEnabled) {
+              withResource(isFixedPoint.all()) { allMatch =>
+                // Check that all non-null values are valid floats.
+                if (allMatch.isValid && !allMatch.getBoolean) {
+                  throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
+                }
+                withoutWhitespace.incRefCount()
+              }
+            } else {
+              isFixedPoint.ifElse(withoutWhitespace, nullString)
+            }
+          }
+        }
+      }
+    }
+  }
+
   def sanitizeStringToFloat(
       input: ColumnVector,
-      ansiEnabled: Boolean,
-      replaceInfinity: Boolean = true): ColumnVector = {
+      ansiEnabled: Boolean): ColumnVector = {
 
     // This regex gets applied after the transformation to normalize use of Inf and is
     // just strict enough to filter out known edge cases that would result in incorrect
@@ -186,37 +239,33 @@ object GpuCast extends Arm {
               _.ifElse(nullString, stripped)
             }
         }
-        val postInfProcessing = if (replaceInfinity) {
           // replace all possible versions of "Inf" and "Infinity" with "Inf"
           val inf = withResource(withoutWhitespace) { _ =>
             withoutWhitespace.stringReplaceWithBackrefs(
               "(?:[iI][nN][fF])" + "(?:[iI][nN][iI][tT][yY])?", "Inf")
           }
           // replace "+Inf" with "Inf" because cuDF only supports "Inf" and "-Inf"
-          withResource(inf) { _ =>
+          val infWithoutPlus = withResource(inf) { _ =>
             withResource(GpuScalar.from("+Inf", DataTypes.StringType)) { search =>
               withResource(GpuScalar.from("Inf", DataTypes.StringType)) { replace =>
                 inf.stringReplace(search, replace)
               }
             }
           }
-        } else {
-          withoutWhitespace
-        }
         // filter out any strings that are not valid floating point numbers according
         // to the regex pattern
-        val floatOrNull = withResource(postInfProcessing) { _ =>
-          withResource(postInfProcessing.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
+        val floatOrNull = withResource(infWithoutPlus) { _ =>
+          withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
             if (ansiEnabled) {
               withResource(isFloat.all()) { allMatch =>
                 // Check that all non-null values are valid floats.
                 if (allMatch.isValid && !allMatch.getBoolean) {
                   throw new NumberFormatException(GpuCast.INVALID_FLOAT_CAST_MSG)
                 }
-                postInfProcessing.incRefCount()
+                infWithoutPlus.incRefCount()
               }
             } else {
-              isFloat.ifElse(postInfProcessing, nullString)
+              isFloat.ifElse(infWithoutPlus, nullString)
             }
           }
         }
@@ -778,38 +827,32 @@ object GpuCast extends Arm {
     //    required so we can round up if needed in the final step
     // 4. Now cast to newDt to dt (Decimal to Decimal)
     def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
-      if (dt.scale + 1 > dt.precision) {
-        // promote if possible or throw
-        if (dt.precision == Decimal.MAX_LONG_DIGITS) {
-          //We don't support Decimal 128
-          throw new IllegalArgumentException("One or more values exceed the maximum supported " +
-              "Decimal precision while conversion")
-        }
-        DecimalType(dt.precision + 1, dt.scale + 1)
+      if (dt.precision + 1 > Decimal.MAX_LONG_DIGITS) {
+        //We don't support Decimal 128
+        throw new IllegalArgumentException("One or more values exceed the maximum supported " +
+            "Decimal precision while conversion")
       }
-      DecimalType(dt.precision, dt.scale + 1)
+      DecimalType(dt.precision + 1, dt.scale + 1)
     }
 
-    withResource(input.strip()) { trimmed =>
-      withResource(GpuCast.sanitizeStringToFloat(trimmed, ansiEnabled, false)) { sanitized =>
-        val interimSparkDt = getInterimDecimalPromoteIfNeeded(dt)
-        val interimDt = DecimalUtil.createCudfDecimal(interimSparkDt)
-        withResource(Scalar.fromNull(interimDt)) { nulls =>
-          withResource(sanitized.isFixedPoint(interimDt)) { isFixedPoints =>
-            if (ansiEnabled) {
-              withResource(isFixedPoints.all()) { allFixedPoints =>
-                if (allFixedPoints.isValid && !allFixedPoints.getBoolean) {
-                  throw new ArithmeticException(s"One or more values cannot be " +
-                      s"represented as Decimal(${dt.precision}, ${dt.scale})")
-                }
-              }
+    withResource(GpuCast.sanitizeStringToDecimal(input, ansiEnabled)) { sanitized =>
+      val interimSparkDt = getInterimDecimalPromoteIfNeeded(dt)
+      val interimDt = DecimalUtil.createCudfDecimal(interimSparkDt)
+      withResource(sanitized.isFixedPoint(interimDt)) { isFixedPoints =>
+        if (ansiEnabled) {
+          withResource(isFixedPoints.all()) { allFixedPoints =>
+            if (allFixedPoints.isValid && !allFixedPoints.getBoolean) {
+              throw new ArithmeticException(s"One or more values cannot be " +
+                  s"represented as Decimal(${dt.precision}, ${dt.scale})")
             }
-            // intermediate step needed so we can make sure we can round up
-            withResource(input.castTo(interimDt)) { interimDecimals =>
-              withResource(isFixedPoints.ifElse(interimDecimals, nulls)) { decimals =>
-                // cast Decimal to the Decimal that's needed
-                castDecimalToDecimal(decimals, interimSparkDt, dt, ansiEnabled)
-              }
+          }
+        }
+        // intermediate step needed so we can make sure we can round up
+        withResource(input.castTo(interimDt)) { interimDecimals =>
+          withResource(Scalar.fromNull(interimDt)) { nulls =>
+            withResource(isFixedPoints.ifElse(interimDecimals, nulls)) { decimals =>
+              // cast Decimal to the Decimal that's needed
+              castDecimalToDecimal(decimals, interimSparkDt, dt, ansiEnabled)
             }
           }
         }
