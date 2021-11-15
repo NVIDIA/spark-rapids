@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids.shims.v2
 
-import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, RapidsConf, RapidsMeta, RegexUnsupportedException, TernaryExprMeta}
+import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, GpuOverrides, RapidsConf, RapidsMeta, RegexUnsupportedException, TernaryExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuStringReplace}
