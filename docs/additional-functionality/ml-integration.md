@@ -36,3 +36,11 @@ val maxValue = rdd.map(table => {
 You may need to disable RMM caching when exporting data to an ML library as that library
 will likely want to use all of the GPU's memory and if it is not aware of RMM it will not have
 access to any of the memory that RMM is holding.
+
+## Spark ML Algorithms Supported by RAPIDS Accelerator
+
+[PCA(Principal Component Analysis)](https://spark.apache.org/docs/latest/mllib-dimensionality-reduction#principal-component-analysis-pca) has been supported by the plugin directly. (only transform part now)
+
+The implementation leverages the technique of [RapidsUDF](https://github.com/NVIDIA/spark-rapids/blob/branch-21.12/docs/additional-functionality/rapids-udfs.md#rapids-accelerated-user-defined-functions).
+
+You may find the details in [spark-rapids-ml](https://github.com/NVIDIA/spark-rapids-ml) and the use case in [spark-rapids-example's pca subfolder](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-21.10/examples/pca).
