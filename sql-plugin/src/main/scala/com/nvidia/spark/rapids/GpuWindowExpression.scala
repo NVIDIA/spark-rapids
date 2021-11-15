@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.util.concurrent.TimeUnit
 
-import scala.language.{existentials, implicitConversions}
-
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, ColumnVector, DType, GroupByScanAggregation, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids.GpuOverrides.wrapExpr

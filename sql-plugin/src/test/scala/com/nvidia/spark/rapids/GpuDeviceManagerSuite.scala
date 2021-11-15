@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.{Assertion, FunSuite}
+import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.resource.ResourceInformation

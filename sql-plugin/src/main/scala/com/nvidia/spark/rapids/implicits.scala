@@ -28,7 +28,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * and Array[AutoCloseable] that help make resource management easier within the project.
  */
 object RapidsPluginImplicits {
-  import scala.language.implicitConversions
 
   implicit class ReallyAGpuExpression[A <: Expression](exp: Expression) {
     def columnarEval(batch: ColumnarBatch): Any = {

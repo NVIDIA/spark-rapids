@@ -22,7 +22,6 @@ import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future, LinkedBloc
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.immutable.HashSet
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.math.max
 

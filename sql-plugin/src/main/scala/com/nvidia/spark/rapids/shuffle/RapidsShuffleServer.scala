@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.io.IOException
 import java.util.concurrent.{ConcurrentLinkedQueue, Executor}
 
 import scala.collection.mutable.ArrayBuffer

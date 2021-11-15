@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{Arm, ColumnCastUtil}
+import com.nvidia.spark.rapids.Arm
 
 object HashUtils extends Arm {
   /**
