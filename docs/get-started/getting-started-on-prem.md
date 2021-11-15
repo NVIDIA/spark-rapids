@@ -301,7 +301,7 @@ $SPARK_HOME/bin/spark-shell \
 
 ### MIG GPU on YARN
 Using MIG enabled GPUs on YARN requires enabling YARN GPU scheduling, cgroups, and using NVIDIA Docker runtime v2.
-The way to use these depends on the version of YARN and the version of Spark you are using.
+The way to set this up depends on the version of YARN and the version of Spark.
 It is important to note that CUDA 11 only supports enumeration of a single MIG instance. This means that using
 any MIG device on YARN means only 1 GPU per container is allowed. See the limitations section in the documentation
 referred to below for the specific YARN version you are using.
@@ -315,7 +315,7 @@ If you are using that plugin with a Spark version older than 3.2.1 and/or specif
 --conf spark.rapids.gpu.resourceName=nvidia/miggpu
 ```
 
-so that the RAPIDS Accelerator for Spark plugin knows to look for the Spark GPU resource assigned to it using the name `nvidia/miggpu`.
+This tells the RAPIDS Accelerator for Spark plugin to look for the Spark GPU resource assigned to it using the name `nvidia/miggpu`.
 If you are using the Spark config `spark.yarn.resourceGpuDeviceName` and using the normal `gpu` Spark resource name, this is not required.
 
 #### YARN version 3.1.2 until 3.3.0
