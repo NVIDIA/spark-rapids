@@ -315,7 +315,7 @@ If you are using that plugin with a Spark version older than 3.2.1 and/or specif
 --conf spark.rapids.gpu.resourceName=nvidia/miggpu
 ```
 
-This tells the RAPIDS Accelerator for Spark plugin to look for the Spark GPU resource assigned to it using the name `nvidia/miggpu`.
+This tells the RAPIDS Accelerator for Apache Spark plugin to look for the Spark GPU resource assigned to it using the name `nvidia/miggpu`.
 If you are using the Spark config `spark.yarn.resourceGpuDeviceName` and using the normal `gpu` Spark resource name, this is not required.
 
 #### YARN version 3.1.2 until 3.3.0
