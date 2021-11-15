@@ -821,11 +821,11 @@ object GpuCast extends Arm {
       input: ColumnView,
       ansiEnabled: Boolean,
       dt: DecimalType): ColumnVector = {
-    // 1. Sanitize strings to make sure all are floating points
+    // 1. Sanitize strings to make sure all are fixed points
     // 2. Identify all fixed point values
-    // 3. Cast String to newDt (newDt = dt.scale + 1). Promote precision if needed. This step is
-    //    required so we can round up if needed in the final step
-    // 4. Now cast to newDt to dt (Decimal to Decimal)
+    // 3. Cast String to newDt (newDt = dt. precision + 1, dt.scale + 1). Promote precision if
+    //    needed. This step is required so we can round up if needed in the final step
+    // 4. Now cast newDt to dt (Decimal to Decimal)
     def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
       if (dt.precision + 1 > Decimal.MAX_LONG_DIGITS) {
         //We don't support Decimal 128
