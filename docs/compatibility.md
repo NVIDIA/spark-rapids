@@ -265,28 +265,43 @@ the end of the string.  This will be fixed in a future release. The issue is
 
 ## Regular Expressions
 
-The following regular expression functions and expressions are supported on the GPU but are disabled by default.
+The following Apache Spark regular expression functions and expressions are supported on the GPU:
 
-- `RLike`
-- `regexp_replace()`
+- `RLIKE`
+- `regexp`
+- `regexpr_like`
+- `regexp_replace`
 
-These expressions are disabled by default because they can potentially have high memory requirements on 
-the GPU and also because of the following issue that can result in different results between CPU and GPU: 
+These operations are disabled by default because of known incompatibilities between the Java regular expression 
+engine that Spark uses, and the cuDF regular expression engine on the GPU, and also because the regular expression 
+kernels can potentially have high memory overhead.
 
-- `$` does not match the end of string if the string ends with a line-terminator
+These operations can be enabled on the GPU with the following configuration settings:
+
+- `spark.rapids.sql.expression.RLike=true` (for `RLIKE`, `regexp`, and `regexp_like`)
+- `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
+
+Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
+CPU when the plugin determines that a pattern is either unsupported or would produce incorrect results on the GPU.
+
+Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
+
+- Lazy quantifiers, such as `a*?`
+- Possessive quantifiers, such as `a*+`
+- Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
+  or `[a-z&&[^bc]]`
+- Word and non-word boundaries, `\b` and `\B`
+- Empty groups: `()`
+- Regular expressions containing null characters (unless the pattern is a simple literal string)
+- Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
+- with a choice (`^|a`) or when used anywhere in `regexp_replace` patterns.
+
+In addition to these cases that can be detected, there is also one known issue that can cause incorrect results:
+
+- `$` does not match the end of a string if the string ends with a line-terminator 
   ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
 
-When these expressions are enabled, they will run on the GPU for all supported regular expressions and will fall 
-back to CPU for any regular expressions that are not yet supported or are known to produce different results
-between CPU and GPU.
-
-### regexp_replace
-
-`regexp_replace` can be enabled by setting `spark.rapids.sql.expression.RegExprReplace=true`.
-
-### RLike
-
-`RLike` can be enabled by setting `spark.rapids.sql.expression.RLike=true`.
+Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
 ## Timestamps
 

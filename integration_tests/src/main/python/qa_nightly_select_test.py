@@ -150,8 +150,7 @@ _qa_conf = {
         'spark.rapids.sql.hasNans': 'false',
         'spark.rapids.sql.castStringToFloat.enabled': 'true',
         'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'true',
-        'spark.rapids.sql.castFloatToString.enabled': 'true',
-        'spark.rapids.sql.expression.RegExpReplace': 'true'
+        'spark.rapids.sql.castFloatToString.enabled': 'true'
         }
 
 _first_last_qa_conf = copy_and_update(_qa_conf, {

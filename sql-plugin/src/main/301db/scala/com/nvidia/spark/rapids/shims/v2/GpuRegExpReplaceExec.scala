@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, RapidsConf, RapidsMeta, RegexUnsupportedException, TernaryExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.GpuRegExpReplace
+import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuStringReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -39,11 +39,15 @@ class GpuRegExpReplaceMeta(
           willNotWorkOnGpu(s"RegExpReplace with empty pattern is not supported on GPU")
         }
 
-        try {
-          new CudfRegexTranspiler(replace = true).transpile(pattern)
-        } catch {
-          case e: RegexUnsupportedException =>
-            willNotWorkOnGpu(e.getMessage)
+        if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
+          // use GpuStringReplace
+        } else {
+          try {
+            new CudfRegexTranspiler(replace = true).transpile(pattern)
+          } catch {
+            case e: RegexUnsupportedException =>
+              willNotWorkOnGpu(e.getMessage)
+          }
         }
 
       case _ =>
@@ -55,6 +59,10 @@ class GpuRegExpReplaceMeta(
       lhs: Expression,
       regexp: Expression,
       rep: Expression): GpuExpression = {
-    GpuRegExpReplace(lhs, regexp, rep)
+    if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
+      GpuStringReplace(lhs, regexp, rep)
+    } else {
+      GpuRegExpReplace(lhs, regexp, rep)
+    }
   }
 }

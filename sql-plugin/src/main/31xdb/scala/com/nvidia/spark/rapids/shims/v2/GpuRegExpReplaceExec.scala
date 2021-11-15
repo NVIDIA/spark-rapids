@@ -19,7 +19,7 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuColumnVector, GpuExpression, GpuLiteral, GpuOverrides, GpuScalar, GpuTernaryExpression, QuaternaryExprMeta, RapidsConf, RapidsMeta, RegexUnsupportedException}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.GpuRegExpReplace
+import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuStringReplace}
 import org.apache.spark.sql.types.{DataType, DataTypes, StringType}
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -40,11 +40,15 @@ class GpuRegExpReplaceMeta(
           willNotWorkOnGpu(s"RegExpReplace with empty pattern is not supported on GPU")
         }
 
-        try {
-          new CudfRegexTranspiler(replace = true).transpile(pattern)
-        } catch {
-          case e: RegexUnsupportedException =>
-            willNotWorkOnGpu(e.getMessage)
+        if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
+          // use GpuStringReplace
+        } else {
+          try {
+            new CudfRegexTranspiler(replace = true).transpile(pattern)
+          } catch {
+            case e: RegexUnsupportedException =>
+              willNotWorkOnGpu(e.getMessage)
+          }
         }
 
       case _ =>
@@ -67,6 +71,10 @@ class GpuRegExpReplaceMeta(
     require(childExprs.length == 4,
       s"Unexpected child count for RegExpReplace: ${childExprs.length}")
     val Seq(subject, regexp, rep) = childExprs.take(3).map(_.convertToGpu())
-    GpuRegExpReplace(subject, regexp, rep)
+    if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
+      GpuStringReplace(subject, regexp, rep)
+    } else {
+      GpuRegExpReplace(subject, regexp, rep)
+    }
   }
 }
