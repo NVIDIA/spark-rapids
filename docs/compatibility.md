@@ -269,7 +269,7 @@ The following Apache Spark regular expression functions and expressions are supp
 
 - `RLIKE`
 - `regexp`
-- `regexpr_like`
+- `regexp_like`
 - `regexp_replace`
 
 These operations are disabled by default because of known incompatibilities between the Java regular expression 
