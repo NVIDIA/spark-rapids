@@ -32,11 +32,11 @@ class GpuRegExpReplaceMeta(
   override def tagExprForGpu(): Unit = {
     expr.regexp match {
       case Literal(null, _) =>
-        willNotWorkOnGpu(s"RegExpReplace with null pattern is not supported on GPU")
+        willNotWorkOnGpu(s"null pattern is not supported on GPU")
       case Literal(s: UTF8String, DataTypes.StringType) =>
         val pattern = s.toString
         if (pattern.isEmpty) {
-          willNotWorkOnGpu(s"RegExpReplace with empty pattern is not supported on GPU")
+          willNotWorkOnGpu(s"empty pattern is not supported on GPU")
         }
 
         if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
@@ -51,7 +51,7 @@ class GpuRegExpReplaceMeta(
         }
 
       case _ =>
-        willNotWorkOnGpu(s"RegExpReplace with non-literal pattern is not supported on GPU")
+        willNotWorkOnGpu(s"non-literal pattern is not supported on GPU")
     }
   }
 
