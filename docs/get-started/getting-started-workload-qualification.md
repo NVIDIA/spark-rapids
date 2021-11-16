@@ -76,8 +76,8 @@ Basically it can return output which is the same as the driver logs with `spark.
 
 3. Enable RAPIDS Accelerator related parameters to allow supporting existing features.
    
-   For example, if your jobs have `double`/`float`/`decimal` operators together with some scala UDFs, you can set 
-   below parameters:
+   For example, if your jobs have `double`/`float`/`decimal` operators together with some Scala UDFs, you can set 
+   the following parameters:
    
    ```scala
    spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
