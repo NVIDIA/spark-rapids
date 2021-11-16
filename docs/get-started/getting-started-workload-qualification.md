@@ -91,7 +91,7 @@ Basically it can return output which is the same as the driver logs with `spark.
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
    
-   Please refer to [config doc](../configs.md) for details of RAPIDS Accelerator parameters.
+   Please refer to [configs doc](../configs.md) for details of RAPIDS Accelerator parameters.
    Note: Please understand the meaning and risk of above parameters before enabling it. 
 
 4. Run the function `explainPotentialGPUPlan` on the query DataFrame.
@@ -115,7 +115,8 @@ Basically it can return output which is the same as the driver logs with `spark.
 
 This log can show you which operators(on what data type) can not run on GPU and what is the reason.
 If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature, you should firstly 
-understand the risk and applicability of that parameter and then enable that parameter and try the tool again.
+understand the risk and applicability of that parameter based on [configs doc](../configs.md) and then enable that 
+parameter and try the tool again.
 
 Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is pretty accurate.
 But you need a Spark 3+ CPU cluster and is ok to modify the code to add this function.
