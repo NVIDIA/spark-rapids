@@ -18,8 +18,6 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 
-import org.apache.spark.sql.types.DecimalType
-
 object FloatUtils extends Arm {
 
   def nanToZero(cv: ColumnView): ColumnVector = {
