@@ -44,8 +44,8 @@ The following example profiling tool output for a specific Spark application sho
 |1       |88   |9     |HashAggregate                                       |22222        |number of output rows               |600000000    |sum       |
 ```
 
-Since the 2 tools are basically analyzing Spark event logs, it can not provide very accurate gap analysis information.
-But it is very convenient because you do not need a CPU or GPU Spark cluster to run them.
+Since the two tools are only analyzing Spark event logs, it can not provide very accurate gap analysis information.
+However it is very convenient because you do not need a CPU or GPU Spark cluster to run them.
 
 ## 2. Function `explainPotentialGPUPlan` 
 
