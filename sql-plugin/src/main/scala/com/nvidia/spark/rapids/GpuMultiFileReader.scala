@@ -22,7 +22,6 @@ import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future, LinkedBloc
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.immutable.HashSet
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.math.max
 
@@ -318,16 +317,17 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, files.length)
+    val tc = TaskContext.get
     for (i <- 0 until limit) {
       val file = files(i)
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
-      tasks.add(getThreadPool(numThreads).submit(getBatchRunner(file, conf, filters)))
+      tasks.add(getThreadPool(numThreads).submit(getBatchRunner(tc, file, conf, filters)))
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
       val file = files(i)
-      tasksToRun.enqueue(getBatchRunner(file, conf, filters))
+      tasksToRun.enqueue(getBatchRunner(tc, file, conf, filters))
     }
     isInitted = true
     filesToRead = files.length
@@ -337,15 +337,17 @@ abstract class MultiFileCloudPartitionReaderBase(
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
+   * @param tc   task context to use
    * @param file file to be read
    * @param conf the Configuration parameters
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
    */
   def getBatchRunner(
-    file: PartitionedFile,
-    conf: Configuration,
-    filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
+      tc: TaskContext,
+      file: PartitionedFile,
+      conf: Configuration,
+      filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
 
   /**
    * Get ThreadPoolExecutor to run the Callable.
@@ -630,6 +632,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
+   * @param tc     task context to use
    * @param file   file to be read
    * @param outhmb the sliced HostMemoryBuffer to hold the blocks, and the implementation
    *               is in charge of closing it in sub-class
@@ -641,10 +644,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *         result._2 is the bytes read
    */
   def getBatchRunner(
-    file: Path,
-    outhmb: HostMemoryBuffer,
-    blocks: ArrayBuffer[DataBlockBase],
-    offset: Long): Callable[(Seq[DataBlockBase], Long)]
+      tc: TaskContext,
+      file: Path,
+      outhmb: HostMemoryBuffer,
+      blocks: ArrayBuffer[DataBlockBase],
+      offset: Long): Callable[(Seq[DataBlockBase], Long)]
 
   /**
    * File format short name used for logging and other things to uniquely identity
@@ -807,13 +811,14 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           var offset = writeFileHeader(hmb)
 
           val allOutputBlocks = scala.collection.mutable.ArrayBuffer[DataBlockBase]()
+          val tc = TaskContext.get
           filesAndBlocks.foreach { case (file, blocks) =>
             val fileBlockSize = blocks.map(_.getBlockSize).sum
             // use a single buffer and slice it up for different files if we need
             val outLocal = hmb.slice(offset, fileBlockSize)
             // Third, copy the blocks for each file in parallel using background threads
             tasks.add(getThreadPool(numThreads).submit(
-              getBatchRunner(file, outLocal, blocks, offset)))
+              getBatchRunner(tc, file, outLocal, blocks, offset)))
             offset += fileBlockSize
           }
 

@@ -58,6 +58,7 @@ import org.apache.spark.sql.execution.datasources.v2.{EmptyPartitionReader, File
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -1296,6 +1297,7 @@ class MultiFileCloudOrcPartitionReader(
     requestedMapping: Option[Array[Int]]) extends HostMemoryBuffersWithMetaDataBase
 
   private class ReadBatchRunner(
+      taskContext: TaskContext,
       partFile: PartitionedFile,
       conf: Configuration,
       filters: Array[Filter]) extends Callable[HostMemoryBuffersWithMetaDataBase]  {
@@ -1303,6 +1305,15 @@ class MultiFileCloudOrcPartitionReader(
     private var blockChunkIter: BufferedIterator[OrcOutputStripe] = null
 
     override def call(): HostMemoryBuffersWithMetaDataBase = {
+      TrampolineUtil.setTaskContext(taskContext)
+      try {
+        doRead()
+      } finally {
+        TrampolineUtil.unsetTaskContext()
+      }
+    }
+
+    private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
 
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
@@ -1358,14 +1369,18 @@ class MultiFileCloudOrcPartitionReader(
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
+   * @param tc      task context to use
    * @param file    file to be read
    * @param conf    the Configuration parameters
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
    */
-  override def getBatchRunner(file: PartitionedFile, conf: Configuration, filters: Array[Filter]):
-      Callable[HostMemoryBuffersWithMetaDataBase] = {
-    new ReadBatchRunner(file, conf, filters)
+  override def getBatchRunner(
+      tc: TaskContext,
+      file: PartitionedFile,
+      conf: Configuration,
+      filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
+    new ReadBatchRunner(tc, file, conf, filters)
   }
 
   /**
@@ -1627,6 +1642,7 @@ class MultiFileOrcPartitionReader(
   // The runner to copy stripes to the offset of HostMemoryBuffer and update
   // the StripeInformation to construct the file Footer
   class OrcCopyStripesRunner(
+      taskContext: TaskContext,
       file: Path,
       outhmb: HostMemoryBuffer,
       stripes: ArrayBuffer[DataBlockBase],
@@ -1634,6 +1650,15 @@ class MultiFileOrcPartitionReader(
     extends Callable[(Seq[DataBlockBase], Long)] {
 
     override def call(): (Seq[DataBlockBase], Long) = {
+      TrampolineUtil.setTaskContext(taskContext)
+      try {
+        doRead()
+      } finally {
+        TrampolineUtil.unsetTaskContext()
+      }
+    }
+
+    private def doRead(): (Seq[DataBlockBase], Long) = {
       val startBytesRead = fileSystemBytesRead()
       // copy stripes to the HostMemoryBuffer
       withResource(outhmb) { _ =>
@@ -1800,6 +1825,7 @@ class MultiFileOrcPartitionReader(
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
+   * @param tc     task context to use
    * @param file   file to be read
    * @param outhmb the sliced HostMemoryBuffer to hold the blocks, and the implementation
    *               is in charge of closing it in sub-class
@@ -1811,11 +1837,12 @@ class MultiFileOrcPartitionReader(
    *         result._2 is the bytes read
    */
   override def getBatchRunner(
+      tc: TaskContext,
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long): Callable[(Seq[DataBlockBase], Long)] = {
-    new OrcCopyStripesRunner(file, outhmb, blocks, offset)
+    new OrcCopyStripesRunner(tc, file, outhmb, blocks, offset)
   }
 
   /**
