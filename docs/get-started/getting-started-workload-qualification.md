@@ -88,7 +88,7 @@ Basically it can print the logs which are the same as the driver logs with `spar
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
    
-   Please refer to [config doc](../configs.md) for details of those Spark RAPIDS related parameters.
+   Please refer to [config doc](../configs.md) for details of RAPIDS Accelerator parameters.
 
 4. Run the function `explainPotentialGPUPlan` on top of Dataframe.
 
