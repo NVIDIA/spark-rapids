@@ -89,6 +89,7 @@ Basically it can return output which is the same as the driver logs with `spark.
    ```
    
    Please refer to [config doc](../configs.md) for details of RAPIDS Accelerator parameters.
+   Note: Please understand the meaning and risk of above parameters before enabling it. 
 
 4. Run the function `explainPotentialGPUPlan` on the query DataFrame.
 
