@@ -179,10 +179,17 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric,
-    streamTime: GpuMetric) extends Iterator[InternalRow] with Arm {
+    streamTime: GpuMetric,
+    nullSafe: Boolean = false) extends Iterator[InternalRow] with Arm {
   // GPU batches read in must be closed by the receiver (us)
   @transient private var cb: ColumnarBatch = null
   private var it: java.util.Iterator[InternalRow] = null
+
+  private[this] lazy val toHost = if (nullSafe) {
+    (gpuCV: GpuColumnVector) => gpuCV.copyToNullSafeHost()
+  } else{
+    (gpuCV: GpuColumnVector) => gpuCV.copyToHost()
+  }
 
   Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => closeCurrentBatch()))
 
@@ -201,7 +208,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
     devCb.foreach { devCb =>
       withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
         try {
-          cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(_.copyToHost()),
+          cb = new ColumnarBatch(GpuColumnVector.extractColumns(devCb).map(toHost),
             devCb.numRows())
           it = cb.rowIterator()
           // In order to match the numOutputRows metric in the generated code we update
