@@ -9638,7 +9638,7 @@ are limited.
 <td rowSpan="3">RLike</td>
 <td rowSpan="3">`rlike`</td>
 <td rowSpan="3">RLike</td>
-<td rowSpan="3">This is disabled by default because The GPU implementation of rlike is disabled by default. See the compatibility guide for more information.</td>
+<td rowSpan="3">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
 <td rowSpan="3">project</td>
 <td>str</td>
 <td> </td>
