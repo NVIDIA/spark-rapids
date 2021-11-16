@@ -56,7 +56,7 @@ However it is very convenient because you do not need a CPU or GPU Spark cluster
 
 ### How to use
 
-In Spark RAPIDS accelerator 21.12, a new function named `explainPotentialGPUPlan` is added which can help us understand 
+Starting with version 21.12 of the RAPIDS Accelerator, a new function named `explainPotentialGPUPlan` is added which can help us understand 
 the potential GPU plan and if there are any not-supported features on a CPU cluster.
 Basically it can return output which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 
