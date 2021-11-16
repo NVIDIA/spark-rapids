@@ -282,7 +282,7 @@ These operations can be enabled on the GPU with the following configuration sett
 - `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
 
 Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
-CPU when the plugin determines that a pattern is either unsupported or would produce incorrect results on the GPU.
+CPU when the RAPIDS Accelerator determines that a pattern is either unsupported or would produce incorrect results on the GPU.
 
 Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
 
