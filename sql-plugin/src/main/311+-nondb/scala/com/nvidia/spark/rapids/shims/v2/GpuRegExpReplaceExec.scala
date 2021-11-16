@@ -15,12 +15,11 @@
  */
 package com.nvidia.spark.rapids.shims.v2
 
-import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuColumnVector, GpuExpression, GpuLiteral, GpuOverrides, GpuScalar, GpuTernaryExpression, QuaternaryExprMeta, RapidsConf, RapidsMeta, RegexUnsupportedException}
+import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, GpuOverrides, QuaternaryExprMeta, RapidsConf, RapidsMeta, RegexUnsupportedException}
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, Literal, RegExpReplace}
+import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuStringReplace}
-import org.apache.spark.sql.types.{DataType, DataTypes, StringType}
+import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
 
 class GpuRegExpReplaceMeta(
