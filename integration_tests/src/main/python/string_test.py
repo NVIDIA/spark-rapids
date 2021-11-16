@@ -337,7 +337,8 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", "PROD")',
                 'REGEXP_REPLACE(a, "TEST", "")',
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
-                'REGEXP_REPLACE(a, "TEST", NULL)'))
+                'REGEXP_REPLACE(a, "TEST", NULL)'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_re_replace_null():
     gen = mk_str_gen('[\u0000 ]{0,2}TE[\u0000 ]{0,2}ST[\u0000 ]{0,2}')\
@@ -356,7 +357,8 @@ def test_re_replace_null():
                 'REGEXP_REPLACE(a, "\x00", "NULL")',
                 'REGEXP_REPLACE(a, "\0", "NULL")',
                 'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
-                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'))
+                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
