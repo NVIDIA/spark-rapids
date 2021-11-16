@@ -33,7 +33,7 @@ The qualification tool outputs the score, rank and some of the potentially not-s
 Its output can help you focus on the top N Spark applications which are SQL heavy applications. 
 
 The profiling tool outputs SQL plan metrics and also prints out actual query plans to provide more insights.
-For example, below Profiling tool output for a specific Spark application shows that it has a query with a large 
+The following example profiling tool output for a specific Spark application shows that it has a query with a large 
 `HashAggregate` and `SortMergeJoin`. Those are indicators for a good candidate for RAPIDS accelerator.
 
 ```
