@@ -110,8 +110,8 @@ Basically it can return output which is the same as the driver logs with `spark.
    ```
 
 This log can show you which operators(on what data type) can not run on GPU and what is the reason.
-If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature, you can enable that parameter 
-and try the tool again.
+If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature, you should firstly 
+understand the risk and applicability of that parameter and then enable that parameter and try the tool again.
 
 Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is pretty accurate.
 But you need a Spark 3+ CPU cluster and is ok to modify the code to add this function.
