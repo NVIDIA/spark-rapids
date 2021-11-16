@@ -12,7 +12,10 @@ to figure out if there are any unsupported features such as functions, expressio
 After that we will know which workload is more suitable to GPU, which is called "workload qualification" here.
 
 If there are certain operators which can not run on GPU due to the current limitations, they will fallback to CPU mode.
-As a result, it may incur some performance overhead because of host memory <=> GPU memory transfer. 
+As a result, it may incur some performance overhead because of host memory <=> GPU memory transfer.
+However it is not critical to ensure all operations are supported by the GPU and significant performance benefits can 
+be gained before all operations are fully supported by the GPU. It all depends on how critical the portion that is 
+executing on the CPU is to the overall performance of the query.
 
 This article is to help you get familiar with the best practice and different tools we provide on how to do gap analysis 
 and workload qualification.
