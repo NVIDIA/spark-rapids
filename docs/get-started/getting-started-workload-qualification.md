@@ -27,8 +27,8 @@ and workload qualification.
 
 ### How to use
 
-If you have old Spark event logs from Spark 2.x or 3.x, you can use [Qualification tool](../spark-qualification-tool.md) 
-and [Profiling tool](../spark-profiling-tool.md) to analyze them.
+If you have Spark event logs from prior runs of the applications on Spark 2.x or 3.x, you can use the
+[Qualification tool](../spark-qualification-tool.md) and [Profiling tool](../spark-profiling-tool.md) to analyze them.
 The qualification tool outputs the score, rank and some of the potentially not-supported features for each Spark application.
 Its output can help you focus on the top N Spark applications which are SQL heavy applications. 
 
