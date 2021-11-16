@@ -56,6 +56,7 @@ However it is very convenient because you do not need a CPU or GPU Spark cluster
 
 - A Spark 3.x CPU cluster
 - A pair of `rapids-4-spark` and `cudf` jars
+- Need to modify the existing Spark application code
 
 ### How to use
 
@@ -120,7 +121,6 @@ understand the risk and applicability of that parameter based on [configs doc](.
 parameter and try the tool again.
 
 Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is pretty accurate.
-But you need a Spark 3+ CPU cluster and is ok to modify the code to add this function.
 
 ## 3. Run Spark applications with Spark RAPIDS Accelerator on a GPU Spark Cluster
 
