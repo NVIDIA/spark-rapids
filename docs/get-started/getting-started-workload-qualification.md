@@ -34,7 +34,7 @@ Its output can help you focus on the top N Spark applications which are SQL heav
 
 The profiling tool outputs SQL plan metrics and also prints out actual query plans to provide more insights.
 The following example profiling tool output for a specific Spark application shows that it has a query with a large 
-`HashAggregate` and `SortMergeJoin`. Those are indicators for a good candidate for RAPIDS accelerator.
+`HashAggregate` and `SortMergeJoin`. Those are indicators for a good candidate for the RAPIDS Accelerator.
 
 ```
 +--------+-----+------+----------------------------------------------------+-------------+------------------------------------+-------------+----------+
