@@ -9826,7 +9826,7 @@ are limited.
 <td rowSpan="4">RegExpReplace</td>
 <td rowSpan="4">`regexp_replace`</td>
 <td rowSpan="4">RegExpReplace support for string literal input patterns</td>
-<td rowSpan="4">This is disabled by default because The GPU implementation of regexp_replace is disabled by default. See the compatibility guide for more information.</td>
+<td rowSpan="4">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
 <td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>

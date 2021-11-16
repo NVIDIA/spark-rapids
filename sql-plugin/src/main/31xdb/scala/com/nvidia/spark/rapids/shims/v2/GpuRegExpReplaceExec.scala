@@ -57,7 +57,7 @@ class GpuRegExpReplaceMeta(
 
     GpuOverrides.extractLit(expr.pos).foreach { lit =>
       if (lit.value.asInstanceOf[Int] != 1) {
-        willNotWorkOnGpu("Only a search starting position of 1 is supported")
+        willNotWorkOnGpu("only a search starting position of 1 is supported")
       }
     }
   }

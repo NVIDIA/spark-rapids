@@ -296,7 +296,7 @@ abstract class SparkBaseShims extends Spark30XShims {
             ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
         (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
-        "The GPU implementation of regexp_replace is disabled by default. " +
+        "the implementation is not 100% compatible. " +
           "See the compatibility guide for more information."),
       GpuScalaUDFMeta.exprMeta
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
