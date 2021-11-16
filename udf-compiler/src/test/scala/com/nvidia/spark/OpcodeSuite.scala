@@ -16,19 +16,16 @@
 
 package com.nvidia.spark
 
-import java.nio.charset.Charset
-import java.time.{LocalDate, LocalDateTime}
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.RapidsConf
-import org.scalatest.Assertions._
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
-import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.functions.{udf => makeUdf}
 import org.apache.spark.sql.functions.{log => logalias}
