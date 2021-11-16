@@ -734,6 +734,7 @@
         <buildver>301</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
+        <java.major.version>8</java.major.version>
         <spark.version>${spark301.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
@@ -1031,7 +1032,9 @@
                             </goals>
                             <configuration>
                                 <args>
+                                    <arg>-doc-external-doc:${java.home}/lib/rt.jar#https://docs.oracle.com/javase/${java.major.version}/docs/api/index.html</arg>
                                     <arg>-doc-external-doc:${settings.localRepository}/${scala.local-lib.path}#https://scala-lang.org/api/${scala.version}/</arg>
+                                    <arg>-doc-external-doc:${settings.localRepository}/org/apache/spark/spark-sql_${scala.binary.version}/${spark.version}/spark-sql_${scala.binary.version}-${spark.version}.jar#https://spark.apache.org/docs/${spark.version}/api/scala/index.html</arg>
                                 </args>
                             </configuration>
                         </execution>
@@ -1047,6 +1050,8 @@
                             <arg>-feature</arg>
                             <arg>-explaintypes</arg>
                             <arg>-Yno-adapted-args</arg>
+                            <arg>-Ywarn-unused:imports</arg>
+                            <arg>-Xlint:missing-interpolator</arg>
                             <arg>-Xfatal-warnings</arg>
                         </args>
                         <jvmArgs>

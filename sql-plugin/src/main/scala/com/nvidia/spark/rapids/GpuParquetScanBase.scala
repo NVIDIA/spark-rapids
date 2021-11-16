@@ -1012,6 +1012,7 @@ class MultiFileParquetPartitionReader(
 
   // The runner to copy blocks to offset of HostMemoryBuffer
   class ParquetCopyBlocksRunner(
+      taskContext: TaskContext,
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
@@ -1019,16 +1020,21 @@ class MultiFileParquetPartitionReader(
     extends Callable[(Seq[DataBlockBase], Long)] {
 
     override def call(): (Seq[DataBlockBase], Long) = {
-      val startBytesRead = fileSystemBytesRead()
-      val res = withResource(outhmb) { _ =>
-        withResource(new HostMemoryOutputStream(outhmb)) { out =>
-          withResource(file.getFileSystem(conf).open(file)) { in =>
-            copyBlocksData(in, out, blocks, offset)
+      TrampolineUtil.setTaskContext(taskContext)
+      try {
+        val startBytesRead = fileSystemBytesRead()
+        val res = withResource(outhmb) { _ =>
+          withResource(new HostMemoryOutputStream(outhmb)) { out =>
+            withResource(file.getFileSystem(conf).open(file)) { in =>
+              copyBlocksData(in, out, blocks, offset)
+            }
           }
         }
+        val bytesRead = fileSystemBytesRead() - startBytesRead
+        (res, bytesRead)
+      } finally {
+        TrampolineUtil.unsetTaskContext()
       }
-      val bytesRead = fileSystemBytesRead() - startBytesRead
-      (res, bytesRead)
     }
   }
 
@@ -1074,11 +1080,12 @@ class MultiFileParquetPartitionReader(
   }
 
   override def getBatchRunner(
+      taskContext: TaskContext,
       file: Path,
       outhmb: HostMemoryBuffer,
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long): Callable[(Seq[DataBlockBase], Long)] = {
-    new ParquetCopyBlocksRunner(file, outhmb, blocks, offset)
+    new ParquetCopyBlocksRunner(taskContext, file, outhmb, blocks, offset)
   }
 
   override final def getFileFormatShortName: String = "Parquet"
@@ -1197,7 +1204,9 @@ class MultiFileCloudParquetPartitionReader(
       hasInt96Timestamps: Boolean,
       clippedSchema: MessageType) extends HostMemoryBuffersWithMetaDataBase
 
-  private class ReadBatchRunner(filterHandler: GpuParquetFileFilterHandler,
+  private class ReadBatchRunner(
+      taskContext: TaskContext,
+      filterHandler: GpuParquetFileFilterHandler,
       file: PartitionedFile,
       conf: Configuration,
       filters: Array[Filter]) extends Callable[HostMemoryBuffersWithMetaDataBase] with Logging {
@@ -1213,6 +1222,15 @@ class MultiFileCloudParquetPartitionReader(
      * Note that the TaskContext is not set in these threads and should not be used.
      */
     override def call(): HostMemoryBuffersWithMetaData = {
+      TrampolineUtil.setTaskContext(taskContext)
+      try {
+        doRead()
+      } finally {
+        TrampolineUtil.unsetTaskContext()
+      }
+    }
+
+    private def doRead(): HostMemoryBuffersWithMetaData = {
       val startingBytesRead = fileSystemBytesRead()
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
       try {
@@ -1271,14 +1289,18 @@ class MultiFileCloudParquetPartitionReader(
   /**
    * File reading logic in a Callable which will be running in a thread pool
    *
+   * @param tc      task context to use
    * @param file    file to be read
    * @param conf    configuration
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
    */
-  override def getBatchRunner(file: PartitionedFile, conf: Configuration, filters: Array[Filter]):
-      Callable[HostMemoryBuffersWithMetaDataBase] = {
-    new ReadBatchRunner(filterHandler, file, conf, filters)
+  override def getBatchRunner(
+      tc: TaskContext,
+      file: PartitionedFile,
+      conf: Configuration,
+      filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
+    new ReadBatchRunner(tc, filterHandler, file, conf, filters)
   }
 
   /**

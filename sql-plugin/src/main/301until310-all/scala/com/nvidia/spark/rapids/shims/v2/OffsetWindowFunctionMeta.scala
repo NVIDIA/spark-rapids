@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, ExprMeta, GpuOverrides, RapidsConf, RapidsMeta}
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, Lag, Lead, Literal, OffsetWindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Lag, Lead, Literal, OffsetWindowFunction}
 import org.apache.spark.sql.types.IntegerType
 
 abstract class OffsetWindowFunctionMeta[INPUT <: OffsetWindowFunction] (
