@@ -132,9 +132,10 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   /**
    * Builds a function that can be used to filter batches prior to being decompressed.
-   * In most cases extending [[SimpleMetricsCachedBatchSerializer]] will provide the filter logic
-   * necessary. You will need to provide metrics for this to work. [[SimpleMetricsCachedBatch]]
-   * provides the APIs to hold those metrics and explains the metrics used, really just min and max.
+   * In most cases extending [[org.apache.spark.sql.columnar.SimpleMetricsCachedBatchSerializer]]
+   * will provide the filter logic necessary. You will need to provide metrics for this to work.
+   * [[org.apache.spark.sql.columnar.SimpleMetricsCachedBatch]] provides the APIs to hold those
+   * metrics and explains the metrics used, really just min and max.
    * Note that this is intended to skip batches that are not needed, and the actual filtering of
    * individual rows is handled later.
    * @param predicates the set of expressions to use for filtering.
