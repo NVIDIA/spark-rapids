@@ -1444,6 +1444,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     entry.get(conf)
   }
 
+  def get(key: String): String = {
+    try {
+      conf(key)
+    } catch {
+      case e: NoSuchElementException => throw new NoSuchElementException(key)
+    }
+  }
+
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).asJava
 

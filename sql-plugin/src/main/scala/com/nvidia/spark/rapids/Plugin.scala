@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
 import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
@@ -53,6 +54,7 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 object RapidsPluginUtils extends Logging {
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
   val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
+  val DRIVER_TIMEZONE_KEY = "spark.rapids.driver.user.timezone"
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
   private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
@@ -109,6 +111,8 @@ object RapidsPluginUtils extends Logging {
           s"the RAPIDS Accelerator. Please disable the RAPIDS Accelerator or use a supported " +
           s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
     }
+    // set driver timezone
+    conf.set(DRIVER_TIMEZONE_KEY, ZoneId.systemDefault().normalized().toString)
   }
 
   def loadProps(resourceName: String): Properties = {
@@ -178,6 +182,16 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
+
+      // Validate executor time zone to be "UTC" if the driver time zone is "UTC".
+      val driverTimezone = conf.get(RapidsPluginUtils.DRIVER_TIMEZONE_KEY)
+      if (driverTimezone == GpuOverrides.UTC_TIMEZONE_ID.toString) {
+        val executorTimezone = ZoneId.systemDefault().normalized()
+        if (executorTimezone != GpuOverrides.UTC_TIMEZONE_ID) {
+          throw new RuntimeException("Driver timezone is UTC. Set executor timezone " +
+              "to UTC as well. Add --conf spark.executor.extraJavaOptions=-Duser.timezone=UTC")
+        }
+      }
 
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
       // on executor startup.
