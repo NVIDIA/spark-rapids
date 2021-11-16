@@ -204,26 +204,35 @@ run_test() {
 }
 export -f run_test
 
-# integration tests
-if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-  # put most time-consuming tests at the head of queue
-  time_consuming_tests="join_test.py generate_expr_test.py parquet_write_test.py"
-  tests_list=$(find "$SCRIPT_PATH"/src/main/python/ -name "*_test.py" -printf "%f ")
-  tests=$(echo "$time_consuming_tests $tests_list" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
-  # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
-  #                      we can set it to "never" and print failed ones after finish running all tests if needed
-  # --group: print stderr after test finished for better readability
-  parallel --group --halt "now,fail=1" -j5 run_test ::: $tests
-else
-  run_test all
-fi
-# cudf_udf_test
-# disable cudf_udf test until https://github.com/rapidsai/cudf/issues/9622 get fixed
-#run_test cudf_udf_test
+# TEST_MODE
+# - IT_ONLY
+# - CUDF_UDF_ONLY
+# - ALL: IT+CUDF_UDF
+TEST_MODE=${TEST_MODE:-'IT_ONLY'}
+if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
+  # integration tests
+  if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
+    # put most time-consuming tests at the head of queue
+    time_consuming_tests="join_test.py generate_expr_test.py parquet_write_test.py"
+    tests_list=$(find "$SCRIPT_PATH"/src/main/python/ -name "*_test.py" -printf "%f ")
+    tests=$(echo "$time_consuming_tests $tests_list" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
+    # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
+    #                      we can set it to "never" and print failed ones after finish running all tests if needed
+    # --group: print stderr after test finished for better readability
+    parallel --group --halt "now,fail=1" -j5 run_test ::: $tests
+  else
+    run_test all
+  fi
 
-# Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
-if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
-  run_test cache_serializer
+  # Temporarily only run on Spark 3.1.1 (https://github.com/NVIDIA/spark-rapids/issues/3311)
+  if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
+    run_test cache_serializer
+  fi
+fi
+
+# cudf_udf_test
+if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+  run_test cudf_udf_test
 fi
 
 popd
