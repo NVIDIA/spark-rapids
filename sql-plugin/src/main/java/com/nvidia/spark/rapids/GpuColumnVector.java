@@ -1113,6 +1113,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return new RapidsHostColumnVector(type, cudfCv.copyToHost());
   }
 
+  public final RapidsNullSafeHostColumnVector copyToNullSafeHost() {
+    return new RapidsNullSafeHostColumnVector(copyToHost());
+  }
+
   @Override
   public final String toString() {
     return getBase().toString();

@@ -49,6 +49,8 @@ case class GpuRowBasedScalaUDF(
       }
     }
   }
+
+  override val checkNull: Boolean = false
 }
 
 object GpuScalaUDFMeta {

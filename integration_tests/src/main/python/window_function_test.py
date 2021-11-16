@@ -1044,3 +1044,11 @@ def test_window_rows_stddev(preceding, following):
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+@ignore_order
+def test_unbounded_to_unbounded_window():
+    # This is specifically to test a bug that caused overflow issues when calculating
+    # the range for some row based queries. The bug applied to more than just
+    # unbounded to unbounded, but this is the simplest to write
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.range(1024).selectExpr(
+        'SUM(id) OVER ()',
+        'COUNT(1) OVER ()'))
