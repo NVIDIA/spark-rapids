@@ -90,7 +90,7 @@ Basically it can print the logs which are the same as the driver logs with `spar
    
    Please refer to [config doc](../configs.md) for details of RAPIDS Accelerator parameters.
 
-4. Run the function `explainPotentialGPUPlan` on top of Dataframe.
+4. Run the function `explainPotentialGPUPlan` on the query DataFrame.
 
    For example:
 
