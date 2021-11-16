@@ -116,7 +116,6 @@ object QualificationInfoUtils extends Logging {
   //   val normaliseCountry = spark.udf.register("normalisedCountry",cleanCountry)
   // doesn't seem to put anything unique in the plan
   def genUDFFuncEventLog(spark: SparkSession, size: Int = 1000) = {
-    import spark.implicits._
     TrampolineUtil.withTempPath { jsonInputFile =>
       TrampolineUtil.withTempPath { jsonOutFile =>
         val userData = spark.createDataFrame(Seq(
@@ -169,7 +168,6 @@ object QualificationInfoUtils extends Logging {
         .config("spark.eventLog.dir", eventDir)
         .getOrCreate()
     }
-    import spark.implicits._
     if (logType.toLowerCase.equals("dataset")) {
       genDatasetEventLog(spark, size)
     } else if (logType.toLowerCase.equals("udfds")) {

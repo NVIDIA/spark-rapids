@@ -108,6 +108,9 @@ def is_before_spark_311():
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
+def is_before_spark_330():
+    return spark_version() < "3.3.0"
+
 def is_databricks91_or_later():
     spark = get_spark_i_know_what_i_am_doing()
     return spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "") >= "9.1"

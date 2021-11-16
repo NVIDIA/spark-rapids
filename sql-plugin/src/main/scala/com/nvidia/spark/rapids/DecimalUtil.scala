@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 
-import org.apache.spark.sql.types.{BooleanType, ByteType, DataType, Decimal, DecimalType, DoubleType, FloatType, IntegerType, LongType, ShortType}
+import org.apache.spark.sql.types._
 
 object DecimalUtil extends Arm {
 

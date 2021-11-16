@@ -22,7 +22,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{DType, GroupByAggregation, NvtxColor, Scalar, Table}
+import ai.rapids.cudf.{DType, NvtxColor}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, LongType, MapType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -406,7 +406,7 @@ class GpuHashAggregateIterator(
 
   /** Build an iterator that uses a sort-based approach to merge aggregated batches together. */
   private def buildSortFallbackIterator(): Iterator[ColumnarBatch] = {
-    logInfo("Falling back to sort-based aggregation with ${aggregatedBatches.size()} batches")
+    logInfo(s"Falling back to sort-based aggregation with ${aggregatedBatches.size()} batches")
     metrics.numTasksFallBacked += 1
     val aggregatedBatchIter = new Iterator[ColumnarBatch] {
       override def hasNext: Boolean = !aggregatedBatches.isEmpty

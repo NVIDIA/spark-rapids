@@ -753,10 +753,12 @@ class GpuRLikeMeta(
     override def tagExprForGpu(): Unit = {
       expr.right match {
         case Literal(str: UTF8String, _) =>
-          if (str.toString.contains("\u0000")) {
-            // see https://github.com/NVIDIA/spark-rapids/issues/3962
-            willNotWorkOnGpu("The GPU implementation of RLike does not " +
-              "support null characters in the pattern")
+          try {
+            // verify that we support this regex and can transpile it to cuDF format
+            new CudfRegexTranspiler().transpile(str.toString)
+          } catch {
+            case e: RegexUnsupportedException =>
+              willNotWorkOnGpu(e.getMessage)
           }
         case _ =>
           willNotWorkOnGpu(s"RLike with non-literal pattern is not supported on GPU")
@@ -787,7 +789,14 @@ case class GpuRLike(left: Expression, right: Expression)
       throw new IllegalStateException("Really should not be here, " +
         "Cannot have an invalid scalar value as right side operand in RLike")
     }
-    lhs.getBase.containsRe(pattern)
+    try {
+      val cudfRegex = new CudfRegexTranspiler().transpile(pattern)
+      lhs.getBase.containsRe(cudfRegex)
+    } catch {
+      case _: RegexUnsupportedException =>
+        throw new IllegalStateException("Really should not be here, " +
+          "regular expression should have been verified during tagging")
+    }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {

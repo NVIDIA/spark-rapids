@@ -352,7 +352,7 @@ object RapidsConf {
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
           "system use such as memory needed for kernels and kernel launches.")
       .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(ByteUnit.MiB.toBytes(1024))
+      .createWithDefault(ByteUnit.MiB.toBytes(256))
 
   val HOST_SPILL_STORAGE_SIZE = conf("spark.rapids.memory.host.spillStorageSize")
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data " +
@@ -737,12 +737,17 @@ object RapidsConf {
     .checkValues(ParquetReaderType.values.map(_.toString))
     .createWithDefault(ParquetReaderType.AUTO.toString)
 
+  /** List of schemes that are always considered cloud storage schemes */
+  private lazy val DEFAULT_CLOUD_SCHEMES =
+    Seq("abfs", "abfss", "dbfs", "gs", "s3", "s3a", "s3n", "wasbs")
+
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
-      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. Cloud based stores " +
-      "generally would be total separate from the executors and likely have a higher I/O read " +
-      "cost. Many times the cloud filesystems also get better throughput when you have multiple " +
-      "readers in parallel. This is used with spark.rapids.sql.format.parquet.reader.type")
+      s"filesystems. Schemes already included: ${DEFAULT_CLOUD_SCHEMES.mkString(", ")}. Cloud " +
+      "based stores generally would be total separate from the executors and likely have a " +
+      "higher I/O read cost. Many times the cloud filesystems also get better throughput when " +
+      "you have multiple readers in parallel. This is used with " +
+      "spark.rapids.sql.format.parquet.reader.type")
     .stringConf
     .toSequence
     .createOptional
@@ -1686,7 +1691,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
 
-  lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
+  lazy val getCloudSchemes: Seq[String] =
+    DEFAULT_CLOUD_SCHEMES ++ get(CLOUD_SCHEMES).getOrElse(Seq.empty)
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 

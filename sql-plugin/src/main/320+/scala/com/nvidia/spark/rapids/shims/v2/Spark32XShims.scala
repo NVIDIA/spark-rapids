@@ -23,6 +23,7 @@ import scala.collection.mutable.ListBuffer
 
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
+import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.arrow.memory.ReferenceManager
@@ -601,7 +602,7 @@ trait Spark32XShims extends SparkShims  with Logging {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
@@ -640,23 +641,8 @@ trait Spark32XShims extends SparkShims  with Logging {
       GpuOverrides.exec[InMemoryTableScanExec](
         "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
-            + TypeSig.ARRAY).nested(), TypeSig.all),
-        (scan, conf, p, r) => new SparkPlanMeta[InMemoryTableScanExec](scan, conf, p, r) {
-          override def tagPlanForGpu(): Unit = {
-            scan.relation.cacheBuilder.serializer match {
-              case _: com.nvidia.spark.ParquetCachedBatchSerializer => ()
-              case _ =>
-                willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
-            }
-          }
-
-          /**
-           * Convert InMemoryTableScanExec to a GPU enabled version.
-           */
-          override def convertToGpu(): GpuExec = {
-            GpuInMemoryTableScanExec(scan.attributes, scan.predicates, scan.relation)
-          }
-        }),
+            + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
+        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         JoinTypeChecks.equiJoinExecChecks,
@@ -717,7 +703,7 @@ trait Spark32XShims extends SparkShims  with Logging {
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_64).nested(),
+            TypeSig.DECIMAL_128_FULL).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
           override val childScans: scala.Seq[ScanMeta[_]] =
