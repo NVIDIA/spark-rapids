@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{GroupByAggregation, GroupByAggregationOnColumn}
+import ai.rapids.cudf.GroupByAggregation
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
