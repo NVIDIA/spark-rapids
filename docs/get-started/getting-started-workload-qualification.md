@@ -74,7 +74,7 @@ Basically it can return output which is the same as the driver logs with `spark.
    import com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan
    ```
 
-3. Enable Spark RAPIDS related parameters to allow supporting existing features.
+3. Enable RAPIDS Accelerator related parameters to allow supporting existing features.
    
    For example, if your jobs have `double`/`float`/`decimal` operators together with some scala UDFs, you can set 
    below parameters:
