@@ -40,7 +40,7 @@ CUDA_VERSION_MINOR=$(echo $CUDA_VERSION | tr -d '.' | cut -c 3); \
 && add-apt-repository ppa:deadsnakes/ppa \
 && apt update -y \
 && apt install -y \
-   build-essential git wget \
+   build-essential git rsync wget \
    gcc-${GCC_VERSION} g++-${GCC_VERSION} \
    openjdk-8-jdk maven tzdata \
    # CMake dependencies
