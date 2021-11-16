@@ -273,7 +273,7 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp_replace`
 
 These operations are disabled by default because of known incompatibilities between the Java regular expression 
-engine that Spark uses, and the cuDF regular expression engine on the GPU, and also because the regular expression 
+engine that Spark uses and the cuDF regular expression engine on the GPU, and also because the regular expression 
 kernels can potentially have high memory overhead.
 
 These operations can be enabled on the GPU with the following configuration settings:
