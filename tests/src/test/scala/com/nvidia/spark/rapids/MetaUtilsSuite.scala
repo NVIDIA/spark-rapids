@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.math.RoundingMode
 import java.util
 
-import ai.rapids.cudf.{ColumnView, ContiguousTable, DeviceMemoryBuffer, DType, HostColumnVector, Table}
+import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, DType, HostColumnVector, Table}
 import ai.rapids.cudf.HostColumnVector.{BasicType, StructData}
 import com.nvidia.spark.rapids.format.CodecType
 import org.scalatest.FunSuite

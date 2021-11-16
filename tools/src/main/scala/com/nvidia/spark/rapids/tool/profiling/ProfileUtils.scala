@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
-import scala.reflect.runtime.universe._
-
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.tool.ToolUtils
 

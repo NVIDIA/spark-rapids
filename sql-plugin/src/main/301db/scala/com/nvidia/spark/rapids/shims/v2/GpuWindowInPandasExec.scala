@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.{GpuBindReferences, GpuBoundReference, GpuProject
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecBase
-import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /*
  * This GpuWindowInPandasExec aims at accelerating the data transfer between

@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
-import org.apache.hadoop.conf.Configuration
-
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.rapids.tool.qualification._
 
