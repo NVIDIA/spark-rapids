@@ -216,7 +216,6 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   final def canThisBeReplaced: Boolean = cannotBeReplacedReasons.exists(_.isEmpty)
 
-
   /**
    * Returns true iff this must be replaced because its children have already been
    * replaced and this needs to also be replaced for compatibility.
