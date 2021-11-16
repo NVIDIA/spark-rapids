@@ -345,7 +345,7 @@ case class GpuFileSourceScanExec(
       driverMetrics("staticFilesNum") = filesNum
       driverMetrics("staticFilesSize") = filesSize
     }
-    if (relation.partitionSchemaOption.isDefined) {
+    if (relation.partitionSchema.nonEmpty) {
       driverMetrics("numPartitions") = partitions.length
     }
   }
@@ -368,7 +368,7 @@ case class GpuFileSourceScanExec(
       None
     }
   } ++ {
-    if (relation.partitionSchemaOption.isDefined) {
+    if (relation.partitionSchema.nonEmpty) {
       Map(
         NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
         "pruningTime" -> createTimingMetric(ESSENTIAL_LEVEL, "dynamic partition pruning time"))
@@ -494,7 +494,7 @@ case class GpuFileSourceScanExec(
       fsRelation: HadoopFsRelation,
       readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
       partitions: Seq[FilePartition]): RDD[InternalRow] = {
-    
+
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
       ShimLoader.getSparkShims.getFileScanRDD(fsRelation.sparkSession, readFile.get, partitions)
