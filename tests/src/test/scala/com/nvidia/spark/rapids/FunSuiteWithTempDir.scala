@@ -13,24 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.nvidia.spark.rapids
 
-package com.nvidia.spark.rapids.shims.spark311db
+import java.io.File
 
-import com.nvidia.spark.rapids.{DatabricksShimVersion, SparkShims}
+import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
-import org.apache.spark.SparkEnv
+// creates temp dir before test and deletes after test
+trait FunSuiteWithTempDir extends FunSuite with BeforeAndAfterEach {
+  val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
 
-object SparkShimServiceProvider {
-  val VERSION = DatabricksShimVersion(3, 1, 1)
-}
-
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  def matchesVersion(version: String): Boolean = {
-    SparkEnv.get.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "").startsWith("8.2.")
+  protected override def beforeEach(): Unit = {
+    TEST_FILES_ROOT.mkdirs()
   }
 
-  def buildShim: SparkShims = {
-    new Spark311dbShims()
+  protected override def afterEach(): Unit = {
+    org.apache.commons.io.FileUtils.deleteDirectory(TEST_FILES_ROOT)
   }
 }

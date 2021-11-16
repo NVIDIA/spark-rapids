@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shims.v2
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
-import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuBaseWindowExecMeta, GpuExec, GpuOverrides, GpuWindowExec, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBaseWindowExecMeta, RapidsConf, RapidsMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression, SortOrder}
 

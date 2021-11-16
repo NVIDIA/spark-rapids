@@ -111,7 +111,7 @@ object QualOutputWriter {
   val READ_FILE_FORMAT_TYPES_STR = "Unsupported Read File Formats and Types"
   val WRITE_DATA_FORMAT_STR = "Unsupported Write Data Format"
   val COMPLEX_TYPES_STR = "Complex Types"
-  val NESTED_TYPES_STR = "Unsupported Nested Types"
+  val NESTED_TYPES_STR = "Nested Complex Types"
   val READ_SCHEMA_STR = "Read Schema"
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
@@ -278,7 +278,8 @@ object QualOutputWriter {
       appInfo.appDuration.toString -> headersAndSizes(APP_DUR_STR),
       appInfo.executorCpuTimePercent.toString -> headersAndSizes(EXEC_CPU_PERCENT_STR),
       appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
-      stringIfempty(appInfo.potentialProblems) -> headersAndSizes(SQL_DUR_POT_PROBLEMS),
+      stringIfempty(appInfo.sqlDurationForProblematic.toString) ->
+          headersAndSizes(SQL_DUR_POT_PROBLEMS),
       stringIfempty(appInfo.failedSQLIds) -> headersAndSizes(SQL_IDS_FAILURES_STR),
       appInfo.readScorePercent.toString -> headersAndSizes(READ_SCORE_PERCENT_STR),
       stringIfempty(appInfo.readFileFormatScore.toString) ->

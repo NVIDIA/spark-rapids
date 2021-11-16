@@ -1,7 +1,7 @@
 # RAPIDS Accelerator For Apache Spark
-NOTE: For the latest stable [README.md](https://github.com/nvidia/spark-rapids/blob/main/README.md) ensure you are on the main branch. The RAPIDS Accelerator for Apache Spark provides a set of plugins for Apache Spark that leverage GPUs to accelerate processing via the RAPIDS libraries and UCX. Documentation on the current release can be found [here](https://nvidia.github.io/spark-rapids/). 
+NOTE: For the latest stable [README.md](https://github.com/nvidia/spark-rapids/blob/main/README.md) ensure you are on the main branch. The RAPIDS Accelerator for Apache Spark provides a set of plugins for Apache Spark that leverage GPUs to accelerate processing via the RAPIDS libraries and UCX. Documentation on the current release can be found [here](https://nvidia.github.io/spark-rapids/).
 
-The RAPIDS Accelerator for Apache Spark provides a set of plugins for 
+The RAPIDS Accelerator for Apache Spark provides a set of plugins for
 [Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing
 via the [RAPIDS](https://rapids.ai) libraries and [UCX](https://www.openucx.org/).
 
@@ -19,7 +19,7 @@ To get started tuning your job and get the most performance out of it please sta
 
 ## Configuration
 
-The plugin has a set of Spark configs that control its behavior and are documented 
+The plugin has a set of Spark configs that control its behavior and are documented
 [here](docs/configs.md).
 
 ## Issues
@@ -30,13 +30,13 @@ may file one [here](https://github.com/NVIDIA/spark-rapids/issues/new/choose).
 ## Download
 
 The jar files for the most recent release can be retrieved from the [download](docs/download.md)
-page. 
+page.
 
 ## Building From Source
 
 See the [build instructions in the contributing guide](CONTRIBUTING.md#building-from-source).
 
-## Testing 
+## Testing
 
 Tests are described [here](tests/README.md).
 
@@ -45,7 +45,7 @@ The RAPIDS Accelerator For Apache Spark does provide some APIs for doing zero co
 transfer into other GPU enabled applications.  It is described
 [here](docs/ml-integration.md).
 
-Currently, we are working with XGBoost to try to provide this integration out of the box. 
+Currently, we are working with XGBoost to try to provide this integration out of the box.
 
 You may need to disable RMM caching when exporting data to an ML library as that library
 will likely want to use all of the GPU's memory and if it is not aware of RMM it will not have
@@ -60,6 +60,21 @@ The profiling tool generates information which can be used for debugging and pro
 Information such as Spark version, executor information, properties and so on. This runs on either CPU or
 GPU generated event logs.
 
-Please refer to [spark qualification tool documentation](docs/spark-qualification-tool.md) 
+Please refer to [spark qualification tool documentation](docs/spark-qualification-tool.md)
 and [spark profiling tool documentation](docs/spark-profiling-tool.md)
 for more details on how to use the tools.
+
+## Dependency for External Projects
+
+If you need to develop some functionality on top of RAPIDS Accelerator For Apache Spark (we currently
+limit support to GPU-accelerated UDFs) we recommend you declare our distribution artifact
+as a `provided` dependency.
+
+```xml
+<dependency>
+    <groupId>com.nvidia</groupId>
+    <artifactId>rapids-4-spark_2.12</artifactId>
+    <version>21.12.0-SNAPSHOT</version>
+    <scope>provided</scope>
+</dependency>
+```

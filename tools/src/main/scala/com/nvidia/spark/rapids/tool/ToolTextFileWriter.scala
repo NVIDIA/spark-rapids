@@ -19,8 +19,6 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, FSDataOutputStream, Path}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.rapids.tool.ToolUtils
 
 /**
  * Class for writing local files, allows writing to distributed file systems.

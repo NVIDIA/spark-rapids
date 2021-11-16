@@ -25,7 +25,6 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait GpuPartitioning extends Partitioning with Arm {

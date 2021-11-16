@@ -26,7 +26,6 @@ import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.QueryStageExec
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
@@ -976,8 +975,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
     case _ => ExpressionContext.getRegularOperatorContext(this)
   }
 
+  val isFoldableNonLitAllowed: Boolean = false
+
   final override def tagSelfForGpu(): Unit = {
-    if (wrapped.foldable && !GpuOverrides.isLit(wrapped)) {
+    if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
       willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
         s"$wrapped is foldable and operates on non literals")
     }

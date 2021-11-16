@@ -17,11 +17,10 @@
 package org.apache.spark.sql.execution.datasources.parquet.rapids.shims.v2
 
 import java.time.ZoneId
-import java.util.PrimitiveIterator
 
 import org.apache.parquet.column.ColumnDescriptor
-import org.apache.parquet.column.page.{PageReader, PageReadStore}
-import org.apache.parquet.schema.{GroupType, LogicalTypeAnnotation, OriginalType, Type}
+import org.apache.parquet.column.page.PageReadStore
+import org.apache.parquet.schema.{GroupType, Type}
 
 import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy
