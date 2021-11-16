@@ -77,7 +77,11 @@ Basically it can return output which is the same as the driver logs with `spark.
    import com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan
    ```
 
-3. Enable RAPIDS Accelerator related parameters to allow supporting existing features.
+3. Enable optional RAPIDS Accelerator related parameters based on your setup.
+
+   Enabling optional parameters may allow more operations to run on the GPU but please understand the meaning and risk 
+   of above parameters before enabling it. Please refer to [configs doc](../configs.md) for details of RAPIDS 
+   Accelerator parameters.
    
    For example, if your jobs have `double`/`float`/`decimal` operators together with some Scala UDFs, you can set 
    the following parameters:
@@ -90,9 +94,6 @@ Basically it can return output which is the same as the driver logs with `spark.
    spark.conf.set("spark.rapids.sql.castDecimalToFloat.enabled",true)
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
-   
-   Please refer to [configs doc](../configs.md) for details of RAPIDS Accelerator parameters.
-   Note: Please understand the meaning and risk of above parameters before enabling it. 
 
 4. Run the function `explainPotentialGPUPlan` on the query DataFrame.
 
