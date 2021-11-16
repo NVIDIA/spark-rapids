@@ -319,8 +319,8 @@ as `nvidia/miggpu` you will also need to specify the config:
 --conf spark.rapids.gpu.resourceName=nvidia/miggpu
 ```
 
-This tells the RAPIDS Accelerator for Spark plugin to look for the Spark GPU resource assigned to
-it using the name `nvidia/miggpu`. If you are using the Spark config
+This tells the RAPIDS Accelerator for Apache Spark plugin to look for the Spark GPU resource
+assigned to it using the name `nvidia/miggpu`. If you are using the Spark config
 `spark.yarn.resourceGpuDeviceName` and using the normal `gpu` Spark resource name, this is not
 required.
 
