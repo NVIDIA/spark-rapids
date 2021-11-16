@@ -325,8 +325,9 @@ pipeline {
                     when {
                         beforeAgent true
                         beforeOptions true
-                        expression {
-                            major_ver >= 21 && minor_ver >= 8
+                        anyOf {
+                            expression { major_ver >= 21 && minor_ver >= 8 }
+                            expression { major_ver >= 22 }
                         }
                     }
 
