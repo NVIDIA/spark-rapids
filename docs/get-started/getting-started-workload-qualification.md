@@ -33,7 +33,9 @@ and workload qualification.
 If you have Spark event logs from prior runs of the applications on Spark 2.x or 3.x, you can use the
 [Qualification tool](../spark-qualification-tool.md) and [Profiling tool](../spark-profiling-tool.md) to analyze them.
 The qualification tool outputs the score, rank and some of the potentially not-supported features for each Spark application.
-Its output can help you focus on the top N Spark applications which are SQL heavy applications. 
+For example, the CSV output can output `Potential Problems`, `Unsupported Read File Formats and Types`, and
+`Unsupported Write Data Format` which are the indication of some not-supported features.
+Its output can help you focus on the top N Spark applications which are SQL heavy applications.
 
 The profiling tool outputs SQL plan metrics and also prints out actual query plans to provide more insights.
 The following example profiling tool output for a specific Spark application shows that it has a query with a large 
