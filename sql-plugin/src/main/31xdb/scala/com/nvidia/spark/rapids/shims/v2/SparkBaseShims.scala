@@ -386,7 +386,7 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
         "Databricks-specific window function exec, for \"running\" windows, " +
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
         ExecChecks(
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
             TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all,
           Map("partitionSpec" ->
