@@ -280,8 +280,9 @@ trait GpuExec extends SparkPlan with Arm {
     SEMAPHORE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SEMAPHORE_WAIT_TIME)
   )
 
-  // FIXME Will it be better to call this in child execs where UDFs may exist, instead of
-  // always iterating the expressions in every exec.
+  // FIXME Will it be better to call this in child execs where UDFs may exist, which requires
+  // listing all the execs that could have UDFs, instead of always iterating the expressions
+  // in every exec.
   private def udfRunTimeMetrics: Map[String, GpuMetric] = {
     var metric: Option[GpuMetric] = None
     expressions.foreach { expr =>
