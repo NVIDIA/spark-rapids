@@ -1383,6 +1383,9 @@ def compare_percentile_approx(df_fun, percentiles, conf):
         cpu_approx_percentile = cpu_approx_result['the_percentile']
         gpu_approx_percentile = gpu_approx_result['the_percentile']
 
+        print("cpu_approx_percentile = ", cpu_approx_percentile)
+        print("gpu_approx_percentile = ", gpu_approx_percentile)
+
         if exact_percentile is None:
             assert cpu_approx_percentile is None
             assert gpu_approx_percentile is None
