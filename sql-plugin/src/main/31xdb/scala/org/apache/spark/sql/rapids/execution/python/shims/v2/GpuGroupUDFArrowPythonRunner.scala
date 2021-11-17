@@ -19,31 +19,17 @@
 
 package org.apache.spark.sql.rapids.execution.python.shims.v2
 
-import java.io.{DataInputStream, DataOutputStream}
+import java.io.DataOutputStream
 import java.net.Socket
-import java.util.concurrent.atomic.AtomicBoolean
-
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.util.toPrettySQL
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner, GpuPythonHelper}
+import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner}
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 

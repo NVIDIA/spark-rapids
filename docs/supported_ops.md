@@ -9638,7 +9638,7 @@ are limited.
 <td rowSpan="3">RLike</td>
 <td rowSpan="3">`rlike`</td>
 <td rowSpan="3">RLike</td>
-<td rowSpan="3">This is disabled by default because The GPU implementation of rlike is not compatible with Apache Spark. See the compatibility guide for more information.</td>
+<td rowSpan="3">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
 <td rowSpan="3">project</td>
 <td>str</td>
 <td> </td>
@@ -9826,7 +9826,7 @@ are limited.
 <td rowSpan="4">RegExpReplace</td>
 <td rowSpan="4">`regexp_replace`</td>
 <td rowSpan="4">RegExpReplace support for string literal input patterns</td>
-<td rowSpan="4">None</td>
+<td rowSpan="4">This is disabled by default because the implementation is not 100% compatible. See the compatibility guide for more information.</td>
 <td rowSpan="4">project</td>
 <td>str</td>
 <td> </td>
@@ -9859,7 +9859,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>very limited regex support;<br/>Literal value only</em></td>
+<td><em>PS<br/>Literal value only</em></td>
 <td> </td>
 <td> </td>
 <td> </td>

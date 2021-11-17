@@ -50,8 +50,8 @@ class RegularExpressionParserSuite extends FunSuite {
   test("group") {
       assert(parse("(a)(b)") ===
         RegexSequence(ListBuffer(
-          RegexGroup(RegexSequence(ListBuffer(RegexChar('a')))),
-          RegexGroup(RegexSequence(ListBuffer(RegexChar('b')))))))
+          RegexGroup(capture = true, RegexSequence(ListBuffer(RegexChar('a')))),
+          RegexGroup(capture = true, RegexSequence(ListBuffer(RegexChar('b')))))))
   }
 
   test("character class") {
@@ -62,6 +62,19 @@ class RegularExpressionParserSuite extends FunSuite {
             RegexCharacterRange('a', 'z'),
             RegexChar('+'),
             RegexCharacterRange('A', 'Z'))))))
+  }
+
+  test("character classes containing ']'") {
+    // "[]a]" is a valid character class containing ']' and 'a'
+    assert(parse("[]a]") ===
+      RegexSequence(ListBuffer(
+        RegexCharacterClass(negated = false,
+          ListBuffer(RegexChar(']'), RegexChar('a'))))))
+    // "[a]]" is a valid character class "[a]" followed by character ']'
+    assert(parse("[a]]") ===
+      RegexSequence(ListBuffer(
+        RegexCharacterClass(negated = false,
+          ListBuffer(RegexChar('a'))), RegexChar(']'))))
   }
 
   test("hex digit") {
@@ -85,6 +98,24 @@ class RegularExpressionParserSuite extends FunSuite {
       RegexSequence(ListBuffer(RegexOctalChar("47"), RegexChar('7'))))
   }
 
+  test("group containing choice with repetition") {
+    assert(parse("(\t+|a)") == RegexSequence(ListBuffer(
+      RegexGroup(capture = true, RegexChoice(RegexSequence(ListBuffer(
+        RegexRepetition(RegexChar('\t'),SimpleQuantifier('+')))),
+        RegexSequence(ListBuffer(RegexChar('a'))))))))
+  }
+
+  test("group containing quantifier") {
+    val e = intercept[RegexUnsupportedException] {
+      parse("(?)")
+    }
+    assert(e.getMessage.startsWith("base expression cannot start with quantifier"))
+
+    assert(parse("(?:a?)") === RegexSequence(ListBuffer(
+      RegexGroup(capture = false, RegexSequence(ListBuffer(
+        RegexRepetition(RegexChar('a'), SimpleQuantifier('?'))))))))
+  }
+
   test("complex expression") {
     val ast = parse(
       "^" +            // start of line
@@ -105,51 +136,50 @@ class RegularExpressionParserSuite extends FunSuite {
       "$"                       // end of line
     )
     assert(ast ===
-      RegexSequence(ListBuffer(
-        RegexChar('^'),
-        RegexRepetition(
-          RegexCharacterClass(negated = false,
-            ListBuffer(RegexChar('+'), RegexEscaped('-'))), SimpleQuantifier('?')),
-        RegexGroup(RegexSequence(ListBuffer(
-          RegexGroup(RegexSequence(ListBuffer(
-            RegexGroup(RegexSequence(ListBuffer(
-              RegexGroup(RegexSequence(ListBuffer(
-                RegexRepetition(
-                  RegexCharacterClass(negated = false,
-                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+'))))),
-                RegexChar('|'),
-              RegexGroup(RegexSequence(ListBuffer(
-                RegexRepetition(
-                  RegexCharacterClass(negated = false,
-                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('*')),
-                RegexEscaped('.'),
-                RegexRepetition(RegexCharacterClass(negated = false,
-                  ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+'))))),
-                RegexChar('|'),
-                RegexGroup(RegexSequence(ListBuffer(RegexRepetition(
-                  RegexCharacterClass(negated = false,
-                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+')),
-                  RegexEscaped('.'),
+      RegexSequence(ListBuffer(RegexChar('^'),
+        RegexRepetition(RegexCharacterClass(negated = false, ListBuffer(
+          RegexChar('+'), RegexEscaped('-'))), SimpleQuantifier('?')),
+        RegexGroup(capture = true, RegexChoice(RegexSequence(ListBuffer(
+          RegexGroup(capture = true, RegexSequence(ListBuffer(
+            RegexGroup(capture = true, RegexChoice(RegexSequence(ListBuffer(
+              RegexGroup(capture = true, RegexSequence(ListBuffer(
+                RegexRepetition(RegexCharacterClass(negated = false, ListBuffer(
+                  RegexCharacterRange('0', '9'))), SimpleQuantifier('+'))))))),
+              RegexChoice(RegexSequence(ListBuffer(
+                RegexGroup(capture = true, RegexSequence(ListBuffer(
                   RegexRepetition(
-                    RegexCharacterClass(negated = false,
-                      ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('*')))))))),
-                  RegexRepetition(RegexGroup(RegexSequence(ListBuffer(
-                    RegexCharacterClass(negated = false,
-                      ListBuffer(RegexChar('e'),
-                  RegexChar('E'))),
+                    RegexCharacterClass(negated = false, ListBuffer(
+                      RegexCharacterRange('0', '9'))), SimpleQuantifier('*')), RegexEscaped('.'),
+                RegexRepetition(
+                    RegexCharacterClass(negated = false, ListBuffer(RegexCharacterRange('0', '9'))),
+                    SimpleQuantifier('+'))))))), RegexSequence(ListBuffer(
+                RegexGroup(capture = true, RegexSequence(ListBuffer(
+                RegexRepetition(
+                    RegexCharacterClass(negated = false, ListBuffer(RegexCharacterRange('0', '9'))),
+                    SimpleQuantifier('+')), RegexEscaped('.'),
+                RegexRepetition(RegexCharacterClass(negated = false,
+                    ListBuffer(RegexCharacterRange('0', '9'))),
+                    SimpleQuantifier('*')))))))))),
+                  RegexRepetition(
+              RegexGroup(capture = true, RegexSequence(ListBuffer(
+                RegexCharacterClass(negated = false, ListBuffer(RegexChar('e'), RegexChar('E'))),
                   RegexRepetition(RegexCharacterClass(negated = false,
                     ListBuffer(RegexChar('+'), RegexEscaped('-'))),SimpleQuantifier('?')),
                   RegexRepetition(RegexCharacterClass(negated = false,
-                    ListBuffer(RegexCharacterRange('0', '9'))),SimpleQuantifier('+'))))),
-                SimpleQuantifier('?')),
-            RegexRepetition(RegexCharacterClass(negated = false,
-              ListBuffer(RegexChar('f'), RegexChar('F'),
-                RegexChar('d'), RegexChar('D'))),SimpleQuantifier('?'))))),
-            RegexChar('|'), RegexChar('I'), RegexChar('n'), RegexChar('f'), RegexChar('|'),
-          RegexCharacterClass(negated = false, ListBuffer(RegexChar('n'), RegexChar('N'))),
-          RegexCharacterClass(negated = false, ListBuffer(RegexChar('a'), RegexChar('A'))),
-          RegexCharacterClass(negated = false, ListBuffer(RegexChar('n'), RegexChar('N')))))
-      ),
+                  ListBuffer(RegexCharacterRange('0', '9'))),
+                  SimpleQuantifier('+'))))), SimpleQuantifier('?')),
+            RegexRepetition(RegexCharacterClass(negated = false, ListBuffer(
+              RegexChar('f'), RegexChar('F'), RegexChar('d'), RegexChar('D'))),
+              SimpleQuantifier('?'))))))),
+          RegexChoice(RegexSequence(ListBuffer(
+            RegexChar('I'), RegexChar('n'), RegexChar('f'))),
+            RegexSequence(ListBuffer(
+              RegexCharacterClass(negated = false,
+                ListBuffer(RegexChar('n'), RegexChar('N'))),
+              RegexCharacterClass(negated = false,
+                ListBuffer(RegexChar('a'), RegexChar('A'))),
+              RegexCharacterClass(negated = false,
+                ListBuffer(RegexChar('n'), RegexChar('N')))))))),
     RegexChar('$'))))
   }
   

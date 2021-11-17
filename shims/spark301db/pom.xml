@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shims_2.12</artifactId>
-        <version>21.12.0-SNAPSHOT</version>
+        <version>22.02.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-shims-spark301db_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin Spark 3.0.1 Databricks Shim</name>
     <description>The RAPIDS SQL plugin for Apache Spark 3.0.1 Databricks Shim</description>
-    <version>21.12.0-SNAPSHOT</version>
+    <version>22.02.0-SNAPSHOT</version>
     <properties>
         <!-- don't move to the parent module shims due to conflicting tmp files -->
         <target.classifier/>
@@ -48,7 +48,7 @@
                             <target>
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/spark-${spark301db.version}-info.properties">
-                                    <arg value="${user.dir}/build/dependency-info.sh"/>
+                                    <arg value="${spark.rapids.source.basedir}/build/dependency-info.sh"/>
                                     <arg value="${cudf.version}"/>
                                     <arg value="${cuda.version}"/>
                                     <arg value="${spark301db.version}"/>

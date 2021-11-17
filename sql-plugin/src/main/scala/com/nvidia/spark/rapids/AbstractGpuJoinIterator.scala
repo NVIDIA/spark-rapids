@@ -23,7 +23,7 @@ import ai.rapids.cudf.{GatherMap, NvtxColor, NvtxRange, OutOfBoundsPolicy}
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType, LeftOuter, RightOuter}
+import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**

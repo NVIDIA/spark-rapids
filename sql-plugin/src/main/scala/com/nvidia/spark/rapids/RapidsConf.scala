@@ -738,12 +738,17 @@ object RapidsConf {
     .checkValues(ParquetReaderType.values.map(_.toString))
     .createWithDefault(ParquetReaderType.AUTO.toString)
 
+  /** List of schemes that are always considered cloud storage schemes */
+  private lazy val DEFAULT_CLOUD_SCHEMES =
+    Seq("abfs", "abfss", "dbfs", "gs", "s3", "s3a", "s3n", "wasbs")
+
   val CLOUD_SCHEMES = conf("spark.rapids.cloudSchemes")
     .doc("Comma separated list of additional URI schemes that are to be considered cloud based " +
-      "filesystems. Schemes already included: dbfs, s3, s3a, s3n, wasbs, gs. Cloud based stores " +
-      "generally would be total separate from the executors and likely have a higher I/O read " +
-      "cost. Many times the cloud filesystems also get better throughput when you have multiple " +
-      "readers in parallel. This is used with spark.rapids.sql.format.parquet.reader.type")
+      s"filesystems. Schemes already included: ${DEFAULT_CLOUD_SCHEMES.mkString(", ")}. Cloud " +
+      "based stores generally would be total separate from the executors and likely have a " +
+      "higher I/O read cost. Many times the cloud filesystems also get better throughput when " +
+      "you have multiple readers in parallel. This is used with " +
+      "spark.rapids.sql.format.parquet.reader.type")
     .stringConf
     .toSequence
     .createOptional
@@ -1346,7 +1351,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-21.12.0-SNAPSHOT.jar,cudf-21.12.0-SNAPSHOT-cuda11.jar' \
+        |${SPARK_HOME}/bin/spark --jars 'rapids-4-spark_2.12-22.02.0-SNAPSHOT.jar,cudf-22.02.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
@@ -1687,7 +1692,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val useArrowCopyOptimization: Boolean = get(USE_ARROW_OPT)
 
-  lazy val getCloudSchemes: Option[Seq[String]] = get(CLOUD_SCHEMES)
+  lazy val getCloudSchemes: Seq[String] =
+    DEFAULT_CLOUD_SCHEMES ++ get(CLOUD_SCHEMES).getOrElse(Seq.empty)
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
