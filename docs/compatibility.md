@@ -265,22 +265,43 @@ the end of the string.  This will be fixed in a future release. The issue is
 
 ## Regular Expressions
 
-### regexp_replace
+The following Apache Spark regular expression functions and expressions are supported on the GPU:
 
-The RAPIDS Accelerator for Apache Spark currently supports string literal matches, not wildcard
-matches for the `regexp_replace` function and will fall back to CPU if a regular expression pattern 
-is provided.
+- `RLIKE`
+- `regexp`
+- `regexp_like`
+- `regexp_replace`
 
-### RLike
+These operations are disabled by default because of known incompatibilities between the Java regular expression 
+engine that Spark uses and the cuDF regular expression engine on the GPU, and also because the regular expression 
+kernels can potentially have high memory overhead.
 
-The GPU implementation of `RLike` has the following known issues where behavior is not consistent with Apache Spark and
-this expression is disabled by default. It can be enabled setting `spark.rapids.sql.expression.RLike=true`.
+These operations can be enabled on the GPU with the following configuration settings:
 
-- `$` does not match the end of string if the string ends with a line-terminator 
+- `spark.rapids.sql.expression.RLike=true` (for `RLIKE`, `regexp`, and `regexp_like`)
+- `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
+
+Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
+CPU when the RAPIDS Accelerator determines that a pattern is either unsupported or would produce incorrect results on the GPU.
+
+Here are some examples of regular expression patterns that are not supported on the GPU and will fall back to the CPU.
+
+- Lazy quantifiers, such as `a*?`
+- Possessive quantifiers, such as `a*+`
+- Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
+  or `[a-z&&[^bc]]`
+- Word and non-word boundaries, `\b` and `\B`
+- Empty groups: `()`
+- Regular expressions containing null characters (unless the pattern is a simple literal string)
+- Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
+- with a choice (`^|a`) or when used anywhere in `regexp_replace` patterns.
+
+In addition to these cases that can be detected, there is also one known issue that can cause incorrect results:
+
+- `$` does not match the end of a string if the string ends with a line-terminator 
   ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
 
-`RLike` will fall back to CPU if any regular expressions are detected that are not supported on the GPU 
-or would produce different results on the GPU.
+Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
 ## Timestamps
 

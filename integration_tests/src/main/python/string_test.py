@@ -337,7 +337,8 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", "PROD")',
                 'REGEXP_REPLACE(a, "TEST", "")',
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
-                'REGEXP_REPLACE(a, "TEST", NULL)'))
+                'REGEXP_REPLACE(a, "TEST", NULL)'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_re_replace_null():
     gen = mk_str_gen('[\u0000 ]{0,2}TE[\u0000 ]{0,2}ST[\u0000 ]{0,2}')\
@@ -356,7 +357,8 @@ def test_re_replace_null():
                 'REGEXP_REPLACE(a, "\x00", "NULL")',
                 'REGEXP_REPLACE(a, "\0", "NULL")',
                 'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
-                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'))
+                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
@@ -470,6 +472,17 @@ def test_like_complex_escape():
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
+def test_regexp_replace():
+    gen = mk_str_gen('[abcd]{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "a", "A")',
+                'regexp_replace(a, "[^xyz]", "A")',
+                'regexp_replace(a, "([^x])|([^y])", "A")',
+                'regexp_replace(a, "(?:aa)+", "A")',
+                'regexp_replace(a, "a|b|c", "A")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
