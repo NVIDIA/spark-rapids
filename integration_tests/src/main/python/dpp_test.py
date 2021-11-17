@@ -81,7 +81,7 @@ _statements = [
     ''',
     '''
     SELECT f.key, sum(f.value)
-    FROM (SELECT *, struct(key) AS keys FROM {0} fact) f 
+    FROM (SELECT *, struct(key) AS keys FROM {0} fact) f
     JOIN (SELECT *, struct(key) AS keys FROM {1} dim) d
     ON f.keys = d.keys
     WHERE d.filter = {2}
@@ -93,11 +93,25 @@ _statements = [
 # When BroadcastExchangeExec is available on filtering side, and it can be reused:
 # DynamicPruningExpression(InSubqueryExec(value, SubqueryBroadcastExec)))
 @ignore_order
-@pytest.mark.parametrize('aqe_on', ['true', 'false'], ids=idfn)
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+def test_dpp_reuse_broadcast_exchange(store_format, s_index, spark_tmp_table_factory):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, store_format, length=10000)
+    filter_val = create_dim_table(dim_table, store_format, length=2000)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        # SubqueryBroadcastExec appears if we reuse broadcast exchange for DPP
+        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
+        conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', 'false')]))
+
+
+@ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_reuse_broadcast_exchange(aqe_on, store_format, s_index, spark_tmp_table_factory):
+def test_dpp_reuse_broadcast_exchange_aqe_on(store_format, s_index, spark_tmp_table_factory):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format, length=10000)
     filter_val = create_dim_table(dim_table, store_format, length=2000)
@@ -106,17 +120,12 @@ def test_dpp_reuse_broadcast_exchange(aqe_on, store_format, s_index, spark_tmp_t
         lambda spark: spark.sql(statement),
         # SubqueryBroadcastExec appears if we reuse broadcast exchange for DPP
         exist_classes='DynamicPruningExpression,SubqueryBroadcastExec',
-        conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_on)]))
+        conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', 'true')]))
 
 
 # When BroadcastExchange is not available and non-broadcast DPPs are forbidden, Spark will bypass it:
 # DynamicPruningExpression(Literal.TrueLiteral)
-@ignore_order
-@pytest.mark.parametrize('aqe_on', ['true', 'false'], ids=idfn)
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_bypass(aqe_on, store_format, s_index, spark_tmp_table_factory):
+def __dpp_bypass(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
     filter_val = create_dim_table(dim_table, store_format)
@@ -126,18 +135,28 @@ def test_dpp_bypass(aqe_on, store_format, s_index, spark_tmp_table_factory):
         # Bypass with a true literal, if we can not reuse broadcast exchange.
         exist_classes='DynamicPruningExpression',
         non_exist_classes='SubqueryExec,SubqueryBroadcastExec',
-        conf=dict(_bypass_conf + [('spark.sql.adaptive.enabled', aqe_on)]))
+        conf=dict(_bypass_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
+
+
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+def test_dpp_bypass(store_format, s_index, spark_tmp_table_factory):
+    __dpp_bypass(store_format, s_index, spark_tmp_table_factory, 'false')
+
+
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
+def test_dpp_bypass_aqe_on(store_format, s_index, spark_tmp_table_factory):
+    __dpp_bypass(store_format, s_index, spark_tmp_table_factory, 'true')
 
 
 # When BroadcastExchange is not available, but it is still worthwhile to run DPP,
 # then Spark will plan an extra Aggregate to collect filtering values:
 # DynamicPruningExpression(InSubqueryExec(value, SubqueryExec(Aggregate(...))))
-@ignore_order
-@pytest.mark.parametrize('aqe_on', ['true', 'false'], ids=idfn)
-@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
-@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
-@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_via_aggregate_subquery(aqe_on, store_format, s_index, spark_tmp_table_factory):
+def __dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
     filter_val = create_dim_table(dim_table, store_format)
@@ -146,16 +165,26 @@ def test_dpp_via_aggregate_subquery(aqe_on, store_format, s_index, spark_tmp_tab
         lambda spark: spark.sql(statement),
         # SubqueryExec appears if we plan extra subquery for DPP
         exist_classes='DynamicPruningExpression,SubqueryExec',
-        conf=dict(_no_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_on)]))
+        conf=dict(_no_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
-# When BroadcastExchange is not available, Spark will skip DPP if there is no potential benefit
 @ignore_order
-@pytest.mark.parametrize('aqe_on', ['true', 'false'], ids=idfn)
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+def test_dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory):
+    __dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory, 'false')
+
+
+@ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
-def test_dpp_skip(aqe_on, store_format, s_index, spark_tmp_table_factory):
+def test_dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory):
+    __dpp_via_aggregate_subquery(store_format, s_index, spark_tmp_table_factory, 'true')
+
+
+# When BroadcastExchange is not available, Spark will skip DPP if there is no potential benefit
+def __dpp_skip(store_format, s_index, spark_tmp_table_factory, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
     filter_val = create_dim_table(dim_table, store_format)
@@ -164,4 +193,19 @@ def test_dpp_skip(aqe_on, store_format, s_index, spark_tmp_table_factory):
         lambda spark: spark.sql(statement),
         # SubqueryExec appears if we plan extra subquery for DPP
         non_exist_classes='DynamicPruningExpression',
-        conf=dict(_dpp_fallback_conf + [('spark.sql.adaptive.enabled', aqe_on)]))
+        conf=dict(_dpp_fallback_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
+
+
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+def test_dpp_skip(store_format, s_index, spark_tmp_table_factory):
+    __dpp_skip(store_format, s_index, spark_tmp_table_factory, 'false')
+
+
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0+ AQE and DPP can be both enabled")
+def test_dpp_skip_aqe_on(store_format, s_index, spark_tmp_table_factory):
+    __dpp_skip(store_format, s_index, spark_tmp_table_factory, 'true')

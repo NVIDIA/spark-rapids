@@ -30,22 +30,22 @@ import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
-
 import org.apache.spark.SparkEnv
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.analysis.Resolver
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
+import org.apache.spark.sql.catalyst.expressions.{Abs, Alias, AnsiCast, Attribute, Cast, DynamicPruningExpression, ElementAt, Expression, ExprId, GetArrayItem, GetMapValue, Lag, Lead, Literal, NamedExpression, NullOrdering, PlanExpression, PythonUDF, RegExpReplace, ScalaUDF, SortDirection, SortOrder, SpecifiedWindowFrame, TimeAdd, WindowExpression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
-import org.apache.spark.sql.execution.{CommandResultExec, FileSourceScanExec, PartitionedFileUtil, SparkPlan}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, CommandResultExec, FileSourceScanExec, InSubqueryExec, PartitionedFileUtil, SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command._
@@ -603,10 +603,31 @@ trait Spark32XShims extends SparkShims {
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+
+          // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+          // if possible. Instead regarding filters as
+          // childExprs of current Meta, we create a new meta for SubqueryBroadcastExec. The
+          // reason is that whether the FileSourceScan can be replaced with GPU has
+          // nothing to do with whether its partitionFilters can run on GPU.
+          private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
+            filter.transformDown {
+              case dpe @ DynamicPruningExpression(inSub @
+                  InSubqueryExec(_, subBroadcast: SubqueryBroadcastExec, _, _)) =>
+                val subBcMeta = GpuOverrides.wrapAndTagPlan(subBroadcast, conf)
+                subBcMeta.tagForExplain()
+                val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+                dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+            }
+          }
+
           // partition filters and data filters are not run on the GPU
           override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
           override def tagPlanForGpu(): Unit = GpuFileSourceScanExec.tagSupport(this)
+
+          override def convertToCpu(): SparkPlan = {
+            wrapped.copy(partitionFilters = partitionFilters)
+          }
 
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
@@ -615,7 +636,7 @@ trait Spark32XShims extends SparkShims {
             val location = replaceWithAlluxioPathIfNeeded(
               conf,
               wrapped.relation,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.dataFilters)
 
             val newRelation = HadoopFsRelation(
@@ -630,7 +651,7 @@ trait Spark32XShims extends SparkShims {
               newRelation,
               wrapped.output,
               wrapped.requiredSchema,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,

@@ -3587,6 +3587,38 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
     ),
+    exec[SubqueryBroadcastExec](
+      "Plan to collect and transform the broadcast key values",
+      ExecChecks(TypeSig.all, TypeSig.all),
+      (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
+
+        override val childExprs: Seq[BaseExprMeta[_]] = Nil
+
+        override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
+
+        override def tagPlanForGpu(): Unit = s.child match {
+          case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
+            val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
+            exMeta.tagForGpu()
+            if (!exMeta.canThisBeReplaced) {
+              willNotWorkOnGpu("underlying BroadcastExchange can not run on the GPU.")
+            }
+          case _ =>
+            willNotWorkOnGpu("underlying BroadcastExchange can not run on the GPU.")
+        }
+
+        override def convertToCpu(): SparkPlan = s
+
+        override def convertToGpu(): GpuExec = s.child match {
+          case ex @ BroadcastExchangeExec(_, c2r: GpuColumnarToRowExecParent) =>
+            val exMeta = new GpuBroadcastMeta(ex.copy(child = c2r.child), conf, p, r)
+            val gpuEx = exMeta.convertToGpu().asInstanceOf[GpuBroadcastExchangeExec]
+            GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, gpuEx)
+          case _ =>
+            throw new IllegalStateException("should NOT reach here")
+        }
+      }
+    ),
     ShimLoader.getSparkShims.aqeShuffleReaderExec,
     exec[FlatMapCoGroupsInPandasExec](
       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +

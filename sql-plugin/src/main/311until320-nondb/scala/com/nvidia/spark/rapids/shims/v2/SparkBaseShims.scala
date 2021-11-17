@@ -407,10 +407,20 @@ abstract class SparkBaseShims extends Spark31XShims {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
+            val partitionFilters = wrapped.partitionFilters.map {
+              case dpe @ DynamicPruningExpression(inSub @
+                  InSubqueryExec(_, subBroadcast: SubqueryBroadcastExec, _, _)) =>
+                val subBcMeta = GpuOverrides.wrapPlan(subBroadcast, conf, Some(this))
+                val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+                dpe.copy(inSub.copy(plan = gpuSubBroadcast))
+              case expression =>
+                expression
+            }
+
             val location = replaceWithAlluxioPathIfNeeded(
               conf,
               wrapped.relation,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.dataFilters)
 
             val newRelation = HadoopFsRelation(
@@ -425,7 +435,7 @@ abstract class SparkBaseShims extends Spark31XShims {
               newRelation,
               wrapped.output,
               wrapped.requiredSchema,
-              wrapped.partitionFilters,
+              partitionFilters,
               wrapped.optionalBucketSet,
               wrapped.optionalNumCoalescedBuckets,
               wrapped.dataFilters,
