@@ -153,47 +153,6 @@ object GpuCast extends Arm {
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
-  def sanitizeStringToDecimal(
-      input: ColumnView,
-      ansiEnabled: Boolean): ColumnVector = {
-
-    // This regex gets applied to filter out strings that aren't fixed-point.
-    val VALID_DEC_REGEX =
-      "^" +                         // start of line
-      "[+\\-]?" +                   // optional + or - at start of string
-      "(" +
-        "(" +
-          "(" +
-            "([0-9]+)|" +           // digits, OR
-            "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
-            "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
-          ")" +
-          "([eE][+\\-]?[0-9]+)?" +  // exponent
-        ")" +
-      ")" +
-      "$"                           // end of line
-
-    withResource(input.strip()) { withoutWhitespace =>
-      // filter out any strings that are not valid fixed-point numbers according
-      // to the regex pattern
-      withResource(withoutWhitespace.matchesRe(VALID_DEC_REGEX)) { isFixedPoint =>
-        if (ansiEnabled) {
-          withResource(isFixedPoint.all()) { allMatch =>
-            // Check that all non-null values are valid floats.
-            if (allMatch.isValid && !allMatch.getBoolean) {
-              throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
-            }
-            withoutWhitespace.incRefCount()
-          }
-        } else {
-          withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-            isFixedPoint.ifElse(withoutWhitespace, nullString)
-          }
-        }
-      }
-    }
-  }
-
   def sanitizeStringToFloat(
       input: ColumnVector,
       ansiEnabled: Boolean): ColumnVector = {
@@ -826,9 +785,9 @@ object GpuCast extends Arm {
 
     val interimSparkDt = getInterimDecimalPromoteIfNeeded(dt)
     val interimDt = DecimalUtil.createCudfDecimal(interimSparkDt)
-    val isFixedPoints = withResource(GpuCast.sanitizeStringToDecimal(input, ansiEnabled)) {
+    val isFixedPoints = withResource(input.strip()) {
       // We further filter out invalid values using the cuDF isFixedPoint method.
-      sanitized => sanitized.isFixedPoint(interimDt)
+      _.isFixedPoint(interimDt)
     }
 
     withResource(isFixedPoints) { isFixedPoints =>
