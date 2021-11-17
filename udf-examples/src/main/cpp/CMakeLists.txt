@@ -20,7 +20,11 @@ file(DOWNLOAD https://raw.githubusercontent.com/rapidsai/rapids-cmake/branch-22.
      ${CMAKE_BINARY_DIR}/RAPIDS.cmake)
 include(${CMAKE_BINARY_DIR}/RAPIDS.cmake)
 
+include(rapids-cmake)
+include(rapids-cpm)
 include(rapids-cuda)
+include(rapids-export)
+include(rapids-find)
 
 # Use GPU_ARCHS if it is defined
 if(DEFINED GPU_ARCHS)
@@ -32,19 +36,6 @@ project(UDFEXAMPLESJNI VERSION 22.02.0 LANGUAGES C CXX CUDA)
 
 option(PER_THREAD_DEFAULT_STREAM "Build with per-thread default stream" OFF)
 option(BUILD_UDF_BENCHMARKS "Build the benchmarks" OFF)
-
-#################################################################################################
-# - CPM -----------------------------------------------------------------------------------------
-
-set(CPM_DOWNLOAD_VERSION 0.27.2)
-set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
-
-if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
-    message(STATUS "Downloading CPM.cmake")
-    file(DOWNLOAD https://github.com/TheLartians/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake ${CPM_DOWNLOAD_LOCATION})
-endif()
-
-include(${CPM_DOWNLOAD_LOCATION})
 
 ###################################################################################################
 # - build type ------------------------------------------------------------------------------------
@@ -92,8 +83,9 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -w --expt-extended-lambda --expt-relax
 # Ensure CUDA runtime is dynamic despite statically linking Arrow in libcudf
 set(CUDA_USE_STATIC_CUDA_RUNTIME OFF)
 
-CPMAddPackage(NAME  cudf
-        VERSION         "22.02.00"
+rapids_cpm_init()
+rapids_cpm_find(cudf 22.02.00
+        CPM_ARGS
         GIT_REPOSITORY  https://github.com/rapidsai/cudf.git
         GIT_TAG         branch-22.02
         GIT_SHALLOW     TRUE
