@@ -483,6 +483,28 @@ def test_regexp_replace():
                 'regexp_replace(a, "a|b|c", "A")'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
+def test_regexp():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp(a, "a{2}")',
+                'regexp(a, "a{1,3}")',
+                'regexp(a, "a{1,}")',
+                'regexp(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
+def test_regexp_like():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_like(a, "a{2}")',
+                'regexp_like(a, "a{1,3}")',
+                'regexp_like(a, "a{1,}")',
+                'regexp_like(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
