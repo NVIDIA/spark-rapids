@@ -1321,6 +1321,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = false)
 
+  val ENABLE_FAST_SAMPLE = conf("spark.rapids.sql.fast.sample")
+    .doc("Option to turn on fast sample. If enable it is inconsistent with CPU sample " +
+      "because of GPU sample algorithm is inconsistent with CPU.")
+    .booleanConf
+    .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1734,6 +1740,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
+
+  lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
