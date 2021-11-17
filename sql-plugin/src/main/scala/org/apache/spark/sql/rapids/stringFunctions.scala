@@ -755,7 +755,7 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, _) =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            new CudfRegexTranspiler().transpile(str.toString)
+            new CudfRegexTranspiler(replace = false).transpile(str.toString)
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -790,7 +790,7 @@ case class GpuRLike(left: Expression, right: Expression)
         "Cannot have an invalid scalar value as right side operand in RLike")
     }
     try {
-      val cudfRegex = new CudfRegexTranspiler().transpile(pattern)
+      val cudfRegex = new CudfRegexTranspiler(replace = false).transpile(pattern)
       lhs.getBase.containsRe(cudfRegex)
     } catch {
       case _: RegexUnsupportedException =>
@@ -808,6 +808,101 @@ case class GpuRLike(left: Expression, right: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def dataType: DataType = BooleanType
+}
+
+object GpuRegExpReplaceMeta {
+  def isSupportedRegExpReplacePattern(pattern: String): Boolean = {
+    try {
+      new CudfRegexTranspiler(replace = true).transpile(pattern)
+      true
+    } catch {
+      case _: RegexUnsupportedException => false
+    }
+  }
+}
+
+case class GpuRegExpReplace(
+    srcExpr: Expression,
+    searchExpr: Expression,
+    replaceExpr: Expression)
+  extends GpuTernaryExpression with ImplicitCastInputTypes {
+
+  override def dataType: DataType = srcExpr.dataType
+
+  override def inputTypes: Seq[DataType] = Seq(StringType, StringType, StringType)
+
+  override def first: Expression = srcExpr
+  override def second: Expression = searchExpr
+  override def third: Expression = replaceExpr
+
+  def this(srcExpr: Expression, searchExpr: Expression) = {
+    this(srcExpr, searchExpr, GpuLiteral("", StringType))
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuScalar): ColumnVector = {
+
+    searchExpr.getValue match {
+      case null =>
+        // Return original string if search string is null
+        strExpr.getBase.asStrings()
+      case pattern: UTF8String =>
+        try {
+          val cudfRegex = new CudfRegexTranspiler(replace = true).transpile(pattern.toString)
+          strExpr.getBase.replaceRegex(cudfRegex, replaceExpr.getBase)
+        } catch {
+          case _: RegexUnsupportedException =>
+            throw new IllegalStateException("Really should not be here, " +
+              "regular expression should have been verified during tagging")
+        }
+
+    }
+  }
+
+  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
+      val2: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(val0, numRows, srcExpr.dataType)) { val0Col =>
+      doColumnar(val0Col, val1, val2)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
 class SubstringIndexMeta(
