@@ -138,10 +138,13 @@ case class ApproxPercentileFromTDigestExpr(
           // (containing a single item) and then extract the child column from the resulting
           // array and return that (after converting from Double to finalDataType)
           withResource(cv.getBase.approxPercentile(Array(p))) { percentiles =>
+            GpuColumnVector.debug("approxPercentile(Array(p))", percentiles)
             withResource(percentiles.extractListElement(0)) { childView =>
+              GpuColumnVector.debug("approxPercentile(Array(p)) childView", childView)
               withResource(doCast(childView, DataTypes.DoubleType, finalDataType,
                   ansiMode = false, legacyCastToString = false,
                   stringToDateAnsiModeEnabled = false)) { childCv =>
+                GpuColumnVector.debug("approxPercentile(Array(p)) childCv", childCv)
                 GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
               }
             }
@@ -150,14 +153,18 @@ case class ApproxPercentileFromTDigestExpr(
         case Right(p) =>
           // array case - cast cuDF Array[Double] to Array[finalDataType]
           withResource(cv.getBase.approxPercentile(p)) { percentiles =>
+            GpuColumnVector.debug("approxPercentile(p)", percentiles)
             if (finalDataType == DataTypes.DoubleType) {
               GpuColumnVector.from(percentiles.incRefCount(), dataType)
             } else {
               withResource(percentiles.getChildColumnView(0)) { childView =>
+                GpuColumnVector.debug("approxPercentile(p) childView", childView)
                 withResource(doCast(childView, DataTypes.DoubleType, finalDataType,
                     ansiMode = false, legacyCastToString = false,
                     stringToDateAnsiModeEnabled = false)) { childCv =>
+                  GpuColumnVector.debug("approxPercentile(p) childCv", childCv)
                   withResource(percentiles.replaceListChild(childCv)) { x =>
+                    GpuColumnVector.debug("approxPercentile(p) replaceListChild", x)
                     GpuColumnVector.from(x.copyToColumnVector(), dataType)
                   }
                 }
