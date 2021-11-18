@@ -6,19 +6,18 @@ parent: Getting-Started
 ---
 # Getting Started on Spark workload qualification
 
-The RAPIDS Accelerator for Apache Spark does not support all the features which are supported in Apache Spark.
-If you plan to convert existing Spark workload from CPU to GPU, it is highly recommended that you do gap analysis 
-to figure out if there are any unsupported features such as functions, expressions, data types, data formats.
-After that we will know which workload is more suitable to GPU, which is called "workload qualification" here.
+The RAPIDS Accelerator for Apache Spark runs as many operations as possible on the GPU.  If there
+are operators which do not yet run on GPU, they will seamlessly fallback to the CPU.  There may be
+some performance overhead because of host memory to GPU memory transfer.  When converting an
+existing Spark workload from CPU to GPU, it is recommended to do an analysis to understand if there
+are any features (functions, expressions, data types, data formats) that do not yet run on the GPU.
+Understanding this will help prioritize workloads that are best suited to the GPU.
 
-If there are certain operators which can not run on GPU due to the current limitations, they will fallback to CPU mode.
-As a result, it may incur some performance overhead because of host memory <=> GPU memory transfer.
-However it is not critical to ensure all operations are supported by the GPU and significant performance benefits can 
-be gained before all operations are fully supported by the GPU. It all depends on how critical the portion that is 
-executing on the CPU is to the overall performance of the query.
+Significant performance benefits can be gained even if all operations are not yet fully supported by
+the GPU. It all depends on how critical the portion that is executing on the CPU is to the overall
+performance of the query.
 
-This article is to help you get familiar with the best practice and different tools we provide on how to do gap analysis 
-and workload qualification.
+This article describe the tools we provide and how to do gap analysis and workload qualification.
 
 ## 1. Qualification and Profiling tool
 
