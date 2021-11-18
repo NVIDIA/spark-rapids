@@ -21,6 +21,14 @@ import org.scalatest.FunSuite
 
 class RegularExpressionParserSuite extends FunSuite {
 
+  test("null pattern") {
+    assert(parse(null) === null)
+  }
+
+  test("empty pattern") {
+    assert(parse("") === RegexSequence(ListBuffer()))
+  }
+
   test("simple quantifier") {
     assert(parse("a{1}") ===
       RegexSequence(ListBuffer(

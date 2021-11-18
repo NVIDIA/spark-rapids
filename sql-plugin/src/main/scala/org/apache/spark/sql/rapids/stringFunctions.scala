@@ -772,6 +772,20 @@ class GpuRLikeMeta(
 case class GpuRLike(left: Expression, right: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant  {
 
+  private val cudfPattern = right.asInstanceOf[GpuLiteral].value match {
+    case pattern: UTF8String =>
+      try {
+        new CudfRegexTranspiler(replace = false).transpile(pattern.toString)
+      } catch {
+        case _: RegexUnsupportedException =>
+          throw new IllegalStateException("Really should not be here, " +
+            "regular expression should have been verified during tagging")
+      }
+    case _ =>
+      throw new IllegalStateException("Really should not be here, " +
+        "regular expression should have been verified during tagging")
+  }
+
   override def toString: String = s"$left gpurlike $right"
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
@@ -783,20 +797,7 @@ case class GpuRLike(left: Expression, right: Expression)
       "Cannot have a scalar as left side operand in RLike")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val pattern = if (rhs.isValid) {
-      rhs.getValue.asInstanceOf[UTF8String].toString
-    } else {
-      throw new IllegalStateException("Really should not be here, " +
-        "Cannot have an invalid scalar value as right side operand in RLike")
-    }
-    try {
-      val cudfRegex = new CudfRegexTranspiler(replace = false).transpile(pattern)
-      lhs.getBase.containsRe(cudfRegex)
-    } catch {
-      case _: RegexUnsupportedException =>
-        throw new IllegalStateException("Really should not be here, " +
-          "regular expression should have been verified during tagging")
-    }
+    lhs.getBase.containsRe(cudfPattern)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -823,6 +824,20 @@ case class GpuRegExpReplace(
   override def first: Expression = srcExpr
   override def second: Expression = searchExpr
   override def third: Expression = replaceExpr
+
+  private val cudfPattern = searchExpr.asInstanceOf[GpuLiteral].value match {
+    case pattern: UTF8String =>
+      try {
+        new CudfRegexTranspiler(replace = true).transpile(pattern.toString)
+      } catch {
+        case _: RegexUnsupportedException =>
+          throw new IllegalStateException("Really should not be here, " +
+            "regular expression should have been verified during tagging")
+      }
+    case _ =>
+      throw new IllegalStateException("Really should not be here, " +
+        "regular expression should have been verified during tagging")
+  }
 
   def this(srcExpr: Expression, searchExpr: Expression) = {
     this(srcExpr, searchExpr, GpuLiteral("", StringType))
@@ -863,21 +878,7 @@ case class GpuRegExpReplace(
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
 
-    searchExpr.getValue match {
-      case null =>
-        // Return original string if search string is null
-        strExpr.getBase.asStrings()
-      case pattern: UTF8String =>
-        try {
-          val cudfRegex = new CudfRegexTranspiler(replace = true).transpile(pattern.toString)
-          strExpr.getBase.replaceRegex(cudfRegex, replaceExpr.getBase)
-        } catch {
-          case _: RegexUnsupportedException =>
-            throw new IllegalStateException("Really should not be here, " +
-              "regular expression should have been verified during tagging")
-        }
-
-    }
+    strExpr.getBase.replaceRegex(cudfPattern, replaceExpr.getBase)
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
