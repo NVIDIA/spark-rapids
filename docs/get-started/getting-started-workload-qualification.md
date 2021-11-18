@@ -54,7 +54,7 @@ Since the two tools are only analyzing Spark event logs they do not have the det
 captured from a running Spark job.  However it is very convenient because you can run the tools on
 existing logs and do not need a GPU cluster to run the tools.
 
-## 2. Function `explainPotentialGPUPlan` 
+## 2. Function `explainPotentialGpuPlan` 
 
 ### Requirements
 
@@ -65,7 +65,7 @@ existing logs and do not need a GPU cluster to run the tools.
 ### How to use
 
 Starting with version 21.12 of the RAPIDS Accelerator, a new function named
-`explainPotentialGPUPlan` is added which can help us understand the potential GPU plan and if there
+`explainPotentialGpuPlan` is added which can help us understand the potential GPU plan and if there
 are any unsupported features on a CPU cluster.  Basically it can return output which is the same as
 the driver logs with `spark.rapids.sql.explain=all`.
 
@@ -81,7 +81,7 @@ the driver logs with `spark.rapids.sql.explain=all`.
 2. Test if the class can be successfully loaded or not.
 
    ```scala
-   import com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan
+   import com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan
    ```
 
 3. Enable optional RAPIDS Accelerator related parameters based on your setup.
@@ -102,24 +102,29 @@ the driver logs with `spark.rapids.sql.explain=all`.
    spark.conf.set("spark.rapids.sql.udfCompiler.enabled",true)
    ```
 
-4. Run the function `explainPotentialGPUPlan` on the query DataFrame.
+4. Run the function `explainPotentialGpuPlan` on the query DataFrame.
 
    For example:
 
    ```scala
-   scala> val df_multi=spark.sql("SELECT value82*value63 FROM df2 union SELECT value82+value63 FROM df2")
-   df_multi: org.apache.spark.sql.DataFrame = [(CAST(value82 AS DECIMAL(9,3)) * CAST(value63 AS DECIMAL(9,3))): decimal(15,5)]
-
-   scala> val output=com.nvidia.spark.rapids.ExplainPlan.explainPotentialGPUPlan(df_multi)
-   scala> println(output)
+   val jdbcDF = spark.read.format("jdbc").
+             option("driver", "com.mysql.jdbc.Driver").
+             option("url", "jdbc:mysql://localhost:3306/hive?useSSL=false").
+             option("dbtable", "TBLS").option("user", "xxx").
+             option("password", "xxx").
+             load()
+   jdbcDF.createOrReplaceTempView("t")
+   val mydf=spark.sql("select count(distinct TBL_ID) from t")
+   
+   val output=com.nvidia.spark.rapids.ExplainPlan.explainPotentialGpuPlan(mydf)
+   println(output)
    ```
 
    Below are sample driver log messages starting with `!` which indicate the unsupported features in
    this version:
    
    ```
-   !Exec <ProjectExec> cannot run on GPU because not all expressions can be replaced
-     !Expression <Multiply> (promote_precision(cast(value82#30 as decimal(9,3))) * promote_precision(cast(value63#31 as decimal(9,3)))) cannot run on GPU because The actual output precision of the multiply ilarge to fit on the GPU DecimalType(19,6)
+   !NOT_FOUND <RowDataSourceScanExec> cannot run on GPU because no GPU enabled version of operator class org.apache.spark.sql.execution.RowDataSourceScanExec could be found
    ```
 
 This log can show you which operators (on what data type) can not run on GPU and the reason.
