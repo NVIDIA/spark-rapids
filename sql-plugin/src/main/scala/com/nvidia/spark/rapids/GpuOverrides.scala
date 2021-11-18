@@ -638,7 +638,7 @@ object GpuOverrides extends Logging {
       case FloatType => true
       case DoubleType => true
       case DateType => true
-      case TimestampType => TypeChecks.areTimestampsSupported(ZoneId.systemDefault().normalized())
+      case TimestampType => TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
       case StringType => true
       case dt: DecimalType if allowDecimal => dt.precision <= DType.DECIMAL64_MAX_PRECISION
       case NullType => allowNull

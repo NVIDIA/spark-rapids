@@ -266,7 +266,7 @@ object GpuCSVScan {
         meta.willNotWorkOnGpu("GpuCSVScan does not support parsing timestamp types. To " +
           s"enable it please set ${RapidsConf.ENABLE_CSV_TIMESTAMPS} to true.")
       }
-      if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId.normalized())) {
+      if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu("Only UTC zone id is supported")
       }
       ShimLoader.getSparkShims.timestampFormatInRead(parsedOptions).foreach { tsFormat =>

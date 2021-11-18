@@ -185,12 +185,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Validate driver and executor time zone are same if the driver time zone is supported by
       // the plugin.
       val driverTimezone = conf.driverTimeZone match {
-        case Some(value) => ZoneId.of(value).normalized()
+        case Some(value) => ZoneId.of(value)
         case None => throw new RuntimeException(s"Driver time zone cannot be determined.")
       }
       if (TypeChecks.areTimestampsSupported(driverTimezone)) {
-        val executorTimezone = ZoneId.systemDefault().normalized()
-        if (executorTimezone != driverTimezone) {
+        val executorTimezone = ZoneId.systemDefault()
+        if (executorTimezone.normalized() != driverTimezone.normalized()) {
           throw new RuntimeException(s" Driver and executor timezone mismatch. " +
               s"Driver timezone is $driverTimezone and executor timezone is " +
               s"$executorTimezone. Set executor timezone to $driverTimezone.")

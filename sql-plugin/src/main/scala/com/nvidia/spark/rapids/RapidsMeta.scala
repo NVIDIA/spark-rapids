@@ -367,7 +367,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   protected def checkTimeZoneId(timeZoneId: Option[String]): Unit = {
     timeZoneId.foreach { zoneId =>
-      if (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault().normalized())) {
+      if (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault())) {
         willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
       }
     }
