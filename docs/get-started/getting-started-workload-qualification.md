@@ -50,8 +50,9 @@ good candidate application for the RAPIDS Accelerator.
 |1       |88   |9     |HashAggregate                                       |22222        |number of output rows               |600000000    |sum       |
 ```
 
-Since the two tools are only analyzing Spark event logs, it can not provide very accurate gap analysis information.
-However it is very convenient because you do not need a CPU or GPU Spark cluster to run them.
+Since the two tools are only analyzing Spark event logs they do not have the detail that can be
+captured from a running Spark job.  However it is very convenient because you can run the tools on
+existing logs and do not need a GPU cluster to run the tools.
 
 ## 2. Function `explainPotentialGPUPlan` 
 
