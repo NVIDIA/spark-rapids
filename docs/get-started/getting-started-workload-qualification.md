@@ -144,6 +144,12 @@ workloads on the GPU cluster with parameter `spark.rapids.sql.explain=all`.  The
 should be collected to check the not-supported messages.  This is the most accurate way to do gap
 analysis.
 
-
-
-
+For example, the log lines starting with `!` is the so-called not-supported messages:
+```
+!Exec <GenerateExec> cannot run on GPU because not all expressions can be replaced
+  !NOT_FOUND <ReplicateRows> replicaterows(sum#99L, gender#76) cannot run on GPU because no GPU enabled version of expression class 
+```
+The indentation indicates the parent and child relationship for those expressions.
+If not all of the children expressions can run on GPU, the parent can not run on GPU either.
+So above example shows the missing feature is `ReplicateRows` expression. So we filed a feature request 
+[issue-4104](https://github.com/NVIDIA/spark-rapids/issues/4104) based on 21.12 version.
