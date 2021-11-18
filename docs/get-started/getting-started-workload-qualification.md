@@ -124,7 +124,7 @@ the driver logs with `spark.rapids.sql.explain=all`.
 
 This log can show you which operators (on what data type) can not run on GPU and the reason.
 If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
-you should firstly understand the risk and applicability of that parameter based on [configs
+you should first understand the risk and applicability of that parameter based on [configs
 doc](../configs.md) and then enable that parameter and try the tool again.
 
 Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is
