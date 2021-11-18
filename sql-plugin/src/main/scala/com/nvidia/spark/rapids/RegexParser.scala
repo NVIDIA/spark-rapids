@@ -165,13 +165,12 @@ class RegexParser(pattern: String) {
           peek() match {
             case None =>
               throw new RegexUnsupportedException(
-                s"unexpected EOF while parsing escaped character", Some(pos))
+                s"Unclosed character class", Some(pos))
             case Some(ch) =>
-              ch match {
-                case '\\' | '^' | '-' | ']' | '+' =>
-                  // escaped metacharacter within character class
-                  characterClass.appendEscaped(consumeExpected(ch))
-              }
+              // this will usually be an escaped metacharacter such as
+              // '\\' | '^' | '-' | ']' | '+'
+              // however, other characters can be escaped even though not necessary
+              characterClass.appendEscaped(consumeExpected(ch))
           }
         case '\u0000' =>
           throw new RegexUnsupportedException(
@@ -203,7 +202,7 @@ class RegexParser(pattern: String) {
     }
     if (!characterClassComplete) {
       throw new RegexUnsupportedException(
-        s"unexpected EOF while parsing character class", Some(pos))
+        s"Unclosed character class", Some(pos))
     }
     characterClass
   }
@@ -440,10 +439,6 @@ class CudfRegexTranspiler(replace: Boolean) {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
-        case '^' | '$' if replace =>
-          // this is a bit extreme and it would be good to replace with finer-grained
-          // rules
-          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
 
         case _ =>
           regex
@@ -501,9 +496,16 @@ class CudfRegexTranspiler(replace: Boolean) {
           // falling back to CPU
           throw new RegexUnsupportedException(nothingToRepeat)
         }
-        if (replace && parts.length == 1 && (isRegexChar(parts.head, '^')
-            || isRegexChar(parts.head, '$'))) {
-          throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
+        if (parts.forall {
+          case RegexChar(ch) => ch == '^' || ch == '$'
+          case _ => false
+        }) {
+          throw new RegexUnsupportedException(
+            "sequences that only contain '^' or '$' are not supported")
+        }
+        if (isRegexChar(parts.last, '^')) {
+          throw new RegexUnsupportedException(
+            "sequences that end with '^' are not supported")
         }
         RegexSequence(parts.map(rewrite))
 
@@ -722,7 +724,7 @@ class RegexUnsupportedException(message: String, index: Option[Int] = None)
   extends SQLException {
   override def getMessage: String = {
     index match {
-      case Some(i) => s"$message at index $index"
+      case Some(i) => s"$message near index $i"
       case _ => message
     }
   }
