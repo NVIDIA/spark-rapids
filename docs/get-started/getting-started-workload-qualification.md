@@ -59,15 +59,7 @@ existing logs and do not need a GPU cluster to run the tools.
 ### Requirements
 
 - A Spark 3.x CPU cluster
-- A pair of `rapids-4-spark` and `cudf` jars
-- Ability to modify the existing Spark application code
-
-### How to use
-
-### Requirements
-
-- A Spark 3.x CPU cluster
-- A pair of `rapids-4-spark` and `cudf` jars
+- The `rapids-4-spark` and `cudf` [jars](../download.md)
 - Ability to modify the existing Spark application code
 
 ### How to use
