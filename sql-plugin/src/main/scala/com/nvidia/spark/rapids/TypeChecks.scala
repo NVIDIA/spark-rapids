@@ -341,7 +341,7 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          ZoneId.systemDefault().normalized() == GpuOverrides.UTC_TIMEZONE_ID
+          TypeChecks.areTimestampsSupported(ZoneId.systemDefault().normalized())
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType => allowDecimal &&
           check.contains(TypeEnum.DECIMAL) &&
@@ -403,7 +403,7 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
-            (ZoneId.systemDefault().normalized() != GpuOverrides.UTC_TIMEZONE_ID)) {
+            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault().normalized()))) {
           Seq(withChild(isChild, s"$dataType is not supported when the JVM system " +
               s"timezone is set to ${ZoneId.systemDefault()}. Set the timezone to UTC to enable " +
               s"$dataType support"))
@@ -738,6 +738,15 @@ abstract class TypeChecks[RET] {
     if (unsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
+  }
+}
+
+object TypeChecks {
+  /**
+   * Check if the time zone passed is supported by plugin.
+   */
+  def areTimestampsSupported(timezoneId: ZoneId): Boolean = {
+    timezoneId == GpuOverrides.UTC_TIMEZONE_ID
   }
 }
 
@@ -1653,17 +1662,6 @@ object ExprChecks {
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
           ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
-  }
-}
-
-object DriverTimeZone {
-
-  /**
-   * Check if the time zone of the driver is supported by plugin.
-   * @param driverZoneId time zone of the driver
-   */
-  def isSupportedByPlugin(driverZoneId: String): Boolean = {
-    driverZoneId == GpuOverrides.UTC_TIMEZONE_ID.toString
   }
 }
 

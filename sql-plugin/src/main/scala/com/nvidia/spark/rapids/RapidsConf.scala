@@ -441,8 +441,8 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   val DRIVER_TIMEZONE = conf("spark.rapids.driver.user.timezone")
-    .doc("This is to set driver timezone. Note that if the user provides this config " +
-      "it would be overridden in RapidsDriverPlugin with the correct driver timezone.")
+    .doc("This config is used to inform the executor plugin about the driver's timezone " +
+      "and is not intended to be set by the user.")
     .internal()
     .stringConf
     .createOptional
