@@ -17,7 +17,7 @@ Significant performance benefits can be gained even if all operations are not ye
 the GPU. It all depends on how critical the portion that is executing on the CPU is to the overall
 performance of the query.
 
-This article describe the tools we provide and how to do gap analysis and workload qualification.
+This article describes the tools we provide and how to do gap analysis and workload qualification.
 
 ## 1. Qualification and Profiling tool
 
