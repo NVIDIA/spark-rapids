@@ -20,15 +20,18 @@ import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExec}
+import ai.rapids.cudf.NvtxColor
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExec, GpuMetric, NvtxWithMetrics}
+import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL}
 import com.nvidia.spark.rapids.shims.v2.ShimUnaryExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, UnsafeProjection}
-import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
+
 
 case class GpuSubqueryBroadcastExec(
     name: String,
@@ -36,19 +39,35 @@ case class GpuSubqueryBroadcastExec(
     buildKeys: Seq[Expression],
     child: SparkPlan) extends BaseSubqueryExec with GpuExec with ShimUnaryExecNode {
 
-  require(child.isInstanceOf[GpuBroadcastExchangeExec])
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
+    COLLECT_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_COLLECT_TIME))
 
   @transient
   private lazy val relationFuture: Future[Array[InternalRow]] = {
-    Future {
-      val serBatch = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]().value
+    // relationFuture is used in "doExecute". Therefore we can get the execution id correctly here.
+    val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
+    val collectTime = gpuLongMetric(COLLECT_TIME)
 
-      val hostCols = GpuColumnVector.extractColumns(serBatch.batch).map(_.copyToHost())
-      withResource(new ColumnarBatch(hostCols.toArray, serBatch.numRows)) { hostCb =>
-        val toUnsafe = UnsafeProjection.create(output, output)
-        hostCb.rowIterator().asScala
-            .map(toUnsafe(_).copy().asInstanceOf[InternalRow])
-            .toArray
+    Future {
+      // This will run in another thread. Set the execution id so that we can connect these jobs
+      // with the correct execution.
+      SQLExecution.withExecutionId(sparkSession, executionId) {
+        withResource(new NvtxWithMetrics("broadcast collect", NvtxColor.GREEN,
+          collectTime)) { _ =>
+          val serBatch = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]().value
+          val hostCols = GpuColumnVector.extractColumns(serBatch.batch).map(_.copyToHost())
+
+          // call dataSize method after the set of internal batch of serializeBatch
+          gpuLongMetric("dataSize") += serBatch.dataSize
+
+          withResource(new ColumnarBatch(hostCols.toArray, serBatch.numRows)) { cb =>
+            val toUnsafe = UnsafeProjection.create(output, output)
+            cb.rowIterator().asScala
+                .map(toUnsafe(_).copy().asInstanceOf[InternalRow])
+                .toArray
+          }
+        }
       }
     }(GpuSubqueryBroadcastExec.executionContext)
   }

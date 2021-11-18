@@ -30,8 +30,8 @@ import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
-import org.apache.spark.SparkEnv
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -605,10 +605,11 @@ trait Spark32XShims extends SparkShims {
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
-          // if possible. Instead regarding filters as
-          // childExprs of current Meta, we create a new meta for SubqueryBroadcastExec. The
-          // reason is that whether the FileSourceScan can be replaced with GPU has
-          // nothing to do with whether its partitionFilters can run on GPU.
+          // if possible. Instead regarding filters as childExprs of current Meta, we create
+          // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+          // FileSourceScan is independent from the replacement of the partitionFilters. It is
+          // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
+          // are on the GPU. And vice versa.
           private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
             filter.transformDown {
               case dpe @ DynamicPruningExpression(inSub @

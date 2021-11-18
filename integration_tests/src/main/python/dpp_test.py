@@ -91,7 +91,7 @@ _statements = [
 
 
 # When BroadcastExchangeExec is available on filtering side, and it can be reused:
-# DynamicPruningExpression(InSubqueryExec(value, SubqueryBroadcastExec)))
+# DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
 @ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
@@ -102,11 +102,32 @@ def test_dpp_reuse_broadcast_exchange(store_format, s_index, spark_tmp_table_fac
     statement = _statements[s_index].format(fact_table, dim_table, filter_val)
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
-        # SubqueryBroadcastExec appears if we reuse broadcast exchange for DPP
+        # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
         exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', 'false')]))
 
 
+# The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
+@ignore_order
+@pytest.mark.allow_non_gpu('FileSourceScanExec')
+def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, 'parquet', length=10000)
+    filter_val = create_dim_table(dim_table, 'parquet', length=2000)
+    statement = _statements[0].format(fact_table, dim_table, filter_val)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
+        exist_classes='FileSourceScanExec,GpuSubqueryBroadcastExec,ReusedExchangeExec',
+        conf=dict(_exchange_reuse_conf + [
+            ('spark.sql.adaptive.enabled', 'false'),
+            ('spark.rapids.sql.format.parquet.read.enabled', 'false')]))
+
+
+# When AQE enabled, the broadcast exchange can not be reused in current, because spark-rapids
+# will plan GpuBroadcastToCpu for exchange reuse. Meanwhile, the original broadcast exchange is
+# simply replaced by GpuBroadcastExchange. Therefore, the reuse can not work since
+# GpuBroadcastToCpu is not semantically equal to GpuBroadcastExchange.
 @ignore_order
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
