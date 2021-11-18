@@ -810,17 +810,6 @@ case class GpuRLike(left: Expression, right: Expression)
   override def dataType: DataType = BooleanType
 }
 
-object GpuRegExpReplaceMeta {
-  def isSupportedRegExpReplacePattern(pattern: String): Boolean = {
-    try {
-      new CudfRegexTranspiler(replace = true).transpile(pattern)
-      true
-    } catch {
-      case _: RegexUnsupportedException => false
-    }
-  }
-}
-
 case class GpuRegExpReplace(
     srcExpr: Expression,
     searchExpr: Expression,
