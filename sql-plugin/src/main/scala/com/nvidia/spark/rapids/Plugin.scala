@@ -54,7 +54,6 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
 object RapidsPluginUtils extends Logging {
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
   val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
-  val DRIVER_TIMEZONE_KEY = "spark.rapids.driver.user.timezone"
 
   private val SQL_PLUGIN_NAME = classOf[SQLExecPlugin].getName
   private val UDF_PLUGIN_NAME = "com.nvidia.spark.udf.Plugin"
@@ -112,7 +111,7 @@ object RapidsPluginUtils extends Logging {
           s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
     }
     // set driver timezone
-    conf.set(DRIVER_TIMEZONE_KEY, ZoneId.systemDefault().normalized().toString)
+    conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
   }
 
   def loadProps(resourceName: String): Properties = {
@@ -183,13 +182,18 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
 
-      // Validate executor time zone to be "UTC" if the driver time zone is "UTC".
-      val driverTimezone = conf.get(RapidsPluginUtils.DRIVER_TIMEZONE_KEY)
-      if (driverTimezone == GpuOverrides.UTC_TIMEZONE_ID.toString) {
-        val executorTimezone = ZoneId.systemDefault().normalized()
-        if (executorTimezone != GpuOverrides.UTC_TIMEZONE_ID) {
-          throw new RuntimeException("Driver timezone is UTC. Set executor timezone " +
-              "to UTC as well. Add --conf spark.executor.extraJavaOptions=-Duser.timezone=UTC")
+      // Validate driver and executor time zone are same if the driver time zone is supported by
+      // the plugin.
+      val driverTimezone = conf.driverTimeZone match {
+        case Some(value) => value
+        case None => throw new RuntimeException(s"Driver time zone cannot be determined.")
+      }
+      if (DriverTimeZone.isSupportedByPlugin(driverTimezone)) {
+        val executorTimezone = ZoneId.systemDefault().normalized().toString
+        if (executorTimezone != driverTimezone) {
+          throw new RuntimeException(s" Driver and executor timezone mismatch. " +
+              s"Driver timezone is $driverTimezone and executor timezone is " +
+              s"$executorTimezone. Set executor timezone to $driverTimezone.")
         }
       }
 

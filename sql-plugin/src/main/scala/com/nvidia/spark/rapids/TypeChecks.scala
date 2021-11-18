@@ -1656,6 +1656,17 @@ object ExprChecks {
   }
 }
 
+object DriverTimeZone {
+
+  /**
+   * Check if the time zone of the driver is supported by plugin.
+   * @param driverZoneId time zone of the driver
+   */
+  def isSupportedByPlugin(driverZoneId: String): Boolean = {
+    driverZoneId == GpuOverrides.UTC_TIMEZONE_ID.toString
+  }
+}
+
 /**
  * Used for generating the support docs.
  */

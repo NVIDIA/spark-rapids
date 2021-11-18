@@ -440,6 +440,13 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
 
+  val DRIVER_TIMEZONE = conf("spark.rapids.driver.user.timezone")
+    .doc("This is to set driver timezone. Note that if the user provides this config " +
+      "it would be overridden in RapidsDriverPlugin with the correct driver timezone.")
+    .internal()
+    .stringConf
+    .createOptional
+
   // Internal Features
 
   val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
@@ -1730,6 +1737,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+
+  lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
 
