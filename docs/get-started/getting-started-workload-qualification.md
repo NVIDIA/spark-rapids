@@ -130,12 +130,13 @@ the driver logs with `spark.rapids.sql.explain=all`.
      !Expression <Multiply> (promote_precision(cast(value82#30 as decimal(9,3))) * promote_precision(cast(value63#31 as decimal(9,3)))) cannot run on GPU because The actual output precision of the multiply ilarge to fit on the GPU DecimalType(19,6)
    ```
 
-This log can show you which operators(on what data type) can not run on GPU and what is the reason.
-If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature, you should firstly 
-understand the risk and applicability of that parameter based on [configs doc](../configs.md) and then enable that 
-parameter and try the tool again.
+This log can show you which operators (on what data type) can not run on GPU and the reason.
+If it shows a specific RAPIDS Accelerator parameter which can be turned on to enable that feature,
+you should firstly understand the risk and applicability of that parameter based on [configs
+doc](../configs.md) and then enable that parameter and try the tool again.
 
-Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is pretty accurate.
+Since its output is directly based on specific version of `rapids-4-spark` jar, the gap analysis is
+pretty accurate.
 
 ## 3. Run Spark applications with Spark RAPIDS Accelerator on a GPU Spark Cluster
 
