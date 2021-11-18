@@ -1,0 +1,39 @@
+version = "1.0.0"
+ 
+[oss]
+ 
+[[oss.allowlist]]
+cve-id = "CVE-2019-17571"
+package = "Apache Log4j"
+versions = ["1.2.17"]
+jira = "PSIRT-505"
+comment = "Not use the log4j SocketServer (spark doesn’t either)"
+exception_status = "approved"
+exception_expiration = 2022-02-01
+
+[[oss.allowlist]]
+cve-id = "BDSA-2017-0180"
+package = "Apache Log4j"
+versions = ["1.2.17"]
+jira = "PSIRT-505"
+comment = "Not use log4j as remote logging server"
+exception_status = "approved"
+exception_expiration = 2022-02-01
+
+[[oss.allowlist]]
+cve-id = "CVE-2017-7657"
+package = "Jetty: Java based HTTP/1.x, HTTP/2, Servlet, WebSocket Server"
+versions = ["6.1.26"]
+jira = "PSIRT-505"
+comment = "Spark Rapids plugin doesn’t use Jetty at all. It's picking up as Spark dependencies."
+exception_status = "approved"
+exception_expiration = 2022-02-01
+
+[[oss.allowlist]]
+cve-id = "CVE-2017-7658"
+package = "Jetty: Java based HTTP/1.x, HTTP/2, Servlet, WebSocket Server"
+versions = ["6.1.26"]
+jira = "PSIRT-505"
+comment = "Spark Rapids plugin doesn’t use Jetty at all. It's picking up as Spark dependencies."
+exception_status = "approved"
+exception_expiration = 2022-02-01
