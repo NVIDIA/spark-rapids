@@ -77,7 +77,8 @@ Starting with version 21.12 of the RAPIDS Accelerator, a new function named
 are any unsupported features on a CPU cluster.  Basically it can return output which is the same as
 the driver logs with `spark.rapids.sql.explain=all`.
 
-1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in Spark related classpath.
+1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in the
+   Spark classpath.
 
    For example:
 
