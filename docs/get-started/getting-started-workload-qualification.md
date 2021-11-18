@@ -64,9 +64,18 @@ existing logs and do not need a GPU cluster to run the tools.
 
 ### How to use
 
-Starting with version 21.12 of the RAPIDS Accelerator, a new function named `explainPotentialGPUPlan` is added which can help us understand 
-the potential GPU plan and if there are any not-supported features on a CPU cluster.
-Basically it can return output which is the same as the driver logs with `spark.rapids.sql.explain=all`.
+### Requirements
+
+- A Spark 3.x CPU cluster
+- A pair of `rapids-4-spark` and `cudf` jars
+- Ability to modify the existing Spark application code
+
+### How to use
+
+Starting with version 21.12 of the RAPIDS Accelerator, a new function named
+`explainPotentialGPUPlan` is added which can help us understand the potential GPU plan and if there
+are any unsupported features on a CPU cluster.  Basically it can return output which is the same as
+the driver logs with `spark.rapids.sql.explain=all`.
 
 1. In `spark-shell`, add the `rapids-4-spark` and `cudf` jars into --jars option or put them in Spark related classpath.
 
