@@ -140,17 +140,17 @@ pretty accurate.
 
 ## 3. Run Spark applications with Spark RAPIDS Accelerator on a GPU Spark Cluster
 
-### Requirement
+### Requirements
 
 - A Spark 3.x GPU cluster
-- A pair of `rapids-4-spark` and `cudf` jars
+- The `rapids-4-spark` and `cudf` [jars](../download.md)
 
 ### How to use
 
-Follow the getting-started guides to start a Spark 3+ GPU cluster and run the existing Spark workloads on the GPU 
-cluster with parameter `spark.rapids.sql.explain=all`.
-The Spark driver log should be collected to check the not-supported messages.
-This is the most accurate way to do gap analysis.
+Follow the getting-started guides to start a Spark 3+ GPU cluster and run the existing Spark
+workloads on the GPU cluster with parameter `spark.rapids.sql.explain=all`.  The Spark driver log
+should be collected to check the not-supported messages.  This is the most accurate way to do gap
+analysis.
 
 
 
