@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeS
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayData, TypeUtils}
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.aggregate.GpuSum
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -627,13 +627,15 @@ case class GpuCheckOverflowAfterSum(
   override def children: Seq[Expression] = Seq(data, isEmpty)
 }
 
-case class GpuSum(child: Expression,
-    resultType: DataType,
-    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
-  extends GpuAggregateFunction with ImplicitCastInputTypes
+trait GpuSumBase extends GpuAggregateFunction with ImplicitCastInputTypes
       with GpuBatchedRunningWindowWithFixer
       with GpuAggregateWindowFunction
       with GpuRunningWindowFunction {
+
+  val child: Expression
+  val resultType: DataType
+  val failOnErrorOverride: Boolean
+  val extraDecimalOverflowChecks: Boolean
 
   private lazy val zeroDec = {
     val dt = resultType.asInstanceOf[DecimalType]
@@ -641,14 +643,15 @@ case class GpuSum(child: Expression,
   }
 
   override lazy val initialValues: Seq[GpuLiteral] = resultType match {
-    case _: DecimalType => Seq(zeroDec, GpuLiteral(true, BooleanType))
+    case _: DecimalType if extraDecimalOverflowChecks =>
+      Seq(zeroDec, GpuLiteral(true, BooleanType))
     case _ => Seq(GpuLiteral(null, resultType))
   }
 
   // we need to cast to `resultType` here, since Spark is not widening types
   // as done before Spark 3.2.0. See CudfSum for more info.
   override lazy val inputProjection: Seq[Expression] = resultType match {
-    case _: DecimalType =>
+    case _: DecimalType if extraDecimalOverflowChecks =>
       // Spark tracks null columns through a second column isEmpty for decimal.
       Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, resultType)), GpuIsNull(child))
     case _ => Seq(GpuCast(child, resultType))
@@ -658,12 +661,13 @@ case class GpuSum(child: Expression,
   private lazy val updateIsEmpty = new CudfMin(BooleanType)
 
   override lazy val updateAggregates: Seq[CudfAggregate] = resultType match {
-    case _: DecimalType => Seq(updateSum, updateIsEmpty)
+    case _: DecimalType if extraDecimalOverflowChecks =>
+      Seq(updateSum, updateIsEmpty)
     case _ => Seq(updateSum)
   }
 
   override lazy val postUpdate: Seq[Expression] = resultType match {
-    case dt: DecimalType =>
+    case dt: DecimalType if extraDecimalOverflowChecks =>
       Seq(GpuCheckOverflow(updateSum.attr, dt, !failOnErrorOverride), updateIsEmpty.attr)
     case _ => postUpdateAttr
   }
@@ -673,12 +677,14 @@ case class GpuSum(child: Expression,
   // Used for Decimal overflow detection
   private lazy val isEmpty = AttributeReference("isEmpty", BooleanType)()
   override lazy val aggBufferAttributes: Seq[AttributeReference] = resultType match {
-    case _: DecimalType => sum :: isEmpty :: Nil
+    case _: DecimalType if extraDecimalOverflowChecks =>
+      sum :: isEmpty :: Nil
     case _ => sum :: Nil
   }
 
   override lazy val preMerge: Seq[Expression] = resultType match {
-    case _: DecimalType => Seq(sum, isEmpty, GpuIsNull(sum))
+    case _: DecimalType if extraDecimalOverflowChecks =>
+      Seq(sum, isEmpty, GpuIsNull(sum))
     case _ => aggBufferAttributes
   }
 
@@ -690,13 +696,13 @@ case class GpuSum(child: Expression,
   // Cudf does not have such an aggregation, so for merge we have to work around that similar to
   // what happens with isEmpty
   override lazy val mergeAggregates: Seq[CudfAggregate] = resultType match {
-    case _: DecimalType =>
+    case _: DecimalType if extraDecimalOverflowChecks =>
       Seq(mergeSum, mergeIsEmpty, mergeIsOverflow)
     case _ => Seq(mergeSum)
   }
 
   override lazy val postMerge: Seq[Expression] = resultType match {
-    case _: DecimalType =>
+    case _: DecimalType if extraDecimalOverflowChecks =>
       Seq(GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, resultType), mergeSum.attr),
         mergeIsEmpty.attr)
     case _ => postMergeAttr
@@ -704,7 +710,11 @@ case class GpuSum(child: Expression,
 
   override lazy val evaluateExpression: Expression = resultType match {
     case dt: DecimalType =>
-      GpuCheckOverflowAfterSum(sum, isEmpty, dt, !failOnErrorOverride)
+      if (extraDecimalOverflowChecks) {
+        GpuCheckOverflowAfterSum(sum, isEmpty, dt, !failOnErrorOverride)
+      } else {
+        GpuCheckOverflow(sum, dt, !failOnErrorOverride)
+      }
     case _ => sum
   }
 

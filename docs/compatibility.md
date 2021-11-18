@@ -113,8 +113,11 @@ When Apache Spark does a sum aggregation on decimal values it will store the res
 with a precision that is the input precision + 10, but with a maximum precision of 38. The table
 below shows the number of rows/values in an aggregation before an overflow is possible,
 and the number of rows/values in the aggregation before an overflow might not be detected.
-Please note that these are for the worst case situations, meaning all the values in the sum were
-either the largest or smallest values possible to be stored in the input type. In the common
+The numbers are for Spark 3.1.0 and above after a number of fixes were put in place, please see
+[SPARK-28067](https://issues.apache.org/jira/browse/SPARK-28067) and
+[SPARK-32018](https://issues.apache.org/jira/browse/SPARK-32018) for more information. 
+Please also note that these are for the worst case situations, meaning all the values in the sum 
+were either the largest or smallest values possible to be stored in the input type. In the common
 case, where the numbers are smaller, or vary between positive and negative values, many more
 rows/values can be processed without any issues.
 
