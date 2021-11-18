@@ -122,7 +122,8 @@ the driver logs with `spark.rapids.sql.explain=all`.
    scala> println(output)
    ```
 
-   Below are sample driver log messages starting with `!` which indicate the unsupported features in this version:
+   Below are sample driver log messages starting with `!` which indicate the unsupported features in
+   this version:
    
    ```
    !Exec <ProjectExec> cannot run on GPU because not all expressions can be replaced
