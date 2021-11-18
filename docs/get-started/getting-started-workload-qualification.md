@@ -56,11 +56,11 @@ existing logs and do not need a GPU cluster to run the tools.
 
 ## 2. Function `explainPotentialGPUPlan` 
 
-### Requirement
+### Requirements
 
 - A Spark 3.x CPU cluster
 - A pair of `rapids-4-spark` and `cudf` jars
-- Need to modify the existing Spark application code
+- Ability to modify the existing Spark application code
 
 ### How to use
 
