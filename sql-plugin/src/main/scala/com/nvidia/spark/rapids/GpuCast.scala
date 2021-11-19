@@ -72,9 +72,9 @@ final class CastExprMeta[INPUT <: CastBase](
         willNotWorkOnGpu(buildTagMessage(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES))
       case (dt: DecimalType, _: StringType) =>
         if (!conf.isCastDecimalToStringEnabled) {
-          willNotWorkOnGpu("The GPU does NOT produce exact same string as Spark produces, " +
-              s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true for semantically " +
-              s"equivalent decimal strings produced on the GPU.")
+          willNotWorkOnGpu("the GPU does not produce the exact same string as Spark produces, " +
+              s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true if semantically " +
+              s"equivalent decimal strings are sufficient for your application.")
         }
         if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
           willNotWorkOnGpu(s"decimal to string with a " +
