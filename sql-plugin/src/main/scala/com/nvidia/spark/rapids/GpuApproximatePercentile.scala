@@ -131,7 +131,9 @@ case class ApproxPercentileFromTDigestExpr(
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val expr = child.asInstanceOf[GpuExpression]
+    GpuColumnVector.debug("input t-digest batch", batch)
     withResource(GpuExpressionsUtils.columnarEvalToColumn(expr, batch)) { cv =>
+      GpuColumnVector.debug("input t-digest column", cv.getBase)
       percentiles match {
         case Left(p) =>
           // For the scalar case, we still pass cuDF an array of percentiles
