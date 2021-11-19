@@ -481,28 +481,17 @@ case class BoundGpuWindowFunction(
     aggFunc.windowAggregation(inputs).overWindow(windowOpts)
   }
 
+  def windowOutput(cv: cudf.ColumnVector): cudf.ColumnVector = {
+    val aggFunc = windowFunc.asInstanceOf[GpuAggregateWindowFunction]
+    aggFunc.windowOutput(cv)
+  }
+
   val dataType: DataType = windowFunc.dataType
 }
 
 case class ParsedBoundary(isUnbounded: Boolean, valueAsLong: Long)
 
 object GroupedAggregations extends Arm {
-  // In some cases a scan or a group by scan produces a different type than window would for the
-  // same aggregation. A lot of this is because scan has a limited set of aggregations so we can
-  // end up using a SUM aggregation to work around other issues, and cudf rightly makes the output
-  // an INT64 instead of an INT32. This is here to fix that up.
-  private def castIfNeeded(
-      col: cudf.ColumnVector,
-      dataType: DataType): GpuColumnVector = {
-    dataType match {
-      case _: ArrayType | _: StructType | _: MapType =>
-        GpuColumnVector.from(col, dataType).incRefCount()
-      case other =>
-        val dtype = GpuColumnVector.getNonNestedRapidsType(other)
-        GpuColumnVector.from(col.castTo(dtype), dataType)
-    }
-  }
-
   /**
    * Get the window options for an aggregation
    * @param orderSpec the order by spec
@@ -713,11 +702,11 @@ class GroupedAggregations extends Arm {
           }
           withResource(result) { result =>
             functions.zipWithIndex.foreach {
-              case ((_, outputIndexes), resultIndex) =>
+              case ((func, outputIndexes), resultIndex) =>
                 val aggColumn = result.getColumn(resultIndex)
 
                 outputIndexes.foreach { outIndex =>
-                  outputColumns(outIndex) = aggColumn.incRefCount()
+                  outputColumns(outIndex) = func.windowOutput(aggColumn)
                 }
             }
           }
@@ -967,10 +956,9 @@ class GroupedAggregations extends Arm {
   }
 
   /**
-   * Turn the final result of the aggregations into a ColumnarBatch. Because of some differences in
-   * output types between cudf and Spark a cast may be done before to fix it up.
+   * Turn the final result of the aggregations into a ColumnarBatch.
    */
-  def castAggOutputsIfNeeded(dataTypes: Array[DataType],
+  def convertToColumnarBatch(dataTypes: Array[DataType],
       aggOutputColumns: Array[cudf.ColumnVector]): ColumnarBatch = {
     assert(dataTypes.length == aggOutputColumns.length)
     val numRows = aggOutputColumns.head.getRowCount.toInt
@@ -978,7 +966,7 @@ class GroupedAggregations extends Arm {
       dataTypes.indices.foreach { index =>
         val dt = dataTypes(index)
         val col = aggOutputColumns(index)
-        finalOutputColumns(index) = castIfNeeded(col, dt)
+        finalOutputColumns(index) = GpuColumnVector.from(col, dt).incRefCount()
       }
       new ColumnarBatch(finalOutputColumns, numRows)
     }
@@ -1077,9 +1065,9 @@ trait BasicWindowCalc extends Arm {
     }
   }
 
-  def castResultsIfNeeded(dataTypes: Array[DataType],
+  def convertToBatch(dataTypes: Array[DataType],
       cols: Array[cudf.ColumnVector]): ColumnarBatch =
-    aggregations.castAggOutputsIfNeeded(dataTypes, cols)
+    aggregations.convertToColumnarBatch(dataTypes, cols)
 }
 
 /**
@@ -1105,7 +1093,7 @@ class GpuWindowIterator(
     withResource(input.next()) { cb =>
       withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
         val ret = withResource(computeBasicWindow(cb)) { cols =>
-          castResultsIfNeeded(outputTypes, cols)
+          convertToBatch(outputTypes, cols)
         }
         numOutputBatches += 1
         numOutputRows += ret.numRows()
@@ -1306,7 +1294,7 @@ class GpuRunningWindowIterator(
           }
           withResource(fixedUp) { fixed =>
             saveLastParts(getScalarRow(numRows - 1, partColumns))
-            castResultsIfNeeded(outputTypes, fixed)
+            convertToBatch(outputTypes, fixed)
           }
         }
       }
