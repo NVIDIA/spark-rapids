@@ -508,8 +508,8 @@ Here are some examples of regular expression patterns that are not supported on 
 
 In addition to these cases that can be detected, there is also one known issue that can cause incorrect results:
 
-- `$` does not match the end of a string if the string ends with a line-terminator 
-  ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
+- `$` does not match the end of a string if the string ends with a carriage return (`\r`) 
+  ([issue #4170](https://github.com/NVIDIA/spark-rapids/issues/4170))
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 

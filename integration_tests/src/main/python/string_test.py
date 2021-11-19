@@ -530,7 +530,7 @@ def test_rlike_escape():
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
 def test_rlike_multi_line():
-    gen = mk_str_gen('[abc]\n[def]')
+    gen = mk_str_gen('[abc]\n[def][\n]?')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "^a"',
