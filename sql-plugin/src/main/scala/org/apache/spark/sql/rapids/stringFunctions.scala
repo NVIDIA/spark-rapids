@@ -752,11 +752,11 @@ class GpuRLikeMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
 
-    var pattern: Option[String] = None
+    private var pattern: Option[String] = None
 
     override def tagExprForGpu(): Unit = {
       expr.right match {
-        case Literal(str: UTF8String, _) =>
+        case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
             pattern = Some(new CudfRegexTranspiler(replace = false).transpile(str.toString))
@@ -765,7 +765,7 @@ class GpuRLikeMeta(
               willNotWorkOnGpu(e.getMessage)
           }
         case _ =>
-          willNotWorkOnGpu(s"RLike with non-literal pattern is not supported on GPU")
+          willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
       }
     }
 

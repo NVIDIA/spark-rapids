@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 import java.sql.SQLException
 
 import com.nvidia.spark.rapids._
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuStringReplace}
 import org.apache.spark.sql.types.DataTypes
@@ -34,7 +35,7 @@ class GpuRegExpReplaceMeta(
 
   override def tagExprForGpu(): Unit = {
     expr.regexp match {
-      case Literal(s: UTF8String, DataTypes.StringType) =>
+      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
           // use GpuStringReplace
         } else {
@@ -47,7 +48,7 @@ class GpuRegExpReplaceMeta(
         }
 
       case _ =>
-        willNotWorkOnGpu(s"non-literal pattern is not supported on GPU")
+        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
   }
 

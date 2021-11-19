@@ -35,7 +35,7 @@ class GpuRegExpReplaceMeta(
 
   override def tagExprForGpu(): Unit = {
     expr.regexp match {
-      case Literal(s: UTF8String, DataTypes.StringType) =>
+      case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
         if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
           // use GpuStringReplace
         } else {
@@ -48,7 +48,7 @@ class GpuRegExpReplaceMeta(
         }
 
       case _ =>
-        willNotWorkOnGpu(s"non-literal pattern is not supported on GPU")
+        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
     GpuOverrides.extractLit(expr.pos).foreach { lit =>
