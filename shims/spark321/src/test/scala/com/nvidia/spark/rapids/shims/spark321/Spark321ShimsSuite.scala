@@ -34,8 +34,8 @@ class Spark321ShimsSuite extends FunSuite {
 
   test("TypeSig321") {
     val check = TypeSig.DAYTIME + TypeSig.YEARMONTH
-    assert(check.isSupportedByPlugin(DayTimeIntervalType(), false) == true)
-    assert(check.isSupportedByPlugin(YearMonthIntervalType(), false) == true)
+    assert(check.isSupportedByPlugin(DayTimeIntervalType()) == true)
+    assert(check.isSupportedByPlugin(YearMonthIntervalType()) == true)
   }
 
 }

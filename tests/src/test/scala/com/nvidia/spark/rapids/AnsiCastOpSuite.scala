@@ -39,7 +39,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT.key, "true")
-    .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
