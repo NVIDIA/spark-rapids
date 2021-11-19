@@ -40,8 +40,10 @@ object FloatUtils extends Arm {
   def getNanScalar(dType: DType): Scalar = {
     if (dType == DType.FLOAT64) {
       Scalar.fromDouble(Double.NaN)
-    } else {
+    } else if (dType == DType.FLOAT32) {
       Scalar.fromFloat(Float.NaN)
+    } else {
+      throw new IllegalArgumentException("NaNs are only supported for Float types")
     }
   }
 
