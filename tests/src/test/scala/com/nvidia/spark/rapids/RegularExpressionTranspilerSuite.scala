@@ -252,13 +252,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("compare CPU and GPU: fuzz test ASCII chars") {
-    val chars = (0x00 to 0x7F)
-      .map(_.toChar)
+    val chars = (0x00 to 0x7F).map(_.toChar)
     doFuzzTest(Some(chars.mkString), replace = true)
   }
 
-  ignore("compare CPU and GPU: regexp find fuzz test all chars") {
-    // this test cannot be enabled until we support CR and LF
+  test("compare CPU and GPU: regexp find fuzz test all chars") {
     doFuzzTest(None, replace = false)
   }
 
