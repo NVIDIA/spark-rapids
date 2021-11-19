@@ -22,6 +22,7 @@ import ai.rapids.cudf.HostMemoryBuffer
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.FunSuite
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
@@ -49,6 +50,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       })
 
       override def getBatchRunner(
+          tc: TaskContext,
           file: PartitionedFile,
           conf: Configuration,
           filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {

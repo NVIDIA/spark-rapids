@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.util.NoSuchElementException
 
-import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier}
+import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.Mockito._
 import org.scalatest.FunSuite

@@ -109,6 +109,9 @@ object GpuPartitioningUtils {
    *
    * mainly copied from PartitioningAwareFileIndex.basePaths
    */
+  @scala.annotation.nowarn(
+    "msg=method isDirectory in class FileSystem is deprecated"
+  )
   private def getBasePaths(
     hadoopConf: Configuration,
     basePathOption: Option[Path],

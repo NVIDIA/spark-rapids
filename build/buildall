@@ -17,12 +17,37 @@
 
 set -ex
 
+shopt -s extglob
+
+while [[ "$1" != "" ]] ; do
+
+
+function print_usage() {
+  echo "Usage: buildall [OPTION]"
+  echo "Options:"
+  echo "   -h, --help"
+  echo "        print this help message"
+  echo "   -gb, --generate-bloop"
+  echo "        generate projects for bloop clients: IDE (Scala Metals, IntelliJ) or Bloop CLI"
+  echo "   -p=DIST_PROFILE, --profile=DIST_PROFILE"
+  echo "        use this profile for the dist module, default: noSnapshots, also supported: snapshots, minimumFeatureVersionMix,"
+  echo "        snapshotsWithDatabricks, and noSnapshotsWithDatabricks. NOTE: the Databricks-related spark3XYdb shims"
+  echo "        are not built locally, the jars are fetched prebuilt from a remote Maven repo."
+  echo "        You can also supply a comma-separated list of build versions. E.g., --profile=320,330 will build only"
+  echo "        the distribution jar only for 3.2.0 and 3.3.0"
+  echo "   -m=MODULE, --module=MODULE"
+  echo "        after finishing parallel builds, resume from dist and build up to and including module MODULE."
+  echo "        E.g., --module=integration_tests"
+  echo "   -P=N, --parallel=N"
+  echo "        Build in parallel, N (4 by default) is passed via -P to xargs"
+}
+
 
 
 function bloopInstall() {
   mkdir $PWD/.bloop
   time (
-    for bv in 301 302 302 304 311 312 313 320; do
+    for bv in $SPARK_SHIM_VERSIONS; do
       bloop_config_dir=".bloop$bv"
       mvn -U generate-sources ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl dist -am \
         -Dbuildver="$bv" \
@@ -46,24 +71,50 @@ function bloopInstall() {
 }
 
 case $1 in
+case "$1" in
 
---h|-h)
-  echo "buildall [noSnapshots (default) | snapshots | minimumFeatureVersionMix | <buildver> (e.g. 320) ]"
+--help|-h)
+  print_usage
   exit 0
   ;;
 
---bloopInstall|-bi)
+--bloop)
   bloopInstall
   exit 0
+-p=*|--profile=*)
+  DIST_PROFILE="${1#*=}"
+  ;;
+
+-m=*|--module=*)
+  MODULE="${1#*=}"
+  ;;
+
+-P=*|--parallel=*)
+  BUILD_PARALLEL="${1#*=}"
+  ;;
+
+*)
+  echo >&2 "Unknown arg: $1"
+  print_usage
+  exit 1
   ;;
 
 esac
 
-DIST_PROFILE=${1:-"noSnapshots"}
+# advance $1 to the next in the arg list
+shift
+
+done
+
+# TODO create a switch for debug
+set -x
+
+DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
+[[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
 
 case $DIST_PROFILE in
 
-  snapshots)
+  snapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=(
       301
       302
@@ -74,10 +125,12 @@ case $DIST_PROFILE in
       312
       313
       320
+      321
+      330
     )
     ;;
 
-  noSnapshots)
+  noSnapshots?(WithDatabricks))
     SPARK_SHIM_VERSIONS=(
       301
       302
@@ -99,38 +152,55 @@ case $DIST_PROFILE in
     ;;
 
   3*)
-    SPARK_SHIM_VERSIONS=($DIST_PROFILE)
+    <<< $DIST_PROFILE IFS="," read -ra SPARK_SHIM_VERSIONS
+    INCLUDED_BUILDVERS_OPT="-Dincluded_buildvers=$DIST_PROFILE"
     unset DIST_PROFILE
     ;;
 
   *)
-    echo "ERROR: Supported profiles are: snapshots, noSnapshots, minimumFeatureVersionMix"
+    echo "ERROR unexpected value for profile: $DIST_PROFILE, see 'buildall --help'"
     exit 1
 
 esac
 
-[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE"
+[[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE" || MVN_PROFILE_OPT=""
 
 # First element in SPARK_SHIM_VERSIONS to do most of the checks
 export BASE_VER=${SPARK_SHIM_VERSIONS[0]}
-
-BUILD_PARALLEL=${BUILD_PARALLEL:-4}
+export NUM_SHIMS=${#SPARK_SHIM_VERSIONS[@]}
+export BUILD_PARALLEL=${BUILD_PARALLEL:-4}
 
 echo Clean once across all modules
 mvn -q clean
 
-echo Building a combined dist jar with Shims for "${SPARK_SHIM_VERSIONS[@]}" ...
+echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 
 export MVN_BASE_DIR=$(mvn help:evaluate -Dexpression=project.basedir -q -DforceStdout)
 build_single_shim() {
   set -x
   BUILD_VER=$1
   mkdir -p "$MVN_BASE_DIR/target"
-  LOG_FILE="$MVN_BASE_DIR/target/mvn-build-$BUILD_VER.log"
-  SKIP_CHECKS=$( [[ "$BUILD_VER" == "$BASE_VER" ]] && echo false || echo true )
+  (( BUILD_PARALLEL == 1 || NUM_SHIMS == 1 )) && LOG_FILE="/dev/tty" || \
+    LOG_FILE="$MVN_BASE_DIR/target/mvn-build-$BUILD_VER.log"
 
-  echo "#### REDIRECTING parallel mvn output to $LOG_FILE ####"
-  mvn -U install \
+  if [[ "$BUILD_VER" == "$BASE_VER" ]]; then
+    SKIP_CHECKS="false"
+    # WORKAROUND:
+    # maven build on L193 currently relies on aggregator dependency which
+    # will removed by
+    # https://github.com/NVIDIA/spark-rapids/issues/3932
+    #
+    # if it were a single maven invocation Maven would register and give
+    # precedence package-phase artifacts
+    #
+    MVN_PHASE="install"
+  else
+    SKIP_CHECKS="true"
+    MVN_PHASE="package"
+  fi
+
+  echo "#### REDIRECTING mvn output to $LOG_FILE ####"
+  mvn -U "$MVN_PHASE" \
       -DskipTests \
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
@@ -138,7 +208,7 @@ build_single_shim() {
       -Dskip="$SKIP_CHECKS" \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
       -pl aggregator -am > "$LOG_FILE" 2>&1 || {
-        tail -20 "$LOG_FILE"
+        [[ "$LOG_FILE" != "/dev/tty" ]] && tail -20 "$LOG_FILE" || true
         exit 255
       }
 }
@@ -155,12 +225,13 @@ export -f build_single_shim
 #   regressions even before pytest-based integration_tests
 #
 # Then resume maven build from the dist module now that shims have been installed
-
 time (
   # printf a single buildver array element per line
   printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
     xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
     bash -c 'build_single_shim "$@"' _ %
   echo "Resuming from dist build only using $BASE_VER"
-  mvn -U -Dbuildver="$BASE_VER" install --resume-from dist -DskipTests $MVN_PROFILE_OPT
+  mvn package --resume-from dist $MODULE_OPT $MVN_PROFILE_OPT $INCLUDED_BUILDVERS_OPT \
+    -Dbuildver="$BASE_VER" \
+    -DskipTests -Dskip -Dmaven.javadoc.skip
 )

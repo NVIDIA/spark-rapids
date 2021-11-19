@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
-import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
+import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
 import com.nvidia.spark.rapids.tool.profiling._
@@ -54,11 +54,6 @@ class QualificationAppInfo(
   val stageIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val jobIdToSqlID: HashMap[Int, Long] = HashMap.empty[Int, Long]
   val sqlIDtoJobFailures: HashMap[Long, ArrayBuffer[Int]] = HashMap.empty[Long, ArrayBuffer[Int]]
-
-  val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
-
-  // SQL containing any Dataset operation or RDD to DataSet/DataFrame operation
-  val sqlIDToDataSetOrRDDCase: HashSet[Long] = HashSet[Long]()
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
 
@@ -135,10 +130,6 @@ class QualificationAppInfo(
     }.values.sum
   }
 
-  private def probNotDataset: HashMap[Long, Set[String]] = {
-    sqlIDtoProblematic.filterNot { case (sqlID, _) => sqlIDToDataSetOrRDDCase.contains(sqlID) }
-  }
-
   // The total task time for all tasks that ran during SQL dataframe
   // operations.  if the SQL contains a dataset, it isn't counted.
   private def calculateTaskDataframeDuration: Long = {
@@ -146,30 +137,6 @@ class QualificationAppInfo(
       sqlIDToDataSetOrRDDCase.contains(sqlID) || sqlDurationTime.getOrElse(sqlID, -1) == -1
     }
     validSums.values.map(dur => dur.totalTaskDuration).sum
-  }
-
-  private def getPotentialProblemsForDf: String = {
-    probNotDataset.values.flatten.toSet.mkString(":")
-  }
-
-  // This is to append potential issues such as UDF, decimal type determined from
-  // SparkGraphPlan Node description and nested complex type determined from reading the
-  // event logs. If there are any complex nested types, then `NESTED COMPLEX TYPE` is mentioned
-  // in the `Potential Problems` section in the csv file. Section `Unsupported Nested Complex
-  // Types` has information on the exact nested complex types which are not supported for a
-  // particular application.
-  private def getAllPotentialProblems(dFPotentialProb: String, nestedComplex: String): String = {
-    val nestedComplexType = if (nestedComplex.nonEmpty) "NESTED COMPLEX TYPE" else ""
-    val result = if (dFPotentialProb.nonEmpty) {
-      if (nestedComplex.nonEmpty) {
-        s"$dFPotentialProb:$nestedComplexType"
-      } else {
-        dFPotentialProb
-      }
-    } else {
-      nestedComplexType
-    }
-    result
   }
 
   private def getSQLDurationProblematic: Long = {
@@ -221,15 +188,6 @@ class QualificationAppInfo(
     }.getOrElse(1.0)
   }
 
-  private def reportComplexTypes: (String, String) = {
-    if (dataSourceInfo.size != 0) {
-      val schema = dataSourceInfo.map { ds => ds.schema }
-      QualificationAppInfo.parseReadSchemaForNestedTypes(schema)
-    } else {
-      ("", "")
-    }
-  }
-
   /**
    * Aggregate and process the application after reading the events.
    * @return Option of QualificationSummaryInfo, Some if we were able to process the application
@@ -269,6 +227,7 @@ class QualificationAppInfo(
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
+    checkJdbcScan(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {
@@ -369,98 +328,5 @@ object QualificationAppInfo extends Logging {
           None
       }
     app
-  }
-
-  def parseReadSchemaForNestedTypes(
-      schema: ArrayBuffer[String]): (String, String) = {
-    val tempStringBuilder = new StringBuilder()
-    val individualSchema: ArrayBuffer[String] = new ArrayBuffer()
-    var angleBracketsCount = 0
-    var parenthesesCount = 0
-    val distinctSchema = schema.distinct.filter(_.nonEmpty).mkString(",")
-
-    // Get the nested types i.e everything between < >
-    for (char <- distinctSchema) {
-      char match {
-        case '<' => angleBracketsCount += 1
-        case '>' => angleBracketsCount -= 1
-        // If the schema has decimals, Example decimal(6,2) then we have to make sure it has both
-        // opening and closing parentheses(unless the string is incomplete due to V2 reader).
-        case '(' => parenthesesCount += 1
-        case ')' => parenthesesCount -= 1
-        case _ =>
-      }
-      if (angleBracketsCount == 0 && parenthesesCount == 0 && char.equals(',')) {
-        individualSchema += tempStringBuilder.toString
-        tempStringBuilder.setLength(0)
-      } else {
-        tempStringBuilder.append(char);
-      }
-    }
-    if (!tempStringBuilder.isEmpty) {
-      individualSchema += tempStringBuilder.toString
-    }
-
-    // If DataSource V2 is used, then Schema may be incomplete with ... appended at the end.
-    // We determine complex types and nested complex types until ...
-    val incompleteSchema = individualSchema.filter(x => x.contains("..."))
-    val completeSchema = individualSchema.filterNot(x => x.contains("..."))
-
-    // Check if it has types
-    val incompleteTypes = incompleteSchema.map { x =>
-      if (x.contains("...") && x.contains(":")) {
-        val schemaTypes = x.split(":", 2)
-        if (schemaTypes.size == 2) {
-          val partialSchema = schemaTypes(1).split("\\.\\.\\.")
-          if (partialSchema.size == 1) {
-            partialSchema(0)
-          } else {
-            ""
-          }
-        } else {
-          ""
-        }
-      } else {
-        ""
-      }
-    }
-    // Omit columnName and get only schemas
-    val completeTypes = completeSchema.map { x =>
-      val schemaTypes = x.split(":", 2)
-      if (schemaTypes.size == 2) {
-        schemaTypes(1)
-      } else {
-        ""
-      }
-    }
-    val schemaTypes = completeTypes ++ incompleteTypes
-
-    // Filter only complex types.
-    // Example: array<string>, array<struct<string, string>>
-    val complexTypes = schemaTypes.filter(x =>
-      x.startsWith("array<") || x.startsWith("map<") || x.startsWith("struct<"))
-
-    // Determine nested complex types from complex types
-    // Example: array<struct<string, string>> is nested complex type.
-    val nestedComplexTypes = complexTypes.filter(complexType => {
-      val startIndex = complexType.indexOf('<')
-      val closedBracket = complexType.lastIndexOf('>')
-      // If String is incomplete due to dsv2, then '>' may not be present. In that case traverse
-      // until length of the incomplete string
-      val lastIndex = if (closedBracket == -1) {
-        complexType.length - 1
-      } else {
-        closedBracket
-      }
-      val string = complexType.substring(startIndex, lastIndex + 1)
-      string.contains("array<") || string.contains("struct<") || string.contains("map<")
-    })
-
-    // Since it is saved as csv, replace commas with ;
-    val complexTypesResult = complexTypes.filter(_.nonEmpty).mkString(";").replace(",", ";")
-    val nestedComplexTypesResult = nestedComplexTypes.filter(
-      _.nonEmpty).mkString(";").replace(",", ";")
-
-    (complexTypesResult, nestedComplexTypesResult)
   }
 }

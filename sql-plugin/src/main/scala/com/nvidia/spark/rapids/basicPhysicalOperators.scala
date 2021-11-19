@@ -45,7 +45,7 @@ class GpuProjectExecMeta(
     with Logging {
   override def convertToGpu(): GpuExec = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
-    val gpuExprs = childExprs.map(_.convertToGpu()).toList
+    val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
       if (childExprs.forall(_.canThisBeAst)) {
@@ -120,16 +120,14 @@ case class GpuProjectExec(
    // using an Array, we opt in for List because it implements Seq while having non-recursive
    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
    //   immutable/List.scala#L516
-   projectList: List[Expression],
+   projectList: List[NamedExpression],
    child: SparkPlan
  ) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
 
-  override def output: Seq[Attribute] = {
-    projectList.collect { case ne: NamedExpression => ne.toAttribute }
-  }
+  override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
 
@@ -618,7 +616,7 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     children.map(_.output).transpose.map { attrs =>
       val firstAttr = attrs.head
       val nullable = attrs.exists(_.nullable)
-      val newDt = attrs.map(_.dataType).reduce(TrampolineUtil.structTypeMerge)
+      val newDt = attrs.map(_.dataType).reduce(TrampolineUtil.unionLikeMerge)
       if (firstAttr.dataType == newDt) {
         firstAttr.withNullability(nullable)
       } else {

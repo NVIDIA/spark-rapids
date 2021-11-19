@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from spark_session import is_before_spark_311
+from spark_session import is_before_spark_311, is_before_spark_320, is_before_spark_330
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
@@ -84,7 +84,7 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -95,7 +95,7 @@ def test_union(data_gen):
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -106,7 +106,7 @@ def test_unionAll(data_gen):
             lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       pytest.param(all_basic_struct_gen),
                                       pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]])),
@@ -123,7 +123,38 @@ def test_union_by_missing_col_name(data_gen):
                                 .unionByName(binary_op_df(spark, data_gen).withColumnRenamed("a", "y"), True),
         conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+
+# the first number ('1' and '2') is the nest level
+# the second number ('one' and 'two') is the fields number in the struct
+base_one = (ArrayGen(StructGen([["ba", StringGen()]]), 1, 1), ArrayGen(StructGen([["bb", StringGen()]]), 1, 1))
+base_two = (ArrayGen(StructGen([["ba", StringGen()], ["bb", StringGen()]]), 1, 1), ArrayGen(StructGen([["bb", StringGen()], ["ba", StringGen()]]), 1, 1))
+nest_1_one = (StructGen([('b', base_one[0])]), StructGen([('b', base_one[1])]))
+nest_1_two = (StructGen([('b', base_two[0])]), StructGen([('b', base_two[1])]))
+nest_2_one = (StructGen([('b', ArrayGen(base_one[0], 1, 1))]), StructGen([('b', ArrayGen(base_one[1],1,1))]))
+nest_2_two = (StructGen([('b', ArrayGen(base_two[0], 1, 1))]), StructGen([('b', ArrayGen(base_two[1],1,1))]))
+
+@pytest.mark.parametrize('gen_pair', [base_one,   base_two,
+                                      nest_1_one, nest_1_two,
+                                      nest_2_one, nest_2_two])
+@pytest.mark.skipif(is_before_spark_330(), reason="This is supported only in Spark 3.3.0+")
+def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
+    """
+    This tests the union of two DFs of arrays of structs with missing field names.
+    The missing field will be replaced be nulls in the output DF. This is a feature added in 3.3+
+    This test is for https://github.com/NVIDIA/spark-rapids/issues/3953
+    Test cases are copies from https://github.com/apache/spark/commit/5241d98800 
+    """
+    def assert_union_equal(gen1, gen2):
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen1).unionByName(unary_op_df(spark, gen2), True)
+        )
+    
+    assert_union_equal(gen_pair[0], gen_pair[1])
+    assert_union_equal(gen_pair[1], gen_pair[0])
+
+
+
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -135,7 +166,7 @@ def test_union_by_name(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
     pytest.param([('struct' + str(i), gen) for i, gen in enumerate(struct_gens_sample)]),
     pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample)]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
@@ -149,12 +180,13 @@ def test_coalesce_types(data_gen):
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 def test_coalesce_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts))
+            lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
     pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
     pytest.param([('a', ArrayGen(string_gen))]),
     pytest.param([('m', simple_string_to_string_map_gen)]),

@@ -23,10 +23,6 @@ script_dest = '/home/ubuntu/build.sh'
 source_tgz = 'spark-rapids-ci.tgz'
 tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
 base_spark_pom_version = '3.0.1'
-# this is odd but with Databricks 8.2 it reports Spark version 3.1.0
-# but its really 3.1.1, so base Spark pom will be 3.1.1 but we want to
-# install them as 3.1.0-databricks. Other Databricks versions
-# this is the same as base_spark_pom_version.
 base_spark_version_to_install_databricks_jars = base_spark_pom_version
 clusterid = ''
 build_profiles = 'databricks,!snapshot-shims'

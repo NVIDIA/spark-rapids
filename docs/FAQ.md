@@ -19,8 +19,8 @@ process, we try to stay on top of these changes and release updates as quickly a
 
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
-- [AWS EMR 6.2.0, 6.3.0](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 7.3, 8.2](get-started/getting-started-databricks.md)
+- [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
+- [Databricks Runtime 7.3, 9.1](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 
 Most distributions based on a supported Apache Spark version should work, but because the plugin
@@ -35,7 +35,7 @@ release.
 
 ### What hardware is supported? 
 
-The plugin is tested and supported on V100, T4, A10, A30 and A100 datacenter GPUs.  It is possible
+The plugin is tested and supported on V100, T4, A2, A10, A30 and A100 datacenter GPUs.  It is possible
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
 does not support [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),

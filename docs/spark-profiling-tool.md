@@ -178,6 +178,7 @@ Data Source Information:
 |1       |6    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
 |1       |7    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
 |1       |8    |json   |Location: InMemoryFileIndex[file:/home/user1/workspace/spark-rapids-another/lotsofcolumnsout.json]                         |PushedFilters: []|adj_remaining_months_to_maturity:double,asset_recovery_costs:double,credit_enhancement_pro...|
+|1       |9    |JDBC   |unknown                                                                                                                    |unknown          |                                                                                             |
 +--------+-----+-------+---------------------------------------------------------------------------------------------------------------------------+-----------------+---------------------------------------------------------------------------------------------+
 ```
 
@@ -237,7 +238,6 @@ Compare Rapids Properties which are set explicitly:
 |spark.rapids.memory.pinnedPool.size        |null      |2g        |
 |spark.rapids.sql.castFloatToDecimal.enabled|null      |true      |
 |spark.rapids.sql.concurrentGpuTasks        |null      |2         |
-|spark.rapids.sql.decimalType.enabled       |null      |true      |
 |spark.rapids.sql.enabled                   |false     |true      |
 |spark.rapids.sql.explain                   |null      |NOT_ON_GPU|
 |spark.rapids.sql.hasNans                   |null      |FALSE     |
@@ -386,11 +386,11 @@ SQL level aggregated task metrics:
 
 ```
 SQL Duration and Executor CPU Time Percent
-+--------+------------------------------+-----+------------+--------------------------+------------+------------------+-------------------------+
-|appIndex|App ID                        |sqlID|SQL Duration|Contains Dataset or RDD Op|App Duration|Potential Problems|Executor CPU Time Percent|
-+--------+------------------------------+-----+------------+--------------------------+------------+------------------+-------------------------+
-|1       |application_1603128018386_7759|0    |11042       |false                     |119990      |null              |68.48                    |
-+--------+------------------------------+-----+------------+--------------------------+------------+------------------+-------------------------+
++--------+-------------------+-----+------------+--------------------------+------------+---------------------------+-------------------------+
+|appIndex|App ID             |sqlID|SQL Duration|Contains Dataset or RDD Op|App Duration|Potential Problems         |Executor CPU Time Percent|
++--------+-------------------+-----+------------+--------------------------+------------+---------------------------+-------------------------+
+|1       |local-1626104300434|0    |1260        |false                     |131104      |DECIMAL:NESTED COMPLEX TYPE|92.65                    |
+|1       |local-1626104300434|1    |259         |false                     |131104      |DECIMAL:NESTED COMPLEX TYPE|76.79                    |
 ```
 
 - Shuffle Skew Check: 

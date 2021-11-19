@@ -1,0 +1,127 @@
+<?xml version="1.0"?>
+<!--
+  Copyright (c) 2021, NVIDIA CORPORATION.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+<project name="maven-antrun" xmlns:ac="antlib:net.sf.antcontrib" xmlns:if="ant:if">
+    <!--
+        - Generates shim service discovery META-INF entries for ShimLoader
+
+        - Creates per-spark-build shim root directories (parallel worlds) from versioned aggregators
+
+        - Uses whichever aggregator from included_buildvers earliest in the list can contribute to
+          the conventional class file locations (shared world) without overwriting them. This is just
+          for deterministic retracing what aggregator contributed a particular file. The shared world
+          files should be bitwise-identical as a rough approximation of binary compatibility.
+          If we keep buildvers in a consistent order across all profiles, we should be able to fix many
+          issues in one shot. The only anticipated issue is the violation of the bitwise identity check
+          in the binary-dedupe script below.
+
+        - Verifies that all public classes in the shared world can indeed be safely shared because they
+          are bitwise-identical for all Spark version dependencies
+
+        - binary-dedupe ensures that only one bitwise-identical copy per class is stored in the final jar.
+
+        This ant script emulates compile and resource generation phases such that its output
+        can be passed to the maven-jar-plugin to fit well into conventional maven execution logic
+        after side-stepping it in this script.
+
+        The script is in a dedicated file because we can't use ant refid across different maven-antrun-plugin
+        executions, let alone maven profiles. It should be kept as general as possible w.r.t. to a particular
+        shim mix, such that it can generically be called from any profile.
+
+        TODO Once the caller pom is cleaned up enough it should be possible to have a single invocation of this
+        ant script outside profiles, and profiles will just set different values for input properties. At this
+        point it can be inlined again in pom.
+    -->
+    <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
+
+    <target name="build-parallel-worlds">
+        <property environment="env"/>
+        <echo level="info">Preparing parallel worlds with params:
+            included_buildvers=${included_buildvers}
+            project.basedir=${project.basedir}
+            project.build.directory=${project.build.directory}
+            spark.version.classifier=${spark.version.classifier}
+            URM_URL=${env.URM_URL}
+            maven.repo.local=${maven.repo.local}
+        </echo>
+        <property name="aggregatorArtifact" value="rapids-4-spark-aggregator_${scala.binary.version}"/>
+        <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
+        <property name="shimServiceFile" value="${project.build.directory}/extra-resources/${shimServiceRsrc}"/>
+        <property name="aggregatorPrefix" value="${project.build.directory}/deps/${aggregatorArtifact}-${project.version}"/>
+        <truncate file="${shimServiceFile}" create="true" mkdirs="true"/>
+        <property name="aggregatorBuildDir" value="${project.basedir}/../aggregator/target"/>
+        <ac:for list="${included_buildvers}" param="bv" trim="true">
+            <sequential>
+                <!-- precedence order tolerating mvn clean
+                     1. locally packaged artifacts
+                     2. local repo
+                     3. remote repo
+                -->
+                <available file="${aggregatorBuildDir}/spark@{bv}/${aggregatorArtifact}-${project.version}.jar"
+                           property="local.aggregator-spark@{bv}.jar.exists"/>
+                <ac:if>
+                    <isset property="local.aggregator-spark@{bv}.jar.exists"/>
+                    <ac:then>
+                        <echo level="info">copy spark@{bv} aggregator from ${aggregatorBuildDir}</echo>
+                        <copy file="${aggregatorBuildDir}/spark@{bv}/${aggregatorArtifact}-${project.version}.jar"
+                              tofile="${aggregatorPrefix}-spark@{bv}.jar"/>
+                    </ac:then>
+                    <ac:else>
+                        <!--
+                            WORKAROUND: in-JVM invocation of resolver ant tasks http://maven.apache.org/resolver-ant-tasks/
+                            fails due to side-stepping Maven classloading isolation, hence, using child Maven processes.
+
+                            Using intransitive dependency:get instead of dependency:copy for structured artifact input
+                            instead of concatenated string
+                        -->
+                        <echo level="info">dependency:get spark@{bv} aggregator</echo>
+                        <exec executable="${maven.home}/bin/mvn" failonerror="true">
+                            <arg value="dependency:get"/>
+                            <arg value="-s" if:set="env.URM_URL"/>
+                            <arg value="${project.basedir}/../jenkins/settings.xml" if:set="env.URM_URL"/>
+                            <arg value="-B"/>
+                            <arg value="-Dmaven.repo.local=${maven.repo.local}" if:set="maven.repo.local"/>
+                            <arg value="-Ddest=${project.build.directory}/deps"/>
+                            <arg value="-DgroupId=com.nvidia"/>
+                            <arg value="-DartifactId=${aggregatorArtifact}"/>
+                            <arg value="-Dversion=${project.version}"/>
+                            <arg value="-Dpackaging=jar"/>
+                            <arg value="-Dclassifier=spark@{bv}"/>
+                            <arg value="-Dtransitive=false"/>
+                        </exec>
+                    </ac:else>
+                </ac:if>
+                <unzip overwrite="false" src="${aggregatorPrefix}-spark@{bv}.jar"
+                    dest="${project.build.directory}/parallel-world">
+                    <patternset id="shared-world-includes">
+                        <includesfile name="${project.basedir}/unshimmed-common-from-spark301.txt"/>
+                        <includesfile name="${project.basedir}/unshimmed-from-each-spark3xx.txt"/>
+                        <includesfile name="${project.basedir}/unshimmed-spark311.txt"/>
+                    </patternset>
+                </unzip>
+                <unzip src="${aggregatorPrefix}-spark@{bv}.jar"
+                    dest="${project.build.directory}/parallel-world/spark@{bv}">
+                </unzip>
+            </sequential>
+        </ac:for>
+
+        <concat destfile="${shimServiceFile}">
+            <fileset dir="${project.build.directory}/parallel-world" includes="spark*/${shimServiceRsrc}"/>
+        </concat>
+        <exec executable="${project.basedir}/scripts/binary-dedupe.sh" failonerror="true"
+            dir="${project.build.directory}"/>
+    </target>
+</project>

@@ -23,15 +23,14 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
-import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.udf
-import org.apache.spark.sql.rapids.tool.{AppFilterImpl, ToolUtils}
-import org.apache.spark.sql.rapids.tool.qualification.{QualificationAppInfo, QualificationSummaryInfo}
+import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
+import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
 import org.apache.spark.sql.types._
 
 class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
@@ -394,7 +393,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "map<id:int;map<fn:string;ln:string>>;map<id:int;struct<st:string;city:string>>;" +
               "map<id:int;order:array<map<oname:string;oid:int>>>"))
 
-    val result = testSchemas.map(x => QualificationAppInfo.parseReadSchemaForNestedTypes(x))
+    val result = testSchemas.map(x => AppBase.parseReadSchemaForNestedTypes(x))
     result.foreach { actualResult =>
       assert(actualResult._1.equals(expectedResult(index)._1))
       assert(actualResult._2.equals(expectedResult(index)._2))
@@ -407,6 +406,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   test("test decimal problematic") {
     val logFiles = Array(s"$logDir/decimal_part_eventlog.zstd")
     runQualificationTest(logFiles, "decimal_part_expectation.csv")
+  }
+
+  test("test jdbc problematic") {
+    val logFiles = Array(s"$logDir/jdbc_eventlog.zstd")
+    runQualificationTest(logFiles, "jdbc_expectation.csv")
   }
 
   private def createDecFile(spark: SparkSession, dir: String): Unit = {

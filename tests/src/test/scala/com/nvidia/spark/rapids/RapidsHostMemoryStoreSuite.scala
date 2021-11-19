@@ -20,7 +20,6 @@ import java.io.File
 import java.math.RoundingMode
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.Mockito.{never, spy, times, verify, when}
 import org.scalatest.FunSuite

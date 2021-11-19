@@ -59,14 +59,13 @@ data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
 # itself.
 ####################################################################
 
-
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_pandas_math_udf(data_gen):
     def add(a, b):
         return a + b
     my_udf = f.pandas_udf(add, returnType=LongType())
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).select(
+            lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
                 my_udf(f.col('a') - 3, f.col('b'))),
             conf=arrow_udf_conf)
 
@@ -79,7 +78,7 @@ def test_iterator_math_udf(data_gen):
 
     my_udf = f.pandas_udf(iterator_add, returnType=LongType())
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen).select(
+            lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
                 my_udf(f.col('a'), f.col('b'))),
             conf=arrow_udf_conf)
 
@@ -91,7 +90,7 @@ def test_pandas_scalar_udf_nested_type(data_gen):
 
     my_udf = f.pandas_udf(nested_size, returnType=LongType())
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).select(my_udf(f.col('a'))),
+        lambda spark: unary_op_df(spark, data_gen, num_slices=4).select(my_udf(f.col('a'))),
         conf=arrow_udf_conf)
 
 
@@ -252,7 +251,7 @@ def test_map_apply_udf(data_gen):
             yield data[data.b <= data.a]
 
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : binary_op_df(spark, data_gen)\
+            lambda spark : binary_op_df(spark, data_gen, num_slices=4)\
                     .mapInPandas(pandas_filter, schema="a long, b long"),
             conf=arrow_udf_conf)
 
@@ -290,7 +289,7 @@ def test_pandas_map_udf_nested_type(data_gen):
             })
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen)\
+        lambda spark: unary_op_df(spark, data_gen, num_slices=4)\
             .mapInPandas(col_types_udf, schema=udf_out_schema),
         conf=arrow_udf_conf)
 

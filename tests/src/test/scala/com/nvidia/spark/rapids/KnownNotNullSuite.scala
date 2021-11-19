@@ -30,24 +30,21 @@ class KnownNotNullSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("KnownNotNull in Scala UDF-Int",
       intsFromCsv,
-      enableCsvConf,
-      decimalTypeEnabled = false) { frame =>
+      enableCsvConf) { frame =>
     val plusOne = frame.sparkSession.udf.register("plusOne", new IntPlusOne())
     frame.select(plusOne(col("ints_1")))
   }
 
   testSparkResultsAreEqual("KnownNotNull in Scala UDF-Long",
     longsFromCSVDf,
-    enableCsvConf,
-    decimalTypeEnabled = false) { frame =>
+    enableCsvConf) { frame =>
     val plusOne = frame.sparkSession.udf.register("plusOne", new LongPlusOne())
     frame.select(plusOne(col("longs")))
   }
 
   testSparkResultsAreEqual("KnownNotNull in Scala UDF-Short",
     shortsFromCsv,
-    enableCsvConf,
-    decimalTypeEnabled = false) { frame =>
+    enableCsvConf) { frame =>
     val plusOne = frame.sparkSession.udf.register("plusOne", new ShortPlusOne())
     frame.select(plusOne(col("shorts")))
   }

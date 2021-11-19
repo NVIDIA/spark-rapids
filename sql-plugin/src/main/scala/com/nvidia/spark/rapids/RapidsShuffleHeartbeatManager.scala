@@ -191,10 +191,11 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
     conf.shuffleTransportEarlyStartHeartbeatInterval
 
   private[this] val executorService: ScheduledExecutorService =
-    Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-      .setNameFormat("rapids-shuffle-hb")
-      .setDaemon(true)
-      .build())
+    Executors.newSingleThreadScheduledExecutor(
+      GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
+        .setNameFormat("rapids-shuffle-hb")
+        .setDaemon(true)
+        .build()))
 
   private class InitializeShuffleManager(ctx: PluginContext,
       shuffleManager: RapidsShuffleInternalManagerBase) extends Runnable {
