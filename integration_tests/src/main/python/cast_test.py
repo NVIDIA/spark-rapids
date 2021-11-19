@@ -97,25 +97,44 @@ def test_cast_string_timestamp_fallback():
 
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
-@pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType()], ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_gens, ids=meta_idfn('from:'))
+@pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType()], ids=meta_idfn('to:'))
 def test_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
             conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
                 {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}))
 
+@pytest.mark.parametrize('data_gen', [
+    DecimalGen(7, 1),
+    DecimalGen(9, 9),
+    DecimalGen(15, 2),
+    DecimalGen(15, 15),
+    DecimalGen(30, 3),
+    DecimalGen(5, -3),
+    DecimalGen(3, 0)], ids=meta_idfn('from:'))
+@pytest.mark.parametrize('to_type', [
+    DecimalType(9, 0),
+    DecimalType(17, 2),
+    DecimalType(35, 4),
+    DecimalType(30, -4),
+    DecimalType(38, -10),
+    DecimalType(1, -1)], ids=meta_idfn('to:'))
+def test_cast_decimal_to_decimal(data_gen, to_type):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(to_type), f.col('a')),
+            conf = allow_negative_scale_of_decimal_conf)
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('to_type', [
-    DecimalType(precision=2, scale=0),
-    DecimalType(precision=3, scale=0),
-    DecimalType(precision=5, scale=0),
-    DecimalType(precision=7, scale=2),
-    DecimalType(precision=10, scale=0),
-    DecimalType(precision=10, scale=2),
-    DecimalType(precision=18, scale=0),
-    DecimalType(precision=18, scale=2)], ids=idfn)
+    DecimalType(2, 0),
+    DecimalType(3, 0),
+    DecimalType(5, 0),
+    DecimalType(7, 2),
+    DecimalType(10, 0),
+    DecimalType(10, 2),
+    DecimalType(18, 0),
+    DecimalType(18, 2)], ids=idfn)
 def test_cast_integral_to_decimal(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(
@@ -139,10 +158,9 @@ def test_cast_int_to_decimal_overflow():
             f.col('a').cast(DecimalType(9, -1))),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
-@allow_non_gpu('ProjectExec', 'Cast', 'Alias')
-def test_cast_long_to_decimal_fallback():
-    assert_gpu_fallback_collect(
+def test_cast_long_to_decimal_overflow():
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, long_gen).select(
             f.col('a').cast(DecimalType(18, -1))),
-        'Cast',
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+
