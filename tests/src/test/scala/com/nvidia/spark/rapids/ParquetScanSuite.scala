@@ -16,11 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
-import java.nio.file.Files
-
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types.{IntegerType, LongType, StringType, StructField, StructType}
 

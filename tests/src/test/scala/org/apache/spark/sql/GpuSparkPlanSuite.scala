@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql
 
-import java.util.{Locale, TimeZone}
-
 import com.nvidia.spark.rapids.{ShimLoader, SparkSessionHolder}
 import org.scalatest.FunSuite
 

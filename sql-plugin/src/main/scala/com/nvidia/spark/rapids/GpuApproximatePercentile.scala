@@ -17,14 +17,13 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{GroupByAggregation, GroupByAggregationOnColumn}
+import ai.rapids.cudf.GroupByAggregation
 import com.nvidia.spark.rapids.GpuCast.doCast
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.expressions.aggregate.ApproximatePercentile
 import org.apache.spark.sql.catalyst.util.ArrayData
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{CudfAggregate, GpuAggregateFunction}
 import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
