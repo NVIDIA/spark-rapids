@@ -335,7 +335,7 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          ZoneId.systemDefault().normalized() == GpuOverrides.UTC_TIMEZONE_ID
+          TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -396,7 +396,7 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
-            (ZoneId.systemDefault().normalized() != GpuOverrides.UTC_TIMEZONE_ID)) {
+            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()))) {
           Seq(withChild(isChild, s"$dataType is not supported when the JVM system " +
               s"timezone is set to ${ZoneId.systemDefault()}. Set the timezone to UTC to enable " +
               s"$dataType support"))
@@ -728,6 +728,15 @@ abstract class TypeChecks[RET] {
     if (unsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
+  }
+}
+
+object TypeChecks {
+  /**
+   * Check if the time zone passed is supported by plugin.
+   */
+  def areTimestampsSupported(timezoneId: ZoneId): Boolean = {
+    timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
   }
 }
 
