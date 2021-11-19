@@ -20,13 +20,14 @@ from marks import incompat, approximate_float
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-@pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
+@pytest.mark.parametrize('data_gen', decimal_128_gens, ids=idfn)
 def test_project_alias(data_gen):
     dec = Decimal('123123123123123123123123123.456')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : binary_op_df(spark, data_gen).select(
             f.col('a').alias('col1'),
             f.col('b').alias('col2'),
-            f.lit(dec)))
+            f.lit(dec)),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 
