@@ -133,14 +133,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   ignore("known issue - multiline difference between CPU and GPU") {
-    // see https://github.com/rapidsai/cudf/issues/9620
+    // see https://github.com/NVIDIA/spark-rapids/issues/4170
     val pattern = "2$"
-    // this matches "2" but not "2\n" on the GPU
+    // this matches "2" and "2\n" but not "2\r" on the GPU
     assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("2", "2\n", "2\r", "2\r\n"))
   }
 
   test("dot matches CR on GPU but not on CPU") {
-    // see https://github.com/rapidsai/cudf/issues/9619
     val pattern = "1."
     assertCpuGpuMatchesRegexpFind(Seq(pattern), Seq("1\r2", "1\n2", "1\r\n2"))
   }
@@ -248,16 +247,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doFuzzTest(Some(REGEXP_LIMITED_CHARS), replace = true)
   }
 
-  test("compare CPU and GPU: regexp find fuzz test printable ASCII chars plus CR and TAB") {
-    // CR and LF has been excluded due to known issues
-    doFuzzTest(Some((0x20 to 0x7F).map(_.toChar) + "\r\t"), replace = false)
+  test("compare CPU and GPU: regexp find fuzz test printable ASCII chars plus CR, LF, and TAB") {
+    doFuzzTest(Some((0x20 to 0x7F).map(_.toChar) + "\n\r\t"), replace = false)
   }
 
   test("compare CPU and GPU: fuzz test ASCII chars") {
-    // LF has been excluded due to known issues
     val chars = (0x00 to 0x7F)
       .map(_.toChar)
-      .filterNot(_ == '\n')
     doFuzzTest(Some(chars.mkString), replace = true)
   }
 
@@ -272,7 +268,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       options = FuzzerOptions(validChars, maxStringLen = 12))
 
     val data = Range(0, 1000)
-      // remove trailing newlines as workaround for https://github.com/rapidsai/cudf/issues/9620
+      // remove trailing `\r` as workaround for https://github.com/NVIDIA/spark-rapids/issues/4170
       .map(_ => removeTrailingNewlines(r.nextString()))
 
     // generate patterns that are valid on both CPU and GPU
@@ -293,7 +289,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   private def removeTrailingNewlines(input: String): String = {
     var s = input
-    while (s.endsWith("\r") || s.endsWith("\n")) {
+    while (s.endsWith("\r")) {
       s = s.substring(0, s.length - 1)
     }
     s
