@@ -151,7 +151,9 @@ def test_single_sort_in_part(data_gen, order):
 
 @pytest.mark.parametrize('data_gen', [
     pytest.param(all_basic_struct_gen),
+    pytest.param(struct_gen_decimal128),
     pytest.param(StructGen([['child0', all_basic_struct_gen]])),
+    pytest.param(StructGen([['child0', struct_gen_decimal128]])),
 ], ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),

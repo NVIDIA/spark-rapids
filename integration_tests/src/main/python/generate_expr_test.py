@@ -63,7 +63,7 @@ def test_explode_array_data(data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens, ids=idfn)
 def test_explode_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
@@ -97,7 +97,7 @@ def test_explode_outer_array_data(spark_tmp_path, data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens, ids=idfn)
 def test_explode_outer_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
@@ -149,7 +149,7 @@ def test_posexplode_array_data(data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens, ids=idfn)
 def test_posexplode_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
@@ -183,7 +183,7 @@ def test_posexplode_outer_array_data(data_gen):
 #sort locally because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
 @ignore_order(local=True)
-@pytest.mark.parametrize('map_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('map_gen', map_gens_sample + decimal_128_map_gens, ids=idfn)
 def test_posexplode_outer_map_data(map_gen):
     data_gen = [int_gen, map_gen]
     assert_gpu_and_cpu_are_equal_collect(
