@@ -55,7 +55,7 @@ class FilterExprSuite extends SparkQueryCompareTestSuite {
           // InSet (spark.sql.optimizer.inSetConversionThreshold = 10 by default)
           .filter(col("longs").isin(100L to 1200L: _*))
           .filter(col("doubles").isin(1 to 15: _*))
-      val conf = new SparkConf().set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+      val conf = new SparkConf()
       val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, fun, conf, repart = 0)
       compareResults(false, 0.0, fromCpu, fromGpu)
     } finally {
