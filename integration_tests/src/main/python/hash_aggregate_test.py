@@ -1296,7 +1296,6 @@ def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
 
     assert_gpu_fallback_collect(lambda spark: approx_percentile_query(spark), 'ApproximatePercentile', conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32():
     compare_percentile_approx(
@@ -1304,7 +1303,6 @@ def test_hash_groupby_approx_percentile_decimal32():
                                      ('v', DecimalGen(6, 2))]),
         [0.05, 0.25, 0.5, 0.75, 0.95], conf = _approx_percentile_conf)
 
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/4060")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32_single():
     compare_percentile_approx(
