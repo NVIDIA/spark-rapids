@@ -44,9 +44,6 @@ class RegexParser(pattern: String) {
   private var pos = 0
 
   def parse(): RegexAST = {
-    if (pattern == null) {
-      return null
-    }
     val ast = parseUntil(() => eof())
     if (!eof()) {
       throw new RegexUnsupportedException("failed to parse full regex")
