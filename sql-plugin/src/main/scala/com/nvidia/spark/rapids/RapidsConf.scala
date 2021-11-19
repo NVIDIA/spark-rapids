@@ -536,6 +536,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val NEED_DECIMAL_OVERFLOW_GUARANTEES = conf("spark.rapids.sql.decimalOverflowGuarantees")
+      .doc("FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of " +
+          "the compatibility documents for more information on this config.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -543,13 +549,6 @@ object RapidsConf {
       "those operations if you know the query is only computing it once.")
     .booleanConf
     .createWithDefault(false)
-
-  val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
-      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
-          "which can slow down processing in some cases.")
-      .booleanConf
-      .createWithDefault(false)
 
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
@@ -1501,11 +1500,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
+  lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
+
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
-
-  lazy val decimalTypeEnabled: Boolean = get(DECIMAL_TYPE_ENABLED)
 
   lazy val explain: String = get(EXPLAIN)
 

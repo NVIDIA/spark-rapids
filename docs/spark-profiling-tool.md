@@ -238,7 +238,6 @@ Compare Rapids Properties which are set explicitly:
 |spark.rapids.memory.pinnedPool.size        |null      |2g        |
 |spark.rapids.sql.castFloatToDecimal.enabled|null      |true      |
 |spark.rapids.sql.concurrentGpuTasks        |null      |2         |
-|spark.rapids.sql.decimalType.enabled       |null      |true      |
 |spark.rapids.sql.enabled                   |false     |true      |
 |spark.rapids.sql.explain                   |null      |NOT_ON_GPU|
 |spark.rapids.sql.hasNans                   |null      |FALSE     |

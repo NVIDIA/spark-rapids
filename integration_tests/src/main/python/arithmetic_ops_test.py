@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat, approximate_float, allow_non_gpu
+from marks import ignore_order, incompat, approximate_float, allow_non_gpu
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_311, is_before_spark_320, is_databricks91_or_later
@@ -38,10 +38,7 @@ def _get_overflow_df(spark, data, data_type, expr):
         StructType([StructField('a', data_type)])
     ).selectExpr(expr)
 
-decimal_gens_not_max_prec = [decimal_gen_neg_scale, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision, decimal_gen_64bit]
-
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_addition(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -66,7 +63,7 @@ def test_addition_ansi_no_overflow(data_gen):
                 f.col('a') + f.col('b')),
             conf={'spark.sql.ansi.enabled': 'true'})
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens_not_max_prec, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_subtraction(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -91,8 +88,9 @@ def test_subtraction_ansi_no_overflow(data_gen):
                 f.col('a') - f.col('b')),
             conf={'spark.sql.ansi.enabled': 'true'})
 
-@pytest.mark.parametrize('data_gen', numeric_gens +
-        [decimal_gen_neg_scale, decimal_gen_scale_precision, decimal_gen_same_scale_precision, DecimalGen(8, 8)], ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + [decimal_gen_neg_scale, 
+    decimal_gen_scale_precision, decimal_gen_same_scale_precision,
+    DecimalGen(8, 8), decimal_gen_12_2, decimal_gen_18_3], ids=idfn)
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -123,18 +121,27 @@ def test_multiplication_ansi_enabled(data_gen):
                 f.col('a') * f.col('b')),
             conf={'spark.sql.ansi.enabled': 'true'})
 
-@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(6, 3)], ids=idfn)
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7)], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3)], ids=idfn)
 def test_multiplication_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a') * f.col('b')),
-            conf=allow_negative_scale_of_decimal_conf)
+            conf = allow_negative_scale_of_decimal_conf)
+
+@approximate_float # we should get the perfectly correct answer for floats except when casting a decimal to a float in some corner cases.
+@pytest.mark.parametrize('lhs', [float_gen, double_gen], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3)], ids=idfn)
+def test_float_multiplication_mixed(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs).select(
+                f.col('a') * f.col('b')),
+            conf=copy_and_update(allow_negative_scale_of_decimal_conf,
+                {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}))
 
 @pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_neg_scale, DecimalGen(6, 3),
- DecimalGen(5, 5), DecimalGen(6, 0),
-pytest.param(DecimalGen(38, 21), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU", raises=IllegalArgumentException)),
-pytest.param(DecimalGen(21, 17), marks=pytest.mark.xfail(reason="The precision is too large to be supported on the GPU", raises=IllegalArgumentException))], ids=idfn)
+ DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4), DecimalGen(15, 0), DecimalGen(18, 0), 
+ DecimalGen(17, 2), DecimalGen(16, 4)], ids=idfn)
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -146,16 +153,71 @@ def test_division(data_gen):
                 f.col('a') / f.col('b')),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('lhs', [DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(4, 1)], ids=idfn)
+@allow_non_gpu('ProjectExec', 'Alias', 'Divide', 'Cast', 'PromotePrecision', 'CheckOverflow')
+@pytest.mark.parametrize('data_gen', [DecimalGen(38, 21), DecimalGen(21, 17)], ids=idfn)
+def test_division_fallback_on_decimal(data_gen):
+    assert_gpu_fallback_collect(
+            lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a') / f.col('b')),
+            'Divide')
+
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4, 1), DecimalGen(5, 0), DecimalGen(5, 1), DecimalGen(10, 5)], ids=idfn)
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
 def test_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a') / f.col('b')),
-            conf=allow_negative_scale_of_decimal_conf)
+            conf = allow_negative_scale_of_decimal_conf)
+
+@approximate_float # we should get the perfectly correct answer for floats except when casting a decimal to a float in some corner cases.
+@pytest.mark.parametrize('rhs', [float_gen, double_gen], ids=idfn)
+@pytest.mark.parametrize('lhs', [DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
+def test_float_division_mixed(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs).select(
+                f.col('a') / f.col('b')),
+            conf=copy_and_update(allow_negative_scale_of_decimal_conf,
+                {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}))
+
+@ignore_order
+@pytest.mark.parametrize('rhs,rhs_type', [
+    (DecimalGen(15, 3), DecimalType(30, 10)),
+    (DecimalGen(10, 2), DecimalType(28, 18))], ids=idfn)
+@pytest.mark.parametrize('lhs,lhs_type', [
+    (DecimalGen(15, 3), DecimalType(27, 7)),
+    (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
+def test_decimal_division_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf,
+                {'spark.rapids.sql.decimalOverflowGuarantees': 'false'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs)\
+                    .withColumn('lhs', f.col('a').cast(lhs_type))\
+                    .withColumn('rhs', f.col('b').cast(rhs_type))\
+                    .repartition(1)\
+                    .select(f.col('lhs'), f.col('rhs'), f.col('lhs') / f.col('rhs')),
+            conf = conf)
+
+@ignore_order
+@pytest.mark.parametrize('rhs,rhs_type', [
+    (DecimalGen(15, 3), DecimalType(30, 10)),
+    (DecimalGen(10, 2), DecimalType(28, 9))], ids=idfn)
+@pytest.mark.parametrize('lhs,lhs_type', [
+    (DecimalGen(10, 3), DecimalType(27, 7)),
+    (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
+def test_decimal_multiplication_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf,
+                {'spark.rapids.sql.decimalOverflowGuarantees': 'false'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs)\
+                    .withColumn('lhs', f.col('a').cast(lhs_type))\
+                    .withColumn('rhs', f.col('b').cast(rhs_type))\
+                    .repartition(1)\
+                    .select(f.col('lhs'), f.col('rhs'), f.col('lhs') * f.col('rhs')),
+            conf = conf)
 
 @pytest.mark.parametrize('data_gen', integral_gens +  [decimal_gen_default, decimal_gen_scale_precision,
-        decimal_gen_same_scale_precision, decimal_gen_64bit], ids=idfn)
+        decimal_gen_same_scale_precision, decimal_gen_64bit, decimal_gen_18_3, decimal_gen_30_2,
+        decimal_gen_36_5, decimal_gen_38_0], ids=idfn)
 def test_int_division(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -166,8 +228,8 @@ def test_int_division(data_gen):
                 'b DIV cast(null as {})'.format(string_type),
                 'a DIV b'))
 
-@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2)], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3)], ids=idfn)
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2), decimal_gen_30_2], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3), decimal_gen_38_0, decimal_gen_36_neg5], ids=idfn)
 def test_int_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).selectExpr(
@@ -201,13 +263,13 @@ def test_signum(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('signum(a)'))
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_unary_minus(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('-a'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens + decimal_128_gens, ids=idfn)
 def test_unary_minus_ansi_no_overflow(data_gen):
     conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.sql.ansi.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
@@ -229,20 +291,20 @@ def test_unary_minus_ansi_overflow(data_type, value):
 # This just ends up being a pass through.  There is no good way to force
 # a unary positive into a plan, because it gets optimized out, but this
 # verifies that we can handle it.
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_unary_positive(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('+a'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_abs(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('abs(a)'),
             conf=allow_negative_scale_of_decimal_conf)
 
 # ANSI is ignored for abs prior to 3.2.0, but still okay to test it a little more.
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [float_gen, double_gen] + decimal_gens + decimal_128_gens, ids=idfn)
 def test_abs_ansi_no_overflow(data_gen):
     conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.sql.ansi.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
@@ -275,17 +337,28 @@ def test_sqrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('sqrt(a)'))
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_floor(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a)'),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + decimal_gens + decimal_128_gens_no_neg, ids=idfn)
 def test_ceil(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a)'),
             conf=allow_negative_scale_of_decimal_conf)
+
+@pytest.mark.parametrize('data_gen', [decimal_gen_36_neg5, decimal_gen_38_neg10], ids=idfn)
+def test_floor_ceil_overflow(data_gen):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('floor(a)').collect(),
+        conf=allow_negative_scale_of_decimal_conf,
+        error_message="java.lang.ArithmeticException")
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('ceil(a)').collect(),
+        conf=allow_negative_scale_of_decimal_conf,
+        error_message="java.lang.ArithmeticException")
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_rint(data_gen):
@@ -327,6 +400,9 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(cast(null as {}), b)'.format(string_type),
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
+
+#gen for testing round operator
+round_gens = numeric_gens + decimal_gens + decimal_128_gens
 
 @incompat
 @approximate_float
@@ -587,7 +663,7 @@ def test_columnar_pow(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr('pow(a, b)'))
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_least(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -602,7 +678,7 @@ def test_least(data_gen):
             lambda spark : gen_df(spark, gen).select(
                 f.least(*command_args)), conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + decimal_128_gens, ids=idfn)
 def test_greatest(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
@@ -693,9 +769,13 @@ _data_type_expr_for_add_overflow = [
     ([3.4028235E38],  FloatType(), 'a + a'),
     ([-3.4028235E38], FloatType(), 'a + a'),
     ([1.7976931348623157E308],  DoubleType(), 'a + a'),
-    ([-1.7976931348623157E308], DoubleType(), 'a + a')]
+    ([-1.7976931348623157E308], DoubleType(), 'a + a'),
+    ([Decimal('-' + '9' * 38)], DecimalType(38,0), 'a + -1'),
+    ([Decimal('-' + '9' * 38)], DecimalType(38,0), 'a + a'),
+    ([Decimal('9' * 38)], DecimalType(38,0), 'a + 1'),
+    ([Decimal('9' * 38)], DecimalType(38,0), 'a + 1')]
 
-@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow)
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow, ids=idfn)
 def test_add_overflow_with_ansi_enabled(data, tp, expr):
     ansi_conf = {'spark.sql.ansi.enabled': 'true'}
     if isinstance(tp, IntegralType):
@@ -703,6 +783,11 @@ def test_add_overflow_with_ansi_enabled(data, tp, expr):
             lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
             conf=ansi_conf,
             error_message='overflow')
+    elif isinstance(tp, DecimalType):
+        assert_gpu_and_cpu_error(
+            lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
+            conf=ansi_conf,
+            error_message='')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_overflow_df(spark, data, tp, expr),
@@ -715,9 +800,12 @@ _data_type_expr_for_sub_overflow = [
     ([-2147483648], IntegerType(), 'a - 1'),
     ([-9223372036854775808], LongType(), 'a - 1L'),
     ([-3.4028235E38], FloatType(), 'a - cast(1.0 as float)'),
-    ([-1.7976931348623157E308], DoubleType(), 'a - 1.0')]
+    ([-1.7976931348623157E308], DoubleType(), 'a - 1.0'),
+    ([Decimal('-' + '9' * 38)], DecimalType(38,0), 'a - 1'),
+    ([Decimal('-' + '9' * 38)], DecimalType(38,0), 'a - (-a)')
+    ]
 
-@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_sub_overflow)
+@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_sub_overflow, ids=idfn)
 def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
     ansi_conf = {'spark.sql.ansi.enabled': 'true'}
     if isinstance(tp, IntegralType):
@@ -725,17 +813,12 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
             lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
             conf=ansi_conf,
             error_message='overflow')
+    elif isinstance(tp, DecimalType):
+        assert_gpu_and_cpu_error(
+            lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
+            conf=ansi_conf,
+            error_message='')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             func=lambda spark: _get_overflow_df(spark, data, tp, expr),
             conf=ansi_conf)
-
-@allow_non_gpu('ProjectExec', 'Alias', 'CheckOverflow', 'Add', 'PromotePrecision', 'Cast')
-@pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow[12:])
-@pytest.mark.parametrize('ansi_enabled', ['false','true'])
-def test_add_overflow_fallback_for_decimal(data, tp, expr, ansi_enabled):
-    # Spark will try to promote the precision (to 19) which GPU does not supported now.
-    assert_gpu_fallback_collect(
-        lambda spark: _get_overflow_df(spark, data, tp, expr),
-        'ProjectExec',
-        conf={'spark.sql.ansi.enabled': ansi_enabled})
