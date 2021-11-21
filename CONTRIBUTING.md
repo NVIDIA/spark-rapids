@@ -193,7 +193,7 @@ mvn install ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl aggregator -am
 With `--generate-bloop` we integrated Bloop project generation into `buildall`. It makes it easier to generate
 projects for multiple Spark dependencies using the same profiles as our regular build.
 It makes sure that the project files belonging to different Spark dependencies are
-not clobbered by repeated bloopInstall Maven plugin invocations and uses (jq)[https://stedolan.github.io/jq/]
+not clobbered by repeated bloopInstall Maven plugin invocations and uses [jq](https://stedolan.github.io/jq/)
 to post-process JSON-formatted project files such that they compile project classes into non-overlapping
 set of output directories.
 
