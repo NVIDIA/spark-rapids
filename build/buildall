@@ -19,9 +19,6 @@ set -ex
 
 shopt -s extglob
 
-while [[ "$1" != "" ]] ; do
-
-
 function print_usage() {
   echo "Usage: buildall [OPTION]"
   echo "Options:"
@@ -42,16 +39,21 @@ function print_usage() {
   echo "        Build in parallel, N (4 by default) is passed via -P to xargs"
 }
 
-
-
 function bloopInstall() {
-  mkdir $PWD/.bloop
+  BLOOP_DIR="${BLOOP_DIR:-$PWD/.bloop}"
+  mkdir -p $BLOOP_DIR
+  rm -f $BLOOP_DIR/*
+
   time (
     for bv in $SPARK_SHIM_VERSIONS; do
-      bloop_config_dir=".bloop$bv"
-      mvn -U generate-sources ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl dist -am \
-        -Dbuildver="$bv" \
+      bloop_config_dir="$PWD/.bloop$bv"
+      mkdir -p "$bloop_config_dir"
+      rm -f "$bloop_config_dir"/*
+
+      mvn install ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl dist -am \
         -Dbloop.configDirectory="$bloop_config_dir" \
+        -DdownloadSources=true \
+        -Dbuildver="$bv" \
         -DskipTests \
         -Dskip \
         -Dmaven.javadoc.skip \
@@ -59,18 +61,24 @@ function bloopInstall() {
         -Dmaven.updateconfig.skip=true
 
       specifier="spark$bv"
-
       for bloop_json in $(echo $bloop_config_dir/*.json); do
         IFS="/" <<< "$bloop_json" read -ra bloop_json_parts
-        file="${bloop_json_parts[1]}"
+        last_idx=$((${#bloop_json_parts[@]} - 1))
+        file="${bloop_json_parts[$last_idx]}"
         project="${file%.json}-$specifier"
-        < $bloop_json jq --arg specifier "$specifier" '.project.out=.project.out + "/" + $specifier | .project.name=.project.name + "-" + $specifier' > .bloop/$project.json
+        < $bloop_json jq \
+          --arg specifier "$specifier" \
+          '.project.out=.project.out + "/" + $specifier | .project.name=.project.name + "-" + $specifier' \
+           > "$BLOOP_DIR/$project.json"
       done
     done
+
+    echo "Generated Bloop files under $BLOOP_DIR"
   )
 }
 
-case $1 in
+while [[ "$1" != "" ]] ; do
+
 case "$1" in
 
 --help|-h)
@@ -78,9 +86,10 @@ case "$1" in
   exit 0
   ;;
 
---bloop)
-  bloopInstall
-  exit 0
+--generate-bloop|-gb)
+  GEN_BLOOP=true
+  ;;
+
 -p=*|--profile=*)
   DIST_PROFILE="${1#*=}"
   ;;
@@ -105,9 +114,6 @@ esac
 shift
 
 done
-
-# TODO create a switch for debug
-set -x
 
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
@@ -163,6 +169,11 @@ case $DIST_PROFILE in
 
 esac
 
+if [[ "$GEN_BLOOP" == "true" ]]; then
+  bloopInstall
+  exit 0
+fi
+
 [[ "$DIST_PROFILE" != "" ]] && MVN_PROFILE_OPT="-P$DIST_PROFILE" || MVN_PROFILE_OPT=""
 
 # First element in SPARK_SHIM_VERSIONS to do most of the checks
@@ -176,7 +187,8 @@ mvn -q clean
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 
 export MVN_BASE_DIR=$(mvn help:evaluate -Dexpression=project.basedir -q -DforceStdout)
-build_single_shim() {
+
+function build_single_shim() {
   set -x
   BUILD_VER=$1
   mkdir -p "$MVN_BASE_DIR/target"
@@ -212,7 +224,6 @@ build_single_shim() {
         exit 255
       }
 }
-
 export -f build_single_shim
 
 # Install all the versions for DIST_PROFILE

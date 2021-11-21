@@ -173,6 +173,62 @@ If you see Scala symbols unresolved (highlighted red) in IDEA please try the fol
 - Make sure there are no relevant poms in "File->Settings->Build Tools->Maven->Ignored Files"
 - Restart IDEA and click "Reload All Maven Projects" again
 
+#### Bloop
+
+[Bloop](https://scalacenter.github.io/bloop/) is a build server and a set of tools around Build Server Protocol (BSP)
+for Scala providing an integration path with IDEs that support it. In fact, you can generate a bloop project from
+Maven just for the Maven modules and profiles you are interested in it. E.g., in order to generate Bloop projects the
+Spark 3.2.0 dependency just for the production code run:
+```shell script
+mvn install ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl aggregator -am \
+  -DdownloadSources=true \
+  -Dbuildver=320 \
+  -DskipTests \
+  -Dskip \
+  -Dmaven.javadoc.skip \
+  -Dmaven.scalastyle.skip=true \
+  -Dmaven.updateconfig.skip=true
+```
+
+With `--generate-bloop` we integrated Bloop project generation into `buildall`. It makes it easier to generate
+projects for multiple Spark dependencies using the same profiles as our regular build.
+It makes sure that the project files belonging to different Spark dependencies are
+not clobbered by repeated bloopInstall Maven plugin invocations and uses (jq)[https://stedolan.github.io/jq/]
+to post-process JSON-formatted project files such that they compile project classes into non-overlapping
+set of output directories.
+
+You can now open the spark-rapids as a [BSP project in IDEA](https://www.jetbrains.com/help/idea/bsp-support.html)
+
+Another, and arguably more popular, use of Bloop arises in connection with
+[Scala Metals](https://scalameta.org/metals/) and [VS @Code](https://code.visualstudio.com/)
+
+# Bloop, Scala Metals, and Visual Studio Code
+
+_Last tested with 1.63.0-insider (Universal) Commit: bedf867b5b02c1c800fbaf4d6ce09cefba_
+
+Run `./build/buildall --generate-bloop --profile=<profile>` to generate Bloop projects
+for required Spark dependencies, e.g. `--profile=320` for Spark 3.2.0.
+
+Install [Scala Metals extension](https://scalameta.org/metals/docs/editors/vscode) in VS Code, either locally or
+into a Remote-SSH extension destination depending on your target environment.
+When your project folder is open in VS Code, it may prompt you to import Maven project.
+IMPORTANT: always decline with "Don't ask again", otherwise it will overwrite the bloop projects generated
+with the default `301` profile. If you need to use a different profile, always rerun the command above manually.
+When regenerating projects it's recommended to proceed to Metals "Build commands" View, and click:
+1. "Restart build server"
+1. "Clean compile workspace"
+to avoid stale class files.
+
+Now you should be able to see Scala class members in the Explorer's Outline view and in the Breadcrumbs view at the top of the Editor with a Scala file open.
+
+Check Metals logs, "Run Doctor", etc if something is not working as expected. You can also verify that Bloop build server, and Metals language server, are running by executing `jps` in the Terminal window:
+```shell script
+jps -l
+72960 sun.tools.jps.Jps
+72356 bloop.Server
+72349 scala.meta.metals.Main
+```
+
 #### Other IDEs
 We welcome pull requests with tips how to setup your favorite IDE!
 
