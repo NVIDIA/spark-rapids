@@ -219,7 +219,7 @@ function build_single_shim() {
       -Dmaven.javadoc.skip="$SKIP_CHECKS" \
       -Dskip="$SKIP_CHECKS" \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
-      -pl 'aggregator' -am > "$LOG_FILE" 2>&1 || {
+      -pl aggregator -am > "$LOG_FILE" 2>&1 || {
         [[ "$LOG_FILE" != "/dev/tty" ]] && tail -20 "$LOG_FILE" || true
         exit 255
       }
