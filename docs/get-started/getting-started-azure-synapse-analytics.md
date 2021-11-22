@@ -11,7 +11,7 @@ parent: Getting-Started
 Synapse now offers the ability to create Apache Spark pools that use GPUs on the backend to run your Spark workloads on 
 GPUs for accelerated processing. This is called as 
 [GPU-accelerated Apache Spark pools](https://docs.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-gpu-concept).
-Currently it ships with the RAPIDS Accelerator for Apache Spark version 21.10 jars.
+Currently it ships with the RAPIDS Accelerator for Apache Spark version 21.10.
 
 Please follow below 2 quickstart guides:
 1. [Quickstart: Create an Apache Spark GPU-enabled Pool in Azure Synapse Analytics using the Azure portal](https://docs.microsoft.com/en-us/azure/synapse-analytics/quickstart-create-apache-gpu-pool-portal)
