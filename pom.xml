@@ -298,7 +298,6 @@
             </build>
             <modules>
                 <module>api_validation</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -727,6 +726,17 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+        <profile>
+            <id>tools</id>
+            <activation>
+                <property>
+                    <name>!skipTools</name>
+                </property>
+            </activation>
+            <modules>
+                <module>tools</module>
+            </modules>
         </profile>
     </profiles>
 
