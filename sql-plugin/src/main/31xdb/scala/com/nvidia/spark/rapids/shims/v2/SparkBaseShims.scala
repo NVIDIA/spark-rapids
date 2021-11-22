@@ -161,19 +161,19 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
         // calendarChecks are the same
 
         override val arrayChecks: TypeSig =
-          ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+          ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
               psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
                   "the desired child type")
         override val sparkArraySig: TypeSig = ARRAY.nested(all)
 
         override val mapChecks: TypeSig =
-          MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT + MAP) +
+          MAP.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT + MAP) +
               psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
                   "desired child types")
         override val sparkMapSig: TypeSig = MAP.nested(all)
 
         override val structChecks: TypeSig =
-          STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+          STRUCT.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
             psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
                 "desired child type(s)")
         override val sparkStructSig: TypeSig = STRUCT.nested(all)
@@ -224,7 +224,8 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.numeric, TypeSig.numeric),
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+        TypeSig.numeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
