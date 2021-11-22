@@ -178,7 +178,7 @@ If you see Scala symbols unresolved (highlighted red) in IDEA please try the fol
 [Bloop](https://scalacenter.github.io/bloop/) is a build server and a set of tools around Build
 Server Protocol (BSP) for Scala providing an integration path with IDEs that support it. In fact,
 you can generate a Bloop project from Maven just for the Maven modules and profiles you are
-interested in. For example, in order to generate the Bloop projects for the Spark 3.2.0 dependency
+interested in. For example, to generate the Bloop projects for the Spark 3.2.0 dependency
 just for the production code run:
 
 ```shell script
