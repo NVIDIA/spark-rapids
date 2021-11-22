@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Workload Qualification
-nav_order: 7
+nav_order: 8
 parent: Getting-Started
 ---
 # Getting Started on Spark workload qualification
