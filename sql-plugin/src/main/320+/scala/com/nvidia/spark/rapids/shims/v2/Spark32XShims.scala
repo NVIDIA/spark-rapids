@@ -352,7 +352,7 @@ trait Spark32XShims extends SparkShims  with Logging {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+        TypeSig.implicitCastsAstTypes, TypeSig.numeric, TypeSig.numeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
 
