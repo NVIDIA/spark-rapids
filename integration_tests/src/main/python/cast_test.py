@@ -36,6 +36,7 @@ def test_cast_empty_string_to_int():
 # pick child types that are simple to cast. Upcasting integer values and casting them to strings
 @pytest.mark.parametrize('data_gen,to_type', [
     (ArrayGen(byte_gen), ArrayType(IntegerType())),
+    (ArrayGen(decimal_gen_36_5), ArrayType(DecimalType(38, 5))),
     (ArrayGen(StringGen('[0-9]{1,5}')), ArrayType(IntegerType())),
     (ArrayGen(byte_gen), ArrayType(StringType())),
     (ArrayGen(byte_gen), ArrayType(DecimalType(6, 2))),
@@ -43,10 +44,12 @@ def test_cast_empty_string_to_int():
     (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(StringType()))),
     (ArrayGen(ArrayGen(byte_gen)), ArrayType(ArrayType(DecimalType(6, 2)))),
     (StructGen([('a', byte_gen)]), StructType([StructField('a', IntegerType())])),
+    (StructGen([('a', decimal_gen_36_5)]), StructType([StructField('a', DecimalType(38, 5))])),
     (StructGen([('a', byte_gen), ('c', short_gen)]), StructType([StructField('b', IntegerType()), StructField('c', ShortType())])),
     (StructGen([('a', ArrayGen(byte_gen)), ('c', short_gen)]), StructType([StructField('a', ArrayType(IntegerType())), StructField('c', LongType())])),
     (ArrayGen(StructGen([('a', byte_gen), ('b', byte_gen)])), ArrayType(StringType())),
     (MapGen(ByteGen(nullable=False), byte_gen), MapType(StringType(), StringType())),
+    (MapGen(ByteGen(nullable=False), decimal_gen_36_5), MapType(StringType(), DecimalType(38, 5))),
     (MapGen(ShortGen(nullable=False), ArrayGen(byte_gen)), MapType(IntegerType(), ArrayType(ShortType()))),
     (MapGen(ShortGen(nullable=False), ArrayGen(StructGen([('a', byte_gen)]))), MapType(IntegerType(), ArrayType(StructType([StructField('b', ShortType())]))))
     ], ids=idfn)
@@ -97,7 +100,7 @@ def test_cast_string_timestamp_fallback():
 
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', decimal_gens, ids=meta_idfn('from:'))
+@pytest.mark.parametrize('data_gen', decimal_gens + decimal_128_gens, ids=meta_idfn('from:'))
 @pytest.mark.parametrize('to_type', [ByteType(), ShortType(), IntegerType(), LongType(), FloatType(), DoubleType()], ids=meta_idfn('to:'))
 def test_cast_decimal_to(data_gen, to_type):
     assert_gpu_and_cpu_are_equal_collect(

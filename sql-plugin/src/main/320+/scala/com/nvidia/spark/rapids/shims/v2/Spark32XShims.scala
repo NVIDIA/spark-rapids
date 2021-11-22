@@ -287,19 +287,19 @@ trait Spark32XShims extends SparkShims  with Logging {
         // calendarChecks are the same
 
         override val arrayChecks: TypeSig =
-          ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+          ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
               psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
                   "the desired child type")
         override val sparkArraySig: TypeSig = ARRAY.nested(all)
 
         override val mapChecks: TypeSig =
-          MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT + MAP) +
+          MAP.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT + MAP) +
               psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
                   "desired child types")
         override val sparkMapSig: TypeSig = MAP.nested(all)
 
         override val structChecks: TypeSig =
-          STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT) +
+          STRUCT.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
               psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
                   "desired child type(s)")
         override val sparkStructSig: TypeSig = STRUCT.nested(all)
@@ -352,7 +352,8 @@ trait Spark32XShims extends SparkShims  with Logging {
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.numeric, TypeSig.numeric),
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+        TypeSig.numeric),
       (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
         val ansiEnabled = SQLConf.get.ansiEnabled
 
@@ -450,9 +451,9 @@ trait Spark32XShims extends SparkShims  with Logging {
           "Returns value for the given key in value if column is map.",
       ExprChecks.binaryProject(
         (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-            TypeSig.DECIMAL_64 + TypeSig.MAP).nested(), TypeSig.all,
+            TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(), TypeSig.all,
         ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP) +
+            TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP) +
             TypeSig.MAP.nested(TypeSig.STRING)
                 .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
             TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
@@ -475,10 +476,10 @@ trait Spark32XShims extends SparkShims  with Logging {
               // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProject(
                 (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                    TypeSig.DECIMAL_64 + TypeSig.MAP).nested(),
+                    TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
                 TypeSig.all,
                 ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-                    TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_64 + TypeSig.MAP),
+                    TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
                     TypeSig.ARRAY.nested(TypeSig.all)),
                 ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
