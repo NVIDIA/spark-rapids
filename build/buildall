@@ -195,7 +195,6 @@ function build_single_shim() {
   (( BUILD_PARALLEL == 1 || NUM_SHIMS == 1 )) && LOG_FILE="/dev/tty" || \
     LOG_FILE="$MVN_BASE_DIR/target/mvn-build-$BUILD_VER.log"
 
-  BUILD_TOOLS_OPTION="-DskipTools"
   if [[ "$BUILD_VER" == "$BASE_VER" ]]; then
     SKIP_CHECKS="false"
     # WORKAROUND:
@@ -207,8 +206,6 @@ function build_single_shim() {
     # precedence package-phase artifacts
     #
     MVN_PHASE="install"
-    # make sure we build the tools module once
-    BUILD_TOOLS_OPTION=""
   else
     SKIP_CHECKS="true"
     MVN_PHASE="package"
@@ -216,13 +213,13 @@ function build_single_shim() {
 
   echo "#### REDIRECTING mvn output to $LOG_FILE ####"
   mvn -U "$MVN_PHASE" \
-      -DskipTests $BUILD_TOOLS_OPTION \
+      -DskipTests \
       -Dbuildver="$BUILD_VER" \
       -Drat.skip="$SKIP_CHECKS" \
       -Dmaven.javadoc.skip="$SKIP_CHECKS" \
       -Dskip="$SKIP_CHECKS" \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
-      -pl aggregator -am > "$LOG_FILE" 2>&1 || {
+      -pl 'aggregator' -am > "$LOG_FILE" 2>&1 || {
         [[ "$LOG_FILE" != "/dev/tty" ]] && tail -20 "$LOG_FILE" || true
         exit 255
       }
