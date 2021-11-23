@@ -19,7 +19,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.ColumnVector
 
-import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GatherUtils extends Arm {
