@@ -37,7 +37,7 @@ mvn -B -Dbuildver=312 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.loc
 mvn -U -B -Dbuildver=313 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 mvn -B -Dbuildver=313 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 mvn -U -B -Dbuildver=311cdh clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
-mvn -B -Dbuildver=311cdh deploy -pl '!tools,!dist'$MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
+mvn -B -Dbuildver=311cdh deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 mvn -U -B -Dbuildver=320 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 mvn -B -Dbuildver=320 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 mvn -U -B -Dbuildver=321 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
