@@ -16,6 +16,7 @@ import org.apache.spark.sql.hive.HiveUtils
 import org.apache.spark.sql.internal.SQLConf.HiveCaseSensitiveInferenceMode.{INFER_AND_SAVE, NEVER_INFER}
 import org.apache.spark.sql.types.StructType
 
+// This class mainly originates from [[HiveMetastoreCatalog]]
 class HiveMetastoreCatalogUtils(sparkSession: SparkSession) extends Logging {
   // these are def_s and not val/lazy val since the latter would introduce circular references
   private def sessionState = sparkSession.sessionState

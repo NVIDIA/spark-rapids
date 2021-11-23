@@ -17,8 +17,7 @@ object HiveOverrides {
         override val childExprs: Seq[ExprMeta[_]] = Seq.empty
 
         override def tagPlanForGpu(): Unit = {
-          val x = this.wrapped.relation
-          val y = this.wrapped.relation.tableMeta
+          // should add more checks for not running on GPU
         }
 
         override def convertToGpu(): GpuExec = {
