@@ -76,9 +76,9 @@ final class CastExprMeta[INPUT <: CastBase](
               s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true if semantically " +
               s"equivalent decimal strings are sufficient for your application.")
         }
-        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+        if (dt.precision > DType.DECIMAL128_MAX_PRECISION) {
           willNotWorkOnGpu(s"decimal to string with a " +
-              s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
+              s"precision > ${DType.DECIMAL128_MAX_PRECISION} is not supported yet")
         }
       case ( _: DecimalType, _: FloatType | _: DoubleType) if !conf.isCastDecimalToFloatEnabled =>
         willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
