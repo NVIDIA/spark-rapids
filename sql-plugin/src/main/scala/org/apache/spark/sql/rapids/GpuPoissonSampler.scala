@@ -59,7 +59,6 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
       // invoke PoissonSampler sample
       val rowCount = super.sample()
       if (rowCount > 0) {
-        numOutputRows += rowCount
         var i = 0
         while (i < rowCount) {
           buf += rowIdx

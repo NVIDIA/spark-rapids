@@ -368,23 +368,32 @@ case class GpuFilterExec(
   }
 }
 
-class GpuSampleExecMeta(sample: SampleExec, conf: RapidsConf, p: Option[RapidsMeta[_, _, _]],
+class GpuSampleExecMeta(
+    sample: SampleExec,
+    conf: RapidsConf,
+    p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[SampleExec](sample, conf, p, r)
-  with Logging {
+    with Logging {
   override def convertToGpu(): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
-    GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
-      sample.seed, gpuChild)
+    if (conf.isFastSampleEnabled) {
+      // Use GPU sample JNI, this is faster, but the output is not the same as CPU produces
+      GpuFastSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
+        sample.seed, gpuChild)
+    } else {
+      // The output is the same as CPU produces
+      // First generates row indexes by CPU sampler, then use GPU to gathers
+      GpuSampleExec(sample.lowerBound, sample.upperBound, sample.withReplacement,
+        sample.seed, gpuChild)
+    }
   }
 }
 
-// See ENABLE_FAST_SAMPLE.
-// If enabled, uses GPU to sample which is faster, but output is inconsistent with CPU;
-// If not enabled it's consistent with CPU, fist generates sample row indexes by CPU,
-// and then use GPU gathers.
-case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement: Boolean,
-                         seed: Long, child: SparkPlan)
-  extends ShimUnaryExecNode with GpuExec {
+case class GpuSampleExec(
+    lowerBound: Double,
+    upperBound: Double,
+    withReplacement: Boolean,
+    seed: Long, child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -413,80 +422,117 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
     val opTime = gpuLongMetric(OP_TIME)
 
     val rdd = child.executeColumnar()
-    val useGpuToSample = new RapidsConf(conf).isFastSampleEnabled
-    if (useGpuToSample) {
-      // CPU inconsistent, use GPU sample
+    // CPU consistent, first generates sample row indexes by CPU, then gathers by GPU
+    if (withReplacement) {
+      new GpuPartitionwiseSampledRDD(
+        rdd,
+        new GpuPoissonSampler(upperBound - lowerBound, useGapSamplingIfPossible = false,
+          numOutputRows, numOutputBatches, opTime),
+        preservesPartitioning = true,
+        seed)
+    } else {
       rdd.mapPartitionsWithIndex(
-        (_, iterator) => {
+        (index, iterator) => {
+          // use CPU sampler generate row indexes
+          val sampler = new BernoulliCellSampler(lowerBound, upperBound)
+          sampler.setSeed(seed + index)
           iterator.map[ColumnarBatch] { columnarBatch =>
+            // collect sampled row idx
+            // samples idx in batch one by one, so it's same as CPU execution
             withResource(new NvtxWithMetrics("Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
               withResource(columnarBatch) { cb =>
-                numOutputBatches += 1
-                val numSampleRows = (cb.numRows() * (upperBound - lowerBound)).toLong
-
-                val colTypes = GpuColumnVector.extractTypes(cb)
-                if (numSampleRows == 0L) {
-                  GpuColumnVector.emptyBatchFromTypes(colTypes)
-                } else if(cb.numCols() == 0) {
-                    // for count agg, num of cols is 0
-                    val c = GpuColumnVector.emptyBatchFromTypes(colTypes)
-                    c.setNumRows(numSampleRows.toInt)
-                    c
-                } else {
-                  withResource(GpuColumnVector.from(cb)) { table =>
-                    withResource(table.sample(numSampleRows, withReplacement, seed)) { sampled =>
-                      val cb = GpuColumnVector.from(sampled, colTypes)
-                      numOutputRows += cb.numRows()
-                      cb
-                    }
+                // generate sampled row indexes by CPU
+                val sampledRows = new ArrayBuffer[Int]
+                var rowIndex = 0
+                while (rowIndex < cb.numRows()) {
+                  if (sampler.sample() > 0) {
+                    sampledRows += rowIndex
                   }
+                  rowIndex += 1
                 }
+                numOutputBatches += 1
+                numOutputRows += sampledRows.length
+                // gather by row indexes
+                GatherUtils.gather(cb, sampledRows)
               }
             }
           }
         }
         , preservesPartitioning = true
       )
-    } else {
-      // CPU consistent, first generates sample row indexes by CPU, then gathers by GPU
-      if (withReplacement) {
-        new GpuPartitionwiseSampledRDD(
-          rdd,
-          new GpuPoissonSampler(upperBound - lowerBound, useGapSamplingIfPossible = false,
-            numOutputRows, numOutputBatches, opTime),
-          preservesPartitioning = true,
-          seed)
-      } else {
-        rdd.mapPartitionsWithIndex(
-          (index, iterator) => {
-            // use CPU sampler generate filter
-            val sampler = new BernoulliCellSampler(lowerBound, upperBound)
-            sampler.setSeed(seed + index)
-            iterator.map[ColumnarBatch] { columnarBatch =>
-              // collect sampled row idx
-              // samples idx in batch one by one, so it's same with CPU version
-              withResource(new NvtxWithMetrics("Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
-                withResource(columnarBatch) { cb =>
-                  // generate sampled row indexes by CPU
-                  val sampledRows = new ArrayBuffer[Int]
-                  var rowIndex = 0
-                  while (rowIndex < cb.numRows()) {
-                    if (sampler.sample() > 0) {
-                      sampledRows += rowIndex
-                    }
-                    rowIndex += 1
+    }
+  }
+}
+
+case class GpuFastSampleExec(
+    lowerBound: Double,
+    upperBound: Double,
+    withReplacement: Boolean,
+    seed: Long,
+    child: SparkPlan) extends ShimUnaryExecNode with GpuExec {
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+
+  override def output: Seq[Attribute] = {
+    child.output
+  }
+
+  // add one coalesce exec to avoid empty batch and small batch,
+  // because sample will shrink the batch
+  override val coalesceAfter: Boolean = true
+
+  // Note GPU sample does not preserve the ordering
+  override def outputOrdering: Seq[SortOrder] = Nil
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
+  override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val opTime = gpuLongMetric(OP_TIME)
+    val rdd = child.executeColumnar()
+
+    // CPU inconsistent, uses GPU sample JNI
+    rdd.mapPartitionsWithIndex(
+      (index, iterator) => {
+        iterator.map[ColumnarBatch] { columnarBatch =>
+          withResource(new NvtxWithMetrics("Fast Sample Exec", NvtxColor.YELLOW, opTime)) { _ =>
+            withResource(columnarBatch) { cb =>
+              numOutputBatches += 1
+              val numSampleRows = (cb.numRows() * (upperBound - lowerBound)).toLong
+
+              val colTypes = GpuColumnVector.extractTypes(cb)
+              if (numSampleRows == 0L) {
+                GpuColumnVector.emptyBatchFromTypes(colTypes)
+              } else if (cb.numCols() == 0) {
+                // for count agg, num of cols is 0
+                val c = GpuColumnVector.emptyBatchFromTypes(colTypes)
+                c.setNumRows(numSampleRows.toInt)
+                c
+              } else {
+                withResource(GpuColumnVector.from(cb)) { table =>
+                  // GPU sample
+                  withResource(table.sample(numSampleRows, withReplacement, seed + index)) {
+                    sampled =>
+                      val cb = GpuColumnVector.from(sampled, colTypes)
+                      numOutputRows += cb.numRows()
+                      cb
                   }
-                  numOutputBatches += 1
-                  numOutputRows += sampledRows.length
-                  GatherUtils.gather(cb, sampledRows)
                 }
               }
             }
           }
-          , preservesPartitioning = true
-        )
+        }
       }
-    }
+      , preservesPartitioning = true
+    )
   }
 }
 
