@@ -61,7 +61,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.OrcFilters
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DecimalType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -416,6 +416,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper {
         dt.fields.foreach(f => findImpl(prefix + fieldName + ".", f.name, f.dataType))
       case dt: ArrayType =>
         findImpl(prefix + fieldName + ".", "1", dt.elementType)
+      case MapType(kt: DataType, vt: DataType, _) =>
+        findImpl(prefix + fieldName + ".", "0", kt)
+        findImpl(prefix + fieldName + ".", "1", vt)
       case _ =>
     }
 
