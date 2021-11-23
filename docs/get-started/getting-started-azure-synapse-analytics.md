@@ -5,7 +5,7 @@ nav_order: 5
 parent: Getting-Started
 ---
 # Getting started with RAPIDS Accelerator on Azure Synapse Analytics
- [Azure Synapse](https://docs.microsoft.com/en-us/azure/synapse-analytics/) is a limitless analytics service that brings
+ [Azure Synapse](https://docs.microsoft.com/en-us/azure/synapse-analytics/) is an analytics service that brings
  together enterprise data warehousing and Big Data analytics.
 
 Synapse now offers the ability to create Apache Spark pools that use GPUs on the backend to run your Spark workloads on 
