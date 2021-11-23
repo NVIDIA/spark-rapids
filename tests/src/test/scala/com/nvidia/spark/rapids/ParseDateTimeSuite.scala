@@ -58,11 +58,13 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
 
+  /*
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
+  */
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd LEGACY",
     datesAsStrings,
@@ -100,11 +102,13 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
+  /*
   testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
       timestampsAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
   }
+  */
 
   testSparkResultsAreEqual("to_timestamp dd/MM/yyyy",
       timestampsAsStrings,
