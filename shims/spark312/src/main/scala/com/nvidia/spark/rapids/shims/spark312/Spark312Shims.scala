@@ -20,7 +20,9 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.v2._
 import org.apache.parquet.schema.MessageType
 
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.hive.execution.HiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 
 class Spark312Shims extends SparkBaseShims with Spark30Xuntil33XShims {
@@ -41,4 +43,7 @@ class Spark312Shims extends SparkBaseShims with Spark30Xuntil33XShims {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive)
   }
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    HiveOverrides.hiveExec ++ super.getExecs
 }
