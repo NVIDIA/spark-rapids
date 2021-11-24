@@ -618,9 +618,17 @@ trait GpuWindowFunction extends GpuUnevaluable with ShimExpression
 
 /**
  * This is a special window function that simply replaces itself with one or more
- * window functions and other expressions that can be executed.
+ * window functions and other expressions that can be executed. This allows you to write
+ * `GpuAverage` in terms of `GpuSum` and `GpuCount` which can both operate on all window
+ * optimizations making `GpuAverage` be able to do the same.
  */
 trait GpuReplaceWindowFunction extends GpuWindowFunction {
+  /**
+   * Return a new single expression that can replace the existing aggregation in window
+   * calculations. Please note that this requires that there are no nested window operations.
+   * For example you cannot do a SUM of AVERAGES with this currently. That support may be added
+   * in the future.
+   */
   def windowReplacement(spec: GpuWindowSpecDefinition): Expression
 }
 
@@ -644,6 +652,13 @@ trait GpuAggregateWindowFunction extends GpuWindowFunction {
    * corresponding ColumnVector. Some aggregations need extra values.
    */
   def windowAggregation(inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn
+
+  /**
+   * Do a final pass over the window aggregation output. This lets us cast the result to a desired
+   * type or check for overflow. This is not used for GpuRunningWindowFunction. There you can use
+   * `scanCombine`.
+   */
+  def windowOutput(result: ColumnVector): ColumnVector = result.incRefCount()
 }
 
 /**
@@ -699,7 +714,7 @@ trait GpuRunningWindowFunction extends GpuWindowFunction {
   def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]]
 
   /**
-   * Should a group by scan be run or not. This should never return false unless this is also an
+   * Should a scan be run or not. This should never return false unless this is also an
    * instance of `GpuAggregateWindowFunction` so the window code can fall back to it for
    * computation.
    */
@@ -863,7 +878,8 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
  * fixers, but it has to special case nulls and that is not super generic.  In the future we
  * might be able to make this more generic but we need to see what the use case really is.
  */
-class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
+class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
+    extends BatchedRunningWindowFixer with Arm with Logging {
   private val name = "sum"
   private val binOp = BinaryOp.ADD
   private var previousResult: Option[Scalar] = None
@@ -886,8 +902,10 @@ class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
     case dec if dec.isDecimalType =>
       if (dec.getTypeId == DType.DTypeEnum.DECIMAL32) {
         Scalar.fromDecimal(dec.getScale, 0)
-      } else {
+      } else if (dec.getTypeId == DType.DTypeEnum.DECIMAL64) {
         Scalar.fromDecimal(dec.getScale, 0L)
+      } else {
+        Scalar.fromDecimal(dec.getScale, java.math.BigInteger.ZERO)
       }
     case other =>
       throw new IllegalArgumentException(s"Making a zero scalar for $other is not supported")
@@ -939,8 +957,17 @@ class SumBinaryFixer extends BatchedRunningWindowFixer with Arm with Logging {
           incRef(windowedColumnOutput)
         }
     }
-    updateState(ret)
-    ret
+    closeOnExcept(ret) { ret =>
+      updateState(ret)
+    }
+    toType match {
+      case dt: DecimalType =>
+        withResource(ret) { ret =>
+          GpuCast.checkNFixDecimalBounds(ret, dt, isAnsi)
+        }
+      case _ =>
+        ret
+    }
   }
 
   override def close(): Unit = {
@@ -1324,6 +1351,10 @@ case object GpuRowNumber extends GpuRunningWindowFunction
     groupByScanInputProjection(isRunningBatched)
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
     Seq(AggAndReplace(ScanAggregation.sum(), None))
+
+  override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
+    cols.head.castTo(DType.INT32)
+  }
 }
 
 trait GpuOffsetWindowFunction extends GpuAggregateWindowFunction {

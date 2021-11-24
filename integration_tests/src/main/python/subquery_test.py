@@ -18,7 +18,7 @@ from data_gen import *
 from marks import *
 
 gens = [('l', LongGen()), ('i', IntegerGen()), ('f', FloatGen()), (
-    's', StringGen())]
+    's', StringGen()), ('d', decimal_gen_38_10)]
 
 
 @ignore_order
@@ -28,7 +28,7 @@ def test_scalar_subquery(data_gen):
         lambda spark: gen_df(spark, data_gen, length=2048),
         'table',
         '''
-        select l, i, f, (select count(s) from table) as c
+        select l, i, f, (select count(s) from table) as c, (select max(d) from table) as dec
         from table
         where l > (select max(i) from table) or f < (select min(i) from table)
         ''')

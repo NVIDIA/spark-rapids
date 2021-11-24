@@ -106,12 +106,6 @@ class DecimalUnitTest extends GpuUnitTests {
         }
       }
     }
-    // assertion error throws because of precision overflow
-    assertThrows[IllegalArgumentException] {
-      withResource(ColumnVector.decimalFromLongs(0, 1L)) { dcv =>
-        GpuColumnVector.from(dcv, DecimalType(DType.DECIMAL64_MAX_PRECISION + 1, 0))
-      }
-    }
     withResource(ColumnVector.decimalFromInts(0, 1)) { dcv =>
       GpuColumnVector.from(dcv, DecimalType(1, 0))
     }
@@ -129,24 +123,9 @@ class DecimalUnitTest extends GpuUnitTests {
     }
   }
 
-  private val rapidsConf = new RapidsConf(Map[String, String](
-    RapidsConf.DECIMAL_TYPE_ENABLED.key -> "true"
-  ))
+  private val rapidsConf = new RapidsConf(Map[String, String]())
 
   private val lit = Literal(dec32Data(0), DecimalType(dec32Data(0).precision, dec32Data(0).scale))
-
-  test("decimals are off by default") {
-    // decimals should be disabled by default
-    val rapidsConfDefault = new RapidsConf(Map[String, String]())
-    val wrapperLit = GpuOverrides.wrapExpr(lit, rapidsConfDefault, None)
-    wrapperLit.tagForGpu()
-    assertResult(false)(wrapperLit.canExprTreeBeReplaced)
-
-    // use the tests' rapidsConf, which enables decimals
-    val wrapperLitSupported = GpuOverrides.wrapExpr(lit, rapidsConf, None)
-    wrapperLitSupported.tagForGpu()
-    assertResult(true)(wrapperLitSupported.canExprTreeBeReplaced)
-  }
 
   test("test Literal with decimal") {
     val wrapperLit = GpuOverrides.wrapExpr(lit, rapidsConf, None)
@@ -161,7 +140,7 @@ class DecimalUnitTest extends GpuUnitTests {
     // inconvertible because of precision overflow
     val wrp = GpuOverrides.wrapExpr(Literal(Decimal(12345L), DecimalType(38, 10)), rapidsConf, None)
     wrp.tagForGpu()
-    assertResult(false)(wrp.canExprTreeBeReplaced)
+    assertResult(true)(wrp.canExprTreeBeReplaced)
   }
 
   test("test Alias with decimal") {
@@ -264,7 +243,7 @@ class DecimalUnitTest extends GpuUnitTests {
   }
 
   test("test type checking of Scans") {
-    val conf = new SparkConf().set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
+    val conf = new SparkConf()
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "BatchScanExec,ColumnarToRowExec,FileSourceScanExec")
     val decimalCsvStruct = StructType(Array(
       StructField("c_0", DecimalType(18, 0), true),
