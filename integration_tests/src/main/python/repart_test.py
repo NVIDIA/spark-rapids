@@ -84,7 +84,7 @@ def test_union_struct_missing_children(data_gen):
         lambda spark : binary_op_df(spark, left_gen).unionByName(binary_op_df(
             spark, right_gen), True))
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -95,7 +95,7 @@ def test_union(data_gen):
             lambda spark : binary_op_df(spark, data_gen).union(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -106,7 +106,7 @@ def test_unionAll(data_gen):
             lambda spark : binary_op_df(spark, data_gen).unionAll(binary_op_df(spark, data_gen)),
             conf=allow_negative_scale_of_decimal_conf)
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       pytest.param(all_basic_struct_gen),
                                       pytest.param(StructGen([[ 'child0', DecimalGen(7, 2)]])),
@@ -154,7 +154,7 @@ def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
 
 
 
-@pytest.mark.parametrize('data_gen', all_gen + map_gens + array_gens_sample +
+@pytest.mark.parametrize('data_gen', all_gen + decimal_128_gens + map_gens + array_gens_sample +
                                      [all_basic_struct_gen,
                                       StructGen([['child0', DecimalGen(7, 2)]]),
                                       nested_struct,
@@ -166,7 +166,7 @@ def test_union_by_name(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
     pytest.param([('struct' + str(i), gen) for i, gen in enumerate(struct_gens_sample)]),
     pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample)]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
@@ -180,12 +180,13 @@ def test_coalesce_types(data_gen):
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 def test_coalesce_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts))
+            lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + decimal_128_gens)]),
     pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
     pytest.param([('a', ArrayGen(string_gen))]),
     pytest.param([('m', simple_string_to_string_map_gen)]),

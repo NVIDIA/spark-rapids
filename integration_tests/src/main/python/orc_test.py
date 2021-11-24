@@ -15,11 +15,10 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session
+from spark_session import with_cpu_session
 from parquet_test import _nested_pruning_schemas
 
 def read_orc_df(data_path):
@@ -57,7 +56,8 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
 # ...
 orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))] + decimal_gens_no_neg
+    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
+                  ] + decimal_gens_no_neg + decimal_128_gens_no_neg
 
 orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
 
@@ -82,11 +82,16 @@ orc_struct_gens_sample = [orc_basic_struct_gen,
 orc_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
     lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
-    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable)]]
+    lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable),
+    lambda nullable=True: DecimalGen(precision=15, scale=1, nullable=nullable),
+    lambda nullable=True: DecimalGen(precision=36, scale=5, nullable=nullable)]]
 
 # Some map gens, but not all because of nesting
 orc_map_gens_sample = orc_basic_map_gens + [
     MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(decimal_gen_36_5), max_length=10),
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+           ArrayGen(StructGen([["c0", decimal_gen_18_3], ["c1", decimal_gen_20_2]])), max_length=10),
     MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
     MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
     MapGen(StructGen([['child0', byte_gen], ['child1', long_gen]], nullable=False),
