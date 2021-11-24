@@ -238,3 +238,18 @@ def test_sql_array_scalars(query):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.sql('SELECT {}'.format(query)),
             conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
+
+
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+def test_cast_array_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length= 3).select(
+            f.col('a').cast("STRING")
+        ), 
+        conf = {
+            'spark.rapids.sql.castDecimalToString.enabled': 'true',
+            'spark.rapids.sql.castFloatToString.enabled'  : 'true'
+            }
+    )
+
+
