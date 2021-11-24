@@ -96,15 +96,15 @@
                             <pattern>org.apache.orc.</pattern>
                             <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
                         </relocation>
-                        <relocation>
-                            <pattern>org.apache.hadoop.hive.</pattern>
-                            <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
-                            <excludes>
-                                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
-                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
-                            </excludes>
-                        </relocation>
+                        <!--
+                            Removed the relocation config for hadoop hive here, to fix the Hive
+                            dependency issue in module tests. Otherwise, it will complain the
+                            error as below:
+                              RowBasedHiveUDFSuite:
+                              *** RUN ABORTED ***
+                              java.lang.NoSuchMethodError: org.apache.hadoop.hive.ql.exec.UDF.getResolver()Lcom/nvidia/shaded/spark/hadoop/hive/ql/exec/UDFMethodResolver;
+                              at org.apache.spark.sql.hive.rapids.GpuRowBasedHiveSimpleUDF.method$lzycompute(rowBasedHiveUDFs.scala:88)
+                         -->
                         <relocation>
                             <pattern>org.apache.hive.</pattern>
                             <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>

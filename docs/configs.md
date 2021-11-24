@@ -332,8 +332,8 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.VarianceSamp"></a>spark.rapids.sql.expression.VarianceSamp|`var_samp`, `variance`|Aggregation computing sample variance|true|None|
 <a name="sql.expression.NormalizeNaNAndZero"></a>spark.rapids.sql.expression.NormalizeNaNAndZero| |Normalize NaN and zero|true|None|
 <a name="sql.expression.ScalarSubquery"></a>spark.rapids.sql.expression.ScalarSubquery| |Subquery that will return only one row and one column|true|None|
-<a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
-<a name="sql.expression.HiveSimpleUDF"></a>spark.rapids.sql.expression.HiveSimpleUDF| |Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface|true|None|
+<a name="sql.expression.HiveGenericUDF"></a>spark.rapids.sql.expression.HiveGenericUDF| |Hive Generic UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance|true|None|
+<a name="sql.expression.HiveSimpleUDF"></a>spark.rapids.sql.expression.HiveSimpleUDF| |Hive UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance|true|None|
 
 ### Execution
 

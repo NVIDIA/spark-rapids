@@ -16149,7 +16149,7 @@ are limited.
 <tr>
 <td rowSpan="2">HiveGenericUDF</td>
 <td rowSpan="2"> </td>
-<td rowSpan="2">Hive Generic UDF, support requires the UDF to implement a RAPIDS accelerated interface</td>
+<td rowSpan="2">Hive Generic UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>param</td>
@@ -16196,7 +16196,7 @@ are limited.
 <tr>
 <td rowSpan="2">HiveSimpleUDF</td>
 <td rowSpan="2"> </td>
-<td rowSpan="2">Hive UDF, support requires the UDF to implement a RAPIDS accelerated interface</td>
+<td rowSpan="2">Hive UDF, the UDF can choose to implement a RAPIDS accelerated interface to get better performance</td>
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>param</td>

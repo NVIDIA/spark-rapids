@@ -95,6 +95,13 @@
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.test.version}</version>
         </dependency>
+        <!-- For enabledHiveSupport() and Hive UDF tests -->
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-hive_${scala.binary.version}</artifactId>
+            <version>${spark.test.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
