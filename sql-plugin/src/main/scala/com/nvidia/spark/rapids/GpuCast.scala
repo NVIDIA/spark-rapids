@@ -23,6 +23,7 @@ import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.YearParseUtil
+//import com.nvidia.spark.rapids.GpuNvl
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
@@ -512,7 +513,7 @@ object GpuCast extends Arm {
         }
 
       case (ArrayType(elementType, containsNull), StringType) =>
-        castArrayToString(input, elementType, containsNull, legacyCastToString)
+        castArrayToString(input, elementType, containsNull, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
 
       case (from: StructType, to: StructType) =>
         castStructToStruct(from, to, input, ansiMode, legacyCastToString,
@@ -621,27 +622,40 @@ object GpuCast extends Arm {
   }
 
 
-  private  def castArrayToString(input: ColumnView, elementType: DataType, containsNull: Boolean, legacyCastToString: Boolean): ColumnVector = {
-    val (leftStr, rightStr) = if (legacyCastToString) ("[", "]") else ("{", "}")
+  private  def castArrayToString(
+                                  input: ColumnView,
+                                  elementType: DataType,
+                                  containsNull: Boolean,
+                                  ansiMode: Boolean,
+                                  legacyCastToString: Boolean,
+                                  stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+    val (leftStr, rightStr) =  ("[", "]")
     val emptyStr = ""
-    val nullStr = if (legacyCastToString) "" else "null"
+    val nullStr =  "null"
     val numRows = input.getRowCount.toInt
 
-    // cast all elements in arrays (lists) to string type. Ex: [[1,2,3],[4,5]] => [["1","2","3"], ["4","5"]]
-    withResource(doCast(input, ArrayType(elementType, containsNull), ArrayType(StringType, containsNull), false, legacyCastToString, false)) { strArr =>
-      // cast each array (list) in the column to string (without brackets). Ex: [["1","2","3"], ["4","5"]] => ["1, 2, 3", "4, 5"]
-      withResource(strArr.stringConcatenateListElements(Scalar.fromString(", "), Scalar.fromString("null"), true, true)) { withoutBrackets =>
-        // add brackets to each string in the column. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
-        withResource(Seq(leftStr, rightStr).safeMap(Scalar.fromString).safeMap(s => ColumnVector.fromScalar(s, numRows))){ case Seq(leftColumn, rightColumn) =>
-          withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
-            columns += leftColumn.incRefCount()
-            columns += withoutBrackets.incRefCount()
-            columns += rightColumn.incRefCount()
+    // cast all elements in arrays to string type. Ex: [[1,2,3],[4,5]] => [["1","2","3"], ["4","5"]]
+    withResource(doCast(input, ArrayType(elementType, containsNull), ArrayType(StringType, containsNull), ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) { strArr =>
+      withResource(strArr.getChildColumnView(0)) { childView =>
+        withResource(childView.copyToColumnVector()){ childVector =>
+          withResource(GpuNvl(childVector, Scalar.fromString(if (legacyCastToString) "" else "null"))){ stringChild =>
+            withResource(strArr.replaceListChild(stringChild)) {pureStrArr =>
+              // cast each array (list) to a string (without brackets). Ex: [["1","2","3"], ["4","5"]] => ["1, 2, 3", "4, 5"]
+              withResource(pureStrArr.stringConcatenateListElements(Scalar.fromString(", "), Scalar.fromString("null"), true, true)) { withoutBrackets =>
+                // add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
+                withResource(Seq(leftStr, rightStr).safeMap(Scalar.fromString).safeMap(s => ColumnVector.fromScalar(s, numRows))){ case Seq(leftColumn, rightColumn) =>
+                  withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
+                    columns += leftColumn.incRefCount()
+                    columns += withoutBrackets.incRefCount()
+                    columns += rightColumn.incRefCount()
 
-            withResource(ColumnVector.stringConcatenate(Scalar.fromString(emptyStr), Scalar.fromString(nullStr), columns.toArray))(
-              _.mergeAndSetValidity(BinaryOp.BITWISE_AND, withoutBrackets)
-            )
-
+                    withResource(ColumnVector.stringConcatenate(Scalar.fromString(emptyStr), Scalar.fromString(nullStr), columns.toArray))(
+                      _.mergeAndSetValidity(BinaryOp.BITWISE_AND, pureStrArr)
+                    )
+                  }
+                }
+              }
+            }
           }
         }
       }
