@@ -51,7 +51,7 @@ def main():
   for opt, arg in opts:
       if opt == '-h':
           print(
-              'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider>  -f <initscripts> -z <awszone>')
+              'create.py -w <workspace> -t <token> -k <sshkey> -n <clustername> -i <idletime> -r <runtime> -o <workernodetype> -d <drivernodetype> -e <numworkers> -s <cloudprovider> -f <initscripts> -z <awszone>')
           sys.exit()
       elif opt in ('-w', '--workspace'):
           workspace = arg
@@ -99,7 +99,7 @@ def main():
       sys.exit(2)
 
   templ = ClusterUtils.generate_create_templ(sshkey, cluster_name, runtime, idletime,
-          num_workers, driver_type, worker_type, cloud_provider, init_scripts, aws_zone,printLoc=sys.stderr)
+          num_workers, driver_type, worker_type, cloud_provider, init_scripts, aws_zone, printLoc=sys.stderr)
   clusterid = ClusterUtils.create_cluster(workspace, templ, token, printLoc=sys.stderr)
   ClusterUtils.wait_for_cluster_start(workspace, clusterid, token, printLoc=sys.stderr)
 
