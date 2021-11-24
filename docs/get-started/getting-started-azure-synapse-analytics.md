@@ -9,7 +9,7 @@ parent: Getting-Started
  together enterprise data warehousing and Big Data analytics.
 
 Synapse now offers the ability to create Apache Spark pools that use GPUs on the backend to run your Spark workloads on 
-GPUs for accelerated processing. These are called as 
+GPUs for accelerated processing. These are called 
 [GPU-accelerated Apache Spark pools](https://docs.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-gpu-concept).
 Currently it ships with the RAPIDS Accelerator for Apache Spark version 21.10.
 
