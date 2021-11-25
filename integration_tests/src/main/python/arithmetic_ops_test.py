@@ -354,11 +354,11 @@ def test_floor_ceil_overflow(data_gen):
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('floor(a)').collect(),
         conf=allow_negative_scale_of_decimal_conf,
-        error_message="java.lang.ArithmeticException")
+        error_message="ArithmeticException")
     assert_gpu_and_cpu_error(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('ceil(a)').collect(),
         conf=allow_negative_scale_of_decimal_conf,
-        error_message="java.lang.ArithmeticException")
+        error_message="ArithmeticException")
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_rint(data_gen):
