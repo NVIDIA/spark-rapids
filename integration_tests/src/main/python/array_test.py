@@ -251,16 +251,58 @@ def test_sql_array_scalars(query):
             conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': 'true'})
 
 
-@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+
+basic_gens_for_cast_to_string = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, null_gen] + decimal_gens_no_neg
+# casting these types to string are not exact match, marked as xfail when testing
+not_matched_gens = [float_gen, double_gen, timestamp_gen, decimal_gen_neg_scale]
+# casting these types to string are not supported, marked as xfail when testing
+not_support_gens = decimal_128_gens
+
+single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_gens_for_cast_to_string]
+nested_array_gens_for_cast_to_string = [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+        ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+        ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', date_gen]]))]
+
+
+@pytest.mark.parametrize('data_gen', single_level_array_gens_for_cast_to_string + nested_array_gens_for_cast_to_string, ids=idfn)
 def test_cast_array_to_string(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen, length= 3).select(
+        lambda spark: unary_op_df(spark, data_gen).select(
             f.col('a').cast("STRING")
-        ), 
-        conf = {
-            'spark.rapids.sql.castDecimalToString.enabled': 'true',
-            'spark.rapids.sql.castFloatToString.enabled'  : 'true'
-            }
+        )
     )
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(StringGen(),max_length=3)], ids=idfn)
+def test_legacy_cast_array_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen, length=1).select(
+            f.col('a').cast("STRING")
+        ),
+        conf = {'spark.sql.legacy.castComplexTypesToString.enabled': 'true'}
+    )
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_gens], ids=idfn)
+@pytest.mark.xfail(reason='casting these types to string are not exact matchs')
+def test_cast_array_with_unmatched_element_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).select(
+            f.col('a').cast("STRING")
+        ),
+        conf = {
+            "spark.sql.legacy.allowNegativeScaleOfDecimal": "true",
+            "spark.rapids.sql.castFloatToString.enabled"  : "true"}
+    )
+
+
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_support_gens], ids=idfn)
+@pytest.mark.xfail(reason='casting these types to string are not supported')
+def test_cast_array_with_unsupported_element_to_string(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+    lambda spark: unary_op_df(spark, data_gen).select(
+        f.col('a').cast("STRING")
+    )
+)
 
 

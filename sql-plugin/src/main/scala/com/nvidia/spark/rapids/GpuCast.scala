@@ -638,36 +638,55 @@ object GpuCast extends Arm {
   }
 
 
-  private  def castArrayToString(
-                                  input: ColumnView,
-                                  elementType: DataType,
-                                  containsNull: Boolean,
-                                  ansiMode: Boolean,
-                                  legacyCastToString: Boolean,
-                                  stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+  private  def castArrayToString(input:                    ColumnView,
+                                 elementType:                DataType,
+                                 containsNull:                Boolean,
+                                 ansiMode:                    Boolean,
+                                 legacyCastToString:          Boolean,
+                                 stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
     val (leftStr, rightStr) =  ("[", "]")
     val emptyStr = ""
-    val nullStr =  "null"
+    val nullStr = if (legacyCastToString) ""  else "null"
+    val separatorStr = if (legacyCastToString) "," else ", "
     val numRows = input.getRowCount.toInt
 
     // cast all elements in arrays to string type. Ex: [[1,2,3],[4,5]] => [["1","2","3"], ["4","5"]]
-    withResource(doCast(input, ArrayType(elementType, containsNull), ArrayType(StringType, containsNull), ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)) { strArr =>
+    withResource(doCast(
+      input,
+      ArrayType(elementType, containsNull),
+      ArrayType(StringType,  containsNull),
+      ansiMode,
+      legacyCastToString,
+      stringToDateAnsiModeEnabled)
+    ) { strArr =>
       withResource(strArr.getChildColumnView(0)) { childView =>
         withResource(childView.copyToColumnVector()){ childVector =>
-          withResource(GpuNvl(childVector, Scalar.fromString(if (legacyCastToString) "" else "null"))){ stringChild =>
+          withResource(GpuNvl(childVector, Scalar.fromString(nullStr))){ stringChild =>
             withResource(strArr.replaceListChild(stringChild)) {pureStrArr =>
-              // cast each array (list) to a string (without brackets). Ex: [["1","2","3"], ["4","5"]] => ["1, 2, 3", "4, 5"]
-              withResource(pureStrArr.stringConcatenateListElements(Scalar.fromString(", "), Scalar.fromString("null"), true, true)) { withoutBrackets =>
+              // cast each array (list) to a string (without brackets).
+              // Ex: [["1","2","3"], ["4","5"]] => ["1, 2, 3", "4, 5"]
+              withResource(pureStrArr.stringConcatenateListElements(
+                Scalar.fromString(separatorStr),
+                Scalar.fromString("null"),
+                true,
+                true)
+              ) { withoutBrackets =>
                 // add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
-                withResource(Seq(leftStr, rightStr).safeMap(Scalar.fromString).safeMap(s => ColumnVector.fromScalar(s, numRows))){ case Seq(leftColumn, rightColumn) =>
+                withResource(
+                  Seq(leftStr, rightStr).
+                  safeMap(Scalar.fromString).
+                  safeMap(s => ColumnVector.fromScalar(s, numRows))
+                ){ case Seq(leftColumn, rightColumn) =>
                   withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
                     columns += leftColumn.incRefCount()
                     columns += withoutBrackets.incRefCount()
                     columns += rightColumn.incRefCount()
 
-                    withResource(ColumnVector.stringConcatenate(Scalar.fromString(emptyStr), Scalar.fromString(nullStr), columns.toArray))(
-                      _.mergeAndSetValidity(BinaryOp.BITWISE_AND, pureStrArr)
-                    )
+                    withResource(ColumnVector.stringConcatenate(
+                      Scalar.fromString(emptyStr),
+                      Scalar.fromString(nullStr),
+                      columns.toArray)
+                    )(_.mergeAndSetValidity(BinaryOp.BITWISE_AND, pureStrArr))
                   }
                 }
               }
