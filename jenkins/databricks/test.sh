@@ -28,7 +28,7 @@ if [ -d "/databricks/conda/envs/cudf-udf" ]; then
     export PYSPARK_PYTHON=/databricks/conda/envs/cudf-udf/bin/python
 fi
 # Try to use the pip from the conda environment if it is available
-sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-ordering
+sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
