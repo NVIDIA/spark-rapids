@@ -1293,13 +1293,8 @@ class CastChecks extends ExprChecks {
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-<<<<<<< HEAD
   val arrayChecks: TypeSig = STRING + ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
       ARRAY + BINARY + STRUCT + MAP + STRING) +
-=======
-  val arrayChecks: TypeSig = ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
-      ARRAY + BINARY + STRUCT + MAP) +
->>>>>>> branch-22.02
       psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
           "the desired child type")
 
