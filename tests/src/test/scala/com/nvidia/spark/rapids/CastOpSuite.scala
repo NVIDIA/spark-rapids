@@ -1392,7 +1392,6 @@ object CastOpSuite {
   def validTimestamps(session: SparkSession): DataFrame = {
     import session.sqlContext.implicits._
     val timestampStrings = Seq(
-      "8669-07-22T04:45:57.73",
       "1920-12-31T11:59:59.999",
       "1969-12-31T23:59:59.999",
       "1969-12-31T23:59:59.999999",
