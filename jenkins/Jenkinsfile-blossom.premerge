@@ -237,14 +237,14 @@ pipeline {
                     major_ver = versions[0].toInteger()
                     minor_ver = versions[1].toInteger()
 
-                    if (major_ver >= 21) {
+                    if (major_ver == 21) {
                         if (minor_ver == 8) {
                             PREMERGE_CI_2_ARGUMENT = "unit_test" // for '21.08' version
                         } else if (minor_ver >= 10) {
                             PREMERGE_CI_2_ARGUMENT = "ci_2" // for '21.10' or later version
-                        } else {
-                            // do nothing to avoid breaking old version
                         }
+                    } else if (major_ver >= 22) {
+                        PREMERGE_CI_2_ARGUMENT = "ci_2"
                     } else {
                         error("Unsupported major version: $major_ver")
                     }
