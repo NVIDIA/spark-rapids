@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Parse input parameters."""
 
-import sys
 import getopt
+import sys
 
 workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
 token = ''
@@ -27,21 +28,24 @@ base_spark_version_to_install_databricks_jars = base_spark_pom_version
 clusterid = ''
 build_profiles = 'databricks,!snapshot-shims'
 jar_path = ''
-# `spark_conf` can take comma seperated mutiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
+# `spark_conf` can take comma seperated multiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
 spark_conf = ''
 
 try:
     opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:',
-                               ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=', 'basesparkpomversion=', 'buildprofiles=', 'jarpath', 'sparkconf', 'sparkinstallver='])
+                               ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=',
+                                'basesparkpomversion=', 'buildprofiles=', 'jarpath', 'sparkconf', 'sparkinstallver='])
 except getopt.GetoptError:
-    print(
-        'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> -d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -j <jarpath> -f <sparkconf> -i <sparkinstallver>')
+    print('run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> '
+          '-d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -j <jarpath> '
+          '-f <sparkconf> -i <sparkinstallver>')
     sys.exit(2)
 
 for opt, arg in opts:
     if opt == '-h':
-        print(
-            'run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> -l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -f <sparkconf> -i <sparkinstallver>')
+        print('run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> '
+              '-l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> '
+              '-f <sparkconf> -i <sparkinstallver>')
         sys.exit()
     elif opt in ('-w', '--workspace'):
         workspace = arg
