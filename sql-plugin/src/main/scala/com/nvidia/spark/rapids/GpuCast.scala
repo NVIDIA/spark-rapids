@@ -18,12 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
+
 import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.YearParseUtil
-//import com.nvidia.spark.rapids.GpuNvl
+
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
@@ -529,7 +531,9 @@ object GpuCast extends Arm {
         }
 
       case (ArrayType(elementType, _), StringType) =>
-        castArrayToString(input, elementType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
+        castArrayToString(
+          input, elementType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled
+        )
 
       case (from: StructType, to: StructType) =>
         castStructToStruct(from, to, input, ansiMode, legacyCastToString,
