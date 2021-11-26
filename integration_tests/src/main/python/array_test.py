@@ -259,12 +259,17 @@ not_matched_gens = [float_gen, double_gen, timestamp_gen, decimal_gen_neg_scale]
 not_support_gens = decimal_128_gens
 
 single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_gens_for_cast_to_string]
-nested_array_gens_for_cast_to_string = [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
-        ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
-        ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', date_gen]]))]
+nested_array_gens_for_cast_to_string = [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(null_gen, max_length=10), max_length=10),
+    ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', date_gen]]))
+    ]
+
+all_gens_for_cast_to_string = single_level_array_gens_for_cast_to_string + nested_array_gens_for_cast_to_string
 
 
-@pytest.mark.parametrize('data_gen', single_level_array_gens_for_cast_to_string + nested_array_gens_for_cast_to_string, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens_for_cast_to_string, ids=idfn)
 def test_cast_array_to_string(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).select(
@@ -273,10 +278,10 @@ def test_cast_array_to_string(data_gen):
     )
 
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(StringGen(),max_length=3)], ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens_for_cast_to_string, ids=idfn)
 def test_legacy_cast_array_to_string(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen, length=1).select(
+        lambda spark: unary_op_df(spark, data_gen).select(
             f.col('a').cast("STRING")
         ),
         conf = {'spark.sql.legacy.castComplexTypesToString.enabled': 'true'}
@@ -304,5 +309,3 @@ def test_cast_array_with_unsupported_element_to_string(data_gen):
         f.col('a').cast("STRING")
     )
 )
-
-
