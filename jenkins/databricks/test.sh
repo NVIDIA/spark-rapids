@@ -70,6 +70,11 @@ IS_SPARK_311_OR_LATER=0
 TEST_MODE=${TEST_MODE:-'IT_ONLY'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
+
+# Enable event log for qualification & profiling tools testing
+export PYSP_TEST_spark_eventLog_enabled=true
+mkdir -p /tmp/spark-events
+
 ## limit parallelism to avoid OOM kill
 export TEST_PARALLEL=4
 if [ -d "$LOCAL_JAR_PATH" ]; then
