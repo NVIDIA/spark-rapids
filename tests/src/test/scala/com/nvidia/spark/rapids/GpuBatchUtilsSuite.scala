@@ -18,13 +18,12 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 import scala.util.Random
-
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import org.scalatest.FunSuite
-
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
-import org.apache.spark.sql.types.{DataTypes, Decimal, DecimalType, StructField, StructType}
+import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, GenericRow}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, Decimal, DecimalType, StructField, StructType}
 import org.apache.spark.unsafe.types.UTF8String
 
 class GpuBatchUtilsSuite extends FunSuite {
@@ -197,51 +196,75 @@ object GpuBatchUtilsSuite {
     rows.toArray
   }
 
+  def createExternalRows(schema: StructType, rowCount: Int): Array[Row] = {
+    val externalRows = new mutable.ArrayBuffer[Row](rowCount)
+    val r = new Random(0)
+    for (i <- 0 until rowCount) {
+      externalRows.append(new GenericRow(createRowValues(i, r, schema.fields)))
+    }
+    externalRows.toArray
+  }
+
+  private def createValueForType(i: Int, r: Random, dt: DataType, nullable: Boolean): Any = {
+    dt match {
+      case DataTypes.BooleanType => maybeNull(nullable, i, r.nextBoolean())
+      case DataTypes.ByteType => maybeNull(nullable, i, r.nextInt().toByte)
+      case DataTypes.ShortType => maybeNull(nullable, i, r.nextInt().toShort)
+      case DataTypes.IntegerType => maybeNull(nullable, i, r.nextInt())
+      case DataTypes.LongType => maybeNull(nullable, i, r.nextLong())
+      case DataTypes.FloatType => maybeNull(nullable, i, r.nextFloat())
+      case DataTypes.DoubleType => maybeNull(nullable, i, r.nextDouble())
+      case dataType: DecimalType =>
+        val upperBound = (0 until dataType.precision).foldLeft(1L)((x, _) => x * 10)
+        val unScaledValue = r.nextLong() % upperBound
+        maybeNull(nullable, i, Decimal(unScaledValue, dataType.precision, dataType.scale))
+      case dataType@DataTypes.StringType =>
+        if (nullable) {
+          // since we want a deterministic test that compares the estimate with actual
+          // usage we need to make sure the average length of strings is `dataType.defaultSize`
+          if (i % 2 == 0) {
+            null
+          } else {
+            createString(dataType.defaultSize * 2)
+          }
+        } else {
+          createString(dataType.defaultSize)
+        }
+      case dataType@DataTypes.BinaryType =>
+        if (nullable) {
+          // since we want a deterministic test that compares the estimate with actual usage we
+          // need to make sure the average length of binary values is `dataType.defaultSize`
+          if (i % 2 == 0) {
+            null
+          } else {
+            r.nextString(dataType.defaultSize * 2).getBytes
+          }
+        } else {
+          r.nextString(dataType.defaultSize).getBytes
+        }
+      case ArrayType(elementType, containsNull) =>
+        val arrayValues = new mutable.ArrayBuffer[Any]()
+        for (_ <- 0 to r.nextInt(10)) {
+          arrayValues.append(createValueForType(i, r,elementType, containsNull))
+        }
+        arrayValues.toArray
+//      case MapType(keyType, valueType, valueContainsNull) =>
+//      case StructType(fields) =>
+      case unknown =>  throw new UnsupportedOperationException(
+        s"Type $unknown not supported")
+    }
+  }
+
+
   private def createRowValues(i: Int, r: Random, fields: Array[StructField]) = {
     val values: Array[Any] = fields.map(field => {
-      field.dataType match {
-        case DataTypes.BooleanType => maybeNull(field, i, r.nextBoolean())
-        case DataTypes.ByteType => maybeNull(field, i, r.nextInt().toByte)
-        case DataTypes.ShortType => maybeNull(field, i, r.nextInt().toShort)
-        case DataTypes.IntegerType => maybeNull(field, i, r.nextInt())
-        case DataTypes.LongType => maybeNull(field, i, r.nextLong())
-        case DataTypes.FloatType => maybeNull(field, i, r.nextFloat())
-        case DataTypes.DoubleType => maybeNull(field, i, r.nextDouble())
-        case dataType: DecimalType =>
-          val upperBound = (0 until dataType.precision).foldLeft(1L)((x, _) => x * 10)
-          val unScaledValue = r.nextLong() % upperBound
-          maybeNull(field, i, Decimal(unScaledValue, dataType.precision, dataType.scale))
-        case dataType@DataTypes.StringType =>
-          if (field.nullable) {
-            // since we want a deterministic test that compares the estimate with actual
-            // usage we need to make sure the average length of strings is `dataType.defaultSize`
-            if (i % 2 == 0) {
-              null
-            } else {
-              createString(dataType.defaultSize * 2)
-            }
-          } else {
-            createString(dataType.defaultSize)
-          }
-        case dataType@DataTypes.BinaryType =>
-          if (field.nullable) {
-            // since we want a deterministic test that compares the estimate with actual usage we
-            // need to make sure the average length of binary values is `dataType.defaultSize`
-            if (i % 2 == 0) {
-              null
-            } else {
-              r.nextString(dataType.defaultSize * 2).getBytes
-            }
-          } else {
-            r.nextString(dataType.defaultSize).getBytes
-          }
-      }
+      createValueForType(i, r, field.dataType, field.nullable)
     })
     values
   }
 
-  private def maybeNull(field: StructField, i: Int, value: Any): Any = {
-    if (field.nullable && i % 2 == 0) {
+  private def maybeNull(nullable: Boolean, i: Int, value: Any): Any = {
+    if (nullable && i % 2 == 0) {
       null
     } else {
       value

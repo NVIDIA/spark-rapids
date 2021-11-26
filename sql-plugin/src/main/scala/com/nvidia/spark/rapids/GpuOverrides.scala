@@ -606,15 +606,15 @@ object GpuOverrides extends Logging {
    * @return true if it is allowed else false
    */
   def isSupportedType(dataType: DataType,
-      allowNull: Boolean = true,
-      allowDecimal: Boolean = true,
-      allowBinary: Boolean = true,
+      allowNull: Boolean = false,
+      allowDecimal: Boolean = false,
+      allowBinary: Boolean = false,
       allowCalendarInterval: Boolean = false,
-      allowArray: Boolean = true,
-      allowStruct: Boolean = true,
-      allowStringMaps: Boolean = true,
-      allowMaps: Boolean = true,
-      allowNesting: Boolean = true): Boolean = {
+      allowArray: Boolean = false,
+      allowStruct: Boolean = false,
+      allowStringMaps: Boolean = false,
+      allowMaps: Boolean = false,
+      allowNesting: Boolean = false): Boolean = {
     def checkNested(dataType: DataType): Boolean = {
       isSupportedType(dataType,
         allowNull = allowNull,

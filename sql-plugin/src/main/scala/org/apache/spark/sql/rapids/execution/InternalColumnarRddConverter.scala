@@ -19,12 +19,12 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{MapPartitionsRDD, RDD}
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.execution.SQLExecutionRDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -33,7 +33,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * This code is based off of the code for [[com.nvidia.spark.rapids.GpuRowToColumnarExec]] but this
  * is for `Row` instead of `InternalRow`, so it is not an exact transition.
  */
-
 private class GpuExternalRowToColumnConverter(schema: StructType) extends Serializable {
   private val converters = schema.fields.map {
     f => GpuExternalRowToColumnConverter.getConverterForType(f.dataType, f.nullable)
@@ -97,8 +96,8 @@ private object GpuExternalRowToColumnConverter {
       case (TimestampType, false) => NotNullLongConverter
       case (StringType, true) => StringConverter
       case (StringType, false) => NotNullStringConverter
-//      case (BinaryType, true) => BinaryConverter
-//      case (BinaryType, false) => NotNullBinaryConverter
+      case (BinaryType, true) => BinaryConverter
+      case (BinaryType, false) => NotNullBinaryConverter
       // NOT SUPPORTED YET
       // case CalendarIntervalType => CalendarConverter
       case (at: ArrayType, true) =>
@@ -362,10 +361,12 @@ private object GpuExternalRowToColumnConverter {
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       val child = builder.getChild(0)
-      val bytes = row.getAs[Array[Byte]](column)
-      bytes.foreach(child.append)
+      val bytes = row.asInstanceOf[GenericRow].get(column)
+      print(bytes)
+//      bytes.foreach(child.append)
       builder.endList()
-      bytes.length + OFFSET
+//      bytes.length + OFFSET
+      8
     }
 
     override def getNullSize: Double = OFFSET + VALIDITY
@@ -436,7 +437,6 @@ private object GpuExternalRowToColumnConverter {
   //      }
   //    }
   //  }
-  //
 
   private[this] def arrayConvert(
     childConverter: TypeConverter,
@@ -445,7 +445,6 @@ private object GpuExternalRowToColumnConverter {
     builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder) : Double = {
     var ret = 0.0
     val values = row.getSeq[Any](column)
-//    val value_row = new Row
     val numElements = values.size
     val child = builder.getChild(0)
     for (i <- 0 until numElements) {
@@ -665,8 +664,10 @@ object InternalColumnarRddConverter extends Logging {
 
   def convert(df: DataFrame): RDD[Table] = {
     val schema = df.schema
-    if (!GpuOverrides.areAllSupportedTypes(schema.map(_.dataType) :_*)) {
-      val unsupported = schema.map(_.dataType).filter(!GpuOverrides.isSupportedType(_)).toSet
+    val unsupported = schema.map(_.dataType).filter( dt => GpuOverrides.isSupportedType(dt,
+      allowMaps = true, allowStringMaps = true, allowNull = true, allowStruct = true, allowArray
+      = true, allowBinary = true, allowDecimal = true, allowNesting = true)).toSet
+    if (unsupported.nonEmpty) {
       throw new IllegalArgumentException(s"Cannot convert $df to GPU columnar $unsupported are " +
         s"not currently supported data types for columnar.")
     }
