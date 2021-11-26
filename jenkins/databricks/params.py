@@ -21,6 +21,7 @@ token = ''
 private_key_file = "~/.ssh/id_rsa"
 local_script = 'build.sh'
 script_dest = '/home/ubuntu/build.sh'
+script_args = []
 source_tgz = 'spark-rapids-ci.tgz'
 tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
 base_spark_pom_version = '3.0.1'
@@ -72,11 +73,15 @@ for opt, arg in opts:
     elif opt in ('-i', '--sparkinstallver'):
         base_spark_version_to_install_databricks_jars = arg
 
+if args:
+    script_args = args
+
 print('-w is ' + workspace)
 print('-c is ' + clusterid)
 print('-p is ' + private_key_file)
 print('-l is ' + local_script)
 print('-d is ' + script_dest)
+print('script_args is ' + ' '.join(script_args))
 print('-z is ' + source_tgz)
 print('-v is ' + base_spark_pom_version)
 print('-j is ' + jar_path)
