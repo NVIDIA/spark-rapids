@@ -236,7 +236,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
       // Tests that this is not true for are skipped in 3.2.0+
       .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
@@ -876,7 +875,16 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast string to decimal") {
-    List(-17, -10, -3, 0, 1, 5, 15).foreach { scale =>
+    // We are limiting the negative scale because of a bug in Spark where it wrongly
+    // assumes a Decimal value won't be represented by a given scale when in fact it can be
+    // Example:
+    // 7.836725755512218E38 can be represented as Decimal(37, -17) but Spark has a check
+    // (precision + scale > DecimalType.MAX_PRECISION), in this case (37 + 17) > 38, stops it from
+    // being casted that was introduced in 3.1.1 as a performance enhancement but introduced a
+    // regression.
+    // There is a bug filed against it in Spark https://issues.apache.org/jira/browse/SPARK-37451
+
+    List(-1, 0, 1, 5, 15).foreach { scale =>
       testCastToDecimal(DataTypes.StringType, scale, precision = 37,
         customRandGenerator = Some(new scala.util.Random(1234L)))
     }
@@ -896,7 +904,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val df2 = doublesAsStrings(ss).select(col("c0").as("col"))
       df1.unionAll(df2)
     }
-    List(-10, -1, 0, 1, 10).foreach { scale =>
+    // Similar to the test above we are limiting the negative scale
+    // There is a bug filed against it in Spark https://issues.apache.org/jira/browse/SPARK-37451
+
+    List(-1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.StringType, scale = scale, precision = 37,
         customDataGenerator = Some(doubleStrings))
     }
@@ -991,7 +1002,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     try {
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+        .set(RapidsConf.ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)

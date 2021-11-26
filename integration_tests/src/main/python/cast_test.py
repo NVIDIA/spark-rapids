@@ -14,13 +14,12 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
-from functools import reduce
-from spark_session import is_before_spark_311, is_before_spark_320
+from spark_session import is_before_spark_311, is_before_spark_320, with_gpu_session
 from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
-from pyspark.sql.functions import array_contains, col, first, isnan, lit, element_at
+from pyspark.sql.utils import IllegalArgumentException
 
 def test_cast_empty_string_to_int():
     assert_gpu_and_cpu_are_equal_collect(
@@ -164,3 +163,16 @@ def test_cast_long_to_decimal_overflow():
             f.col('a').cast(DecimalType(18, -1))),
         conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
 
+
+@pytest.mark.xfail(not is_before_spark_311(), reason="Only in Spark 3.1.1+ do we have incompatibility with negative decimal scale", raises=IllegalArgumentException)
+def test_cast_string_to_decimal_fail(spark_tmp_path):
+    if (is_before_spark_311()):
+        with_gpu_session(
+            lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
+                f.col('a').cast(DecimalType(8, -3))), conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})
+    else:
+        data_path = spark_tmp_path + '/PARQUET_DATA'
+        with_gpu_session(
+            lambda spark: unary_op_df(spark, StringGen("[0-9]{9}")).select(
+                f.col('a').cast(DecimalType(8, -3))).coalesce(1).write.parquet(data_path),
+        conf={'spark.sql.legacy.allowNegativeScaleOfDecimal': True})

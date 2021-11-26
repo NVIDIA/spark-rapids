@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims.v2
 
+import com.nvidia.spark.rapids.RapidsConf
+
 import org.apache.spark.sql.internal.SQLConf
 
 trait Spark31XShims extends Spark30XShims {
@@ -23,10 +25,16 @@ trait Spark31XShims extends Spark30XShims {
 
   override def int96ParquetRebaseRead(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
+
   override def int96ParquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
+
   override def int96ParquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
+
   override def int96ParquetRebaseWriteKey: String =
     SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
+
+  override def isNegativeDecimalScaleSupportEnabled(conf: RapidsConf): Boolean =
+    conf.isLimitedNegativeDecimalScaleEnabled
 }

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims.v2
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, RapidsConf, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 import org.apache.hadoop.fs.FileStatus
 
@@ -142,4 +142,6 @@ trait Spark30XShims extends SparkShims {
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
 
   override def getLegacyStatisticalAggregate(): Boolean = true
+
+  override def isNegativeDecimalScaleSupportEnabled(conf: RapidsConf): Boolean = true
 }
