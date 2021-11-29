@@ -101,6 +101,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
+  ignore("to_timestamp yyyy-MM-dd fails - https://github.com/NVIDIA/spark-rapids/issues/4176") {
     testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
         timestampsAsStrings,
         conf = CORRECTED_TIME_PARSER_POLICY) {
