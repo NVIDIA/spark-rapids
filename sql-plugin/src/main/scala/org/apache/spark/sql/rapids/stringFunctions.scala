@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.sql.SQLException
-
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
@@ -771,7 +769,7 @@ class GpuRLikeMeta(
 
     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
       GpuRLike(lhs, rhs, pattern.getOrElse(
-        throw new SQLException("Expression has not been tagged with cuDF regex pattern")))
+        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
     }
 }
 

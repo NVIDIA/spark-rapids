@@ -15,8 +15,6 @@
  */
 package com.nvidia.spark.rapids.shims.v2
 
-import java.sql.SQLException
-
 import com.nvidia.spark.rapids.{CudfRegexTranspiler, DataFromReplacementRule, GpuExpression, GpuOverrides, QuaternaryExprMeta, RapidsConf, RapidsMeta, RegexUnsupportedException}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
@@ -71,7 +69,7 @@ class GpuRegExpReplaceMeta(
       GpuStringReplace(subject, regexp, rep)
     } else {
       GpuRegExpReplace(subject, regexp, rep, pattern.getOrElse(
-        throw new SQLException("Expression has not been tagged with cuDF regex pattern")))
+        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
     }
   }
 }
