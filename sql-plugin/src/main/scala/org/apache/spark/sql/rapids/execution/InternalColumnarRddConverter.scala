@@ -388,8 +388,8 @@ private object GpuExternalRowToColumnConverter {
     val keyBuilder = structBuilder.getChild(0)
     val valueBuilder = structBuilder.getChild(1)
     for (i <- 0 until numElements) {
-      ret += keyConverter.append(Row(srcKeys), i, keyBuilder)
-      ret += valueConverter.append(Row(srcValues), i, valueBuilder)
+      ret += keyConverter.append(Row(srcKeys: _*), i, keyBuilder)
+      ret += valueConverter.append(Row(srcValues: _*), i, valueBuilder)
       structBuilder.endStruct()
     }
     builder.endList()
@@ -449,7 +449,7 @@ private object GpuExternalRowToColumnConverter {
     val numElements = values.size
     val child = builder.getChild(0)
     for (i <- 0 until numElements) {
-      ret += childConverter.append(Row(values), i, child)
+      ret += childConverter.append(Row(values: _*), i, child)
     }
     builder.endList()
     ret + OFFSET
@@ -665,7 +665,7 @@ object InternalColumnarRddConverter extends Logging {
 
   def convert(df: DataFrame): RDD[Table] = {
     val schema = df.schema
-    val unsupported = schema.map(_.dataType).filter( dt => GpuOverrides.isSupportedType(dt,
+    val unsupported = schema.map(_.dataType).filter( dt => !GpuOverrides.isSupportedType(dt,
       allowMaps = true, allowStringMaps = true, allowNull = true, allowStruct = true, allowArray
       = true, allowBinary = true, allowDecimal = true, allowNesting = true)).toSet
     if (unsupported.nonEmpty) {
