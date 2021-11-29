@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims.v2
+package org.apache.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.GpuPartitioning
 
@@ -40,9 +40,7 @@ case class GpuShuffleExchangeExec(
 
   override def numPartitions: Int = shuffleDependencyColumnar.partitioner.numPartitions
 
-  override def getShuffleRDD(
-      partitionSpecs: Array[ShufflePartitionSpec],
-      partitionSizes: Option[Array[Long]]): RDD[_] = {
+  override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
     throw new UnsupportedOperationException
   }
 
