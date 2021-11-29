@@ -251,6 +251,12 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
     if (GpuShuffleEnv.isExternalShuffleEnabled) {
       fallThroughReasons += "External Shuffle Service is enabled"
     }
+    if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
+      fallThroughReasons += "Spark authentication is enabled"
+    }
+    if (GpuShuffleEnv.isNetworkEncryptionEnabled) {
+      fallThroughReasons += "Network encryption is enabled"
+    }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
           s"because: ${fallThroughReasons.mkString(", ")}")
