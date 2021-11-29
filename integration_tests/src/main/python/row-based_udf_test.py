@@ -17,24 +17,9 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from spark_session import with_spark_session
-from pyspark.sql.utils import AnalysisException
-from conftest import skip_unless_precommit_tests
+from rapids_udf_test import skip_if_no_hive, load_hive_udf_or_skip_test
 
-def drop_udf(spark, udfname):
-    spark.sql("DROP TEMPORARY FUNCTION IF EXISTS {}".format(udfname))
-
-def skip_if_no_hive(spark):
-    if spark.conf.get("spark.sql.catalogImplementation") != "hive":
-        skip_unless_precommit_tests('The Spark session does not have Hive support')
-
-def load_hive_udf_or_skip_test(spark, udfname, udfclass):
-    drop_udf(spark, udfname)
-    try:
-        spark.sql("CREATE TEMPORARY FUNCTION {} AS '{}'".format(udfname, udfclass))
-    except AnalysisException:
-        skip_unless_precommit_tests("UDF {} failed to load, udf-examples jar is probably missing".format(udfname))
-
-def test_hive_simple_udf():
+def test_hive_empty_simple_udf():
     with_spark_session(skip_if_no_hive)
     data_gens = [["i", int_gen], ["s", string_gen]]
     def evalfn(spark):
@@ -46,7 +31,7 @@ def test_hive_simple_udf():
         "SELECT i, emptysimple(s) FROM hive_simple_udf_test_table",
         conf={'spark.rapids.sql.rowBasedUDF.enabled': 'true'})
 
-def test_hive_generic_udf():
+def test_hive_empty_generic_udf():
     with_spark_session(skip_if_no_hive)
     def evalfn(spark):
         load_hive_udf_or_skip_test(spark, "emptygeneric", "com.nvidia.spark.rapids.udf.hive.EmptyHiveGenericUDF")
