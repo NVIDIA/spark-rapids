@@ -410,9 +410,10 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
           // are on the GPU. And vice versa.
           private lazy val partitionFilters = wrapped.partitionFilters.map { filter =>
             filter.transformDown {
-              case dpe @ DynamicPruningExpression(inSub @
-                  InSubqueryExec(_, subBroadcast: SubqueryBroadcastExec, _, _)) =>
-                val subBcMeta = GpuOverrides.wrapAndTagPlan(subBroadcast, conf)
+              case dpe @ DynamicPruningExpression(inSub: InSubqueryExec)
+                if inSub.plan.isInstanceOf[SubqueryBroadcastExec] =>
+
+                val subBcMeta = GpuOverrides.wrapAndTagPlan(inSub.plan, conf)
                 subBcMeta.tagForExplain()
                 val gpuSubBroadcast = subBcMeta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
                 dpe.copy(inSub.copy(plan = gpuSubBroadcast))
