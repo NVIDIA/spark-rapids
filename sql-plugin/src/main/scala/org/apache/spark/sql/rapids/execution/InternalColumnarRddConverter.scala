@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{MapPartitionsRDD, RDD}

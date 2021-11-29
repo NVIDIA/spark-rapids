@@ -18,8 +18,10 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 import scala.util.Random
+
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import org.scalatest.FunSuite
+
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, GenericRow}

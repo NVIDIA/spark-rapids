@@ -1,9 +1,9 @@
 package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.sql.types.{BinaryType, DoubleType, StructField, StructType}
-
 import com.nvidia.spark.rapids.{ColumnarToRowIterator, GpuBatchUtilsSuite, NoopMetric, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+
+import org.apache.spark.sql.types.{BinaryType, DoubleType, StructField, StructType}
 
 class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
   test("transform binary data back and forth between Row and Columnar") {
