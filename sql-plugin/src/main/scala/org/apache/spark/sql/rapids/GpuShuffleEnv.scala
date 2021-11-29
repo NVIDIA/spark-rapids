@@ -96,15 +96,6 @@ object GpuShuffleEnv extends Logging {
     conf.getBoolean("spark.authenticate", false)
   }
 
-  // Returns true if network encryption is enabled in Spark, which
-  // is not handled currently by the RAPIDS Shuffle Manager. Note that
-  // in order to enable network encryption, spark.authenticate must be
-  // already enabled presently.
-  def isNetworkEncryptionEnabled: Boolean = {
-    val conf = SparkEnv.get.conf
-    conf.getBoolean("spark.network.crypto.enabled", false)
-  }
-
   //
   // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
   // this forces the initialization when we know we are ready in the driver and executor.
@@ -130,7 +121,6 @@ object GpuShuffleEnv extends Logging {
     val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
     (isConfiguredInEnv || isRapidsManager) &&
       !isExternalShuffleEnabled &&
-      !isNetworkEncryptionEnabled &&
       !isSparkAuthenticateEnabled
   }
 
