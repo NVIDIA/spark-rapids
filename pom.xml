@@ -122,6 +122,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -166,6 +167,7 @@
             </properties>
             <modules>
                 <module>aggregator</module>
+                <module>tools</module>
                 <module>api_validation</module>
             </modules>
         </profile>
@@ -209,6 +211,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -252,6 +255,7 @@
             </build>
             <modules>
                 <module>api_validation</module>
+                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -456,6 +460,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
                 <module>tests-spark310+</module>
@@ -503,6 +508,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
                 <module>tests-spark310+</module>
@@ -546,6 +552,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -588,6 +595,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -630,6 +638,7 @@
                 </plugins>
             </build>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
@@ -682,6 +691,7 @@
                 </repository>
             </repositories>
             <modules>
+                <module>tools</module>
                 <module>aggregator</module>
                 <module>tests-spark310+</module>
             </modules>
