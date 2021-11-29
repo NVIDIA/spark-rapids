@@ -33,7 +33,7 @@ import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 /**
 * Shim base class that can be compiled with every supported 3.0.x
 */
-trait Spark30XShims extends SparkShims {
+trait Spark30XdbShimsBase extends SparkShims {
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
   override def parquetRebaseWriteKey: String =
@@ -47,14 +47,14 @@ trait Spark30XShims extends SparkShims {
   override def parquetRebaseWrite(conf: SQLConf): String =
     conf.getConf(SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_WRITE)
   override def int96ParquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
+    parquetRebaseRead(conf)
   override def int96ParquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
+    parquetRebaseWrite(conf)
   override def int96ParquetRebaseReadKey: String =
-    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
+    parquetRebaseReadKey
   override def int96ParquetRebaseWriteKey: String =
-    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
-  override def hasSeparateINT96RebaseConf: Boolean = true
+    parquetRebaseWriteKey
+  override def hasSeparateINT96RebaseConf: Boolean = false
 
   override def sessionFromPlan(plan: SparkPlan): SparkSession = {
     plan.sqlContext.sparkSession
@@ -63,7 +63,7 @@ trait Spark30XShims extends SparkShims {
   override def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
       newPlan: SparkPlan): BroadcastQueryStageExec =
-    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan)
+    BroadcastQueryStageExec(old.id, newPlan, old._canonicalized)
 
   override def getDateFormatter(): DateFormatter = {
     DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))

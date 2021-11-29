@@ -22,13 +22,13 @@ import java.nio.ByteBuffer
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
+import com.nvidia.spark.InMemoryTableScanMeta
 import com.nvidia.spark.rapids._
 import org.apache.arrow.memory.ReferenceManager
 import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
-import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
@@ -46,40 +46,28 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{AlterTableRecoverPartitionsCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.{FileIndex, FilePartition, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.{ReusedExchangeExec, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuTimeSub}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch, TrampolineUtil}
+import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
-import org.apache.spark.sql.rapids.shims.v2.{GpuFileScanRDD, GpuSchemaUtils}
+import org.apache.spark.sql.rapids.shims.v2._
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
-import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class SparkBaseShims extends Spark30XShims with Logging {
-  override def getParquetFilters(
-      schema: MessageType,
-      pushDownDate: Boolean,
-      pushDownTimestamp: Boolean,
-      pushDownDecimal: Boolean,
-      pushDownStartWith: Boolean,
-      pushDownInFilterThreshold: Int,
-      caseSensitive: Boolean,
-      datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
-    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
-      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
@@ -93,8 +81,8 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
       udfName: Option[String] = None,
       nullable: Boolean = true,
       udfDeterministic: Boolean = true): Expression = {
-    // outputEncoder is only used in Spark 3.1+
-    ScalaUDF(function, dataType, children, inputEncoders, udfName, nullable, udfDeterministic)
+    ScalaUDF(function, dataType, children, inputEncoders, outputEncoder, udfName, nullable,
+      udfDeterministic)
   }
 
   override def getMapSizesByExecutorId(
@@ -103,7 +91,7 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
       endMapIndex: Int,
       startPartition: Int,
       endPartition: Int): Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])] = {
-    SparkEnv.get.mapOutputTracker.getMapSizesByRange(shuffleId,
+    SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(shuffleId,
       startMapIndex, endMapIndex, startPartition, endPartition)
   }
 
@@ -117,27 +105,15 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     GpuBroadcastNestedLoopJoinExec(left, right, join, joinType, condition, targetSizeBytes)
   }
 
-  override def getGpuShuffleExchangeExec(
-      gpuOutputPartitioning: GpuPartitioning,
-      child: SparkPlan,
-      cpuOutputPartitioning: Partitioning,
-      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
-    val canChangeNumPartitions = cpuShuffle.forall(_.canChangeNumPartitions)
-    GpuShuffleExchangeExec(gpuOutputPartitioning, child, canChangeNumPartitions)(
-      cpuOutputPartitioning)
-  }
-
-  override def getGpuShuffleExchangeExec(
-      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
-    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
-  }
-
   override def isGpuBroadcastHashJoin(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuBroadcastHashJoinExec => true
       case _ => false
     }
   }
+
+  override def isWindowFunctionExec(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
 
   override def isGpuShuffledHashJoin(plan: SparkPlan): Boolean = {
     plan match {
@@ -146,8 +122,267 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     }
   }
 
+  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int =
+    sqlConf.maxMetadataStringLength
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[Cast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          doFloatToIntCheck = true, stringToAnsiDate = false)),
+    GpuOverrides.expr[AnsiCast](
+      "Convert a column of one type of data into another type",
+      new CastChecks {
+        import TypeSig._
+        // nullChecks are the same
+
+        override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING + DECIMAL_128_FULL
+        override val sparkBooleanSig: TypeSig = numeric + BOOLEAN + STRING
+
+        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + DECIMAL_128_FULL
+        override val sparkIntegralSig: TypeSig = numeric + BOOLEAN + STRING
+
+        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING + DECIMAL_128_FULL)
+            .withPsNote(TypeEnum.STRING, fpToStringPsNote)
+        override val sparkFpSig: TypeSig = numeric + BOOLEAN + STRING
+
+        override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
+        override val sparkDateSig: TypeSig = TIMESTAMP + DATE + STRING
+
+        override val timestampChecks: TypeSig = TIMESTAMP + DATE + STRING
+        override val sparkTimestampSig: TypeSig = TIMESTAMP + DATE + STRING
+
+        // stringChecks are the same
+        // binaryChecks are the same
+        override val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128_FULL + STRING
+        override val sparkDecimalSig: TypeSig = numeric + BOOLEAN + STRING
+
+        // calendarChecks are the same
+
+        override val arrayChecks: TypeSig =
+          ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
+              psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
+                  "the desired child type")
+        override val sparkArraySig: TypeSig = ARRAY.nested(all)
+
+        override val mapChecks: TypeSig =
+          MAP.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT + MAP) +
+              psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
+                  "desired child types")
+        override val sparkMapSig: TypeSig = MAP.nested(all)
+
+        override val structChecks: TypeSig =
+          STRUCT.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT) +
+            psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
+                "desired child type(s)")
+        override val sparkStructSig: TypeSig = STRUCT.nested(all)
+
+        override val udtChecks: TypeSig = none
+        override val sparkUdtSig: TypeSig = UDT
+      },
+      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
+        parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = false)),
+    GpuOverrides.expr[Average](
+      "Average aggregate operator",
+      ExprChecks.fullAgg(
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+        Seq(ParamCheck("input",
+          TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128_FULL,
+          TypeSig.numeric))),
+      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
+          // then it divides by the count with an output scale that is 4 more than the input
+          // scale. With how our divide works to match Spark, this means that we will need a
+          // precision of 5 more. So 38 - 10 - 5 = 23
+          val dataType = a.child.dataType
+          dataType match {
+            case dt: DecimalType =>
+              if (dt.precision > 23) {
+                if (conf.needDecimalGuarantees) {
+                  willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
+                      s"a precision large than 23. The current precision is ${dt.precision}")
+                } else {
+                  logWarning("Decimal overflow guarantees disabled for " +
+                      s"Average(${a.child.dataType}) produces ${dt} with an " +
+                      s"intermediate precision of ${dt.precision + 15}")
+                }
+              }
+            case _ => // NOOP
+          }
+          GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
+        }
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuAverage(childExprs.head)
+
+        // Average is not supported in ANSI mode right now, no matter the type
+        override val ansiTypeToCheck: Option[DataType] = None
+      }),
+    GpuOverrides.expr[Abs](
+      "Absolute value",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+        TypeSig.numeric),
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+        // ANSI support for ABS was added in 3.2.0 SPARK-33275
+        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
+      }),
+    GpuOverrides.expr[RegExpReplace](
+      "RegExpReplace support for string literal input patterns",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("pos", TypeSig.lit(TypeEnum.INT)
+            .withPsNote(TypeEnum.INT, "only a value of 1 is supported"),
+            TypeSig.lit(TypeEnum.INT)))),
+      (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
+      "the implementation is not 100% compatible. " +
+        "See the compatibility guide for more information."),
+    // Spark 3.1.1-specific LEAD expression, using custom OffsetWindowFunctionMeta.
+    GpuOverrides.expr[Lead](
+      "Window function that returns N entries ahead of this one",
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
+          ParamCheck("offset", TypeSig.INT, TypeSig.INT),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
+      (lead, conf, p, r) => new OffsetWindowFunctionMeta[Lead](lead, conf, p, r) {
+        override def convertToGpu(): GpuExpression =
+          GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+      }),
+    // Spark 3.1.1-specific LAG expression, using custom OffsetWindowFunctionMeta.
+    GpuOverrides.expr[Lag](
+      "Window function that returns N entries behind this one",
+      ExprChecks.windowOnly(
+        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+        TypeSig.all,
+        Seq(
+          ParamCheck("input",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL +
+              TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all),
+          ParamCheck("offset", TypeSig.INT, TypeSig.INT),
+          ParamCheck("default",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+            TypeSig.all)
+        )
+      ),
+      (lag, conf, p, r) => new OffsetWindowFunctionMeta[Lag](lag, conf, p, r) {
+        override def convertToGpu(): GpuExpression = {
+          GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
+        }
+      }),
+  GpuOverrides.expr[GetArrayItem](
+    "Gets the field at `ordinal` in the Array",
+    ExprChecks.binaryProject(
+      (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+        TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
+      TypeSig.all,
+      ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+        TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all)),
+      ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT)),
+    (in, conf, p, r) => new GpuGetArrayItemMeta(in, conf, p, r){
+      override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
+        GpuGetArrayItem(arr, ordinal, SQLConf.get.ansiEnabled)
+    }),
+    GpuOverrides.expr[GetMapValue](
+      "Gets Value from a Map based on a key",
+      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.all,
+        ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
+        ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all)),
+      (in, conf, p, r) => new GpuGetMapValueMeta(in, conf, p, r){
+        override def convertToGpu(map: Expression, key: Expression): GpuExpression =
+          GpuGetMapValue(map, key, SQLConf.get.ansiEnabled)
+      }),
+    GpuOverrides.expr[ElementAt](
+      "Returns element of array at given(1-based) index in value if column is array. " +
+        "Returns value for the given key in value if column is map.",
+      ExprChecks.binaryProject(
+        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+          TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(), TypeSig.all,
+        ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP) +
+          TypeSig.MAP.nested(TypeSig.STRING)
+            .withPsNote(TypeEnum.MAP ,"If it's map, only string is supported."),
+          TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
+        ("index/key", (TypeSig.lit(TypeEnum.INT) + TypeSig.lit(TypeEnum.STRING))
+          .withPsNote(TypeEnum.INT, "ints are only supported as array indexes, " +
+            "not as maps keys")
+          .withPsNote(TypeEnum.STRING, "strings are only supported as map keys, " +
+            "not array indexes"),
+          TypeSig.all)),
+      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          // To distinguish the supported nested type between Array and Map
+          val checks = in.left.dataType match {
+            case _: MapType =>
+              // Match exactly with the checks for GetMapValue
+              ExprChecks.binaryProject(TypeSig.STRING, TypeSig.all,
+                ("map", TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.all)),
+                ("key", TypeSig.lit(TypeEnum.STRING), TypeSig.all))
+            case _: ArrayType =>
+              // Match exactly with the checks for GetArrayItem
+              ExprChecks.binaryProject(
+                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+                  TypeSig.DECIMAL_128_FULL + TypeSig.MAP).nested(),
+                TypeSig.all,
+                ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128_FULL + TypeSig.MAP),
+                  TypeSig.ARRAY.nested(TypeSig.all)),
+                ("ordinal", TypeSig.lit(TypeEnum.INT), TypeSig.INT))
+            case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
+          }
+          checks.tag(this)
+        }
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuElementAt(lhs, rhs, SQLConf.get.ansiEnabled)
+        }
+      }),
+    GpuScalaUDFMeta.exprMeta
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[WindowInPandasExec](
+        "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
+          " the Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled. For now it only supports row based window frame.",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
+          TypeSig.all),
+        (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
+          override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
+            winPy.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+          override def convertToGpu(): GpuExec = {
+            GpuWindowInPandasExec(
+              windowExpressions.map(_.convertToGpu()),
+              partitionSpec.map(_.convertToGpu()),
+              // leave ordering expression on the CPU, it's not used for GPU computation
+              winPy.orderSpec,
+              childPlans.head.convertIfNeeded()
+            )(winPy.partitionSpec)
+          }
+        }).disabledByDefault("it only supports row based frame for now"),
       GpuOverrides.exec[RunningWindowFunctionExec](
         "Databricks-specific window function exec, for \"running\" windows, " +
             "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
@@ -158,8 +393,8 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
           Map("partitionSpec" ->
               InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64,
                 TypeSig.all))),
-        (runningWindowFunctionExec, conf, p, r) =>
-          new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
+          (runningWindowFunctionExec, conf, p, r) =>
+            new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       ),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
@@ -210,29 +445,13 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier)(conf)
-          }
+            }
         }),
-      GpuOverrides.exec[WindowInPandasExec](
-        "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
-          " the Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled. For now it only supports row based window frame.",
-        ExecChecks(
-          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
-          TypeSig.all),
-        (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
-          override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
-            winPy.windowExpression.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
-          override def convertToGpu(): GpuExec = {
-            GpuWindowInPandasExec(
-              windowExpressions.map(_.convertToGpu()),
-              partitionSpec.map(_.convertToGpu()),
-              // leave ordering expression on the CPU, it's not used for GPU computation
-              winPy.orderSpec,
-              childPlans.head.convertIfNeeded()
-            )(winPy.partitionSpec)
-          }
-        }).disabledByDefault("it only supports row based frame for now"),
+      GpuOverrides.exec[InMemoryTableScanExec](
+        "Implementation of InMemoryTableScanExec to use GPU accelerated Caching",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.STRUCT
+            + TypeSig.ARRAY + TypeSig.MAP).nested(), TypeSig.all),
+        (scan, conf, p, r) => new InMemoryTableScanMeta(scan, conf, p, r)),
       GpuOverrides.exec[SortMergeJoinExec](
         "Sort merge join, replacing with shuffled hash join",
         JoinTypeChecks.equiJoinExecChecks,
@@ -253,140 +472,43 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
           (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
         (e, conf, p, r) =>
-          new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
-            val udfs: Seq[BaseExprMeta[PythonUDF]] =
-              e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-            val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-              e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-            override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
+        new SparkPlanMeta[ArrowEvalPythonExec](e, conf, p, r) {
+          val udfs: Seq[BaseExprMeta[PythonUDF]] =
+            e.udfs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+            e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+          override val childExprs: Seq[BaseExprMeta[_]] = udfs ++ resultAttrs
 
-            override def replaceMessage: String = "partially run on GPU"
-            override def noReplacementPossibleMessage(reasons: String): String =
-              s"cannot run even partially on the GPU because $reasons"
+          override def replaceMessage: String = "partially run on GPU"
+          override def noReplacementPossibleMessage(reasons: String): String =
+            s"cannot run even partially on the GPU because $reasons"
 
-            override def convertToGpu(): GpuExec =
-              GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
-                resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
-                childPlans.head.convertIfNeeded(),
-                e.evalType)
-          }),
+          override def convertToGpu(): GpuExec =
+            GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
+              resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+              childPlans.head.convertIfNeeded(),
+              e.evalType)
+        }),
       GpuOverrides.exec[MapInPandasExec](
         "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
+          " Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled.",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
         (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
       GpuOverrides.exec[FlatMapGroupsInPandasExec](
         "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
-        " Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
+          " Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
         (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
       GpuOverrides.exec[AggregateInPandasExec](
         "The backend for an Aggregation Pandas UDF, this accelerates the data transfer between" +
-        " the Java process and the Python process. It also supports scheduling GPU resources" +
-        " for the Python process when enabled.",
+          " the Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled.",
         ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
         (aggPy, conf, p, r) => new GpuAggregateInPandasExecMeta(aggPy, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-  }
-
-  protected def getExprsSansTimeSub: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    Seq(
-      GpuOverrides.expr[Cast](
-        "Convert a column of one type of data into another type",
-        new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
-          doFloatToIntCheck = false, stringToAnsiDate = false)),
-      GpuOverrides.expr[AnsiCast](
-        "Convert a column of one type of data into another type",
-        new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
-          parent = p, rule = r, doFloatToIntCheck = false, stringToAnsiDate = false)),
-      GpuOverrides.expr[Average](
-        "Average aggregate operator",
-        ExprChecks.fullAgg(
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          Seq(ParamCheck("input", 
-            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128_FULL,
-            TypeSig.numeric))),
-        (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-          override def tagAggForGpu(): Unit = {
-            // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
-            // then it divides by the count with an output scale that is 4 more than the input
-            // scale. With how our divide works to match Spark, this means that we will need a
-            // precision of 5 more. So 38 - 10 - 5 = 23
-            val dataType = a.child.dataType
-            dataType match {
-              case dt: DecimalType =>
-                if (dt.precision > 23) {
-                  if (conf.needDecimalGuarantees) {
-                    willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
-                        s"a precision large than 23. The current precision is ${dt.precision}")
-                  } else {
-                    logWarning("Decimal overflow guarantees disabled for " +
-                        s"Average(${a.child.dataType}) produces $dt with an " +
-                        s"intermediate precision of ${dt.precision + 15}")
-                  }
-                }
-              case _ => // NOOP
-            }
-            GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
-          }
-
-          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-            GpuAverage(childExprs.head)
-
-          // Average is not supported in ANSI mode right now, no matter the type
-          override val ansiTypeToCheck: Option[DataType] = None
-        }),
-      GpuOverrides.expr[Abs](
-        "Absolute value",
-        ExprChecks.unaryProjectAndAstInputMatchesOutput(
-          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
-          TypeSig.numeric),
-        (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
-          // ANSI support for ABS was added in 3.2.0 SPARK-33275
-          override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
-        }),
-      GpuOverrides.expr[RegExpReplace](
-        "RegExpReplace support for string literal input patterns",
-        ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
-          Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-            ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
-        "the implementation is not 100% compatible. " +
-          "See the compatibility guide for more information."),
-      GpuScalaUDFMeta.exprMeta
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-  }
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    getExprsSansTimeSub + (classOf[TimeSub] -> GpuOverrides.expr[TimeSub](
-      "Subtracts interval from timestamp",
-      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-        ("interval", TypeSig.lit(TypeEnum.CALENDAR)
-            .withPsNote(TypeEnum.CALENDAR, "months not supported"), TypeSig.CALENDAR)),
-      (timeSub, conf, p, r) => new BinaryExprMeta[TimeSub](timeSub, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          timeSub.interval match {
-            case Literal(intvl: CalendarInterval, DataTypes.CalendarIntervalType) =>
-              if (intvl.months != 0) {
-                willNotWorkOnGpu("interval months isn't supported")
-              }
-            case _ =>
-          }
-          checkTimeZoneId(timeSub.timeZoneId)
-        }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeSub(lhs, rhs)
-      }))
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(
@@ -479,18 +601,12 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     }
   }
 
-  override def isWindowFunctionExec(plan: SparkPlan): Boolean =
-    plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
-
   override def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],
       filePartitions: Seq[FilePartition]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
-
-  // Hardcoded for Spark-3.0.*
-  override def getFileSourceMaxMetadataValueLength(sqlConf: SQLConf): Int = 100
 
   override def createFilePartition(index: Int, files: Array[PartitionedFile]): FilePartition = {
     FilePartition(index, files)
@@ -517,7 +633,13 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
 
   override def getGpuColumnarToRowTransition(plan: SparkPlan,
      exportColumnRdd: Boolean): GpuColumnarToRowExecParent = {
-    GpuColumnarToRowExec(plan, exportColumnRdd)
+    val serName = plan.conf.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+    val serClass = ShimLoader.loadClass(serName)
+    if (serClass == classOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+      GpuColumnarToRowTransitionExec(plan)
+    } else {
+      GpuColumnarToRowExec(plan)
+    }
   }
 
   override def checkColumnNameDuplication(
@@ -527,12 +649,26 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     GpuSchemaUtils.checkColumnNameDuplication(schema, colType, resolver)
   }
 
+  override def getGpuShuffleExchangeExec(
+      gpuOutputPartitioning: GpuPartitioning,
+      child: SparkPlan,
+      cpuOutputPartitioning: Partitioning,
+      cpuShuffle: Option[ShuffleExchangeExec]): GpuShuffleExchangeExecBase = {
+    val shuffleOrigin = cpuShuffle.map(_.shuffleOrigin).getOrElse(ENSURE_REQUIREMENTS)
+    GpuShuffleExchangeExec(gpuOutputPartitioning, child, shuffleOrigin)(cpuOutputPartitioning)
+  }
+
+  override def getGpuShuffleExchangeExec(
+      queryStage: ShuffleQueryStageExec): GpuShuffleExchangeExecBase = {
+    queryStage.shuffle.asInstanceOf[GpuShuffleExchangeExecBase]
+  }
+
   override def sortOrder(
       child: Expression,
       direction: SortDirection,
-      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Set.empty)
+      nullOrdering: NullOrdering): SortOrder = SortOrder(child, direction, nullOrdering, Seq.empty)
 
-  override def copySortOrderWithNewChild(s: SortOrder, child: Expression): SortOrder = {
+  override def copySortOrderWithNewChild(s: SortOrder, child: Expression) = {
     s.copy(child = child)
   }
 
@@ -544,14 +680,16 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
   }
 
   override def shouldIgnorePath(path: String): Boolean = {
-    InMemoryFileIndex.shouldFilterOut(path)
+    HadoopFSUtilsShim.shouldIgnorePath(path)
   }
 
-  override def getLegacyComplexTypeToString(): Boolean = true
+  override def getLegacyComplexTypeToString(): Boolean = {
+    SQLConf.get.getConf(SQLConf.LEGACY_COMPLEX_TYPES_TO_STRING)
+  }
 
   // Arrow version changed between Spark versions
   override def getArrowDataBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
-    val arrowBuf = vec.getDataBuffer
+    val arrowBuf = vec.getDataBuffer()
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
@@ -560,10 +698,27 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
 
+  override def createTable(table: CatalogTable,
+    sessionCatalog: SessionCatalog,
+    tableLocation: Option[URI],
+    result: BaseRelation) = {
+    val newTable = table.copy(
+      storage = table.storage.copy(locationUri = tableLocation),
+      // We will use the schema of resolved.relation as the schema of the table (instead of
+      // the schema of df). It is important since the nullability may be changed by the relation
+      // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
+      schema = result.schema)
+    // Table location is already validated. No need to check it again during table creation.
+    sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
+  }
+
   override def getArrowOffsetsBuf(vec: ValueVector): (ByteBuffer, ReferenceManager) = {
     val arrowBuf = vec.getOffsetBuffer
     (arrowBuf.nioBuffer(), arrowBuf.getReferenceManager)
   }
+
+  /** matches SPARK-33008 fix in 3.1.1 */
+  override def shouldFailDivByZero(): Boolean = SQLConf.get.ansiEnabled
 
   override def replaceWithAlluxioPathIfNeeded(
       conf: RapidsConf,
@@ -654,8 +809,6 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
     partitionDir.files.map(f => replaceFunc(f.getPath))
   }
 
-  override def shouldFailDivByZero(): Boolean = false
-
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _) => e
@@ -663,25 +816,11 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
 
   /** dropped by SPARK-34234 */
   override def attachTreeIfSupported[TreeType <: TreeNode[_], A](
-    tree: TreeType,
-    msg: String)(
-    f: => A
+      tree: TreeType,
+      msg: String)(
+      f: => A
   ): A = {
     attachTree(tree, msg)(f)
-  }
-
-  override def createTable(table: CatalogTable,
-    sessionCatalog: SessionCatalog,
-    tableLocation: Option[URI],
-    result: BaseRelation) = {
-    val newTable = table.copy(
-      storage = table.storage.copy(locationUri = tableLocation),
-      // We will use the schema of resolved.relation as the schema of the table (instead of
-      // the schema of df). It is important since the nullability may be changed by the relation
-      // provider (for example, see org.apache.spark.sql.parquet.DefaultSource).
-      schema = result.schema)
-    // Table location is already validated. No need to check it again during table creation.
-    sessionCatalog.createTable(newTable, ignoreIfExists = false, validateLocation = false)
   }
 
   override def hasAliasQuoteFix: Boolean = false
@@ -693,7 +832,7 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
   }
 
   override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
-    mode.transform(rows, TrampolineUtil.getTaskMemoryManager())
+    mode.transform(rows, TaskContext.get.taskMemoryManager())
 
   override def registerKryoClasses(kryo: Kryo): Unit = {
     kryo.register(classOf[SerializeConcatHostBuffersDeserializeBatch],
@@ -702,9 +841,12 @@ abstract class SparkBaseShims extends Spark30XShims with Logging {
       new KryoJavaSerializer())
   }
 
+  override def shouldFallbackOnAnsiTimestamp(): Boolean = SQLConf.get.ansiEnabled
+
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
-    adaptivePlan.initialPlan
+    adaptivePlan.inputPlan
   }
 
-  override def getLegacyStatisticalAggregate(): Boolean = true
+  override def getLegacyStatisticalAggregate(): Boolean =
+    SQLConf.get.legacyStatisticalAggregate
 }

@@ -35,9 +35,9 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 
 /**
-* Shim base class that can be compiled with every supported 3.0.x
+* Shim base class that can be compiled with from 301 until 320
 */
-trait Spark30XShims extends SparkShims {
+trait Spark301util320Shims extends SparkShims {
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
   override def parquetRebaseWriteKey: String =
