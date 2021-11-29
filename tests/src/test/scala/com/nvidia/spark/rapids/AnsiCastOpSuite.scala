@@ -39,7 +39,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT.key, "true")
-    .set(RapidsConf.DECIMAL_TYPE_ENABLED.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
@@ -408,22 +407,22 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testCastFailsForBadInputs("Test bad cast 1 from strings to floats", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c0").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to floats", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c1").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 1 from strings to double", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c0").cast(DoubleType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to double", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_FLOAT_CAST_MSG) {
+      msg = GpuCast.INVALID_NUMBER_MSG) {
     frame =>frame.select(col("c1").cast(DoubleType))
   }
 

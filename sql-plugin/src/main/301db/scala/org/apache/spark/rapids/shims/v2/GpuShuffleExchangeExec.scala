@@ -13,8 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-package com.nvidia.spark.rapids.shims.v2
+package org.apache.spark.rapids.shims.v2
 
 import com.nvidia.spark.rapids.GpuPartitioning
 
@@ -22,16 +21,16 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
-import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeLike
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBaseWithMetrics
 
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)(
+    canChangeNumPartitions: Boolean)(
     cpuOutputPartitioning: Partitioning)
-    extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
-        with ShuffleExchangeLike {
+  extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
+      with ShuffleExchangeLike {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
 
@@ -41,7 +40,9 @@ case class GpuShuffleExchangeExec(
 
   override def numPartitions: Int = shuffleDependencyColumnar.partitioner.numPartitions
 
-  override def getShuffleRDD(partitionSpecs: Array[ShufflePartitionSpec]): RDD[_] = {
+  override def getShuffleRDD(
+      partitionSpecs: Array[ShufflePartitionSpec],
+      partitionSizes: Option[Array[Long]]): RDD[_] = {
     throw new UnsupportedOperationException
   }
 

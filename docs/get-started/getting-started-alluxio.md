@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Alluxio
-nav_order: 6
+nav_order: 7
 parent: Getting-Started
 ---
 # Getting Started with RAPIDS and Alluxio
