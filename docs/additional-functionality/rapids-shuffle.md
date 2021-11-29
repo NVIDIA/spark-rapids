@@ -349,10 +349,10 @@ guide for Databricks. The following are extra steps required to enable UCX.
 
 ```
 #!/bin/bash
-sudo apt install -y wget libnuma1 && \
-wget https://github.com/openucx/ucx/releases/download/v1.11.0/ucx-v1.11.0-ubuntu18.04-mofed5.x-cuda11.0.deb && \
-sudo dpkg -i  ucx-v1.11.0-ubuntu18.04-mofed5.x-cuda11.0.deb &&
-rm ucx-v1.11.0-ubuntu18.04-mofed5.x-cuda11.0.deb
+sudo apt install -y wget libnuma1 &&
+wget https://github.com/openucx/ucx/releases/download/v1.11.2/ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb &&
+sudo dpkg -i ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb &&
+rm ucx-v1.11.2-ubuntu18.04-mofed5.x-cuda11.2.deb
 ```
 
 Save the script in DBFS and add it to the "Init Scripts" list:
