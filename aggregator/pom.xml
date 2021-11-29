@@ -96,15 +96,33 @@
                             <pattern>org.apache.orc.</pattern>
                             <shadedPattern>${rapids.shade.package}.orc.</shadedPattern>
                         </relocation>
-                        <!--
-                            Removed the relocation config for hadoop hive here, to fix the Hive
-                            dependency issue in module tests. Otherwise, it will complain the
-                            error as below:
-                              RowBasedHiveUDFSuite:
-                              *** RUN ABORTED ***
-                              java.lang.NoSuchMethodError: org.apache.hadoop.hive.ql.exec.UDF.getResolver()Lcom/nvidia/shaded/spark/hadoop/hive/ql/exec/UDFMethodResolver;
-                              at org.apache.spark.sql.hive.rapids.GpuRowBasedHiveSimpleUDF.method$lzycompute(rowBasedHiveUDFs.scala:88)
-                         -->
+                        <relocation>
+                            <pattern>org.apache.hadoop.hive.</pattern>
+                            <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
+                            <excludes>
+                                <!-- FIXME
+                                    Seems we need to exclude all the public classes being used
+                                    directly and indirectly by plugin to support row-based Hive
+                                    UDF, otherwise it will get a ClassNotFoundException as below:
+                                        E Caused by: java.lang.ClassNotFoundException: com.nvidia.shaded.spark.hadoop.hive.serde2.objectinspector.ObjectInspector
+                                        E     at java.net.URLClassLoader.findClass(URLClassLoader.java:382)
+                                    Or, just simply remove this relocation.
+                                -->
+                                <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.FunctionRegistry</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.UDF</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.exec.UDFMethodResolver</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.UDFType</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDF$DeferredObject</exclude>
+                                <exclude>org.apache.hadoop.hive.ql.udf.generic.GenericUDFUtils$ConversionHelper</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory$ObjectInspectorOptions</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.objectinspector.StructField</exclude>
+                                <exclude>org.apache.hadoop.hive.serde2.typeinfo.TypeInfo</exclude>
+                            </excludes>
+                        </relocation>
                         <relocation>
                             <pattern>org.apache.hive.</pattern>
                             <shadedPattern>${rapids.shade.package}.hive.</shadedPattern>

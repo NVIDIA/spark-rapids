@@ -29,7 +29,6 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.internal.StaticSQLConf.CATALOG_IMPLEMENTATION
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
@@ -56,7 +55,7 @@ object TestResourceFinder {
 
 object SparkSessionHolder extends Logging {
 
-  private var spark = createSparkSession(enableHive = false)
+  private var spark = createSparkSession()
   private var origConf = spark.conf.getAll
   private var origConfKeys = origConf.keys.toSet
 
@@ -66,7 +65,7 @@ object SparkSessionHolder extends Logging {
     case _ => // No need to modify it
   }
 
-  private def createSparkSession(enableHive: Boolean): SparkSession = {
+  private def createSparkSession(): SparkSession = {
     TrampolineUtil.cleanupAnyExistingSession()
 
     // Timezone is fixed to UTC to allow timestamps to work by default
@@ -94,38 +93,32 @@ object SparkSessionHolder extends Logging {
       }
     }
 
-    if (enableHive) {
-      // For Hive UDF tests only.
-      // Because some tests will fail if enabling Hive support unconditionally.
-      builder.enableHiveSupport()
-    }
     builder.getOrCreate()
   }
 
-  private def reinitSession(enableHive: Boolean): Unit = {
-    spark = createSparkSession(enableHive)
+  private def reinitSession(): Unit = {
+    spark = createSparkSession()
     origConf = spark.conf.getAll
     origConfKeys = origConf.keys.toSet
   }
 
   def sparkSession: SparkSession = {
     if (SparkSession.getActiveSession.isEmpty) {
-      reinitSession(enableHive = false)
+      reinitSession()
     }
     spark
   }
 
-  def resetSparkSessionConf(enableHive: Boolean = false): Unit = {
+  def resetSparkSessionConf(): Unit = {
     if (SparkSession.getActiveSession.isEmpty) {
-      reinitSession(enableHive)
+      reinitSession()
     } else {
       setAllConfs(origConf.toArray)
       val currentKeys = spark.conf.getAll.keys.toSet
       val toRemove = currentKeys -- origConfKeys
-      val hiveEnabled = origConf.getOrElse(CATALOG_IMPLEMENTATION.key, "") == "hive"
-      if (toRemove.contains("spark.shuffle.manager") || enableHive != hiveEnabled) {
+      if (toRemove.contains("spark.shuffle.manager")) {
         // cannot unset the config so need to reinitialize
-        reinitSession(enableHive)
+        reinitSession()
       } else {
         toRemove.foreach(spark.conf.unset)
       }
@@ -134,13 +127,9 @@ object SparkSessionHolder extends Logging {
   }
 
   def withSparkSession[U](conf: SparkConf, f: SparkSession => U): U = {
-    // 'catalogImplementation' is a static config, should be set before
-    // creating a SparkSession.
-    val enableHive = conf.get(CATALOG_IMPLEMENTATION.key, "") == "hive"
-    resetSparkSessionConf(enableHive)
-    val rtConf = conf.clone().remove(CATALOG_IMPLEMENTATION.key)
-    logDebug(s"SETTING  CONF: ${rtConf.getAll.toMap}")
-    setAllConfs(rtConf.getAll)
+    resetSparkSessionConf
+    logDebug(s"SETTING  CONF: ${conf.getAll.toMap}")
+    setAllConfs(conf.getAll)
     logDebug(s"RUN WITH CONF: ${spark.conf.getAll}\n")
     f(spark)
   }
@@ -750,24 +739,6 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
             stripMargin)
       }
     }
-  }
-
-  def testSparkResultsAreEqualWithHiveSupport(
-      testName: String,
-      df: SparkSession => DataFrame,
-      conf: SparkConf = new SparkConf(),
-      repart: Integer = 1,
-      sort: Boolean = false,
-      maxFloatDiff: Double = 0.0,
-      incompat: Boolean = false,
-      execsAllowedNonGpu: Seq[String] = Seq.empty,
-      sortBeforeRepart: Boolean = false,
-      assumeCondition: SparkSession => (Boolean, String) = null,
-      skipCanonicalizationCheck: Boolean = false)
-      (fun: DataFrame => DataFrame): Unit = {
-    val newConf = conf.clone().set(CATALOG_IMPLEMENTATION.key, "hive")
-    testSparkResultsAreEqual(testName, df, newConf, repart, sort, maxFloatDiff, incompat,
-      execsAllowedNonGpu, sortBeforeRepart, assumeCondition, skipCanonicalizationCheck)(fun)
   }
 
   def testSparkResultsAreEqual(

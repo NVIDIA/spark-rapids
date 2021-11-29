@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids;
+package com.nvidia.spark.rapids.udf.hive;
 
 import org.apache.hadoop.hive.ql.exec.UDFArgumentException;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -25,10 +25,7 @@ import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectIn
 import org.apache.hadoop.hive.serde2.objectinspector.primitive.PrimitiveObjectInspectorFactory;
 import org.apache.hadoop.io.Text;
 
-/**
- * An empty Hive GenericUDF returning the input directly for test only,
- * used in file "RowBasedHiveUDFSuite".
- */
+/** An empty Hive GenericUDF returning the input directly for row-based UDF test only */
 public class EmptyHiveGenericUDF extends GenericUDF {
   private transient PrimitiveObjectInspectorConverter.TextConverter converter;
   private final Text textResult = new Text();

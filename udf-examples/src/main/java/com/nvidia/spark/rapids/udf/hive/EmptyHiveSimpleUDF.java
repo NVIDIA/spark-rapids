@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids;
+package com.nvidia.spark.rapids.udf.hive;
 
 import org.apache.hadoop.hive.ql.exec.UDF;
 
-/**
- * An empty Hive simple UDF returning the input string directly for test only,
- * used in file "RowBasedHiveUDFSuite".
- */
+/** An empty Hive simple UDF returning the input directly for row-based UDF test only. */
 public class EmptyHiveSimpleUDF extends UDF {
   public String evaluate(String in) {
     return in;
