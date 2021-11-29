@@ -670,8 +670,8 @@ object GpuCast extends Arm {
               withResource(ColumnVector.fromScalar(space, child.getRowCount.toInt)) { spaceVec =>
                 withResource(
                   ColumnVector.stringConcatenate(Array(spaceVec, strChild))
-                ) { AddSpace =>
-                  withResource(child.isNotNull) {_.ifElse(AddSpace, strChild)}
+                ) { addSpace =>
+                  withResource(child.isNotNull) {_.ifElse(addSpace, strChild)}
                 }
               }
             }
@@ -686,11 +686,9 @@ object GpuCast extends Arm {
        */
       def removeFirstSpace(strVec: ColumnVector): ColumnVector = {
         if (legacyCastToString){
-          withResource(ColumnVector.fromScalar(space, strVec.getRowCount.toInt)){spaceVec =>
-            withResource(strVec.substring(0,1)) { fstChar =>
-              withResource(strVec.substring(1)) { remain =>
-                withResource(fstChar.equalTo(spaceVec)) {_.ifElse(remain, strVec)}
-              }
+          withResource(strVec.substring(0,1)) { fstChar =>
+            withResource(strVec.substring(1)) { remain =>
+              withResource(fstChar.equalTo(space)) {_.ifElse(remain, strVec)}
             }
           }
         }
@@ -705,16 +703,12 @@ object GpuCast extends Arm {
         withResource(
           Seq(left, right).safeMap(s => ColumnVector.fromScalar(s, numRows))
         ) { case Seq(leftColumn, rightColumn) =>
-          withResource(ArrayBuffer.empty[ColumnVector]) { columns =>
-            columns += leftColumn.incRefCount
-            columns += strVec.incRefCount
-            columns += rightColumn.incRefCount
-
-            ColumnVector.stringConcatenate(empty, nullRep, columns.toArray)
-          }
+          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, strVec, rightColumn))
         }
       }
       /* -------------------------------- helper functions -----------------------*/
+
+
       // cast child column to string type
       withResource(input.getChildColumnView(0)) { childView =>
         withResource(castChildToStr(childView)){ stringChild =>
