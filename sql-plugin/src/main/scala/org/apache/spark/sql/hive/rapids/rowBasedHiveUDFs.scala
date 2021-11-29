@@ -71,6 +71,8 @@ case class GpuRowBasedHiveSimpleUDF(
     name: String,
     funcWrapper: HiveFunctionWrapper,
     children: Seq[Expression]) extends GpuRowBasedHiveUDFBase {
+
+  @scala.annotation.nowarn("msg=class UDF in package exec is deprecated")
   @transient
   override lazy val function: UDF = funcWrapper.createFunction[UDF]()
 
