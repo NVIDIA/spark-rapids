@@ -94,6 +94,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
       withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
         if (headers.isEmpty) {
           batchInternal = GpuColumnVector.emptyBatchFromTypes(dataTypes)
+          GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
         } else {
           withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) { tableInfo =>
             val table = tableInfo.getContiguousTable
@@ -103,6 +104,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
             } else {
               batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
               GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
+              table.getBuffer.noWarnLeakExpected()
             }
           }
         }
