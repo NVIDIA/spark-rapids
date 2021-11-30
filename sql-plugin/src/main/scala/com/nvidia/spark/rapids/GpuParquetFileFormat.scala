@@ -142,6 +142,9 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
    * here by setting the output committer class in the conf of
    * spark.sql.sources.outputCommitterClass.
    */
+  @scala.annotation.nowarn(
+    "msg=value ENABLE_JOB_SUMMARY in class ParquetOutputFormat is deprecated"
+  )
   override def prepareWrite(
       sparkSession: SparkSession,
       job: Job,

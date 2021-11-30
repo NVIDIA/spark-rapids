@@ -22,23 +22,13 @@ import ai.rapids.cudf.{ContiguousTable, CuFile, Table}
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, times, verify, when}
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.compatible.Assertion
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.storage.BlockId
 
-class RapidsGdsStoreSuite extends FunSuite with BeforeAndAfterEach with Arm with MockitoSugar {
-  val TEST_FILES_ROOT: File = TestUtils.getTempDir(this.getClass.getSimpleName)
-
-  override def beforeEach(): Unit = {
-    TEST_FILES_ROOT.mkdirs()
-  }
-
-  override def afterEach(): Unit = {
-    org.apache.commons.io.FileUtils.deleteDirectory(TEST_FILES_ROOT)
-  }
+class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
 
   test("single shot spill with shared path") {
     assume(CuFile.libraryLoaded())

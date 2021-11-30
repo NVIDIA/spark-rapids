@@ -19,13 +19,13 @@ package org.apache.spark.sql.rapids
 import java.lang.invoke.SerializedLambda
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuExpression, GpuRowBasedUserDefinedFunction, GpuUserDefinedFunction, RapidsConf, RapidsMeta, VersionUtils}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprMeta, GpuExpression, GpuRowBasedUserDefinedFunction, GpuUserDefinedFunction, RapidsConf, RapidsMeta}
 
 import org.apache.spark.sql.catalyst.{CatalystTypeConverters, InternalRow}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions.{Expression, ScalaUDF, SpecializedGetters}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, DataType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, DataType}
 
 case class GpuScalaUDF(
     function: RapidsUDF,
@@ -120,7 +120,7 @@ abstract class GpuRowBasedScalaUDFBase(
    * converter for typed ScalaUDF only, since its the only case where we know the type tag
    * of the return data type of udf function.
    */
-  private def catalystConverter: Any => Any = outputEncoder.map { enc =>
+  private[this] lazy val catalystConverter: Any => Any = outputEncoder.map { enc =>
     val toRow = enc.createSerializer().asInstanceOf[Any => Any]
     if (enc.isSerializedAsStructForTopLevel) {
       value: Any =>
@@ -534,21 +534,6 @@ abstract class ScalaUDFMetaBase(
       willNotWorkOnGpu(s"neither $udfName implemented by $udfClass provides " +
         s"a GPU implementation, nor the conf `${RapidsConf.ENABLE_CPU_BASED_UDF.key}` " +
         s"is enabled")
-    } else if (opRapidsFunc.isEmpty && conf.isCpuBasedUDFEnabled
-        && VersionUtils.isSpark311OrLater) {
-      // Fall back to CPU if the children contain array type with nulls,
-      // because of the issue as below.
-      //   https://github.com/NVIDIA/spark-rapids/issues/3942
-      val hasArrayWithNulls = expr.children.exists { e =>
-        e.dataType match {
-          case ArrayType(_, containsNull) => containsNull
-          case _ => false
-        }
-      }
-      if (hasArrayWithNulls) {
-        willNotWorkOnGpu(s"support for array with nulls in an UDF input is disabled " +
-          s"temporarily for Spark 3.1.1+. UDF will run into an error for this case.")
-      }
     }
   }
 

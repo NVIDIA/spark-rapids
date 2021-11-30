@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{HostColumnVector, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{HostColumnVector, HostColumnVectorCore, NvtxColor, NvtxRange}
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.v2.ShimExpression
@@ -73,8 +73,12 @@ trait GpuUserDefinedFunction extends GpuExpression
 
 object GpuUserDefinedFunction {
   // UDFs can support all types except UDT which does not have a clear columnar representation.
-  val udfTypeSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
+  val udfTypeSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
       TypeSig.BINARY + TypeSig.CALENDAR + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+
+  /** (This will be initialized once per process) */
+  lazy val hostColumnAssertionEnabled: Boolean =
+    classOf[HostColumnVectorCore].desiredAssertionStatus()
 }
 
 /**
@@ -88,6 +92,9 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
 
   /** True if the UDF is deterministic */
   val udfDeterministic: Boolean
+
+  /** True if the UDF needs null check when converting input columns to rows */
+  val checkNull: Boolean
 
   /** The row based function of the UDF. */
   protected def evaluateRow(childrenRow: InternalRow): Any
@@ -110,12 +117,19 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
       val retType = GpuColumnVector.convertFrom(dataType, nullable)
       val retRow = new GenericInternalRow(size = 1)
       closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
+        /**
+         * This `nullSafe` is for https://github.com/NVIDIA/spark-rapids/issues/3942.
+         * And more details can be found from
+         *     https://github.com/NVIDIA/spark-rapids/pull/3997#issuecomment-957650846
+         */
+        val nullSafe = checkNull && GpuUserDefinedFunction.hostColumnAssertionEnabled
         new ColumnarToRowIterator(
             Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
             NoopMetric,
             NoopMetric,
             NoopMetric,
-            NoopMetric).foreach { row =>
+            NoopMetric,
+            nullSafe).foreach { row =>
           retRow.update(0, evaluateRow(row))
           retConverter.append(retRow, 0, builder)
         }

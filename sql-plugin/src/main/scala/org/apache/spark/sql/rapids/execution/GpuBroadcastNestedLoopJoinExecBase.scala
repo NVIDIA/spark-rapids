@@ -470,10 +470,37 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val broadcastRelation =
       broadcastExchange.executeColumnarBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
-    if (boundCondition.isEmpty) {
+    val joinCondition = boundCondition.orElse {
+      // For outer joins use a true condition if there are any columns in the build side
+      // otherwise use a cross join.
+      val useTrueCondition = joinType match {
+        case LeftOuter if getGpuBuildSide == GpuBuildRight => right.output.nonEmpty
+        case RightOuter if getGpuBuildSide == GpuBuildLeft => left.output.nonEmpty
+        case _ => false
+      }
+      if (useTrueCondition) Some(GpuLiteral(true)) else None
+    }
+
+    if (joinCondition.isEmpty) {
       doUnconditionalJoin(broadcastRelation)
     } else {
-      doConditionalJoin(broadcastRelation, boundCondition, numFirstTableColumns)
+      doConditionalJoin(broadcastRelation, joinCondition, numFirstTableColumns)
+    }
+  }
+
+  private def leftExistenceJoin(
+      broadcastRelation: Broadcast[SerializeConcatHostBuffersDeserializeBatch],
+      exists: Boolean,
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): RDD[ColumnarBatch] = {
+    assert(getGpuBuildSide == GpuBuildRight)
+    streamed.executeColumnar().mapPartitionsInternal { streamedIter =>
+      val buildRows = computeBuildRowCount(broadcastRelation, buildTime, buildDataSize)
+      if (buildRows > 0 == exists) {
+        streamedIter
+      } else {
+        Iterator.empty
+      }
     }
   }
 
@@ -492,12 +519,19 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       lazy val builtBatch = makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
       val joinIterator: RDD[ColumnarBatch] = joinType match {
         case LeftSemi =>
-          // just return the left table
-          left.executeColumnar()
+          if (getGpuBuildSide == GpuBuildRight) {
+            leftExistenceJoin(broadcastRelation, exists=true, buildTime, buildDataSize)
+          } else {
+            left.executeColumnar()
+          }
         case LeftAnti =>
-          // degenerate case, no rows are returned.
-          val childRDD = left.executeColumnar()
-          new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, childRDD.getNumPartitions)
+          if (getGpuBuildSide == GpuBuildRight) {
+            leftExistenceJoin(broadcastRelation, exists=false, buildTime, buildDataSize)
+          } else {
+            // degenerate case, no rows are returned.
+            val childRDD = left.executeColumnar()
+            new GpuCoalesceExec.EmptyRDDWithPartitions(sparkContext, childRDD.getNumPartitions)
+          }
         case _ =>
           // Everything else is treated like an unconditional cross join
           val buildSide = getGpuBuildSide
@@ -509,8 +543,11 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
                 LazySpillableColumnarBatch(cb, spillCallback, "stream_batch")
               }
             }
+            val spillableBuiltBatch = withResource(builtBatch) {
+              LazySpillableColumnarBatch(_, spillCallback, "built_batch")
+            }
             new CrossJoinIterator(
-              LazySpillableColumnarBatch(builtBatch, spillCallback, "built_batch"),
+              spillableBuiltBatch,
               lazyStream,
               targetSizeBytes,
               buildSide,
@@ -589,9 +626,13 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           LazySpillableColumnarBatch(cb, spillCallback, "stream_batch")
         }
       }
+      val spillableBuiltBatch = withResource(builtBatch) {
+        LazySpillableColumnarBatch(_, spillCallback, "built_batch")
+      }
+
       GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
         nestedLoopJoinType, buildSide, numFirstTableColumns,
-        LazySpillableColumnarBatch(builtBatch, spillCallback, "built_batch"),
+        spillableBuiltBatch,
         lazyStream, streamAttributes, targetSizeBytes, boundCondition, spillCallback,
         numOutputRows = numOutputRows,
         joinOutputRows = joinOutputRows,

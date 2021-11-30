@@ -227,6 +227,7 @@ class QualificationAppInfo(
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
     checkMetadataForReadSchema(sqlID, planInfo)
+    checkJdbcScan(sqlID, planInfo)
     val planGraph = SparkPlanGraph(planInfo)
     val allnodes = planGraph.allNodes
     for (node <- allnodes) {

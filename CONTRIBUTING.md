@@ -50,31 +50,35 @@ You can find all available build versions in the top level pom.xml file. If you 
 for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
 the version you want.
 
-To get an uber jar with more than 1 version you have to `mvn install` each version
-and then use one of the defined profiles in the dist module. See the next section
-for more details.
+To get an uber jar with more than 1 version you have to `mvn package` each version
+and then use one of the defined profiles in the dist module, or a comma-separated list of
+build versions. See the next section for more details.
 
 ### Building a Distribution for Multiple Versions of Spark
 
 By default the distribution jar only includes code for a single version of Spark. If you want
-to create a jar with multiple versions we currently have 4 options.
+to create a jar with multiple versions we have the following options.
 
 1. Build for all Apache Spark versions and CDH with no SNAPSHOT versions of Spark, only released. Use `-PnoSnapshots`.
 2. Build for all Apache Spark versions and CDH including SNAPSHOT versions of Spark we have supported for. Use `-Psnapshots`.
 3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
 4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
+5. Build for an arbitrary combination of comma-separated build versions using `-Dincluded_buildvers=<CSV list of build versions>`.
+   E.g., `-Dincluded_buildvers=312,330`
 
-You must first build and install each of the versions of Spark and then build one final time using the profile for the option you want.
+You must first build each of the versions of Spark and then build one final time using the profile for the option you want.
 
 You can also install some manually and build a combined jar. For instance to build non-snapshot versions:
 
 ```shell script
-mvn -Dbuildver=301 clean install -DskipTests
-mvn -Dbuildver=302 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=303 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=311 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=312 clean install -Drat.skip=true -DskipTests
-mvn -Dbuildver=311cdh clean install -Drat.skip=true -DskipTests
+mvn clean
+mvn -Dbuildver=301 install -DskipTests
+mvn -Dbuildver=302 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=303 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=312 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=311cdh install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
 #### Building with buildall script
@@ -84,11 +88,11 @@ There is a build script `build/buildall` that automates the local build process.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots`
-- `minimumFeatureVersionMix` that currently includes 302, 311cdh, 312, 320 is recommended for catching incompatibilites already in the local development cycle
+- `minimumFeatureVersionMix` that currently includes 302, 311cdh, 312, 320 is recommended for catching incompatibilities already in the local development cycle
 
-For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `-Dbuildver=320` for Spark 3.2.0
+For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=301` for Spark 3.0.1.
 
-The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
+The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need for the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
 
 By default, `buildall` builds up to 4 shims in parallel using `xargs -P <n>`. This can be adjusted by
 specifying the environment variable `BUILD_PARALLEL=<n>`.
@@ -168,6 +172,77 @@ right-click on it and select "Maven->Ignore Projects".
 If you see Scala symbols unresolved (highlighted red) in IDEA please try the following steps to resolve it:
 - Make sure there are no relevant poms in "File->Settings->Build Tools->Maven->Ignored Files"
 - Restart IDEA and click "Reload All Maven Projects" again
+
+#### Bloop Build Server
+
+[Bloop](https://scalacenter.github.io/bloop/) is a build server and a set of tools around Build
+Server Protocol (BSP) for Scala providing an integration path with IDEs that support it. In fact,
+you can generate a Bloop project from Maven just for the Maven modules and profiles you are
+interested in. For example, to generate the Bloop projects for the Spark 3.2.0 dependency
+just for the production code run:
+
+```shell script
+mvn install ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl aggregator -am \
+  -DdownloadSources=true \
+  -Dbuildver=320 \
+  -DskipTests \
+  -Dskip \
+  -Dmaven.javadoc.skip \
+  -Dmaven.scalastyle.skip=true \
+  -Dmaven.updateconfig.skip=true
+```
+
+With `--generate-bloop` we integrated Bloop project generation into `buildall`. It makes it easier
+to generate projects for multiple Spark dependencies using the same profiles as our regular build.
+It makes sure that the project files belonging to different Spark dependencies are
+not clobbered by repeated `bloopInstall` Maven plugin invocations, and it uses
+[jq](https://stedolan.github.io/jq/) to post-process JSON-formatted project files such that they
+compile project classes into non-overlapping set of output directories.
+
+You can now open the spark-rapids as a
+[BSP project in IDEA](https://www.jetbrains.com/help/idea/bsp-support.html)
+
+# Bloop, Scala Metals, and Visual Studio Code
+
+_Last tested with 1.63.0-insider (Universal) Commit: bedf867b5b02c1c800fbaf4d6ce09cefba_
+
+Another, and arguably more popular, use of Bloop arises in connection with
+[Scala Metals](https://scalameta.org/metals/) and [VS @Code](https://code.visualstudio.com/).
+Scala Metals implements the
+[Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol/) for Scala,
+and enables features such as context-aware autocomplete, and code browsing between Scala symbol
+definitions, references and vice versa. LSP is supported by many editors including Vim and Emacs.
+
+Here we document the integration with VS code. It makes development on a remote node almost
+as easy as local development, which comes very handy when working in Cloud environments.
+
+Run `./build/buildall --generate-bloop --profile=<profile>` to generate Bloop projects
+for required Spark dependencies, e.g. `--profile=320` for Spark 3.2.0. When developing
+remotely this is done on the remote node.
+
+Install [Scala Metals extension](https://scalameta.org/metals/docs/editors/vscode) in VS Code,
+either locally or into a Remote-SSH extension destination depending on your target environment.
+When your project folder is open in VS Code, it may prompt you to import Maven project.
+IMPORTANT: always decline with "Don't ask again", otherwise it will overwrite the Bloop projects
+generated with the default `301` profile. If you need to use a different profile, always rerun the
+command above manually. When regenerating projects it's recommended to proceed to Metals
+"Build commands" View, and click:
+1. "Restart build server"
+1. "Clean compile workspace"
+to avoid stale class files.
+
+Now you should be able to see Scala class members in the Explorer's Outline view and in the
+Breadcrumbs view at the top of the Editor with a Scala file open.
+
+Check Metals logs, "Run Doctor", etc if something is not working as expected. You can also verify
+that the Bloop build server and the Metals language server are running by executing `jps` in the
+Terminal window:
+```shell script
+jps -l
+72960 sun.tools.jps.Jps
+72356 bloop.Server
+72349 scala.meta.metals.Main
+```
 
 #### Other IDEs
 We welcome pull requests with tips how to setup your favorite IDE!

@@ -52,7 +52,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, GenericInternalRow, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData, GenericArrayData, MapData}
-import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
+import org.apache.spark.sql.columnar.CachedBatch
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetToSparkSchemaConverter, ParquetWriteSupport, SparkToParquetSchemaConverter, VectorizedColumnReader}
 import org.apache.spark.sql.execution.datasources.parquet.rapids.shims.v2.{ParquetRecordMaterializer, ShimVectorizedColumnReader}
 import org.apache.spark.sql.execution.vectorized.{OffHeapColumnVector, WritableColumnVector}
@@ -286,6 +286,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
     dataType match {
       case a: ArrayType => isSupportedByCudf(a.elementType)
       case s: StructType => s.forall(field => isSupportedByCudf(field.dataType))
+      case m: MapType => isSupportedByCudf(m.keyType) && isSupportedByCudf(m.valueType)
       case _ => GpuColumnVector.isNonNestedSupportedType(dataType)
     }
   }
@@ -1474,6 +1475,9 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
  */
 private[rapids] class ParquetOutputFileFormat {
 
+  @scala.annotation.nowarn(
+    "msg=constructor .* in class .* is deprecated"
+  )
   def getRecordWriter(output: OutputFile, conf: Configuration): RecordWriter[Void, InternalRow] = {
     import ParquetOutputFormat._
 

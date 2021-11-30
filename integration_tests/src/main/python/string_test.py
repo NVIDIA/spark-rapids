@@ -337,7 +337,8 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", "PROD")',
                 'REGEXP_REPLACE(a, "TEST", "")',
                 'REGEXP_REPLACE(a, "TEST", "%^[]\ud720")',
-                'REGEXP_REPLACE(a, "TEST", NULL)'))
+                'REGEXP_REPLACE(a, "TEST", NULL)'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_re_replace_null():
     gen = mk_str_gen('[\u0000 ]{0,2}TE[\u0000 ]{0,2}ST[\u0000 ]{0,2}')\
@@ -356,7 +357,8 @@ def test_re_replace_null():
                 'REGEXP_REPLACE(a, "\x00", "NULL")',
                 'REGEXP_REPLACE(a, "\0", "NULL")',
                 'REGEXP_REPLACE(a, "TE\u0000ST", "PROD")',
-                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'))
+                'REGEXP_REPLACE(a, "TE\u0000\u0000ST", "PROD")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_length():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
@@ -470,6 +472,17 @@ def test_like_complex_escape():
                 'a like "_oo"'),
             conf={'spark.sql.parser.escapedStringLiterals': 'true'})
  
+def test_regexp_replace():
+    gen = mk_str_gen('[abcd]{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, "a", "A")',
+                'regexp_replace(a, "[^xyz]", "A")',
+                'regexp_replace(a, "([^x])|([^y])", "A")',
+                'regexp_replace(a, "(?:aa)+", "A")',
+                'regexp_replace(a, "a|b|c", "A")'),
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -492,11 +505,20 @@ def test_rlike_embedded_null():
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
 @allow_non_gpu('ProjectExec', 'RLike')
-def test_rlike_null_pattern():
+def test_rlike_fallback_null_pattern():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "a\u0000"'),
+            'RLike',
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_empty_group():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike "a()?"'),
             'RLike',
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
@@ -507,7 +529,6 @@ def test_rlike_escape():
                 'a rlike "a[\\\\-]"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF supports multiline by default but Spark does not - https://github.com/rapidsai/cudf/issues/9439')
 def test_rlike_multi_line():
     gen = mk_str_gen('[abc]\n[def]')
     assert_gpu_and_cpu_are_equal_collect(
@@ -518,18 +539,20 @@ def test_rlike_multi_line():
                 'a rlike "e$"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF has stricter requirements around escaping - https://github.com/rapidsai/cudf/issues/9434')
 def test_rlike_missing_escape():
     gen = mk_str_gen('a[\\-\\+]')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'a rlike "a[-]"'),
+                'a rlike "a[-]"',
+                'a rlike "a[+-]"',
+                'a rlike "a[a-b-]"'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
-@pytest.mark.xfail(reason='cuDF does not support qualifier with nothing to repeat - https://github.com/rapidsai/cudf/issues/9434')
-def test_rlike_nothing_to_repeat():
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_possessive_quantifier():
     gen = mk_str_gen('(\u20ac|\\w){0,3}a[|b*.$\r\n]{0,2}c\\w{0,3}')
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "a*+"'),
+                'RLike',
             conf={'spark.rapids.sql.expression.RLike': 'true'})

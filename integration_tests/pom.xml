@@ -22,10 +22,10 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>21.12.0-SNAPSHOT</version>
+        <version>22.02.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-integration-tests_2.12</artifactId>
-    <version>21.12.0-SNAPSHOT</version>
+    <version>22.02.0-SNAPSHOT</version>
     <properties>
         <target.classifier/>
     </properties>
@@ -214,7 +214,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
-                <version>1.8</version>
                 <executions>
                     <execution>
                         <id>generate-build-info</id>
@@ -225,7 +224,7 @@
                                 <mkdir dir="${project.build.directory}/extra-resources"/>
                                 <mkdir dir="${project.build.directory}/tmp"/>
                                 <exec executable="bash" failonerror="true" output="${project.build.directory}/extra-resources/rapids4spark-version-info.properties">
-                                    <arg value="${user.dir}/build/build-info"/>
+                                    <arg value="${spark.rapids.source.basedir}/build/build-info"/>
                                     <arg value="${project.version}"/>
                                     <arg value="${cudf.version}"/>
                                 </exec>

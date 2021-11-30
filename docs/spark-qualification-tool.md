@@ -335,7 +335,7 @@ In the above example, two application event logs were analyzed. “app-202105071
 than the “app-20210507174503-1704” because the score(in the csv output) for “app-20210507174503-2538”   
 is higher than  “app-20210507174503-1704”. 
 Here the `Problematic Duration` is zero but please keep in mind that we are only able to detect certain issues. 
-This currently includes some UDFs, some decimal operations and nested complex types. 
+This currently includes some UDFs, some decimal operations and nested complex types.
 The tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
 
 Please refer to [supported_ops.md](./supported_ops.md) 
@@ -346,7 +346,7 @@ if they aren’t in the event logs.
 The second output is a more detailed output.
 Here is a sample output requesting csv style output:
 ```
-App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Unsupported Nested Complex Types
+App Name,App ID,Score,Potential Problems,SQL DF Duration,SQL Dataframe Task Duration,App Duration,Executor CPU Time Percent,App Duration Estimated,SQL Duration with Potential Problems,SQL Ids with Failures,Read Score Percent,Read File Format Score,Unsupported Read File Formats and Types,Unsupported Write Data Format,Complex Types,Nested Complex Types
 job3,app-20210507174503-1704,4320658.0,"",9569,4320658,26171,35.34,false,0,"",20,100.0,"",JSON,array<struct<city:string;state:string>>;map<string;string>,array<struct<city:string;state:string>>
 job1,app-20210507174503-2538,19864.04,"",6760,21802,83728,71.3,false,0,"",20,55.56,"Parquet[decimal]",JSON;CSV,"",""
 ```
@@ -375,12 +375,12 @@ Here is a brief description of each of column that is in the CSV:
 13. Read File Format Score: A score given based on whether the read file formats and types are supported.
 14. Unsupported Read File Formats and Types: Looks at the Read Schema and
     reports the file formats along with types which may not be fully supported.
-    Example: Parquet[decimal]. Note that this is based on the current version of the plugin and
+    Example: Parquet[decimal], JDBC[*]. Note that this is based on the current version of the plugin and
     future versions may add support for more file formats and types.
 15. Unsupported Write Data Format: Reports the data format which we currently don’t support, i.e.
     if the result is written in JSON or CSV format.
 16. Complex Types: Looks at the Read Schema and reports if there are any complex types(array, struct or maps) in the schema.
-17. Unsupported Nested Complex Types: Nested complex types are complex types which
+17. Nested Complex Types: Nested complex types are complex types which
     contain other complex types (Example: `array<struct<string,string>>`). 
     Note that it can read all the schemas for DataSource V1. The Data Source V2 truncates the schema,
     so if you see ..., then the full schema is not available.

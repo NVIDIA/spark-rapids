@@ -26,9 +26,6 @@ from spark_session import with_cpu_session
 from marks import approximate_float, ignore_order, incompat, qarun
 from data_gen import copy_and_update
 
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = pytest.mark.premerge_ci_1
-
 def num_stringDf(spark):
     print("### CREATE DATAFRAME 1  ####")
     schema = StructType([StructField("strF", StringType()),
@@ -150,7 +147,8 @@ _qa_conf = {
         'spark.rapids.sql.hasNans': 'false',
         'spark.rapids.sql.castStringToFloat.enabled': 'true',
         'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'true',
-        'spark.rapids.sql.castFloatToString.enabled': 'true'
+        'spark.rapids.sql.castFloatToString.enabled': 'true',
+        'spark.rapids.sql.expression.RegExpReplace': 'true'
         }
 
 _first_last_qa_conf = copy_and_update(_qa_conf, {

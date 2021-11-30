@@ -34,29 +34,26 @@ trait TypeSigUtil {
    * Check if this type of Spark-specific is supported by the plugin or not.
    * @param check the Supported Types
    * @param dataType the data type to be checked
-   * @param allowDecimal whether decimal support is enabled or not
    * @return true if it is allowed else false.
    */
-  def isSupported(check: TypeEnum.ValueSet, dataType: DataType, allowDecimal: Boolean): Boolean
+  def isSupported(check: TypeEnum.ValueSet, dataType: DataType): Boolean
 
   /**
    * Get all supported types for the spark-specific
    * @return the all supported typ
    */
-  def getAllSupportedTypes(): TypeEnum.ValueSet
+  def getAllSupportedTypes: TypeEnum.ValueSet
 
   /**
    * Return the reason why this type is not supported.\
    * @param check the Supported Types
    * @param dataType the data type to be checked
-   * @param allowDecimal whether decimal support is enabled or not
    * @param notSupportedReason the reason for not supporting
    * @return the reason
    */
   def reasonNotSupported(
     check: TypeEnum.ValueSet,
     dataType: DataType,
-    allowDecimal: Boolean,
     notSupportedReason: Seq[String]): Seq[String]
 
   /**
@@ -67,7 +64,7 @@ trait TypeSigUtil {
   def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value
 
   /** Get numeric and interval TypeSig */
-  def getNumericAndInterval(): TypeSig
+  def getNumericAndInterval: TypeSig
 }
 
 /**
@@ -280,11 +277,10 @@ final class TypeSig private(
     // This is for a parameter so skip it if there is no data type for the expression
     typeMeta.dataType.foreach { dt =>
       val expr = exprMeta.wrapped.asInstanceOf[Expression]
-      val allowDecimal = meta.conf.decimalTypeEnabled
 
-      if (!isSupportedByPlugin(dt, allowDecimal)) {
+      if (!isSupportedByPlugin(dt)) {
         willNotWork(s"$name expression ${expr.getClass.getSimpleName} $expr " +
-            reasonNotSupported(dt, allowDecimal).mkString("(", ", ", ")"))
+            reasonNotSupported(dt).mkString("(", ", ", ")"))
       } else if (isLitOnly(dt) && !GpuOverrides.isLit(expr)) {
         willNotWork(s"$name only supports $dt if it is a literal value")
       }
@@ -297,11 +293,10 @@ final class TypeSig private(
   /**
    * Check if this type is supported by the plugin or not.
    * @param dataType the data type to be checked
-   * @param allowDecimal if decimal support is enabled
    * @return true if it is allowed else false.
    */
-  def isSupportedByPlugin(dataType: DataType, allowDecimal: Boolean): Boolean =
-    isSupported(initialTypes, dataType, allowDecimal)
+  def isSupportedByPlugin(dataType: DataType): Boolean =
+    isSupported(initialTypes, dataType)
 
   private [this] def isLitOnly(dataType: DataType): Boolean = dataType match {
     case BooleanType => litOnlyTypes.contains(TypeEnum.BOOLEAN)
@@ -321,16 +316,15 @@ final class TypeSig private(
     case _: ArrayType => litOnlyTypes.contains(TypeEnum.ARRAY)
     case _: MapType => litOnlyTypes.contains(TypeEnum.MAP)
     case _: StructType => litOnlyTypes.contains(TypeEnum.STRUCT)
-    case _ => TypeSigUtil.isSupported(litOnlyTypes, dataType, false)
+    case _ => TypeSigUtil.isSupported(litOnlyTypes, dataType)
   }
 
   def isSupportedBySpark(dataType: DataType): Boolean =
-    isSupported(initialTypes, dataType, allowDecimal = true)
+    isSupported(initialTypes, dataType)
 
   private[this] def isSupported(
       check: TypeEnum.ValueSet,
-      dataType: DataType,
-      allowDecimal: Boolean): Boolean =
+      dataType: DataType): Boolean =
     dataType match {
       case BooleanType => check.contains(TypeEnum.BOOLEAN)
       case ByteType => check.contains(TypeEnum.BYTE)
@@ -341,28 +335,28 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          ZoneId.systemDefault().normalized() == GpuOverrides.UTC_TIMEZONE_ID
+          TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
       case StringType => check.contains(TypeEnum.STRING)
-      case dt: DecimalType => allowDecimal &&
+      case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
           dt.precision <= maxAllowedDecimalPrecision
       case NullType => check.contains(TypeEnum.NULL)
       case BinaryType => check.contains(TypeEnum.BINARY)
       case CalendarIntervalType => check.contains(TypeEnum.CALENDAR)
       case ArrayType(elementType, _) if check.contains(TypeEnum.ARRAY) =>
-        isSupported(childTypes, elementType, allowDecimal)
+        isSupported(childTypes, elementType)
       case MapType(keyType, valueType, _) if check.contains(TypeEnum.MAP) =>
-        isSupported(childTypes, keyType, allowDecimal) &&
-            isSupported(childTypes, valueType, allowDecimal)
+        isSupported(childTypes, keyType) &&
+            isSupported(childTypes, valueType)
       case StructType(fields) if check.contains(TypeEnum.STRUCT) =>
         fields.map(_.dataType).forall { t =>
-          isSupported(childTypes, t, allowDecimal)
+          isSupported(childTypes, t)
         }
-      case _ => TypeSigUtil.isSupported(check, dataType, allowDecimal)
+      case _ => TypeSigUtil.isSupported(check, dataType)
     }
 
-  def reasonNotSupported(dataType: DataType, allowDecimal: Boolean): Seq[String] =
-    reasonNotSupported(initialTypes, dataType, isChild = false, allowDecimal)
+  def reasonNotSupported(dataType: DataType): Seq[String] =
+    reasonNotSupported(initialTypes, dataType, isChild = false)
 
   private[this] def withChild(isChild: Boolean, msg: String): String = if (isChild) {
     "child " + msg
@@ -382,8 +376,7 @@ final class TypeSig private(
   private[this] def reasonNotSupported(
       check: TypeEnum.ValueSet,
       dataType: DataType,
-      isChild: Boolean,
-      allowDecimal: Boolean): Seq[String] =
+      isChild: Boolean): Seq[String] =
     dataType match {
       case BooleanType =>
         basicNotSupportedMessage(dataType, TypeEnum.BOOLEAN, check, isChild)
@@ -403,7 +396,7 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
-            (ZoneId.systemDefault().normalized() != GpuOverrides.UTC_TIMEZONE_ID)) {
+            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()))) {
           Seq(withChild(isChild, s"$dataType is not supported when the JVM system " +
               s"timezone is set to ${ZoneId.systemDefault()}. Set the timezone to UTC to enable " +
               s"$dataType support"))
@@ -419,10 +412,6 @@ final class TypeSig private(
             reasons ++= Seq(withChild(isChild, s"$dataType precision is larger " +
                 s"than we support $maxAllowedDecimalPrecision"))
           }
-          if (!allowDecimal) {
-            reasons ++= Seq(s"decimal support has been disabled to enable it set " +
-                s"${RapidsConf.DECIMAL_TYPE_ENABLED} to true")
-          }
           reasons
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.DECIMAL, check, isChild)
@@ -435,31 +424,31 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.CALENDAR, check, isChild)
       case ArrayType(elementType, _) =>
         if (check.contains(TypeEnum.ARRAY)) {
-          reasonNotSupported(childTypes, elementType, isChild = true, allowDecimal)
+          reasonNotSupported(childTypes, elementType, isChild = true)
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.ARRAY, check, isChild)
         }
       case MapType(keyType, valueType, _) =>
         if (check.contains(TypeEnum.MAP)) {
-          reasonNotSupported(childTypes, keyType, isChild = true, allowDecimal) ++
-              reasonNotSupported(childTypes, valueType, isChild = true, allowDecimal)
+          reasonNotSupported(childTypes, keyType, isChild = true) ++
+              reasonNotSupported(childTypes, valueType, isChild = true)
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.MAP, check, isChild)
         }
       case StructType(fields) =>
         if (check.contains(TypeEnum.STRUCT)) {
           fields.flatMap { sf =>
-            reasonNotSupported(childTypes, sf.dataType, isChild = true, allowDecimal)
+            reasonNotSupported(childTypes, sf.dataType, isChild = true)
           }
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.STRUCT, check, isChild)
         }
       case _ => TypeSigUtil.reasonNotSupported(check, dataType,
-        allowDecimal, Seq(withChild(isChild, s"$dataType is not supported")))
+        Seq(withChild(isChild, s"$dataType is not supported")))
     }
 
-  def areAllSupportedByPlugin(types: Seq[DataType], allowDecimal: Boolean): Boolean =
-    types.forall(isSupportedByPlugin(_, allowDecimal))
+  def areAllSupportedByPlugin(types: Seq[DataType]): Boolean =
+    types.forall(isSupportedByPlugin)
 
   /**
    * Get the level of support for a given type compared to what Spark supports.
@@ -546,6 +535,9 @@ object TypeSig {
   def psNote(dataType: TypeEnum.Value, note: String): TypeSig =
     TypeSig.none.withPsNote(dataType, note)
 
+  def decimal(maxPrecision: Int): TypeSig =
+    new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), maxPrecision)
+
   /**
    * All types nested and not nested
    */
@@ -569,16 +561,15 @@ object TypeSig {
   val DATE: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.DATE))
   val TIMESTAMP: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.TIMESTAMP))
   val STRING: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.STRING))
-  val DECIMAL_64: TypeSig =
-    new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), DType.DECIMAL64_MAX_PRECISION)
+  val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
 
   /**
    * Full support for 128 bit DECIMAL. In the future we expect to have other types with
    * slightly less than full DECIMAL support. This are things like math operations where
    * we cannot replicate the overflow behavior of Spark. These will be added when needed.
    */
-  val DECIMAL_128_FULL: TypeSig =
-    new TypeSig(TypeEnum.ValueSet(TypeEnum.DECIMAL), DecimalType.MAX_PRECISION)
+  val DECIMAL_128_FULL: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
+
   val NULL: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.NULL))
   val BINARY: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.BINARY))
   val CALENDAR: TypeSig = new TypeSig(TypeEnum.ValueSet(TypeEnum.CALENDAR))
@@ -726,18 +717,26 @@ abstract class TypeChecks[RET] {
   protected def tagUnsupportedTypes(
     meta: RapidsMeta[_, _, _],
     sig: TypeSig,
-    allowDecimal: Boolean,
     fields: Seq[StructField],
     msgFormat: String
     ): Unit = {
     val unsupportedTypes: Map[DataType, Set[String]] = fields
-      .filterNot(attr => sig.isSupportedByPlugin(attr.dataType, allowDecimal))
+      .filterNot(attr => sig.isSupportedByPlugin(attr.dataType))
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet)
 
     if (unsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
+  }
+}
+
+object TypeChecks {
+  /**
+   * Check if the time zone passed is supported by plugin.
+   */
+  def areTimestampsSupported(timezoneId: ZoneId): Boolean = {
+    timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
   }
 }
 
@@ -782,7 +781,7 @@ case class ContextChecks(
     val expr = meta.wrapped.asInstanceOf[Expression]
     meta.typeMeta.dataType match {
       case Some(dt: DataType) =>
-        if (!outputCheck.isSupportedByPlugin(dt, meta.conf.decimalTypeEnabled)) {
+        if (!outputCheck.isSupportedByPlugin(dt)) {
           willNotWork(s"expression ${expr.getClass.getSimpleName} $expr " +
               s"produces an unsupported type $dt")
         }
@@ -839,8 +838,7 @@ class FileFormatChecks private (
       schema: StructType,
       fileType: FileFormatType,
       op: FileFormatOp): Unit = {
-    val allowDecimal = meta.conf.decimalTypeEnabled
-    tagUnsupportedTypes(meta, sig, allowDecimal, schema.fields,
+    tagUnsupportedTypes(meta, sig, schema.fields,
       s"unsupported data types %s in $op for $fileType")
   }
 
@@ -896,16 +894,13 @@ class ExecChecks private(
 
   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
     val meta = rapidsMeta.asInstanceOf[SparkPlanMeta[_]]
-    val allowDecimal = meta.conf.decimalTypeEnabled
 
     // expression.toString to capture ids in not-on-GPU tags
     def toStructField(a: Attribute) = StructField(name = a.toString(), dataType = a.dataType)
 
-    tagUnsupportedTypes(meta, check, allowDecimal,
-      meta.outputAttributes.map(toStructField),
+    tagUnsupportedTypes(meta, check, meta.outputAttributes.map(toStructField),
       "unsupported data types in output: %s")
-    tagUnsupportedTypes(meta, check, allowDecimal,
-      meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
+    tagUnsupportedTypes(meta, check, meta.childPlans.flatMap(_.outputAttributes.map(toStructField)),
       "unsupported data types in input: %s")
 
     val namedChildExprs = meta.namedChildExprs
@@ -922,7 +917,7 @@ class ExecChecks private(
           .flatMap(_.typeMeta.dataType)
           .zipWithIndex
           .map(t => StructField(s"c${t._2}", t._1))
-        tagUnsupportedTypes(meta, pc.cudf, allowDecimal, fieldMeta,
+        tagUnsupportedTypes(meta, pc.cudf, fieldMeta,
           s"unsupported data types in '$fieldName': %s")
     }
   }
@@ -1057,7 +1052,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  * This is specific to CaseWhen, because it does not follow the typical parameter convention.
  */
 object CaseWhenCheck extends ExprChecks {
-  val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+  val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
     TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
 
   val sparkSig: TypeSig = TypeSig.all
@@ -1108,8 +1103,8 @@ object CaseWhenCheck extends ExprChecks {
  */
 object WindowSpecCheck extends ExprChecks {
   val check: TypeSig =
-    TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL +
-      TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_64 + TypeSig.NULL)
+    TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL +
+      TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128_FULL + TypeSig.NULL)
   val sparkSig: TypeSig = TypeSig.all
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
@@ -1153,11 +1148,11 @@ object CreateMapCheck extends ExprChecks {
 
   // Spark supports all types except for Map for key (Map is not supported
   // even in child types)
-  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+  private val keySig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
     TypeSig.ARRAY + TypeSig.STRUCT).nested()
 
-  private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
-    TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+  private val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL +
+    TypeSig.DECIMAL_128_FULL + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
     meta.willNotWorkInAst("CreateMap is not supported by AST")
@@ -1188,7 +1183,7 @@ object CreateMapCheck extends ExprChecks {
 object CreateNamedStructCheck extends ExprChecks {
   val nameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
   val sparkNameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
-  val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_64 +
+  val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128_FULL +
       TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
   val sparkValueSig: TypeSig = TypeSig.all
   val resultSig: TypeSig = TypeSig.STRUCT.nested(valueSig)
@@ -1216,7 +1211,7 @@ object CreateNamedStructCheck extends ExprChecks {
         valueSig.tagExprParam(exprMeta, valueMeta, "value", willNotWork)
     }
     exprMeta.typeMeta.dataType.foreach { dt =>
-      if (!resultSig.isSupportedByPlugin(dt, exprMeta.conf.decimalTypeEnabled)) {
+      if (!resultSig.isSupportedByPlugin(dt)) {
         willNotWork(s"unsupported data type in output: $dt")
       }
     }
@@ -1241,18 +1236,20 @@ class CastChecks extends ExprChecks {
 
   // When updating these please check child classes too
   import TypeSig._
-  val nullChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING + NULL
+  val nullChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING +
+    NULL + DECIMAL_128_FULL
   val sparkNullSig: TypeSig = all
 
-  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING
+  val booleanChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128_FULL
   val sparkBooleanSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
-  val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY
+  val integralChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + STRING +
+    BINARY + DECIMAL_128_FULL
   val sparkIntegralSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING + BINARY
 
   val fpToStringPsNote: String = s"Conversion may produce different results and requires " +
       s"${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to be true."
-  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING)
+  val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + TIMESTAMP + STRING + DECIMAL_128_FULL)
       .withPsNote(TypeEnum.STRING, fpToStringPsNote)
   val sparkFpSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
@@ -1262,26 +1259,27 @@ class CastChecks extends ExprChecks {
   val timestampChecks: TypeSig = integral + fp + BOOLEAN + TIMESTAMP + DATE + STRING
   val sparkTimestampSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + STRING
 
-  val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING + BINARY
+  val stringChecks: TypeSig = gpuNumeric + BOOLEAN + TIMESTAMP + DATE + STRING +
+    BINARY + DECIMAL_128_FULL
   val sparkStringSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING + BINARY
 
   val binaryChecks: TypeSig = none
   val sparkBinarySig: TypeSig = STRING + BINARY
 
-  val decimalChecks: TypeSig = gpuNumeric + STRING
+  val decimalChecks: TypeSig = gpuNumeric + DECIMAL_128_FULL + STRING
   val sparkDecimalSig: TypeSig = numeric + BOOLEAN + TIMESTAMP + STRING
 
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-  val arrayChecks: TypeSig = ARRAY.nested(commonCudfTypes + DECIMAL_64 + NULL +
+  val arrayChecks: TypeSig = ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
       ARRAY + BINARY + STRUCT + MAP) +
       psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
           "the desired child type")
 
   val sparkArraySig: TypeSig = STRING + ARRAY.nested(all)
 
-  val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY +
+  val mapChecks: TypeSig = MAP.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY +
       STRUCT + MAP) +
       psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
       "desired child types")
@@ -1289,7 +1287,7 @@ class CastChecks extends ExprChecks {
 
   val structChecks: TypeSig = psNote(TypeEnum.STRING, "the struct's children must also support " +
       "being cast to string") +
-      STRUCT.nested(commonCudfTypes + DECIMAL_64 + NULL + ARRAY + BINARY + STRUCT + MAP) +
+      STRUCT.nested(commonCudfTypes + DECIMAL_128_FULL + NULL + ARRAY + BINARY + STRUCT + MAP) +
       psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
           "desired child type(s)")
   val sparkStructSig: TypeSig = STRING + STRUCT.nested(all)
@@ -1359,7 +1357,7 @@ class CastChecks extends ExprChecks {
     val cast = meta.wrapped.asInstanceOf[UnaryExpression]
     val from = cast.child.dataType
     val to = cast.dataType
-    if (!gpuCanCast(from, to, meta.conf.decimalTypeEnabled)) {
+    if (!gpuCanCast(from, to)) {
       willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
     }
   }
@@ -1379,9 +1377,9 @@ class CastChecks extends ExprChecks {
     sparkSig.isSupportedBySpark(to)
   }
 
-  def gpuCanCast(from: DataType, to: DataType, allowDecimal: Boolean = true): Boolean = {
+  def gpuCanCast(from: DataType, to: DataType): Boolean = {
     val (checks, _) = getChecksAndSigs(from)
-    checks.isSupportedByPlugin(to, allowDecimal)
+    checks.isSupportedByPlugin(to)
   }
 }
 
@@ -2127,12 +2125,10 @@ object SupportedOpsForTools {
               case "DOUBLE" => conf.isCsvDoubleReadEnabled
               case "TIMESTAMP" => conf.isCsvTimestampReadEnabled
               case "DATE" => conf.isCsvDateReadEnabled
-              case "DECIMAL" => conf.decimalTypeEnabled
               case _ => true
             }
           } else {
             t.toString match {
-              case "DECIMAL" => conf.decimalTypeEnabled
               case _ => true
             }
           }

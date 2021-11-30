@@ -16,13 +16,15 @@
 
 package com.nvidia.spark
 
-import com.nvidia.spark.rapids.ShimLoader
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, ShimLoader, SparkPlanMeta}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.columnar.{CachedBatch, CachedBatchSerializer}
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
+import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
+import org.apache.spark.sql.rapids.shims.v2.GpuInMemoryTableScanExec
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.StorageLevel
@@ -34,6 +36,32 @@ trait GpuCachedBatchSerializer extends CachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch]
+}
+
+class InMemoryTableScanMeta(
+    imts: InMemoryTableScanExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends SparkPlanMeta[InMemoryTableScanExec](imts, conf, parent, rule) {
+
+  override def tagPlanForGpu(): Unit = {
+    if (!imts.relation.cacheBuilder.serializer
+        .isInstanceOf[com.nvidia.spark.ParquetCachedBatchSerializer]) {
+      willNotWorkOnGpu("ParquetCachedBatchSerializer is not being used")
+      if (SQLConf.get.getConf(StaticSQLConf.SPARK_CACHE_SERIALIZER)
+          .equals("com.nvidia.spark.ParquetCachedBatchSerializer")) {
+        throw new IllegalStateException("Cache serializer failed to load! " +
+            "Something went wrong while loading ParquetCachedBatchSerializer class")
+      }
+    }
+  }
+  /**
+   * Convert InMemoryTableScanExec to a GPU enabled version.
+   */
+  override def convertToGpu(): GpuExec = {
+    GpuInMemoryTableScanExec(imts.attributes, imts.predicates, imts.relation)
+  }
 }
 
 /**
@@ -104,9 +132,10 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
   /**
    * Builds a function that can be used to filter batches prior to being decompressed.
-   * In most cases extending [[SimpleMetricsCachedBatchSerializer]] will provide the filter logic
-   * necessary. You will need to provide metrics for this to work. [[SimpleMetricsCachedBatch]]
-   * provides the APIs to hold those metrics and explains the metrics used, really just min and max.
+   * In most cases extending [[org.apache.spark.sql.columnar.SimpleMetricsCachedBatchSerializer]]
+   * will provide the filter logic necessary. You will need to provide metrics for this to work.
+   * [[org.apache.spark.sql.columnar.SimpleMetricsCachedBatch]] provides the APIs to hold those
+   * metrics and explains the metrics used, really just min and max.
    * Note that this is intended to skip batches that are not needed, and the actual filtering of
    * individual rows is handled later.
    * @param predicates the set of expressions to use for filtering.

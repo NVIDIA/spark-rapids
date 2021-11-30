@@ -27,6 +27,8 @@ import org.apache.arrow.vector.ValueVector
 import org.apache.hadoop.fs.{FileStatus, Path}
 
 import org.apache.spark.SparkEnv
+import org.apache.spark.internal.Logging
+import org.apache.spark.rapids.shims.v2.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -52,7 +54,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.execution.python.{AggregateInPandasExec, ArrowEvalPythonExec, FlatMapGroupsInPandasExec, MapInPandasExec, WindowInPandasExec}
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuStringReplace, GpuTimeSub}
+import org.apache.spark.sql.rapids.{GpuAbs, GpuAverage, GpuFileSourceScanExec, GpuTimeSub}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExecBase, GpuShuffleExchangeExecBase, JoinTypeChecks, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.v2._
@@ -62,7 +64,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-abstract class SparkBaseShims extends Spark30XShims {
+abstract class SparkBaseShims extends Spark30XShims with Logging {
 
   override def v1RepairTableCommand(tableName: TableIdentifier): RunnableCommand =
     AlterTableRecoverPartitionsCommand(tableName)
@@ -157,7 +159,7 @@ abstract class SparkBaseShims extends Spark30XShims {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_64).nested(), TypeSig.all),
+            TypeSig.ARRAY + TypeSig.DECIMAL_128_FULL).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           // partition filters and data filters are not run on the GPU
@@ -258,24 +260,47 @@ abstract class SparkBaseShims extends Spark30XShims {
       GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[Cast](cast, SparkSession.active.sessionState.conf
-            .ansiEnabled, conf, p, r)),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          doFloatToIntCheck = false, stringToAnsiDate = false)),
       GpuOverrides.expr[AnsiCast](
         "Convert a column of one type of data into another type",
         new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, true, conf, p, r)),
+        (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
+          parent = p, rule = r, doFloatToIntCheck = false, stringToAnsiDate = false)),
       GpuOverrides.expr[Average](
         "Average aggregate operator",
         ExprChecks.fullAgg(
-          TypeSig.DOUBLE, TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
-          Seq(ParamCheck("input", TypeSig.integral + TypeSig.fp, TypeSig.numeric))),
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128_FULL,
+          Seq(ParamCheck("input", 
+            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128_FULL,
+            TypeSig.numeric))),
         (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
           override def tagAggForGpu(): Unit = {
+            // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
+            // then it divides by the count with an output scale that is 4 more than the input
+            // scale. With how our divide works to match Spark, this means that we will need a
+            // precision of 5 more. So 38 - 10 - 5 = 23
             val dataType = a.child.dataType
+            dataType match {
+              case dt: DecimalType =>
+                if (dt.precision > 23) {
+                  if (conf.needDecimalGuarantees) {
+                    willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
+                        s"a precision large than 23. The current precision is ${dt.precision}")
+                  } else {
+                    logWarning("Decimal overflow guarantees disabled for " +
+                        s"Average(${a.child.dataType}) produces $dt with an " +
+                        s"intermediate precision of ${dt.precision + 15}")
+                  }
+                }
+              case _ => // NOOP
+            }
             GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
           }
 
-          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = 
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
             GpuAverage(childExprs.head)
 
           // Average is not supported in ANSI mode right now, no matter the type
@@ -284,7 +309,8 @@ abstract class SparkBaseShims extends Spark30XShims {
       GpuOverrides.expr[Abs](
         "Absolute value",
         ExprChecks.unaryProjectAndAstInputMatchesOutput(
-          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric, TypeSig.numeric),
+          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric + TypeSig.DECIMAL_128_FULL,
+          TypeSig.numeric),
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
           // ANSI support for ABS was added in 3.2.0 SPARK-33275
           override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
@@ -293,20 +319,11 @@ abstract class SparkBaseShims extends Spark30XShims {
         "RegExpReplace support for string literal input patterns",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
           Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
-            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING)
-                .withPsNote(TypeEnum.STRING, "very limited regex support"), TypeSig.STRING),
+            ParamCheck("regex", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
             ParamCheck("rep", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-        (a, conf, p, r) => new TernaryExprMeta[RegExpReplace](a, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            if (!GpuOverrides.isSupportedStringReplacePattern(a.regexp)) {
-              willNotWorkOnGpu(
-                "Only non-null, non-empty String literals that are not regex patterns " +
-                    "are supported by RegExpReplace on the GPU")
-            }
-          }
-          override def convertToGpu(lhs: Expression, regexp: Expression,
-              rep: Expression): GpuExpression = GpuStringReplace(lhs, regexp, rep)
-        }),
+        (a, conf, p, r) => new GpuRegExpReplaceMeta(a, conf, p, r)).disabledByDefault(
+        "the implementation is not 100% compatible. " +
+          "See the compatibility guide for more information."),
       GpuScalaUDFMeta.exprMeta
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
