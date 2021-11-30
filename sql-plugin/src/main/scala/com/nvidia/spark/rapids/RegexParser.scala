@@ -444,7 +444,17 @@ class CudfRegexTranspiler(replace: Boolean) {
           // this is a bit extreme and it would be good to replace with finer-grained
           // rules
           throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
-
+        case '$' =>
+          RegexSequence(ListBuffer(
+            RegexRepetition(
+              RegexCharacterClass(negated = false,
+                characters = ListBuffer(RegexChar('\r'))),
+              SimpleQuantifier('?')),
+            RegexRepetition(
+              RegexCharacterClass(negated = false,
+                characters = ListBuffer(RegexChar('\n'))),
+              SimpleQuantifier('?')),
+            RegexChar('$')))
         case _ =>
           regex
       }
