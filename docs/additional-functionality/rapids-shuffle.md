@@ -342,7 +342,7 @@ can be used to enable or disable the usage of RAPIDS Shuffle Manager during your
 
 #### Databricks
 
-Please make sure you follow the plugin's [Getting Started](../get-started/getting-started-databricks.md)
+Please make sure you follow the [Getting Started](../get-started/getting-started-databricks.md)
 guide for Databricks. The following are extra steps required to enable UCX.
 
 1) Create and enable an additional "init script" that installs UCX:
