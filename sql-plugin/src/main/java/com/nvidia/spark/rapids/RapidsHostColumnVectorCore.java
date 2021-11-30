@@ -32,6 +32,8 @@ import org.apache.spark.sql.vectorized.ColumnarArray;
 import org.apache.spark.sql.vectorized.ColumnarMap;
 import org.apache.spark.unsafe.types.UTF8String;
 
+import java.math.BigDecimal;
+
 /**
  * A GPU accelerated version of the Spark ColumnVector.
  * Most of the standard Spark APIs should never be called, as they assume that the data
@@ -160,15 +162,18 @@ public class RapidsHostColumnVectorCore extends ColumnVector {
 
   @Override
   public final Decimal getDecimal(int rowId, int precision, int scale) {
-    assert precision <= DType.DECIMAL64_MAX_PRECISION : "Assert " + precision + " <= DECIMAL64_MAX_PRECISION(" + DType.DECIMAL64_MAX_PRECISION + ")";
+    assert precision <= DType.DECIMAL128_MAX_PRECISION : "Assert " + precision + " <= DECIMAL128_MAX_PRECISION(" + DType.DECIMAL128_MAX_PRECISION + ")";
     assert scale == -cudfCv.getType().getScale() :
         "Assert fetch decimal with its original scale " + scale + " expected " + (-cudfCv.getType().getScale());
     if (precision <= Decimal.MAX_INT_DIGITS()) {
       assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL32 : "type should be DECIMAL32";
       return Decimal.createUnsafe(cudfCv.getInt(rowId), precision, scale);
-    } else {
+    } else if (precision <= Decimal.MAX_LONG_DIGITS()) {
       assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL64 : "type should be DECIMAL64";
       return Decimal.createUnsafe(cudfCv.getLong(rowId), precision, scale);
+    } else {
+      assert cudfCv.getType().getTypeId() == DType.DTypeEnum.DECIMAL128 : "type should be DECIMAL128";
+      return Decimal.fromDecimal(new BigDecimal(cudfCv.getBigDecimal(rowId).unscaledValue(), scale));
     }
 
   }

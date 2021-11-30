@@ -367,7 +367,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
 
   protected def checkTimeZoneId(timeZoneId: Option[String]): Unit = {
     timeZoneId.foreach { zoneId =>
-      if (ZoneId.of(zoneId).normalized() != GpuOverrides.UTC_TIMEZONE_ID) {
+      if (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault())) {
         willNotWorkOnGpu(s"Only UTC zone id is supported. Actual zone id: $zoneId")
       }
     }
@@ -941,6 +941,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override val printWrapped: Boolean = true
+
+  def dataType: DataType = expr.dataType
 
   val ignoreUnsetDataTypes = false
 
