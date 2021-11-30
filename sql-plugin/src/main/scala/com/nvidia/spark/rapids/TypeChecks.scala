@@ -19,8 +19,6 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
-import scala.collection.mutable
-
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 
