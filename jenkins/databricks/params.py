@@ -21,7 +21,6 @@ token = ''
 private_key_file = "~/.ssh/id_rsa"
 local_script = 'build.sh'
 script_dest = '/home/ubuntu/build.sh'
-script_args = []
 source_tgz = 'spark-rapids-ci.tgz'
 tgz_dest = '/home/ubuntu/spark-rapids-ci.tgz'
 base_spark_pom_version = '3.0.1'
@@ -32,22 +31,47 @@ jar_path = ''
 # `spark_conf` can take comma seperated multiple spark configurations, e.g., spark.foo=1,spark.bar=2,...'
 spark_conf = ''
 
+
+def usage():
+    """Define usage."""
+    print('Usage: ' + sys.argv[0] +
+          ' -s <workspace>'
+          ' -t <token>'
+          ' -c <clusterid>'
+          ' -p <privatekeyfile>'
+          ' -l <localscript>'
+          ' -d <scriptdestination>'
+          ' -z <sparktgz>'
+          ' -v <basesparkpomversion>'
+          ' -b <buildprofiles>'
+          ' -j <jarpath>'
+          ' -n <skipstartingcluster>'
+          ' -f <sparkconf>'
+          ' -i <sparkinstallver>')
+
+
 try:
-    opts, args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:',
-                               ['workspace=', 'token=', 'clusterid=', 'private=', 'localscript=', 'dest=', 'sparktgz=',
-                                'basesparkpomversion=', 'buildprofiles=', 'jarpath', 'sparkconf', 'sparkinstallver='])
+    opts, script_args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:',
+                                      ['workspace=',
+                                       'token=',
+                                       'clusterid=',
+                                       'private=',
+                                       'localscript=',
+                                       'dest=',
+                                       'sparktgz=',
+                                       'basesparkpomversion=',
+                                       'buildprofiles=',
+                                       'jarpath',
+                                       'sparkconf',
+                                       'sparkinstallver='])
 except getopt.GetoptError:
-    print('run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -l <localscript> '
-          '-d <scriptdestinatino> -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> -j <jarpath> '
-          '-f <sparkconf> -i <sparkinstallver>')
+    usage()
     sys.exit(2)
 
 for opt, arg in opts:
     if opt == '-h':
-        print('run-tests.py -s <workspace> -t <token> -c <clusterid> -p <privatekeyfile> -n <skipstartingcluster> '
-              '-l <localscript> -d <scriptdestinatino>, -z <sparktgz> -v <basesparkpomversion> -b <buildprofiles> '
-              '-f <sparkconf> -i <sparkinstallver>')
-        sys.exit()
+        usage()
+        sys.exit(1)
     elif opt in ('-w', '--workspace'):
         workspace = arg
     elif opt in ('-t', '--token'):
@@ -72,9 +96,6 @@ for opt, arg in opts:
         spark_conf = arg
     elif opt in ('-i', '--sparkinstallver'):
         base_spark_version_to_install_databricks_jars = arg
-
-if args:
-    script_args = args
 
 print('-w is ' + workspace)
 print('-c is ' + clusterid)
