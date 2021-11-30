@@ -548,6 +548,30 @@ object GpuOverrides extends Logging {
     }
   }
 
+  /**
+   * Searches the plan for ReusedExchangeExec instances containing a GPU shuffle where the
+   * output types between the two plan nodes do not match. In such a case the ReusedExchangeExec
+   * will be updated to match the GPU shuffle output types.
+   */
+  def fixupReusedExchangeExecs(plan: SparkPlan): SparkPlan = {
+    def outputTypesMatch(a: Seq[Attribute], b: Seq[Attribute]): Boolean =
+      a.corresponds(b)((x, y) => x.dataType == y.dataType)
+    plan.transformUp {
+      case sqse: ShuffleQueryStageExec =>
+        sqse.plan match {
+          case ReusedExchangeExec(output, gsee: GpuShuffleExchangeExecBase) if (
+              !outputTypesMatch(output, gsee.output)) =>
+            val newOutput = sqse.plan.output.zip(gsee.output).map { case (c, g) =>
+              assert(c.isInstanceOf[AttributeReference] && g.isInstanceOf[AttributeReference],
+                s"Expected AttributeReference but found $c and $g")
+              AttributeReference(c.name, g.dataType, c.nullable, c.metadata)(c.exprId, c.qualifier)
+            }
+            sqse.newReuseInstance(sqse.id, newOutput)
+          case _ => sqse
+        }
+    }
+  }
+
   @scala.annotation.tailrec
   def extractLit(exp: Expression): Option[Literal] = exp match {
     case l: Literal => Some(l)
@@ -3910,7 +3934,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
           // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
           // distribution expressions are not semantically equal.
-          GpuOverrides.removeExtraneousShuffles(plan, conf)
+          val newPlan = GpuOverrides.removeExtraneousShuffles(plan, conf)
+
+          // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type
+          // compared to the desired buffer type from a reused GPU shuffle.
+          GpuOverrides.fixupReusedExchangeExecs(newPlan)
         } else {
           plan
         }
