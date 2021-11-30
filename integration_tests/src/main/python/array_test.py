@@ -254,9 +254,9 @@ def test_sql_array_scalars(query):
 
 basic_gens_for_cast_to_string = [byte_gen, short_gen, int_gen, long_gen, string_gen, boolean_gen, date_gen, null_gen] + decimal_gens_no_neg
 # casting these types to string are not exact match, marked as xfail when testing
-not_matched_gens = [float_gen, double_gen, timestamp_gen, decimal_gen_neg_scale]
+not_matched_gens_for_cast_to_string = [float_gen, double_gen, timestamp_gen, decimal_gen_neg_scale]
 # casting these types to string are not supported, marked as xfail when testing
-not_support_gens = decimal_128_gens
+not_support_gens_for_cast_to_string = decimal_128_gens
 
 single_level_array_gens_for_cast_to_string = [ArrayGen(sub_gen) for sub_gen in basic_gens_for_cast_to_string]
 nested_array_gens_for_cast_to_string = [
@@ -288,7 +288,7 @@ def test_legacy_cast_array_to_string(data_gen):
     )
 
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_gens], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_matched_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.xfail(reason='casting these types to string are not exact matchs')
 def test_cast_array_with_unmatched_element_to_string(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -301,7 +301,7 @@ def test_cast_array_with_unmatched_element_to_string(data_gen):
     )
 
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_support_gens], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub) for sub in not_support_gens_for_cast_to_string], ids=idfn)
 @pytest.mark.xfail(reason='casting these types to string are not supported')
 def test_cast_array_with_unsupported_element_to_string(data_gen):
     assert_gpu_and_cpu_are_equal_collect(

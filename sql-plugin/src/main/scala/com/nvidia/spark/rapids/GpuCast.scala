@@ -642,11 +642,36 @@ object GpuCast extends Arm {
   }
 
 
+  /**
+   * A 8 steps solution for casting array to string. <p>
+   * Array is represented as `list column` in cudf, which has child column and offset column. <p>
+   * When `legacyCastToString = true`, given an input with 3 rows:
+   * `[ [1, 2, null, 3], [], null]` <p>
+   * Step 1: cast all not-null elements in array to string type:
+   * `[ ["1", "2", null, "3"], [], null]` <p>
+   * Step 2: add space char in the front of all not-null elements:
+   * `[ [" 1", " 2", null, " 3"], [], null]` <p>
+   * step 3: cast `null` elements to their string representation :
+   * `[ [" 1", " 2", "", " 3"], [], null]`(here we use "" to represent null) <p>
+   * step 4: concatenate list elements, seperated by `","`:
+   * `[" 1, 2,, 3", null, null]` <p>
+   * step 5: remove the first char, if it is an `' '`:
+   * `["1, 2,, 3", null, null]` <p>
+   * step 6: replace nulls with empty string:
+   * `["1, 2,, 3", "", ""]` <p>
+   * step 7: add brackets:
+   * `["[1, 2,, 3]", "[]", "[]"]` <p>
+   * step 8: add `null` masks using original input:
+   * `["[1, 2,, 3]", "[]", null]` <p>
+   *
+   * when `legacyCastToString = false`, step 2, 5 are skipped
+   */
   private  def castArrayToString(input:                    ColumnView,
                                  elementType:                DataType,
                                  ansiMode:                    Boolean,
                                  legacyCastToString:          Boolean,
                                  stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+
     val (leftStr, rightStr) =  ("[", "]")
     val emptyStr = ""
     val spaceStr = " "
@@ -659,11 +684,17 @@ object GpuCast extends Arm {
     ){ case Seq(left, right, empty, space, nullRep, sep) =>
 
       /* -------------------------------- helper functions -----------------------*/
-      def castChildToStr(child: ColumnView): ColumnVector = {
-        // cast each element to string
+
+      /**
+       * cast all not-null elements in a child column to string type <p>
+       * add `' '` to all elements when `legacyCastToString = true`
+       * @param child child column of an array column
+       * @return a string type child column
+       */
+      def castChildToStr(child: ColumnView): ColumnView = {
         withResource(
           doCast(child, elementType, StringType, ansiMode,
-                 legacyCastToString, stringToDateAnsiModeEnabled)
+            legacyCastToString, stringToDateAnsiModeEnabled)
         ) { strChildWithNull =>
           withResource(strChildWithNull.replaceNulls(nullRep)) { strChild =>
             if (legacyCastToString) {// add a space string to each non-null element
@@ -681,7 +712,7 @@ object GpuCast extends Arm {
       }
 
       /**
-       * If the first char of a string is ' ', remove it
+       * If the first char of a string is ' ', remove it (only for legacyCastToString = true)
        * @param strVec a string type column vector
        */
       def removeFirstSpace(strVec: ColumnVector): ColumnVector = {
@@ -712,16 +743,19 @@ object GpuCast extends Arm {
       // cast child column to string type
       withResource(input.getChildColumnView(0)) { childView =>
         withResource(castChildToStr(childView)){ stringChild =>
-          withResource(input.replaceListChild(stringChild)) {pureStrArr =>
+          withResource(input.replaceListChild(stringChild)) {strArr =>
             // concatenate each row. cast from list column to string column
-            withResource(
-              pureStrArr.stringConcatenateListElements(sep, nullRep, true, true)
-            ) { withoutBrackets =>
-              withResource(removeFirstSpace(withoutBrackets)){withoutBrackets =>
-                // add "[ ]"
-                withResource(addBrackets(withoutBrackets))(
-                  _.mergeAndSetValidity(BinaryOp.BITWISE_AND, pureStrArr)
-                )
+            withResource(ColumnVector.fromScalar(sep, numRows)){ sepCol =>
+              withResource(
+                strArr.stringConcatenateListElements(sepCol)
+              ) { strColContainsNull =>
+                withResource(strColContainsNull.replaceNulls(empty)){strCol =>
+                  withResource(removeFirstSpace(strCol)){withoutBrackets =>
+                    withResource(addBrackets(withoutBrackets))(
+                      _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+                    )
+                  }
+                }
               }
             }
           }
@@ -729,6 +763,7 @@ object GpuCast extends Arm {
       }
     }
   }
+
 
 
   private def castStructToString(
