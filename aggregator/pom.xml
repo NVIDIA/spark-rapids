@@ -100,13 +100,11 @@
                             <pattern>org.apache.hadoop.hive.</pattern>
                             <shadedPattern>${rapids.shade.package}.hadoop.hive.</shadedPattern>
                             <excludes>
-                                <!-- FIXME
-                                    Seems we need to exclude all the public classes being used
-                                    directly and indirectly by plugin to support row-based Hive
-                                    UDF, otherwise it will get a ClassNotFoundException as below:
+                                <!--
+                                    Class exclusions for Hive UDFs, to avoid the ClassNotFoundException,
+                                    For example:
                                         E Caused by: java.lang.ClassNotFoundException: com.nvidia.shaded.spark.hadoop.hive.serde2.objectinspector.ObjectInspector
                                         E     at java.net.URLClassLoader.findClass(URLClassLoader.java:382)
-                                    Or, just simply remove this relocation.
                                 -->
                                 <exclude>org.apache.hadoop.hive.conf.HiveConf</exclude>
                                 <exclude>org.apache.hadoop.hive.ql.exec.FunctionRegistry</exclude>
