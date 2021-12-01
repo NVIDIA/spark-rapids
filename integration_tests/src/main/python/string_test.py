@@ -220,7 +220,7 @@ def test_concat_ws_sql_col_sep():
                 'concat_ws(c, b, a, cast(null as string)) from concat_ws_table')
 
 
-@pytest.mark.xfail(condition=is_databricks_runtime(),
+@pytest.mark.skipif(is_databricks_runtime(),
     reason='Databricks optimizes out concat_ws call in this case')
 @allow_non_gpu('ProjectExec', 'Alias', 'ConcatWs')
 def test_concat_ws_sql_col_sep_only_sep_specified():
@@ -483,11 +483,14 @@ def test_regexp_replace():
                 'regexp_replace(a, "a|b|c", "A")'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
+@pytest.mark.skipif(is_databricks_runtime(),
+    reason='Databricks optimizes out regexp_replace call in this case')
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_regexp_replace_null_pattern_fallback():
     gen = mk_str_gen('[abcd]{0,3}')
-    # Spark translates `NULL` to `CAST(NULL as STRING)` and we only support
+    # Apache Spark translates `NULL` to `CAST(NULL as STRING)` and we only support
     # literal expressions for the regex pattern
+    # Databricks Spark replaces the whole regexp_replace expression with a literal null
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_replace(a, NULL, "A")'),
