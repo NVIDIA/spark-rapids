@@ -126,7 +126,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
     testCastStringTo(DataTypes.FloatType, generateRandomStrings(Some(NUMERIC_CHARS)))
   }
 
-  test("Cast from string to float using hand-picked values") {
+  // https://github.com/NVIDIA/spark-rapids/issues/4246
+  ignore("Cast from string to float using hand-picked values") {
     testCastStringTo(DataTypes.FloatType, Seq(".", "e", "Infinity", "+Infinity", "-Infinity",
       "+nAn", "-naN", "Nan", "5f", "1.2f", "\riNf", null))
   }

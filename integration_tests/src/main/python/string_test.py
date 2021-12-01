@@ -505,6 +505,16 @@ def test_regexp_like():
                 'regexp_like(a, "a{1,}")',
                 'regexp_like(a, "a[bc]d")'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_null_pattern_fallback():
+    gen = mk_str_gen('[abcd]{0,3}')
+    # Spark translates `NULL` to `CAST(NULL as STRING)` and we only support
+    # literal expressions for the regex pattern
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_replace(a, NULL, "A")'),
+            'RegExpReplace',
+            conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
@@ -525,6 +535,14 @@ def test_rlike_embedded_null():
                 'a rlike "a{1,3}"',
                 'a rlike "a{1,}"',
                 'a rlike "a[bc]d"'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+def test_rlike_null_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    # Spark optimizes out `RLIKE NULL` in this test
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike NULL'),
             conf={'spark.rapids.sql.expression.RLike': 'true'})
 
 @allow_non_gpu('ProjectExec', 'RLike')
