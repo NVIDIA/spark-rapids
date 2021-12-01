@@ -3837,7 +3837,7 @@ object GpuOverrides extends Logging {
   // Use explain mode on an active SQL plan as its processed through catalyst.
   // This path is the same as being run through the plugin running on hosts with
   // GPUs.
-  private def explainCatalystSQLPlan(updatedPlan: SparkPlan, conf: RapidsConf) = {
+  private def explainCatalystSQLPlan(updatedPlan: SparkPlan, conf: RapidsConf): Unit = {
     val explainSetting = if (conf.shouldExplain) {
       conf.explain
     } else {
@@ -3922,26 +3922,32 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   // gets called once for each query stage (where a query stage is an `Exchange`).
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled) {
+    if (conf.isSqlEnabled && !conf.isSqlExplainOnlyEnabled) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = if (plan.conf.adaptiveExecutionEnabled) {
-          // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
-          // distribution expressions are not semantically equal.
-          GpuOverrides.removeExtraneousShuffles(plan, conf)
-        } else {
-          plan
-        }
-        if (conf.isSqlExplainOnlyEnabled) {
-          GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
-        } else {
+          val updatedPlan = updateForAdaptivePlan(plan, conf)
           applyOverrides(updatedPlan, conf)
-        }
       }
+    } else if (conf.isSqlExplainOnlyEnabled) {
+      // this mode logs the explain output and returns the original CPU plan
+      val updatedPlan = updateForAdaptivePlan(plan, conf)
+      GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
+      plan
     } else {
       plan
     }
   }(sparkPlan)
+
+  private def updateForAdaptivePlan(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    if (plan.conf.adaptiveExecutionEnabled) {
+      // AQE can cause Spark to inject undesired CPU shuffles into the plan because GPU and CPU
+      // distribution expressions are not semantically equal.
+      GpuOverrides.removeExtraneousShuffles(plan, conf)
+    } else {
+      plan
+    }
+  }
+
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
