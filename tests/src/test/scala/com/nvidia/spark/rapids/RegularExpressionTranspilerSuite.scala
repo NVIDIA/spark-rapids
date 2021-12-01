@@ -165,7 +165,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile character class unescaped range symbol") {
     val patterns = Seq("a[-b]", "a[+-]", "a[-+]", "a[-]", "a[^-]")
-    val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", raw"a[^\-]")
+    val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", "a(?:[\r\n]|[^\\-])")
     val transpiler = new CudfRegexTranspiler(replace=false)
     val transpiled = patterns.map(transpiler.transpile)
     assert(transpiled === expected)
@@ -245,6 +245,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("compare CPU and GPU: regexp replace simple regular expressions") {
     val inputs = Seq("a", "b", "c")
     val patterns = Seq("a|b")
+    assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("compare CPU and GPU: regexp replace negated character class") {
+    val inputs = Seq("a", "b", "a\nb")
+    val patterns = Seq("[^z]")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 

@@ -150,9 +150,11 @@ class RegexParser(pattern: String) {
         case '[' =>
           // treat as a literal character and add to the character class
           characterClass.append(ch)
-        case ']' if pos > start + 1 =>
+        case ']' if (!characterClass.negated && pos > start + 1) ||
+            (characterClass.negated && pos > start + 2) =>
           // "[]" is not a valid character class
           // "[]a]" is a valid character class containing the characters "]" and "a"
+          // "[^]a]" is a valid negated character class containing the characters "]" and "a"
           characterClassComplete = true
         case '^' if pos == start + 1 =>
           // Negates the character class, causing it to match a single character not listed in
@@ -492,7 +494,40 @@ class CudfRegexTranspiler(replace: Boolean) {
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map(x => rewrite(x).asInstanceOf[RegexCharacterClassComponent])
-        RegexCharacterClass(negated, ListBuffer(components: _*))
+
+        if (negated) {
+          // There are differences between cuDF and Java handling of newlines
+          // for negative character matches. The expression `[^a]` will match
+          // `\r` and `\n` in Java but not in cuDF, so we replace `[^a]` with
+          // `(?:[\r\n]|[^a])`. We also have to take into account whether any
+          // newline characters are included in the character range.
+          //
+          // Examples:
+          //
+          // `[^a]`     => `(?:[\r\n]|[^a])`
+          // `[^a\r]`   => `(?:[\n]|[^a])`
+          // `[^a\n]`   => `(?:[\r]|[^a])`
+          // `[^a\r\n]` => `[^a]`
+
+          val newlineCharsInClass = characters.flatMap {
+            case RegexChar(ch) if ch == '\n' || ch == '\r' =>
+              Seq(ch)
+            case _ =>
+              Seq.empty
+          }
+          val negatedNewlines = Seq('\r', '\n').diff(newlineCharsInClass)
+          if (negatedNewlines.isEmpty) {
+            RegexCharacterClass(negated, ListBuffer(components: _*))
+          } else {
+            RegexGroup(capture = false,
+              RegexChoice(
+                RegexCharacterClass(negated = false,
+                  characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
+                RegexCharacterClass(negated, ListBuffer(components: _*))))
+          }
+        } else {
+          RegexCharacterClass(negated, ListBuffer(components: _*))
+        }
 
       case RegexSequence(parts) =>
         if (parts.isEmpty) {
