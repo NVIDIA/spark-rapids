@@ -553,6 +553,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
     val rapidsConf = new RapidsConf(conf)
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
       getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
+    val origSelectedAttributesWithUnambiguousNames = 
+      sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
     if (rapidsConf.isSqlEnabled &&
         isSchemaSupportedByCudf(cachedSchemaWithNames)) {
       val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
@@ -569,7 +571,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
       input.mapPartitions {
         cbIter => {
           new CachedBatchIteratorConsumer(cbIter, cachedSchemaWithNames, selectedSchemaWithNames,
-            cacheAttributes, newSelectedAttributes, broadcastedConf).getColumnBatchIterator
+            cacheAttributes, origSelectedAttributesWithUnambiguousNames, broadcastedConf)
+            .getColumnBatchIterator
         }
       }
     }
@@ -592,11 +595,12 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
       conf: SQLConf): RDD[InternalRow] = {
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
       getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
+    val newSelectedAttributes = sanitizeColumnNames(selectedAttributes, selectedSchemaWithNames)
     val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
     input.mapPartitions {
       cbIter => {
         new CachedBatchIteratorConsumer(cbIter, cachedSchemaWithNames, selectedSchemaWithNames,
-          cacheAttributes, selectedAttributes, broadcastedConf).getInternalRowIterator
+          cacheAttributes, newSelectedAttributes, broadcastedConf).getInternalRowIterator
       }
     }
   }
@@ -1355,6 +1359,12 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
       case _ =>
         dataType
     }
+  }
+
+  // We want to change the original schema to have the new names as well
+  private def sanitizeColumnNames(originalSchema: Seq[Attribute],
+      schemaToCopyNamesFrom: Seq[Attribute]): Seq[Attribute] = {
+    originalSchema.zip(schemaToCopyNamesFrom).map(t => t._1.withName(t._2.name))
   }
 
   private def getSupportedSchemaFromUnsupported(
