@@ -439,7 +439,17 @@ class CudfRegexTranspiler(replace: Boolean) {
         case '.' =>
           // workaround for https://github.com/rapidsai/cudf/issues/9619
           RegexCharacterClass(negated = true, ListBuffer(RegexChar('\r'), RegexChar('\n')))
-
+        case '$' =>
+          RegexSequence(ListBuffer(
+            RegexRepetition(
+              RegexCharacterClass(negated = false,
+                characters = ListBuffer(RegexChar('\r'))),
+              SimpleQuantifier('?')),
+            RegexRepetition(
+              RegexCharacterClass(negated = false,
+                characters = ListBuffer(RegexChar('\n'))),
+              SimpleQuantifier('?')),
+            RegexChar('$')))
         case _ =>
           regex
       }

@@ -265,7 +265,8 @@ object CudfRowTransitions {
   def isSupportedType(dataType: DataType): Boolean = dataType match {
     // Only fixed width for now...
     case ByteType | ShortType | IntegerType | LongType |
-         FloatType | DoubleType | BooleanType | DateType | TimestampType | _: DecimalType => true
+         FloatType | DoubleType | BooleanType | DateType | TimestampType => true
+    case dt: DecimalType if dt.precision <= Decimal.MAX_LONG_DIGITS => true
     case _ => false
   }
 

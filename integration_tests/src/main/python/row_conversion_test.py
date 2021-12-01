@@ -38,7 +38,8 @@ def test_row_conversions():
             ["p", StructGen([["c0", byte_gen], ["c1", ArrayGen(byte_gen)]])],
             ["q", simple_string_to_string_map_gen],
             ["r", MapGen(BooleanGen(nullable=False), ArrayGen(boolean_gen), max_length=2)],
-            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_scale_precision]]
+            ["s", null_gen], ["t", decimal_gen_64bit], ["u", decimal_gen_scale_precision],
+            ["v", decimal_gen_36_5]]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gens).selectExpr("*", "a as a_again"))
 
@@ -59,7 +60,9 @@ def test_row_conversions_fixed_width():
     int_gen,
     string_gen,
     decimal_gen_default,
+    decimal_gen_36_5,
     ArrayGen(string_gen, max_length=10),
+    ArrayGen(decimal_gen_36_5, max_length=10),
     StructGen([('a', string_gen)]) ] + map_string_string_gen, ids=idfn)
 @allow_non_gpu('ColumnarToRowExec', 'FileSourceScanExec')
 def test_host_columnar_transition(spark_tmp_path, data_gen):

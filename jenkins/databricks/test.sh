@@ -28,7 +28,7 @@ if [ -d "/databricks/conda/envs/cudf-udf" ]; then
     export PYSPARK_PYTHON=/databricks/conda/envs/cudf-udf/bin/python
 fi
 # Try to use the pip from the conda environment if it is available
-sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-ordering
+sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
@@ -70,6 +70,11 @@ IS_SPARK_311_OR_LATER=0
 TEST_MODE=${TEST_MODE:-'IT_ONLY'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
+
+# Enable event log for qualification & profiling tools testing
+export PYSP_TEST_spark_eventLog_enabled=true
+mkdir -p /tmp/spark-events
+
 ## limit parallelism to avoid OOM kill
 export TEST_PARALLEL=4
 if [ -d "$LOCAL_JAR_PATH" ]; then
