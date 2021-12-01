@@ -100,9 +100,9 @@ object GpuHiveOverrides {
 
           override def tagExprForGpu(): Unit = {
             if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
-              willNotWorkOnGpu(s"neither Hive GenericUDF ${a.name} implemented by " +
-                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation," +
-                s" nor the conf `${RapidsConf.ENABLE_CPU_BASED_UDF.key}` is enabled")
+              willNotWorkOnGpu(s"Hive GenericUDF ${a.name} implemented by " +
+                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation " +
+                s"and CPU-based UDFs are not enabled by `${RapidsConf.ENABLE_CPU_BASED_UDF.key}`")
             }
           }
 
