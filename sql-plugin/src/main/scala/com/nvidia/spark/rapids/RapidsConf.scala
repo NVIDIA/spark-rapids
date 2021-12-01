@@ -506,6 +506,15 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val SQL_EXPLAIN_ONLY_ENABLED = conf("spark.rapids.sql.explainOnly.enabled")
+    .doc("Enable (true) or disable (false) explain only mode for sql operations. This allows " +
+         "running queries on the CPU and the plugin will evaluate each of the SparkPlans and " +
+         "output an explanations of which operators would have run on the GPU. When enabled " +
+         "this defaults the explain output to ALL, but this can be overridden by setting " +
+         "spark.rapids.sql.explain")
+    .booleanConf
+    .createWithDefault(false)
+
   val UDF_COMPILER_ENABLED = conf("spark.rapids.sql.udfCompiler.enabled")
     .doc("When set to true, Scala UDFs will be considered for compilation as Catalyst expressions")
     .booleanConf
@@ -1456,6 +1465,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
+
+  lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_EXPLAIN_ONLY_ENABLED)
 
   lazy val isUdfCompilerEnabled: Boolean = get(UDF_COMPILER_ENABLED)
 

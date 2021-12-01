@@ -3804,6 +3804,9 @@ object GpuOverrides extends Logging {
   }
 
   // Only run the explain and don't actually convert or run on GPU.
+  // This gets the plan from the dataframe so its after catalyst has run through all the
+  // rules to modify the plan. This means we have to try to undo some of the last rules
+  // to make it close to when the columnar rules would normally run on the plan.
   def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     val plan = df.queryExecution.executedPlan
     val conf = new RapidsConf(plan.conf)
@@ -3828,6 +3831,21 @@ object GpuOverrides extends Logging {
       wrap.tagForExplain()
       val shouldExplainAll = explain.equalsIgnoreCase("ALL")
       wrap.explain(shouldExplainAll)
+    }
+  }
+
+  // Use explain mode on an active SQL plan as its processed through catalyst.
+  // This path is the same as being run through the plugin running on hosts with
+  // GPUs.
+  private def explainCatalystSQLPlan(updatedPlan: SparkPlan, conf: RapidsConf) = {
+    val explainSetting = if (conf.shouldExplain) {
+      conf.explain
+    } else {
+      "ALL"
+    }
+    val explainOutput = explainSinglePlan(updatedPlan, conf, explainSetting)
+    if (explainOutput.nonEmpty) {
+      logWarning(s"\n$explainOutput")
     }
   }
 
@@ -3914,7 +3932,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         } else {
           plan
         }
-        applyOverrides(updatedPlan, conf)
+        if (conf.isSqlExplainOnlyEnabled) {
+          GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
+        } else {
+          applyOverrides(updatedPlan, conf)
+        }
       }
     } else {
       plan
