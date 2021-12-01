@@ -374,8 +374,8 @@ Using Spark Operator is another way to submit Spark Applications into a Kubernet
    ```
    sparkctl forward testpython-rapids --local-port 1234 --remote-port 4045
    ```
-
-Then open browser with `http://localhost:1234/` to check Spark UI.
+   
+   Then open browser with `http://localhost:1234/` to check Spark UI.
 
 8. Delete the Spark Application
 
