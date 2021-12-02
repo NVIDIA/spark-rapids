@@ -381,6 +381,7 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+  // TODO CPU vs GPU OP TIME in Debug mode???
 
   override def output: Seq[Attribute] = {
     child.output
@@ -419,32 +420,31 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
           val sampler = new BernoulliCellSampler(lowerBound, upperBound)
           sampler.setSeed(seed + index)
           iterator.map[ColumnarBatch] { batch =>
-            numOutputBatches += 1
             withResource(batch) { b => // will generate new columnar column, close this
-              val numRows = b.numRows()
-              val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
-                builder =>
-                  (0 until numRows).foreach { _ =>
-                    val n = sampler.sample()
-                    if (n > 0) {
-                      builder.append(1.toByte)
-                      numOutputRows += 1
-                    } else {
-                      builder.append(0.toByte)
+              withResource(new NvtxWithMetrics("sample", NvtxColor.DARK_GREEN, opTime)) { _ =>
+                val numRows = b.numRows()
+                val filter = withResource(HostColumnVector.builder(DType.BOOL8, numRows)) {
+                  builder =>
+                    var i = 0
+                    while (i < numRows) {
+                      i = i + 1
+                      builder.append(if (sampler.sample() > 0) 1.toByte else 0.toByte)
                     }
-                  }
-                  builder.buildAndPutOnDevice()
-              }
+                    builder.buildAndPutOnDevice()
+                }
 
-              // use GPU filer rows
-              val colTypes = GpuColumnVector.extractTypes(b)
-              withResource(filter) { filter =>
-                withResource(GpuColumnVector.from(b)) { tbl =>
-                  withResource(tbl.filter(filter)) { filteredData =>
-                    if (filteredData.getRowCount == 0) {
-                      GpuColumnVector.emptyBatchFromTypes(colTypes)
-                    } else {
-                      GpuColumnVector.from(filteredData, colTypes)
+                // use GPU filer rows
+                val colTypes = GpuColumnVector.extractTypes(b)
+                withResource(filter) { filter =>
+                  withResource(GpuColumnVector.from(b)) { tbl =>
+                    withResource(tbl.filter(filter)) { filteredData =>
+                      numOutputBatches += 1
+                      numOutputRows += filteredData.getRowCount
+                      if (filteredData.getRowCount == 0) {
+                        GpuColumnVector.emptyBatchFromTypes(colTypes)
+                      } else {
+                        GpuColumnVector.from(filteredData, colTypes)
+                      }
                     }
                   }
                 }
