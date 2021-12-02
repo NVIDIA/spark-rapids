@@ -27,8 +27,6 @@ class Spark313Shims extends Spark31XShims with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
-  override def hasCastFloatTimestampUpcast: Boolean = true
-
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
@@ -40,4 +38,7 @@ class Spark313Shims extends Spark31XShims with Spark30Xuntil33XShims {
       datetimeRebaseMode: SQLConf.LegacyBehaviorPolicy.Value): ParquetFilters =
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+
+  override def hasCastFloatTimestampUpcast: Boolean = true
+
 }
