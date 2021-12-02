@@ -530,6 +530,11 @@ object GpuCast extends Arm {
           }
         }
 
+      case (ArrayType(elementType, _), StringType) =>
+        castArrayToString(
+          input, elementType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled
+        )
+
       case (from: StructType, to: StructType) =>
         castStructToStruct(from, to, input, ansiMode, legacyCastToString,
           stringToDateAnsiModeEnabled)
@@ -635,6 +640,131 @@ object GpuCast extends Arm {
       }
     }
   }
+
+
+  /**
+   * A 8 steps solution for casting array to string. <p>
+   * Array is represented as `list column` in cudf, which has child column and offset column. <p>
+   * When `legacyCastToString = true`, given an input with 3 rows:
+   * `[ [1, 2, null, 3], [], null]` <p>
+   * Step 1: cast all not-null elements in array to string type:
+   * `[ ["1", "2", null, "3"], [], null]` <p>
+   * Step 2: add space char in the front of all not-null elements:
+   * `[ [" 1", " 2", null, " 3"], [], null]` <p>
+   * step 3: cast `null` elements to their string representation :
+   * `[ [" 1", " 2", "", " 3"], [], null]`(here we use "" to represent null) <p>
+   * step 4: concatenate list elements, seperated by `","`:
+   * `[" 1, 2,, 3", null, null]` <p>
+   * step 5: remove the first char, if it is an `' '`:
+   * `["1, 2,, 3", null, null]` <p>
+   * step 6: replace nulls with empty string:
+   * `["1, 2,, 3", "", ""]` <p>
+   * step 7: add brackets:
+   * `["[1, 2,, 3]", "[]", "[]"]` <p>
+   * step 8: add `null` masks using original input:
+   * `["[1, 2,, 3]", "[]", null]` <p>
+   *
+   * when `legacyCastToString = false`, step 2, 5 are skipped
+   */
+  private  def castArrayToString(input:                    ColumnView,
+                                 elementType:                DataType,
+                                 ansiMode:                    Boolean,
+                                 legacyCastToString:          Boolean,
+                                 stringToDateAnsiModeEnabled: Boolean): ColumnVector = {
+
+    val (leftStr, rightStr) =  ("[", "]")
+    val emptyStr = ""
+    val spaceStr = " "
+    val nullStr = if (legacyCastToString) emptyStr  else "null"
+    val sepStr = "," + (if (legacyCastToString) emptyStr else spaceStr)
+    val numRows = input.getRowCount.toInt
+
+    withResource(
+      Seq(leftStr, rightStr, emptyStr, spaceStr, nullStr, sepStr).safeMap(Scalar.fromString)
+    ){ case Seq(left, right, empty, space, nullRep, sep) =>
+
+      /* -------------------------------- helper functions -----------------------*/
+
+      /**
+       * cast all not-null elements in a child column to string type <p>
+       * add `' '` to all elements when `legacyCastToString = true`
+       * @param child child column of an array column
+       * @return a string type child column
+       */
+      def castChildToStr(child: ColumnView): ColumnView = {
+        withResource(
+          doCast(child, elementType, StringType, ansiMode,
+            legacyCastToString, stringToDateAnsiModeEnabled)
+        ) { strChildWithNull =>
+          withResource(strChildWithNull.replaceNulls(nullRep)) { strChild =>
+            if (legacyCastToString) {// add a space string to each non-null element
+              withResource(ColumnVector.fromScalar(space, child.getRowCount.toInt)) { spaceVec =>
+                withResource(
+                  ColumnVector.stringConcatenate(Array(spaceVec, strChild))
+                ) { addSpace =>
+                  withResource(child.isNotNull) {_.ifElse(addSpace, strChild)}
+                }
+              }
+            }
+            else { strChild.incRefCount }
+          }
+        }
+      }
+
+      /**
+       * If the first char of a string is ' ', remove it (only for legacyCastToString = true)
+       * @param strVec a string type column vector
+       */
+      def removeFirstSpace(strVec: ColumnVector): ColumnVector = {
+        if (legacyCastToString){
+          withResource(strVec.substring(0,1)) { fstChar =>
+            withResource(strVec.substring(1)) { remain =>
+              withResource(fstChar.equalTo(space)) {_.ifElse(remain, strVec)}
+            }
+          }
+        }
+        else {strVec.incRefCount}
+      }
+
+      /**
+       * Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
+       * @param strVec a string vector
+       */
+      def addBrackets(strVec: ColumnVector): ColumnVector = {
+        withResource(
+          Seq(left, right).safeMap(s => ColumnVector.fromScalar(s, numRows))
+        ) { case Seq(leftColumn, rightColumn) =>
+          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, strVec, rightColumn))
+        }
+      }
+      /* -------------------------------- helper functions -----------------------*/
+
+
+      // cast child column to string type
+      withResource(input.getChildColumnView(0)) { childView =>
+        withResource(castChildToStr(childView)){ stringChild =>
+          withResource(input.replaceListChild(stringChild)) {strArr =>
+            // concatenate each row. cast from list column to string column
+            withResource(ColumnVector.fromScalar(sep, numRows)){ sepCol =>
+              withResource(
+                strArr.stringConcatenateListElements(sepCol)
+              ) { strColContainsNull =>
+                withResource(strColContainsNull.replaceNulls(empty)){strCol =>
+                  withResource(removeFirstSpace(strCol)){withoutBrackets =>
+                    withResource(addBrackets(withoutBrackets))(
+                      _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+
 
   private def castStructToString(
       input: ColumnView,
