@@ -173,26 +173,30 @@ object GpuCast extends Arm {
       input: ColumnVector,
       ansiEnabled: Boolean): ColumnVector = {
 
-    // This regex gets applied after the transformation to normalize use of Inf and is
-    // just strict enough to filter out known edge cases that would result in incorrect
-    // values. We further filter out invalid values using the cuDF isFloat method.
+    // This regex is just strict enough to filter out known edge cases that would result
+    // in incorrect values. We further filter out invalid values using the cuDF isFloat method.
     val VALID_FLOAT_REGEX =
-      "^" +                         // start of line
-      "[+\\-]?" +                   // optional + or - at start of string
-      "(" +
+      "^" +                             // start of line
+        "[Nn][Aa][Nn]" +                // NaN
+        "|" +
         "(" +
+          "[+\\-]?" +                   // optional sign preceding Inf or numeric
           "(" +
-            "([0-9]+)|" +           // digits, OR
-            "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
-            "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
+            "([Ii][Nn][Ff]" +           // Inf, Infinity
+            "([Ii][Nn][Ii][Tt][Yy])?)" +
+            "|" +
+            "(" +
+              "(" +
+                "([0-9]+)|" +           // digits, OR
+                "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
+                "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
+              ")" +
+              "([eE][+\\-]?[0-9]+)?" +  // exponent
+              "[fFdD]?" +               // floating-point designator
+            ")" +
           ")" +
-          "([eE][+\\-]?[0-9]+)?" +  // exponent
-          "[fFdD]?" +               // floating-point designator
         ")" +
-        "|Inf" +                    // Infinity
-        "|[nN][aA][nN]" +           // NaN
-      ")" +
-      "$"                           // end of line
+      "$"                               // end of line
 
     withResource(input.lstrip()) { stripped =>
       withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
@@ -203,39 +207,26 @@ object GpuCast extends Arm {
               _.ifElse(nullString, stripped)
             }
         }
-          // replace all possible versions of "Inf" and "Infinity" with "Inf"
-          val inf = withResource(withoutWhitespace) { _ =>
-            withoutWhitespace.stringReplaceWithBackrefs(
-              "(?:[iI][nN][fF])" + "(?:[iI][nN][iI][tT][yY])?", "Inf")
-          }
-          // replace "+Inf" with "Inf" because cuDF only supports "Inf" and "-Inf"
-          val infWithoutPlus = withResource(inf) { _ =>
-            withResource(GpuScalar.from("+Inf", DataTypes.StringType)) { search =>
-              withResource(GpuScalar.from("Inf", DataTypes.StringType)) { replace =>
-                inf.stringReplace(search, replace)
-              }
-            }
-          }
         // filter out any strings that are not valid floating point numbers according
         // to the regex pattern
-        val floatOrNull = withResource(infWithoutPlus) { _ =>
-          withResource(infWithoutPlus.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
+        val floatOrNull = withResource(withoutWhitespace) { _ =>
+          withResource(withoutWhitespace.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
             if (ansiEnabled) {
               withResource(isFloat.all()) { allMatch =>
                 // Check that all non-null values are valid floats.
                 if (allMatch.isValid && !allMatch.getBoolean) {
                   throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
                 }
-                infWithoutPlus.incRefCount()
+                withoutWhitespace.incRefCount()
               }
             } else {
-              isFloat.ifElse(infWithoutPlus, nullString)
+              isFloat.ifElse(withoutWhitespace, nullString)
             }
           }
         }
         // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
         withResource(floatOrNull) {
-          _.stringReplaceWithBackrefs("([^n])[fFdD]$", "\\1")
+          _.stringReplaceWithBackrefs("([^nN])[fFdD]$", "\\1")
         }
       }
     }
@@ -961,13 +952,11 @@ object GpuCast extends Arm {
       input: ColumnVector,
       ansiEnabled: Boolean,
       dType: DType): ColumnVector = {
-    // 1. convert the different infinities to "Inf"/"-Inf" which is the only variation cudf
-    // understands
-    // 2. identify the nans
-    // 3. identify the floats. "nan", "null" and letters are not considered floats
-    // 4. if ansi is enabled we want to throw an exception if the string is neither float nor nan
-    // 5. convert everything that's not floats to null
-    // 6. set the indices where we originally had nans to Float.NaN
+    // 1. identify the nans
+    // 2. identify the floats. "null" and letters are not considered floats
+    // 3. if ansi is enabled we want to throw an exception if the string is neither float nor nan
+    // 4. convert everything that's not floats to null
+    // 5. set the indices where we originally had nans to Float.NaN
     //
     // NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
     // Inf even though Spark does
