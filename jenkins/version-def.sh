@@ -21,7 +21,7 @@ set -e
 # $OVERWRITE_PARAMS patten 'abc=123;def=456;'
 PRE_IFS=$IFS
 IFS=";"
-for VAR in $OVERWRITE_PARAMS;do
+for VAR in $OVERWRITE_PARAMS; do
     echo $VAR && export $VAR
 done
 IFS=$PRE_IFS
