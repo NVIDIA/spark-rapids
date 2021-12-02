@@ -362,11 +362,10 @@ private object GpuExternalRowToColumnConverter {
       column: Int,
       builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
       val child = builder.getChild(0)
-      val bytes = row.asInstanceOf[GenericRow].get(column)
-      print(bytes)
-//      bytes.foreach(child.append)
+      val bytes = row.asInstanceOf[GenericRow].getSeq[Byte](column)
+      bytes.foreach(child.append)
       builder.endList()
-//      bytes.length + OFFSET
+      bytes.length + OFFSET
       8
     }
 
@@ -445,7 +444,7 @@ private object GpuExternalRowToColumnConverter {
     column: Int,
     builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder) : Double = {
     var ret = 0.0
-    val values = row.getSeq[Any](column)
+    val values = row.getSeq(column)
     val numElements = values.size
     val child = builder.getChild(0)
     for (i <- 0 until numElements) {

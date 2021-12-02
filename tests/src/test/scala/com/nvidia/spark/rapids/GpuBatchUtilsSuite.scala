@@ -25,7 +25,7 @@ import org.scalatest.FunSuite
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, GenericRow}
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, Decimal, DecimalType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, Decimal, DecimalType, MapType, StringType, StructField, StructType}
 import org.apache.spark.unsafe.types.UTF8String
 
 class GpuBatchUtilsSuite extends FunSuite {
@@ -202,7 +202,7 @@ object GpuBatchUtilsSuite {
     val externalRows = new mutable.ArrayBuffer[Row](rowCount)
     val r = new Random(0)
     for (i <- 0 until rowCount) {
-      externalRows.append(new GenericRow(createRowValues(i, r, schema.fields)))
+      externalRows.append(new GenericRow(createExternalRowValues(i, r, schema.fields)))
     }
     externalRows.toArray
   }
@@ -216,10 +216,17 @@ object GpuBatchUtilsSuite {
       case DataTypes.LongType => maybeNull(nullable, i, r.nextLong())
       case DataTypes.FloatType => maybeNull(nullable, i, r.nextFloat())
       case DataTypes.DoubleType => maybeNull(nullable, i, r.nextDouble())
+      // Spark use Int to store a Date internally, so use nextInt to avoid
+      // 1). create Date object 2). convert Date to EpochDays int value
+      case DataTypes.DateType => maybeNull(nullable, i, r.nextInt())
+      // Spark use Long to store a Timestamp internally, so use nextLong to avoid
+      // 1). create Timestamp object 2). convert Timestamp to microsecond long value
+      case DataTypes.TimestampType => maybeNull(nullable, i, r.nextLong())
       case dataType: DecimalType =>
         val upperBound = (0 until dataType.precision).foldLeft(1L)((x, _) => x * 10)
         val unScaledValue = r.nextLong() % upperBound
-        maybeNull(nullable, i, Decimal(unScaledValue, dataType.precision, dataType.scale))
+        maybeNull(nullable, i, Decimal(unScaledValue, dataType.precision, dataType.scale)
+            .toJavaBigDecimal)
       case dataType@DataTypes.StringType =>
         if (nullable) {
           // since we want a deterministic test that compares the estimate with actual
@@ -227,10 +234,10 @@ object GpuBatchUtilsSuite {
           if (i % 2 == 0) {
             null
           } else {
-            createString(dataType.defaultSize * 2)
+            createUTF8String(dataType.defaultSize * 2)
           }
         } else {
-          createString(dataType.defaultSize)
+          createUTF8String(dataType.defaultSize)
         }
       case dataType@DataTypes.BinaryType =>
         if (nullable) {
@@ -239,19 +246,38 @@ object GpuBatchUtilsSuite {
           if (i % 2 == 0) {
             null
           } else {
-            r.nextString(dataType.defaultSize * 2).getBytes
+            r.nextString(dataType.defaultSize * 2).getBytes.toSeq
           }
         } else {
-          r.nextString(dataType.defaultSize).getBytes
+          r.nextString(dataType.defaultSize).getBytes.toSeq
         }
       case ArrayType(elementType, containsNull) =>
-        val arrayValues = new mutable.ArrayBuffer[Any]()
-        for (_ <- 0 to r.nextInt(10)) {
-          arrayValues.append(createValueForType(i, r,elementType, containsNull))
+        if (nullable && i % 2 == 0) {
+          null
+        } else {
+          val arrayValues = new mutable.ArrayBuffer[Any]()
+          for (_ <- 0 to r.nextInt(10)) {
+            arrayValues.append(createValueForType(i, r, elementType, containsNull))
+          }
+          arrayValues.toArray.toSeq
         }
-        arrayValues.toArray
-//      case MapType(keyType, valueType, valueContainsNull) =>
-//      case StructType(fields) =>
+      case MapType(keyType, valueType, valueContainsNull) =>
+        if (nullable && i % 2 == 0) {
+          null
+        } else {
+          // TODO: add other types
+          val map = mutable.Map[String, String]()
+          for ( j <- 0 until 10) {
+            if (valueContainsNull && j % 2 == 0) {
+              map += (createUTF8String(10).toString -> null)
+            } else {
+              map += (createUTF8String(10).toString -> createUTF8String(10).toString)
+            }
+          }
+          map
+        }
+      case StructType(fields) =>
+        new GenericRow(fields.map(f => createValueForType(i, r, f.dataType, nullable)))
       case unknown =>  throw new UnsupportedOperationException(
         s"Type $unknown not supported")
     }
@@ -265,6 +291,24 @@ object GpuBatchUtilsSuite {
     values
   }
 
+  private def createExternalRowValues(i: Int, r: Random, fields: Array[StructField]): Array[Any] = {
+    val values: Array[Any] = fields.map(field => {
+      field.dataType match {
+        // Since it's using the createUTF8String method for InternalRow case, need to convert to
+        // String for Row case.
+        case StringType =>
+          val utf8StringOrNull = createValueForType(i, r, field.dataType, field.nullable)
+          if (utf8StringOrNull != null) {
+            utf8StringOrNull.asInstanceOf[UTF8String].toString
+          } else {
+            utf8StringOrNull
+          }
+        case _ => createValueForType(i, r, field.dataType, field.nullable)
+      }
+    })
+    values
+  }
+
   private def maybeNull(nullable: Boolean, i: Int, value: Any): Any = {
     if (nullable && i % 2 == 0) {
       null
@@ -273,7 +317,7 @@ object GpuBatchUtilsSuite {
     }
   }
 
-  private def createString(size: Int): UTF8String = {
+  private def createUTF8String(size: Int): UTF8String = {
     // avoid multi byte characters to keep the test simple
     val str = (0 until size).map(_ => 'a').mkString
     UTF8String.fromString(str)
