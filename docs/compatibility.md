@@ -120,7 +120,7 @@ GPU. If this concerns you, you should upgrade to Spark 3.1.0 or above.
 
 When Apache Spark does a sum aggregation on decimal values it will store the result in a value
 with a precision that is the input precision + 10, but with a maximum precision of 38.
-For an input precision of 9 and above, Spark will do the aggregations as a java `BigDecimal`
+For an input precision of 9 and above, Spark will do the aggregations as a Java `BigDecimal`
 value which is slow, but guarantees that any overflow can be detected because it can work with
 effectively unlimited precision. For inputs with a precision of 8 or below Spark will internally do
 the calculations as a long value, 64-bits. When the precision is 8, you would need at least 

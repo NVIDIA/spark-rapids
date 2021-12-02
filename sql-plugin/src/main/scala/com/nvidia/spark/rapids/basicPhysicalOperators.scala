@@ -381,7 +381,6 @@ case class GpuSampleExec(lowerBound: Double, upperBound: Double, withReplacement
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
-  // TODO CPU vs GPU OP TIME in Debug mode???
 
   override def output: Seq[Attribute] = {
     child.output

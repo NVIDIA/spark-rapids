@@ -579,14 +579,16 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
  *    this means that we can SUM `174,467,442,481` maximum or minimum decimal values with a
  *    precision of 8 before overflow can no longer be detected. It is much higher for decimal
  *    values with a smaller precision.
- * 2. For decimal values with a precision from 9 to 28 inclusive we sum them as 128-bit values.
+ * 2. For decimal values with a precision from 9 to 20 inclusive we sum them as 128-bit values.
  *    this is very similar to what we do in the first strategy. The main differences are that we
- *    use 128-bit value when doing the sum, and we check for overflow after processing a batch.
+ *    use a 128-bit value when doing the sum, and we check for overflow after processing each batch.
  *    In the case of group-by and reduction that happens after the update stage and also after each
- *    merge stage. In the worst case this mens that we can SUM `24,028,236,692` maximum or minimum
- *    decimal values with a precision of 28 before overflow can no longer be detected.
- * 3. For anything larger than precision 28 we do the same things we do for strategy 2, but we also
- *    take the digits above 28 and sum them separately. We then check to see if they would have
+ *    merge stage. This gives us enough room that we can always detect overflow when summing a
+ *    single batch. Even on a merge where we could be doing the aggregation on a batch that has
+ *    all max output values in it.
+ * 3. For values from 21 to 28 inclusive we have enough room to not check for overflow on teh update
+ *    aggregation, but for the merge aggregation we need to do some extra checks. This is done by
+ *    taking the digits above 28 and sum them separately. We then check to see if they would have
  *    overflowed the original limits. This lets us detect overflow in cases where the original
  *    value would have wrapped around. The reason this works is because we have a hard limit on the
  *    maximum number of values in a single batch being processed. `Int.MaxValue`, or about 2.2
@@ -594,35 +596,13 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
  *    2.2 billion values and still detect overflow. This equates to a precision of about 10 more
  *    than is needed to hold the higher digits. This effectively gives us unlimited overflow
  *    detection.
+ * 4. For anything larger than precision 28 we do the same overflow detection for strategy 3, but
+ *    also do it on the update aggregation. This lets us fully detect overflows in any stage of
+ *    an aggregation.
  *
- *
- *
- * but we do want to have some kind of guarantees that are large
- * enough that users feel comfortable using our framework for doing the processing. In Spark there
- * are a few optimizations around SUM where if the output fits in 64-bits, then they will use it
- * to do the SUM instead of processing the values using `Decimal`. This speeds the processing up a
- * lot, but also means that Spark can only detect the overflow if it does not wrap around and go
- * back to being a valid number. The formula for this is.
- *
- * `(Long.MaxValue * 2 − DEC_18_MAX) ÷ DEC_8_MAX` =
- *
- * `DEC_18_MAX` is the maximum value that a `Decimal(18, 0)` can hold. This is because Spark will
- * do the SUM as this type, so that it gives us a lot of values before overflow is even possible
- * (10-billion) because it adds 10 to the input precision. `DEC_8_MAX` is the maximum value that
- * a `Decimal(8, 0)` can hold. This means we can have at least 174 billion values before Spark
- * could possibly return a bogus value or over 17 times the number of values it takes to hit the
- * overflow case to being with. In practice it will likely be a lot more than that because not all
- * values will be the maximum (or minimum) values allowed.
- *
- * We don't necessarily want to match Spark exactly. We could come close because each batch can have
- * at most `Int.MaxValue` rows in it, so if we can ensure we can detect overflow on 2.2 billion
- * This means that we want to try and match Spark, and ideally have something around 100-billion+
- * values before overflow is no longer detectable in the worst case.
- *
- * TODO look at merge vs update for this. Because for update we just need to support Int.MaxValue
- *   values before we can not detect overflow. For merge we are combining multiple of these results
- *   together. So if we can support Int.MaxValue of these values, then we know we will never be
- *   bitten by overflow. So if we can support 2.2 billion values.
+ * Note that for Window operations either there is no merge stage or it only has a single value
+ * being merged into a batch instead of an entire batch being merged together. This lets us handle
+ * the overflow detection with what is built into GpuAdd.
  */
 object GpuDecimalSumOverflow {
   /**

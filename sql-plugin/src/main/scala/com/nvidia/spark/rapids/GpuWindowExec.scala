@@ -328,7 +328,7 @@ object GpuWindowExec extends Arm {
             // by our GPU window operations anyways.
             rep.windowReplacement(spec)
           case GpuWindowExpression(rep: GpuReplaceWindowFunction, spec)
-            if rep.shouldReplaceWindow(spec)=>
+            if rep.shouldReplaceWindow(spec) =>
             rep.windowReplacement(spec)
         }
         // Second pass looks for GpuWindowFunctions and GpuWindowSpecDefinitions to build up
