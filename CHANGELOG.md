@@ -1,5 +1,5 @@
 # Change log
-Generated on 2021-12-01
+Generated on 2021-12-02
 
 ## Release 21.12
 
@@ -112,7 +112,9 @@ Generated on 2021-12-01
 ### PRs
 |||
 |:---|:---|
+|[#4222](https://github.com/NVIDIA/spark-rapids/pull/4222)|Add arguments support to 'databricks/run-tests.py'|
 |[#4233](https://github.com/NVIDIA/spark-rapids/pull/4233)|Add databricks init script for UCX|
+|[#4231](https://github.com/NVIDIA/spark-rapids/pull/4231)|RAPIDS Shuffle Manager fallback if security is enabled|
 |[#4228](https://github.com/NVIDIA/spark-rapids/pull/4228)|Fix unconditional nested loop joins on empty tables|
 |[#4217](https://github.com/NVIDIA/spark-rapids/pull/4217)|Enable event log for qualification & profiling tools testing from IT|
 |[#4202](https://github.com/NVIDIA/spark-rapids/pull/4202)|Parameter for the Databricks zone-id [skip ci]|
@@ -127,6 +129,7 @@ Generated on 2021-12-01
 |[#4106](https://github.com/NVIDIA/spark-rapids/pull/4106)|Add docs for MIG on YARN [skip ci]|
 |[#4100](https://github.com/NVIDIA/spark-rapids/pull/4100)|Add PCA example to ml-integration page [skip ci]|
 |[#4177](https://github.com/NVIDIA/spark-rapids/pull/4177)|Decimal128: added missing decimal128 signature on Spark 32X|
+|[#4161](https://github.com/NVIDIA/spark-rapids/pull/4161)|More integration tests with decimal128|
 |[#4165](https://github.com/NVIDIA/spark-rapids/pull/4165)|Fix type checks for get array item in 3.2.0|
 |[#4163](https://github.com/NVIDIA/spark-rapids/pull/4163)|Enable config to check for casting decimals to strings|
 |[#4154](https://github.com/NVIDIA/spark-rapids/pull/4154)|Use num_slices to guarantee partition shape in the pandas udf tests|
@@ -137,6 +140,7 @@ Generated on 2021-12-01
 |[#4125](https://github.com/NVIDIA/spark-rapids/pull/4125)|Remove unused imports|
 |[#4052](https://github.com/NVIDIA/spark-rapids/pull/4052)|Support null safe host column vector|
 |[#4116](https://github.com/NVIDIA/spark-rapids/pull/4116)|Add in tests to check for overflow in unbounded window|
+|[#4111](https://github.com/NVIDIA/spark-rapids/pull/4111)|Added external doc links for JRE and Spark|
 |[#4105](https://github.com/NVIDIA/spark-rapids/pull/4105)|Enforce checks for unused imports and missed interpolation|
 |[#4107](https://github.com/NVIDIA/spark-rapids/pull/4107)|Set the task context in background reader threads|
 |[#4114](https://github.com/NVIDIA/spark-rapids/pull/4114)|Refactoring cudf_udf test setup|
@@ -153,6 +157,8 @@ Generated on 2021-12-01
 |[#4049](https://github.com/NVIDIA/spark-rapids/pull/4049)|Change Databricks image from 8.2 to 9.1 [skip ci]|
 |[#4051](https://github.com/NVIDIA/spark-rapids/pull/4051)|Upgrade ORC version from 1.5.8 to 1.5.10|
 |[#4080](https://github.com/NVIDIA/spark-rapids/pull/4080)|Add case insensitive when clipping parquet blocks|
+|[#4083](https://github.com/NVIDIA/spark-rapids/pull/4083)|Fix compiler warning in regex transpiler|
+|[#4070](https://github.com/NVIDIA/spark-rapids/pull/4070)|Support building from sub directory|
 |[#4072](https://github.com/NVIDIA/spark-rapids/pull/4072)|Fix overflow checking on optimized decimal sum|
 |[#4067](https://github.com/NVIDIA/spark-rapids/pull/4067)|Append new authorized user to blossom-ci whitelist [skip ci]|
 |[#4066](https://github.com/NVIDIA/spark-rapids/pull/4066)|Temply disable cudf_udf test|
