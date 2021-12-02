@@ -233,7 +233,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
             assert(output.isNullAt(0))
           } else {
             val inputStructRow = input.getStruct(0)
-            val outputStructRow = output.getStruct(0, 4)
+            val outputStructRow = output.getStruct(0, 3)
             if (inputStructRow.isNullAt(0)) {
               assert(outputStructRow.isNullAt(0))
             } else {
