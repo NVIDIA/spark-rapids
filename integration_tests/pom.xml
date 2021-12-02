@@ -59,37 +59,46 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <!-- use aggregator jar because accessing internal classes -->
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-aggregator_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <classifier>${spark.version.classifier}</classifier>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark-tests_${scala.binary.version}</artifactId>
-            <version>${project.version}</version>
-            <classifier>${spark.version.classifier}tests</classifier>
-            <type>test-jar</type>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-sql_${scala.binary.version}</artifactId>
             <version>${spark.test.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- compile the test code against v2 shims code but run them solely against the distribution jar-->
+        <!-- scope is runtime, so compile will not use-->
+        <!-- run_pyspark_from_build.sh depends on the distribution jar, so make it as runtime scope -->
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark_2.12</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- this jar is generated for compile the tests -->
+        <!-- this jar is extracted from dist jar -->
+        <!-- this jar is installed to local repo in the dist project -->
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>dist-for-compile</artifactId>
+            <version>1</version>
+        </dependency>
+
+        <!-- for test case ScalaUDFSuite.scala -->
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-udf-examples_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -127,6 +136,22 @@
                     <groupId>org.apache.curator</groupId>
                     <artifactId>curator-recipes</artifactId>
                     <version>4.3.0.7.2.7.0-184</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark311cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>*</artifactId>
+                        </exclusion>
+                    </exclusions>
                 </dependency>
             </dependencies>
         </profile>
@@ -169,9 +194,39 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.scala-lang</groupId>
-                    <artifactId>scala-reflect</artifactId>
-                    <version>${scala.version}</version>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-unsafe_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.commons</groupId>
+                    <artifactId>commons-io</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.commons</groupId>
+                    <artifactId>commons-lang3</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-common</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hadoop</groupId>
+                    <artifactId>hadoop-mapreduce-client</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.esotericsoftware.kryo</groupId>
+                    <artifactId>kryo-shaded-db</artifactId>
+                    <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
@@ -184,18 +239,36 @@
                     <groupId>org.apache.arrow</groupId>
                     <artifactId>arrow-memory</artifactId>
                     <version>${spark.version}</version>
-                    <scope>compile</scope>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>org.apache.arrow</groupId>
                     <artifactId>arrow-vector</artifactId>
                     <version>${spark.version}</version>
-                    <scope>compile</scope>
+                    <scope>provided</scope>
                 </dependency>
                 <dependency>
                     <groupId>com.fasterxml.jackson.core</groupId>
                     <artifactId>jackson-annotations</artifactId>
                     <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-hadoop</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.parquet</groupId>
+                    <artifactId>parquet-column</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.scala-lang</groupId>
+                    <artifactId>scala-reflect</artifactId>
+                    <version>${scala.version}</version>
                     <scope>provided</scope>
                 </dependency>
             </dependencies>
@@ -306,7 +379,7 @@
                 <executions>
                     <execution>
                         <id>run pyspark tests</id>
-                        <phase>verify</phase><!--run after packageing and collecting dependencies-->
+                        <phase>verify</phase><!--run after packaging and collecting dependencies-->
                         <goals>
                             <goal>exec</goal>
                         </goals>

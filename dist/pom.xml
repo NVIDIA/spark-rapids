@@ -299,6 +299,38 @@
                             </target>
                         </configuration>
                     </execution>
+
+                    <!-- generate a new jar from the dist jar for the compile purpose of the integration tests module-->
+                    <!-- see the comments in integration_tests module pom.xml-->
+                    <execution>
+                        <id>generate-dist-compile-jar</id>
+                        <phase>package</phase>
+                        <configuration>
+                            <target name="generate-dist-compile-jar">
+                                <exec executable="${project.basedir}/scripts/generate-dist-compile-jar.sh"
+                                      dir="${project.build.directory}"
+                                      resultproperty="generate-dist-compile-jar.exitCode"
+                                      errorproperty="generate-dist-compile-jar.errorMsg"
+                                      failonerror="false">
+
+                                    <arg value="${artifactId}-${version}.jar"/>
+                                    <arg value="${spark.version.classifier}"/>
+                                </exec>
+
+                                <fail message="exec generate-dist-compile-jar.sh failed, exit code is ${generate-dist-compile-jar.exitCode}, error msg is ${generate-dist-compile-jar.errorMsg}">
+                                    <condition>
+                                        <not>
+                                            <equals arg1="${generate-dist-compile-jar.exitCode}" arg2="0"/>
+                                        </not>
+                                    </condition>
+                                </fail>
+                            </target>
+                        </configuration>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                    </execution>
+
                     <execution>
                         <phase>verify</phase>
                         <goals>
