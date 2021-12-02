@@ -152,7 +152,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
 
-    if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+    if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
       if (conf.shuffleTransportEarlyStart) {
         rapidsShuffleHeartbeatManager =
@@ -202,7 +202,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       if (!GpuDeviceManager.rmmTaskInitEnabled) {
         logInfo("Initializing memory from Executor Plugin")
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf)
-        if (GpuShuffleEnv.isRapidsShuffleAvailable) {
+        if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
           if (conf.shuffleTransportEarlyStart) {
             logInfo("Initializing shuffle manager heartbeats")
