@@ -29,7 +29,7 @@ Software Requirements:
 
 	OS: Ubuntu 18.04, Ubuntu 20.04 or CentOS 7, CentOS 8
 
-	CUDA & NVIDIA Drivers*: 11.0-11.4 & v450.80.02+
+	CUDA & NVIDIA Drivers*: 11.0-11.5 & v450.80.02+
 
 	Apache Spark 3.0.1, 3.0.2, 3.0.3, 3.1.1, 3.1.2, 3.2.0, Cloudera CDP 7.1.6, 7.1.7, Databricks 7.3 ML LTS or 9.1 ML Runtime, GCP Dataproc 2.0, and Azure Synapse
 
@@ -45,22 +45,22 @@ for your hardware's minimum driver version.
   Accelerator for Apache Spark 21.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar)
 * Download the [RAPIDS cuDF 21.12.0 jar](https://repo1.maven.org/maven2/ai/rapids/cudf/21.12.0/cudf-21.12.0-cuda11.jar)
 
-This package is built against CUDA 11.4 and has [CUDA forward
+This package is built against CUDA 11.5 and has [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html) enabled.  It is tested
-on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.4.  For those using other types of GPUs which
+on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.2 is required. Users will
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Verify signature
 * Download the [RAPIDS Accelerator for Apache Spark 21.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar)
-  and the signature file [RAPIDS Accelerator for Apache Spark 21.12.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar.asc)
-* Search the public key via the user-Id [sw-spark@nvidia.com](sw-spark@nvidia.com) at keyserver [keys.openpgp.org](https://keys.openpgp.org) and download.
+  and [RAPIDS Accelerator for Apache Spark 21.12.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/21.12.0/rapids-4-spark_2.12-21.12.0.jar.asc)
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
-* Verift the signature: `gpg --verify rapids-4-spark_2.12-21.12.0.jar.asc rapids-4-spark_2.12-21.12.0.jar`
+* Verify the signature: `gpg --verify rapids-4-spark_2.12-21.12.0.jar.asc rapids-4-spark_2.12-21.12.0.jar`
 
-Sinature verify output:
+The output if signature verify:
 
-	gpg: Good signature from "NVidia Spark (For the jars signature of spark rapids public release)<sw-spark@nvidia.com>"
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
 New functionality and performance improvements for this release include:
