@@ -3952,7 +3952,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
-
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
