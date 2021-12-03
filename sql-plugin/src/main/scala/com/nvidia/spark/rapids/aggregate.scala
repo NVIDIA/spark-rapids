@@ -691,8 +691,7 @@ class GpuHashAggregateIterator(
     /**
      * Apply the "pre" step: preMerge for merge, or pass-through in the update case
      * @param toAggregateBatch - input (to the agg) batch from the child directly in the
-     *                         merge
-     *                         case, or from the `inputProjection` in the update case.
+     *                         merge case, or from the `inputProjection` in the update case.
      * @return a pre-processed batch that can be later cuDF aggregated
      */
     def preProcess(toAggregateBatch: ColumnarBatch): ColumnarBatch = {
