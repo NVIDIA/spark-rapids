@@ -61,7 +61,7 @@ private object GpuExternalRowToColumnConverter {
 
   private abstract class TypeConverter extends Serializable {
     /** Append row value to the column builder and return the number of data bytes written */
-    def append(row: Row, column: Int, uilder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double
+    def append(row: Row, column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double
 
     /**
      * This is here for structs.  When you append a null to a struct the size is not known
