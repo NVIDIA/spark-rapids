@@ -20,7 +20,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320
+from spark_session import is_before_spark_311, is_before_spark_320
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -508,12 +508,15 @@ def test_regexp_like():
 
 @pytest.mark.skipif(is_databricks_runtime(),
     reason='Databricks optimizes out regexp_replace call in this case')
+@pytest.mark.skipif(not is_before_spark_311(),
+    reason='Spark 3.1.1 optimizes out regexp_replace call in this case')
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_regexp_replace_null_pattern_fallback():
     gen = mk_str_gen('[abcd]{0,3}')
-    # Apache Spark translates `NULL` to `CAST(NULL as STRING)` and we only support
+    # Spark 3.0.1 translates `NULL` to `CAST(NULL as STRING)` and we only support
     # literal expressions for the regex pattern
-    # Databricks Spark replaces the whole regexp_replace expression with a literal null
+    # Spark 3.1.1 (and Databricks) replaces the whole regexp_replace expression with a
+    # literal null
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_replace(a, NULL, "A")'),
