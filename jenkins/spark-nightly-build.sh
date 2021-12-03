@@ -25,6 +25,7 @@ export M2DIR="$WORKSPACE/.m2"
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
 # Deploy jars unless SKIP_DEPLOY is 'true'
+SKIP_DEPLOY=${SKIP_DEPLOY:-'false'}
 mvn -U -B -Dbuildver=302 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
 [[ $SKIP_DEPLOY == 'false' ]] && mvn -B -Dbuildver=302 deploy -pl '!tools,!dist' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DskipTests
 mvn -U -B -Dbuildver=303 clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER
