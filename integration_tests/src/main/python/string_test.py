@@ -20,6 +20,7 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import is_before_spark_311, is_before_spark_320
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -483,14 +484,39 @@ def test_regexp_replace():
                 'regexp_replace(a, "a|b|c", "A")'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
+def test_regexp():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp(a, "a{2}")',
+                'regexp(a, "a{1,3}")',
+                'regexp(a, "a{1,}")',
+                'regexp(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
+@pytest.mark.skipif(is_before_spark_320(), reason='regexp_like is synonym for RLike starting in Spark 3.2.0')
+def test_regexp_like():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_like(a, "a{2}")',
+                'regexp_like(a, "a{1,3}")',
+                'regexp_like(a, "a{1,}")',
+                'regexp_like(a, "a[bc]d")'),
+            conf={'spark.rapids.sql.expression.RLike': 'true'})
+
 @pytest.mark.skipif(is_databricks_runtime(),
     reason='Databricks optimizes out regexp_replace call in this case')
+@pytest.mark.skipif(not is_before_spark_311(),
+    reason='Spark 3.1.1 optimizes out regexp_replace call in this case')
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
 def test_regexp_replace_null_pattern_fallback():
     gen = mk_str_gen('[abcd]{0,3}')
-    # Apache Spark translates `NULL` to `CAST(NULL as STRING)` and we only support
+    # Spark 3.0.1 translates `NULL` to `CAST(NULL as STRING)` and we only support
     # literal expressions for the regex pattern
-    # Databricks Spark replaces the whole regexp_replace expression with a literal null
+    # Spark 3.1.1 (and Databricks) replaces the whole regexp_replace expression with a
+    # literal null
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_replace(a, NULL, "A")'),
