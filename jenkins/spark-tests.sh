@@ -23,7 +23,7 @@ nvidia-smi
 
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
-    -Dmaven.repo.local=$WORKSPACE/.m2 -Dtransitive=false \
+    -Dmaven.repo.local=$WORKSPACE/.m2 \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT

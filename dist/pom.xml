@@ -308,8 +308,7 @@
                         <configuration>
                             <target>
                                 <zip update="true" basedir="${project.build.directory}/extra-resources"
-                                    destfile="${project.build.directory}/${project.artifactId}-${project.version}.jar"
-                                />
+                                    destfile="${project.build.directory}/${project.artifactId}-${project.version}.jar"/>
                             </target>
                         </configuration>
                     </execution>
