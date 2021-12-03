@@ -96,7 +96,7 @@ def with_gpu_session(func, conf={}):
     if is_allowing_any_non_gpu():
         copy['spark.rapids.sql.test.enabled'] = 'false'
     else:
-        copy['spark.rapids.sql.test.enabled'] = 'true'
+        copy['spark.rapids.sql.test.enabled'] = 'false'
         copy['spark.rapids.sql.test.allowedNonGpu'] = ','.join(get_non_gpu_allowed())
 
     copy['spark.rapids.sql.test.validateExecsInGpuPlan'] = ','.join(get_validate_execs_in_gpu_plan())

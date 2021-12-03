@@ -19,8 +19,8 @@ package org.apache.spark.sql.rapids.execution
 import com.nvidia.spark.rapids.GpuColumnVector
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.EmptyHashedRelation
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuBroadcastHelper {
@@ -34,12 +34,11 @@ object GpuBroadcastHelper {
    * cases are not known, so this is a defensive measure.
    *
    * @param broadcastRelation - the broadcast as produced by a broadcast exchange
-   * @param broadcastPlan - the SparkPlan to use to obtain the schema for the broadcast
-   *                      batch
+   * @param broadcastSchema - the broadcast schema
    * @return a `ColumnarBatch` or throw if the broadcast can't be handled
    */
   def getBroadcastBatch(broadcastRelation: Broadcast[Any],
-                        broadcastPlan: SparkPlan): ColumnarBatch = {
+                        broadcastSchema: StructType): ColumnarBatch = {
     val broadcastRelationValue = broadcastRelation.value
     broadcastRelationValue match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
@@ -47,14 +46,14 @@ object GpuBroadcastHelper {
         GpuColumnVector.incRefCounts(builtBatch)
         builtBatch
       case EmptyHashedRelation =>
-        GpuColumnVector.emptyBatch(broadcastPlan.schema)
+        GpuColumnVector.emptyBatch(broadcastSchema)
       case identity: Array[Any] if identity.length == 0 =>
         // A broadcast nested loop join uses `IdentityBroadcastMode` which when
         // transformed can produce an Array[InternalRow].
         // In this case we handle the scenario where this is an empty result,
         // so we return the empty batch, other results are expected to be
         // `SerializeConcatHostBuffersDeserializeBatch`.
-        GpuColumnVector.emptyBatch(broadcastPlan.schema)
+        GpuColumnVector.emptyBatch(broadcastSchema)
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
     }

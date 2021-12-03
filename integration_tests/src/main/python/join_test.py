@@ -101,31 +101,40 @@ def create_ridealong_df(spark, key_data_gen, data_gen, left_length, right_length
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
-def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, batch_size):
+@pytest.mark.parametrize('enable_aqe', [False, True], ids=idfn)
+def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, batch_size, enable_aqe):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(broadcast(right), how=join_type)
-    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+            {'spark.rapids.sql.batchSizeBytes': batch_size,
+             'spark.sql.adaptive.enabled': enable_aqe})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
-def test_left_broadcast_nested_loop_join_without_condition_empty(join_type, batch_size):
+@pytest.mark.parametrize('enable_aqe', [False, True], ids=idfn)
+def test_left_broadcast_nested_loop_join_without_condition_empty(join_type, batch_size, enable_aqe):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 50)
         return left.join(broadcast(right), how=join_type)
-    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+            {'spark.rapids.sql.batchSizeBytes': batch_size,
+             'spark.sql.adaptive.enabled': enable_aqe})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
-def test_broadcast_nested_loop_join_without_condition_empty(join_type, batch_size):
+@pytest.mark.parametrize('enable_aqe', [False, True], ids=idfn)
+def test_broadcast_nested_loop_join_without_condition_empty(join_type, batch_size, enable_aqe):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 0)
         return left.join(broadcast(right), how=join_type)
-    conf = copy_and_update(allow_negative_scale_of_decimal_conf, {'spark.rapids.sql.batchSizeBytes': batch_size})
+    conf = copy_and_update(allow_negative_scale_of_decimal_conf, 
+            {'spark.rapids.sql.batchSizeBytes': batch_size,
+             'spark.sql.adaptive.enabled': enable_aqe})
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84

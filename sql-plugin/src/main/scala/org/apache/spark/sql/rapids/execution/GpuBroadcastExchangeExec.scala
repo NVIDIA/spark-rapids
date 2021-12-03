@@ -42,6 +42,7 @@ import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
+import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
@@ -313,26 +314,47 @@ abstract class GpuBroadcastExchangeExecBase(
                 } finally {
                   cb.close()
                 })
+
                 val d = data.collect()
-                if (d.length == 0) {
+                val emptyRelation: Any = if (d.isEmpty) {
                   // This call for `HashedRelationBroadcastMode` produces
-                  // `EmptyHashedRelation` allowing the AQE rule `EliminateJoinToEmptyRelation` to
-                  // optimize out our parent join given that this is a empty broadcast result.
-                  mode.transform(Iterator.empty, None)
+                  // `EmptyHashedRelation` allowing the AQE rule `EliminateJoinToEmptyRelation`
+                  // before Spark 3.2.0 to optimize out our parent join given that this is
+                  // a empty broadcast result.
+                  // In Spark 3.2.0, the optimization is still performed, but the AQE optimizer
+                  // is looking at the metrics for the query stage to determine if numRows == 0,
+                  // and if so it can eliminate certain joins.
+                  val transformed = mode.transform(Array.empty)
+
+                  // We make sure that the transformation is indeed an EmptyHashedRelation or an
+                  // empty array of rows, and in those cases only do we short cirtcuit our
+                  // broadcast. The reason for this is to be protective, since an
+                  // EmptyHashedRelation or Array.empty are not the only results of a transform
+                  // call, depending on BroadcastMode specifics. At this time other results are
+                  // not expectd, but we default to the unoptimized path.
+                  transformed match {
+                    case EmptyHashedRelation => transformed
+                    case arr: Array[InternalRow] if arr.isEmpty => transformed
+                    case _ => null
+                  }
                 } else {
+                  null
+                }
+
+                if (emptyRelation == null) {
                   val batch = new SerializeConcatHostBuffersDeserializeBatch(d, output)
                   val numRows = batch.numRows
                   checkRowLimit(numRows)
                   numOutputBatches += 1
                   numOutputRows += numRows
+                  dataSize += batch.dataSize
                   batch
+                } else {
+                  emptyRelation
                 }
               }
-
             withResource(new NvtxWithMetrics("broadcast build", NvtxColor.DARK_GREEN,
                 buildTime)) { _ =>
-              // we only support hashjoin so this is a noop
-              // val relation = mode.transform(input, Some(numRows))
               gpuLongMetric("dataSize") += dataSize
               if (dataSize >= MAX_BROADCAST_TABLE_BYTES) {
                 throw new SparkException(
@@ -343,7 +365,7 @@ abstract class GpuBroadcastExchangeExecBase(
             val broadcasted = withResource(new NvtxWithMetrics("broadcast", NvtxColor.CYAN,
                 broadcastTime)) { _ =>
               // Broadcast the relation
-              sparkContext.broadcast(broadcastResult.asInstanceOf[Any])
+              sparkContext.broadcast(broadcastResult)
             }
 
             SQLMetrics.postDriverMetricUpdates(sparkContext, executionId, metrics.values.toSeq)
