@@ -25,7 +25,7 @@ import org.scalatest.FunSuite
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, GenericRow}
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, Decimal, DecimalType, MapType, StringType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
 class GpuBatchUtilsSuite extends FunSuite {
@@ -225,8 +225,7 @@ object GpuBatchUtilsSuite {
       case dataType: DecimalType =>
         val upperBound = (0 until dataType.precision).foldLeft(1L)((x, _) => x * 10)
         val unScaledValue = r.nextLong() % upperBound
-        maybeNull(nullable, i, Decimal(unScaledValue, dataType.precision, dataType.scale)
-            .toJavaBigDecimal)
+        maybeNull(nullable, i, Decimal(unScaledValue, dataType.precision, dataType.scale))
       case dataType@DataTypes.StringType =>
         if (nullable) {
           // since we want a deterministic test that compares the estimate with actual
@@ -246,10 +245,10 @@ object GpuBatchUtilsSuite {
           if (i % 2 == 0) {
             null
           } else {
-            r.nextString(dataType.defaultSize * 2).getBytes.toSeq
+            r.nextString(dataType.defaultSize * 2).getBytes
           }
         } else {
-          r.nextString(dataType.defaultSize).getBytes.toSeq
+          r.nextString(dataType.defaultSize).getBytes
         }
       case ArrayType(elementType, containsNull) =>
         if (nullable && i % 2 == 0) {
@@ -302,6 +301,20 @@ object GpuBatchUtilsSuite {
             utf8StringOrNull.asInstanceOf[UTF8String].toString
           } else {
             utf8StringOrNull
+          }
+        case BinaryType =>
+          val b = createValueForType(i, r, field.dataType, field.nullable)
+          if (b != null) {
+            b.asInstanceOf[Array[Byte]].toSeq
+          } else {
+            b
+          }
+        case DecimalType() =>
+          val d = createValueForType(i, r, field.dataType, field.nullable)
+          if (d != null) {
+            d.asInstanceOf[Decimal].toJavaBigDecimal
+          } else {
+            d
           }
         case _ => createValueForType(i, r, field.dataType, field.nullable)
       }

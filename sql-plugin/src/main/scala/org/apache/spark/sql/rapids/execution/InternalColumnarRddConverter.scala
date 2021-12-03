@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import ai.rapids.cudf.HostColumnVector.ColumnBuilder
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
@@ -61,7 +62,7 @@ private object GpuExternalRowToColumnConverter {
 
   private abstract class TypeConverter extends Serializable {
     /** Append row value to the column builder and return the number of data bytes written */
-    def append(row: Row, column: Int, uilder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double
+    def append(row: Row, column: Int, builder: ColumnBuilder): Double
 
     /**
      * This is here for structs.  When you append a null to a struct the size is not known
@@ -328,7 +329,7 @@ private object GpuExternalRowToColumnConverter {
         NotNullStringConverter.append(row, column, builder) + VALIDITY
       }
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
   private object NotNullStringConverter extends TypeConverter {
@@ -340,7 +341,7 @@ private object GpuExternalRowToColumnConverter {
       bytes.length + OFFSET
     }
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 //
   private object BinaryConverter extends TypeConverter {
@@ -354,7 +355,7 @@ private object GpuExternalRowToColumnConverter {
         NotNullBinaryConverter.append(row, column, builder) + VALIDITY
       }
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
   private object NotNullBinaryConverter extends TypeConverter {
@@ -366,10 +367,9 @@ private object GpuExternalRowToColumnConverter {
       bytes.foreach(child.append)
       builder.endList()
       bytes.length + OFFSET
-      8
     }
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
   private[this] def mapConvert(
@@ -408,7 +408,7 @@ private object GpuExternalRowToColumnConverter {
       }
     }
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
   private case class NotNullMapConverter(
@@ -418,7 +418,7 @@ private object GpuExternalRowToColumnConverter {
       column: Int, builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double =
       mapConvert(keyConverter, valueConverter, row, column, builder)
 
-    override def getNullSize: Double = OFFSET + VALIDITY
+    override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
   //
@@ -523,11 +523,8 @@ private object GpuExternalRowToColumnConverter {
 
   private class DecimalConverter(
     precision: Int, scale: Int) extends NotNullDecimalConverter(precision, scale) {
-    private val appendedSize = if (precision <= Decimal.MAX_LONG_DIGITS) {
-      8 + VALIDITY
-    } else {
-      16 + VALIDITY
-    }
+    private val appendedSize = DecimalUtil.createCudfDecimal(precision, scale).getSizeInBytes +
+        VALIDITY
 
     override def append(
       row: Row,
@@ -543,13 +540,8 @@ private object GpuExternalRowToColumnConverter {
   }
 
   private class NotNullDecimalConverter(precision: Int, scale: Int) extends TypeConverter {
-    private val appendedSize = if (precision <= Decimal.MAX_INT_DIGITS) {
-      4
-    } else if (precision <= Decimal.MAX_LONG_DIGITS) {
-      8
-    } else {
-      16
-    }
+    private val appendedSize = DecimalUtil.createCudfDecimal(precision, scale).getSizeInBytes +
+        VALIDITY
 
     override def append(
       row: Row,

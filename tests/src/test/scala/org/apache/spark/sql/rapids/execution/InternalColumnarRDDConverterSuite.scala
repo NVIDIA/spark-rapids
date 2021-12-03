@@ -211,7 +211,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
   test("transform struct data back and forth between Row and Columnar") {
     val structFieldArray = Array(
       StructField("struct_int", IntegerType),
-      StructField("struct_binary", BinaryType),
+      StructField("struct_double", DoubleType),
       StructField("struct_array", DataTypes.createArrayType(DoubleType))
     )
     val schema = StructType(Seq(
@@ -242,7 +242,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
             if (inputStructRow.isNullAt(1)) {
               assert(outputStructRow.isNullAt(1))
             } else {
-              assert(inputStructRow.getSeq[Byte](1) sameElements outputStructRow.getBinary(1))
+              assert(inputStructRow.getDouble(1) == outputStructRow.getDouble(1))
             }
             if (inputStructRow.isNullAt(2)) {
               assert(outputStructRow.isNullAt(2))
