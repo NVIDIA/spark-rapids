@@ -59,7 +59,7 @@ trait GpuRowBasedHiveUDFBase extends GpuRowBasedUserDefinedFunction with HiveIns
   protected def gpuToInspector(expr: Expression): ObjectInspector = expr match {
     case GpuLiteral(value, dataType) =>
       // Convert to CPU literal as possible as we can before going into `toInspector(Expression)`.
-      // Because inspectors for literals of primitive types are likely to get better performance.
+      // Because some optimization will be made for Literal expressions of primitive types.
       value match {
         case scalar: ai.rapids.cudf.Scalar =>
           if (scalar.getType.isNestedType) {
