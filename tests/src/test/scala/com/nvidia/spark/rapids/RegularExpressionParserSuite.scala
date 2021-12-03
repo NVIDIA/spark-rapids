@@ -68,7 +68,7 @@ class RegularExpressionParserSuite extends FunSuite {
             RegexCharacterRange('A', 'Z'))))))
   }
 
-  test("foo") {
+  test("character class complex example") {
     assert(parse("[^]+d]+") === RegexSequence(ListBuffer(
       RegexRepetition(
         RegexCharacterClass(negated = true,
