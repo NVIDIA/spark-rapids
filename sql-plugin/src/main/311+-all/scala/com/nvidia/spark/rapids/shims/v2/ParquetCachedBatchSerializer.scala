@@ -1364,7 +1364,9 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
   // We want to change the original schema to have the new names as well
   private def sanitizeColumnNames(originalSchema: Seq[Attribute],
       schemaToCopyNamesFrom: Seq[Attribute]): Seq[Attribute] = {
-    originalSchema.zip(schemaToCopyNamesFrom).map(t => t._1.withName(t._2.name))
+    originalSchema.zip(schemaToCopyNamesFrom).map {
+      case (origAttribute, newAttribute) => origAttribute.withName(newAttribute.name)
+    }
   }
 
   private def getSupportedSchemaFromUnsupported(
