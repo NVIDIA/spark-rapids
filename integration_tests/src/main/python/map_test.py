@@ -96,27 +96,43 @@ def test_map_expr_multiple_pairs():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
                 'map("key1", b, "key2", a) as m1',
-                'map(a, b, b, a) as m2'),
-                conf={'spark.rapids.sql.createMap.enabled':True})
+                'map(a, b, b, a) as m2'))
 
-@allow_non_gpu('ProjectExec,Alias,CreateMap,Literal')
-def test_map_expr_dupe_keys_fallback():
+def test_map_expr_expr_keys_dupe_last_win():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map(a, b, a, b) as m2'),
+                conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+
+def test_map_expr_expr_keys_dupe_exception():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_error(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map(a, b, a, b) as m2').collect(),
+                conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+                error_message = "Duplicate map key")
+
+def test_map_expr_literal_keys_dupe_last_win():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen).selectExpr(
                 'map("key1", b, "key1", a) as m1'),
-                'ProjectExec',
-                conf={'spark.rapids.sql.createMap.enabled':True,
-                    'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+                conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
 
-@allow_non_gpu('ProjectExec,Alias,CreateMap,Literal')
-def test_map_expr_multi_non_literal_keys_fallback():
+def test_map_expr_literal_keys_dupe_exception():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_error(
             lambda spark : gen_df(spark, data_gen).selectExpr(
-                'map(a, b, b, a) as m1'),
-                'ProjectExec',
-                conf={'spark.rapids.sql.createMap.enabled':False})
+                'map("key1", b, "key1", a) as m1').collect(),
+                conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+                error_message = "Duplicate map key")
+
+def test_map_expr_multi_non_literal_keys():
+    data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : gen_df(spark, data_gen).selectExpr(
+                'map(a, b, b, a) as m1'))
 
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(

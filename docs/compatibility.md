@@ -725,7 +725,8 @@ This configuration setting is ignored when using Spark versions prior to 3.1.0.
 ### Float to String
 
 The GPU will use different precision than Java's toString method when converting floating-point data
-types to strings and this can produce results that differ from the default behavior in Spark.
+types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
+`E`. As a result the computed string can differ from the default behavior in Spark.
 
 To enable this operation on the GPU, set
 [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `true`.

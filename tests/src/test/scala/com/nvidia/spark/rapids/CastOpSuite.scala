@@ -932,10 +932,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("CAST string to float - sanitize step") {
     val testPairs = Seq(
-      ("\tinf", "Inf"),
-      ("\t+InFinITy", "Inf"),
-      ("\tInFinITy", "Inf"),
-      ("\t-InFinITy", "-Inf"),
+      ("\tinf", "inf"),
+      ("\riNf", "iNf"),
+      ("\t+InFinITy", "+InFinITy"),
+      ("\tInFinITy", "InFinITy"),
+      ("\t-InFinITy", "-InFinITy"),
       ("\t61f", "61"),
       (".8E4f", ".8E4")
     )

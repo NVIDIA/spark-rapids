@@ -127,7 +127,7 @@ object GpuMapUtils extends Arm {
   }
 
   // Copied from Spark org.apache.spark.sql.errors.QueryExecutionErrors
-  private[this] def duplicateMapKeyFoundError: Throwable = {
+  def duplicateMapKeyFoundError: Throwable = {
     new RuntimeException(s"Duplicate map key was found, please check the input " +
         "data. If you want to remove the duplicated keys, you can set " +
         s"${SQLConf.MAP_KEY_DEDUP_POLICY.key} to ${SQLConf.MapKeyDedupPolicy.LAST_WIN} so that " +
