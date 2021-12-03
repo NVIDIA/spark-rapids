@@ -507,12 +507,13 @@ object RapidsConf {
     .createWithDefault(true)
 
   val SQL_EXPLAIN_ONLY_ENABLED = conf("spark.rapids.sql.explainOnly.enabled")
-    .doc("Enable (true) or disable (false) explain only mode for sql operations. This allows " +
-         "running queries on the CPU and the plugin will evaluate each of the Spark plans as " +
-         "if it was going to run on the GPU but only output the explanations of what it would " +
-         "have done. When enabled, the default explain output is ALL, but this can be " +
-         "overridden by setting spark.rapids.sql.explain. If spark.rapids.sql.enabled " +
-         "is also true, this settings takes precedence and only the explain will occur.")
+    .doc("Enable (true) or disable (false) explain only mode for the plugin. This allows " +
+         "running queries on the CPU and the plugin will evaluate the queries as " +
+         "if it was going to run on the GPU. The the explanations of what would have run on " +
+         "the GPU and why are output in log messages. When enabled, the default explain output " +
+         "is ALL, but this can be overridden by setting spark.rapids.sql.explain. If " +
+         "spark.rapids.sql.enabled is also true, this settings takes precedence and only the " +
+         "explain will occur.")
     .booleanConf
     .createWithDefault(false)
 
