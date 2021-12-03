@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.spark.sql.rapids.shims.v2
+package org.apache.spark.rapids.shims.v2
 
 import scala.concurrent.Future
 
@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
+import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, ShuffledBatchRDD}
 
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
@@ -54,7 +54,7 @@ case class GpuShuffleExchangeExec(
   override def getShuffleRDD(
       partitionSpecs: Array[ShufflePartitionSpec],
       partitionSizes: Option[Array[Long]]): RDD[_] = {
-    throw new UnsupportedOperationException
+    new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
   }
 
   // DB SPECIFIC - throw if called since we don't know how its used

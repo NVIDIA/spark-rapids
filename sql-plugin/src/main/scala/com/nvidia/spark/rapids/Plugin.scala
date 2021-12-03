@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.time.ZoneId
 import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
@@ -109,6 +110,8 @@ object RapidsPluginUtils extends Logging {
           s"the RAPIDS Accelerator. Please disable the RAPIDS Accelerator or use a supported " +
           s"serializer ($JAVA_SERIALIZER_NAME, $KRYO_SERIALIZER_NAME).")
     }
+    // set driver timezone
+    conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
   }
 
   def loadProps(resourceName: String): Properties = {
@@ -178,6 +181,21 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
+
+      // Validate driver and executor time zone are same if the driver time zone is supported by
+      // the plugin.
+      val driverTimezone = conf.driverTimeZone match {
+        case Some(value) => ZoneId.of(value)
+        case None => throw new RuntimeException(s"Driver time zone cannot be determined.")
+      }
+      if (TypeChecks.areTimestampsSupported(driverTimezone)) {
+        val executorTimezone = ZoneId.systemDefault()
+        if (executorTimezone.normalized() != driverTimezone.normalized()) {
+          throw new RuntimeException(s" Driver and executor timezone mismatch. " +
+              s"Driver timezone is $driverTimezone and executor timezone is " +
+              s"$executorTimezone. Set executor timezone to $driverTimezone.")
+        }
+      }
 
       // we rely on the Rapids Plugin being run with 1 GPU per executor so we can initialize
       // on executor startup.

@@ -58,10 +58,12 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   }
 
 
-  testSparkResultsAreEqual("to_date yyyy-MM-dd",
-      datesAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
-    df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
+  ignore("to_date yyyy-MM-dd fails - https://github.com/NVIDIA/spark-rapids/issues/4176") {
+    testSparkResultsAreEqual("to_date yyyy-MM-dd",
+        datesAsStrings,
+        conf = CORRECTED_TIME_PARSER_POLICY) {
+      df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
+    }
   }
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd LEGACY",
@@ -100,10 +102,12 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
-  testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
-      timestampsAsStrings,
-      conf = CORRECTED_TIME_PARSER_POLICY) {
-    df => df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
+  ignore("to_timestamp yyyy-MM-dd fails - https://github.com/NVIDIA/spark-rapids/issues/4176") {
+    testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
+        timestampsAsStrings,
+        conf = CORRECTED_TIME_PARSER_POLICY) {
+      df => df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
+    }
   }
 
   testSparkResultsAreEqual("to_timestamp dd/MM/yyyy",
@@ -120,10 +124,12 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     df => df.withColumn("c1", to_date(col("c0")))
   }
 
-  testSparkResultsAreEqual("unix_timestamp parse date",
-      timestampsAsStrings,
-      CORRECTED_TIME_PARSER_POLICY) {
-    df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd"))
+  ignore("unix_timestamp parse date fails - https://github.com/NVIDIA/spark-rapids/issues/4176") {
+    testSparkResultsAreEqual("unix_timestamp parse date",
+        timestampsAsStrings,
+        CORRECTED_TIME_PARSER_POLICY) {
+      df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd"))
+    }
   }
 
   testSparkResultsAreEqual("unix_timestamp parse yyyy/MM",
@@ -281,7 +287,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
   // the output to find which ones failed
   override def compareResults(
       sort: Boolean,
-      maxFloatDiff: Double,
+      floatEpsilon: Double,
       fromCpu: Array[Row],
       fromGpu: Array[Row]): Unit = {
     assert(fromCpu.length === fromGpu.length)

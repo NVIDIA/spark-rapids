@@ -440,6 +440,13 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
 
+  val DRIVER_TIMEZONE = conf("spark.rapids.driver.user.timezone")
+    .doc("This config is used to inform the executor plugin about the driver's timezone " +
+      "and is not intended to be set by the user.")
+    .internal()
+    .stringConf
+    .createOptional
+
   // Internal Features
 
   val UVM_ENABLED = conf("spark.rapids.memory.uvm.enabled")
@@ -536,6 +543,12 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val NEED_DECIMAL_OVERFLOW_GUARANTEES = conf("spark.rapids.sql.decimalOverflowGuarantees")
+      .doc("FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of " +
+          "the compatibility documents for more information on this config.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
       "This is not true for some floating point aggregations, which can produce slightly " +
@@ -543,13 +556,6 @@ object RapidsConf {
       "those operations if you know the query is only computing it once.")
     .booleanConf
     .createWithDefault(false)
-
-  val DECIMAL_TYPE_ENABLED = conf("spark.rapids.sql.decimalType.enabled")
-      .doc("Enable decimal type support on the GPU.  Decimal support on the GPU is limited to " +
-          "less than 18 digits.  This can result in a lot of data movement to and from the GPU, " +
-          "which can slow down processing in some cases.")
-      .booleanConf
-      .createWithDefault(false)
 
   val ENABLE_REPLACE_SORTMERGEJOIN = conf("spark.rapids.sql.replaceSortMergeJoin.enabled")
     .doc("Allow replacing sortMergeJoin with HashJoin")
@@ -635,14 +641,6 @@ object RapidsConf {
         "\"12300\", which spark produces \"1.23E+4\".")
       .booleanConf
       .createWithDefault(false)
-
-  val ENABLE_CREATE_MAP = conf("spark.rapids.sql.createMap.enabled")
-    .doc("The GPU-enabled version of the `CreateMap` expression (`map` SQL function) does not " +
-      "detect duplicate keys in all cases and does not guarantee which key wins if there are " +
-      "duplicates. When this config is set to true, `CreateMap` will be enabled to run on the " +
-      "GPU even when there might be duplicate keys.")
-    .booleanConf
-    .createWithDefault(false)
 
   val ENABLE_INNER_JOIN = conf("spark.rapids.sql.join.inner.enabled")
       .doc("When set to true inner joins are enabled on the GPU")
@@ -1507,11 +1505,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hasNans: Boolean = get(HAS_NANS)
 
+  lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
+
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
-
-  lazy val decimalTypeEnabled: Boolean = get(DECIMAL_TYPE_ENABLED)
 
   lazy val explain: String = get(EXPLAIN)
 
@@ -1588,8 +1586,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
-
-  lazy val isCreateMapEnabled: Boolean = get(ENABLE_CREATE_MAP)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
@@ -1728,6 +1724,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+
+  lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
 

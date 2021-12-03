@@ -32,24 +32,21 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Row Based Scala UDF-Boolean",
       booleanDf,
-      cpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      cpuEnabledConf) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[java.lang.Boolean]())
     frame.select(noopUDF(col("bools")))
   }
 
   testSparkResultsAreEqual("Row Based Scala UDF-Short",
       shortsFromCsv,
-      csvAndCpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      csvAndCpuEnabledConf) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[java.lang.Short]())
     frame.select(noopUDF(col("shorts")))
   }
 
   testSparkResultsAreEqual("Row Based Scala UDF-Mixed(int,long,double,string)",
       mixedDfWithNulls,
-      cpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      cpuEnabledConf) { frame =>
     val iNoopUDF = frame.sparkSession.udf.register("iNoopUDF", new NoopUDF[java.lang.Integer]())
     val lNoopUDF = frame.sparkSession.udf.register("lNoopUDF", new NoopUDF[java.lang.Long]())
     val dNoopUDF = frame.sparkSession.udf.register("dNoopUDF", new NoopUDF[java.lang.Double]())
@@ -63,16 +60,14 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Row Based Scala UDF-Date",
       datesDf,
-      cpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      cpuEnabledConf) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Date]())
     frame.select(noopUDF(col("dates")))
   }
 
   testSparkResultsAreEqual("Row Based Scala UDF-Timestamp",
       timestampsDf,
-      cpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      cpuEnabledConf) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Timestamp]())
     frame.select(noopUDF(col("timestamps")))
   }
@@ -89,16 +84,14 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Row Based Scala UDF-Array(Int)",
     mixedDfWithNulls,
-    cpuEnabledConf,
-    decimalTypeEnabled = false) { frame =>
+    cpuEnabledConf) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF", new NoopUDF[Seq[java.lang.Integer]]())
     frame.select(noopUDF(array("ints", "ints")))
   }
 
   testSparkResultsAreEqual("Row Based Scala UDF-Array(Array(Int))",
     mixedDfWithNulls,
-    cpuEnabledConf,
-    decimalTypeEnabled = false) { frame =>
+    cpuEnabledConf) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF",
       new NoopUDF[Seq[Seq[java.lang.Integer]]]())
     frame.select(noopUDF(array(array("ints", "ints"))))
@@ -106,8 +99,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Row Based Scala UDF-Struct(Int, Double, String)",
       mixedDfWithNulls,
-      cpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      cpuEnabledConf) { frame =>
     // UDF accepting a struct as row, can not return the input Row directly, since Row is
     // not supported as the returned type of an UDF in Spark.
     // Then here convert it to a Tuple3 to return.
@@ -121,8 +113,7 @@ class RowBasedUDFSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("Row Based Scala UDF-Map(String -> Long)",
       mixedDfWithNulls,
-      cpuEnabledConf,
-      decimalTypeEnabled = false) { frame =>
+      cpuEnabledConf) { frame =>
     val noopUDF = frame.sparkSession.udf.register("NoopUDF",
       new NoopUDF[Map[String, java.lang.Long]]())
     // keys should not be null, so filter nulls out first.

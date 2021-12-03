@@ -33,8 +33,7 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
    */
   override def isSupported(
     check: TypeEnum.ValueSet,
-    dataType: DataType,
-    allowDecimal: Boolean): Boolean = false
+    dataType: DataType): Boolean = false
 
   /**
    * Get all supported types for the spark-specific
@@ -56,7 +55,7 @@ object TypeSigUtil extends com.nvidia.spark.rapids.TypeSigUtil {
   override def reasonNotSupported(
     check: TypeEnum.ValueSet,
     dataType: DataType,
-    allowDecimal: Boolean, notSupportedReason: Seq[String]): Seq[String] = notSupportedReason
+    notSupportedReason: Seq[String]): Seq[String] = notSupportedReason
 
   /**
    * Map DataType to TypeEnum

@@ -89,6 +89,13 @@ object GpuShuffleEnv extends Logging {
     SparkEnv.get.blockManager.externalShuffleServiceEnabled
   }
 
+  // Returns true if authentication is requested, which is not supported
+  // by the RAPIDS Shuffle Manager
+  def isSparkAuthenticateEnabled: Boolean = {
+    val conf = SparkEnv.get.conf
+    conf.getBoolean("spark.authenticate", false)
+  }
+
   //
   // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
   // this forces the initialization when we know we are ready in the driver and executor.
@@ -112,7 +119,9 @@ object GpuShuffleEnv extends Logging {
     // executors have `env` defined when this is checked
     // in tests
     val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
-    (isConfiguredInEnv || isRapidsManager) && !isExternalShuffleEnabled
+    (isConfiguredInEnv || isRapidsManager) &&
+      !isExternalShuffleEnabled &&
+      !isSparkAuthenticateEnabled
   }
 
   def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {
