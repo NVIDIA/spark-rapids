@@ -605,15 +605,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_CAST_STRING_TO_DECIMAL = conf("spark.rapids.sql.castStringToDecimal.enabled")
-    .doc("When set to true, enables casting from strings to decimal type on the GPU. Currently " +
-      "string to decimal type on the GPU might produce results which slightly differed from the " +
-      "correct results when the string represents any number exceeding the max precision that " +
-      "CAST_STRING_TO_FLOAT can keep. For instance, the GPU returns 99999999999999987 given " +
-      "input string \"99999999999999999\". The cause of divergence is that we can not cast " +
-      "strings containing scientific notation to decimal directly. So, we have to cast strings " +
-      "to floats firstly. Then, cast floats to decimals. The first step may lead to precision " +
-      "loss.")
+  val ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE =
+    conf("spark.rapids.sql.allowLimitedNegativeScale.enabled")
+    .doc("When set to true, enables negative scales for Decimal types. This config is added to" +
+        "make sure the user is aware that Rapids supports results compatible with versions of " +
+        "Spark before 3.1.1. There is a bug filed for it at " +
+        "https://issues.apache.org/jira/browse/SPARK-37451")
+
     .booleanConf
     .createWithDefault(false)
 
@@ -1561,7 +1559,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
 
-  lazy val isCastStringToDecimalEnabled: Boolean = get(ENABLE_CAST_STRING_TO_DECIMAL)
+  lazy val isLimitedNegativeDecimalScaleEnabled: Boolean =
+    get(ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE)
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 

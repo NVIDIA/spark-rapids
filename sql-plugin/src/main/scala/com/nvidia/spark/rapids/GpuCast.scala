@@ -76,9 +76,9 @@ final class CastExprMeta[INPUT <: CastBase](
               s"set ${RapidsConf.ENABLE_CAST_DECIMAL_TO_STRING} to true if semantically " +
               s"equivalent decimal strings are sufficient for your application.")
         }
-        if (dt.precision > DType.DECIMAL64_MAX_PRECISION) {
+        if (dt.precision > DType.DECIMAL128_MAX_PRECISION) {
           willNotWorkOnGpu(s"decimal to string with a " +
-              s"precision > ${DType.DECIMAL64_MAX_PRECISION} is not supported yet")
+              s"precision > ${DType.DECIMAL128_MAX_PRECISION} is not supported yet")
         }
       case ( _: DecimalType, _: FloatType | _: DoubleType) if !conf.isCastDecimalToFloatEnabled =>
         willNotWorkOnGpu("the GPU will use a different strategy from Java's BigDecimal " +
@@ -95,7 +95,7 @@ final class CastExprMeta[INPUT <: CastBase](
             "converting floating point data types to strings and this can produce results that " +
             "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
             s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
-      case (_: StringType, dt: DecimalType) if dt.precision + 1 > Decimal.MAX_LONG_DIGITS =>
+      case (_: StringType, dt: DecimalType) if dt.precision + 1 > DecimalType.MAX_PRECISION =>
         willNotWorkOnGpu(s"Because of rounding requirements we cannot support $dt on the GPU")
       case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
         willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
@@ -115,6 +115,12 @@ final class CastExprMeta[INPUT <: CastBase](
         YearParseUtil.tagParseStringAsDate(conf, this)
       case (_: StringType, _: DateType) =>
         YearParseUtil.tagParseStringAsDate(conf, this)
+      case (_: StringType, _:DecimalType) =>
+        if (!ShimLoader.getSparkShims.isNegativeDecimalScaleSupportEnabled(conf)) {
+          willNotWorkOnGpu("Rapids supports negative decimal scale compatible with Spark " +
+              s"versions below 3.1.1. Please set " +
+              s"${RapidsConf.ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE} to true to acknowledge that")
+        }
       case (structType: StructType, StringType) =>
         structType.foreach { field =>
           recursiveTagExprForGpuCheck(field.dataType, StringType, depth + 1)
@@ -912,7 +918,7 @@ object GpuCast extends Arm {
     //    needed. This step is required so we can round up if needed in the final step
     // 4. Now cast newDt to dt (Decimal to Decimal)
     def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
-      if (dt.precision + 1 > Decimal.MAX_LONG_DIGITS) {
+      if (dt.precision + 1 > DecimalType.MAX_PRECISION) {
         //We don't support Decimal 128
         throw new IllegalArgumentException("One or more values exceed the maximum supported " +
             "Decimal precision while conversion")

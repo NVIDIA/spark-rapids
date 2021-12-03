@@ -20,11 +20,15 @@ import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids.{ExecChecks, ExecRule, RapidsConf, SparkPlanMeta, SparkShims, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.exec
+import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, ShuffledHashJoinExec}
 import org.apache.spark.sql.internal.SQLConf
@@ -33,7 +37,7 @@ import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 /**
 * Shim base class that can be compiled with every supported 3.0.x
 */
-trait Spark30XdbShimsBase extends SparkShims {
+trait Spark30XShims extends SparkShims {
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
   override def parquetRebaseWriteKey: String =
@@ -60,10 +64,18 @@ trait Spark30XdbShimsBase extends SparkShims {
     plan.sqlContext.sparkSession
   }
 
+  override def filesFromFileIndex(
+      fileIndex: PartitioningAwareFileIndex
+  ): Seq[FileStatus] = {
+    fileIndex.allFiles()
+  }
+
+  def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
+    mode.transform(rows)
+
   override def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
-      newPlan: SparkPlan): BroadcastQueryStageExec =
-    BroadcastQueryStageExec(old.id, newPlan, old._canonicalized)
+      newPlan: SparkPlan): BroadcastQueryStageExec = BroadcastQueryStageExec(old.id, newPlan)
 
   override def getDateFormatter(): DateFormatter = {
     DateFormatter(DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
@@ -128,6 +140,8 @@ trait Spark30XdbShimsBase extends SparkShims {
   }
 
   override def shouldFallbackOnAnsiTimestamp(): Boolean = false
+
+  override def getLegacyStatisticalAggregate(): Boolean = true
 
   override def isNegativeDecimalScaleSupportEnabled(conf: RapidsConf): Boolean = true
 }

@@ -236,7 +236,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
       // Tests that this is not true for are skipped in 3.2.0+
       .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
@@ -450,7 +449,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     sqlCtx.setConf("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
     sqlCtx.setConf("spark.rapids.sql.castDecimalToString.enabled", "true")
 
-    Seq(10, 15, 18).foreach { precision =>
+    Seq(10, 15, 28).foreach { precision =>
       Seq(-precision, -5, 0, 5, precision).foreach { scale =>
         testCastToString(DataTypes.createDecimalType(precision, scale),
           comparisonFunc = Some(compareStringifiedDecimalsInSemantic))
@@ -876,15 +875,24 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast string to decimal") {
-    List(-17, -10, -3, 0, 1, 5, 15).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale, precision = 17,
+    // We are limiting the negative scale because of a bug in Spark where it wrongly
+    // assumes a Decimal value won't be represented by a given scale when in fact it can be
+    // Example:
+    // 7.836725755512218E38 can be represented as Decimal(37, -17) but Spark has a check
+    // (precision + scale > DecimalType.MAX_PRECISION), in this case (37 + 17) > 38, stops it from
+    // being casted that was introduced in 3.1.1 as a performance enhancement but introduced a
+    // regression.
+    // There is a bug filed against it in Spark https://issues.apache.org/jira/browse/SPARK-37451
+
+    List(-1, 0, 1, 5, 15).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale, precision = 37,
         customRandGenerator = Some(new scala.util.Random(1234L)))
     }
   }
 
   test("cast string to decimal (fail)") {
     assertThrows[IllegalArgumentException](
-    List(-18, 18, 2, 32, 8).foreach { scale =>
+    List(-38, 38, 2, 32, 8).foreach { scale =>
       testCastToDecimal(DataTypes.StringType, scale,
         customRandGenerator = Some(new scala.util.Random(1234L)))
     })
@@ -896,8 +904,11 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val df2 = doublesAsStrings(ss).select(col("c0").as("col"))
       df1.unionAll(df2)
     }
-    List(-10, -1, 0, 1, 10).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 17,
+    // Similar to the test above we are limiting the negative scale
+    // There is a bug filed against it in Spark https://issues.apache.org/jira/browse/SPARK-37451
+
+    List(-1, 0, 1, 10).foreach { scale =>
+      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 37,
         customDataGenerator = Some(doubleStrings))
     }
   }
@@ -907,15 +918,15 @@ class CastOpSuite extends GpuExpressionTestSuite {
       import ss.sqlContext.implicits._
       column.toDF("col")
     }
-    testCastToDecimal(DataTypes.StringType, scale = 7, precision = 17,
+    testCastToDecimal(DataTypes.StringType, scale = 7, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("9999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = 2, precision = 17,
+    testCastToDecimal(DataTypes.StringType, scale = 2, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = 0, precision = 17,
+    testCastToDecimal(DataTypes.StringType, scale = 0, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -1, precision = 17,
+    testCastToDecimal(DataTypes.StringType, scale = -1, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
-    testCastToDecimal(DataTypes.StringType, scale = -10, precision = 17,
+    testCastToDecimal(DataTypes.StringType, scale = -10, precision = 37,
       customDataGenerator = Some(specialGenerator(Seq("99999999999999999"))))
   }
 
@@ -924,7 +935,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       exponentsAsStringsDf(ss).select(col("c0").as("col"))
     }
     List(-10, -1, 0, 1, 10).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 17,
+      testCastToDecimal(DataTypes.StringType, scale = scale, precision = 37,
         customDataGenerator = Some(exponentsAsStrings),
         ansiEnabled = true)
     }
@@ -992,7 +1003,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     try {
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_DECIMAL.key, "true")
+        .set(RapidsConf.ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)

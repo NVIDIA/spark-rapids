@@ -100,6 +100,7 @@ trait SparkShims {
   def int96ParquetRebaseWrite(conf: SQLConf): String
   def int96ParquetRebaseReadKey: String
   def int96ParquetRebaseWriteKey: String
+  def isNegativeDecimalScaleSupportEnabled(conf: RapidsConf): Boolean
 
   def getParquetFilters(
     schema: MessageType,

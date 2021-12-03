@@ -1086,4 +1086,7 @@ trait Spark32XShims extends SparkShims  with Logging {
   override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = {
     adaptivePlan.initialPlan
   }
+
+  override def isNegativeDecimalScaleSupportEnabled(conf: RapidsConf): Boolean =
+    conf.isLimitedNegativeDecimalScaleEnabled
 }
