@@ -68,7 +68,6 @@ mvn_verify() {
     # because the class files in udf jar will be modified in aggregator's shade phase
     jar xf "$UDF_JAR" com/nvidia/spark/udf
     rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
-    rm -rf com/nvidia/shaded/ org/openucx/
     popd
 
     # Triggering here until we change the jenkins file
