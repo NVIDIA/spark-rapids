@@ -23,7 +23,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.internal.SQLConf
 
-class Spark312dbShims extends SparkBaseShims with Spark30Xuntil33XShims {
+class Spark312dbShims extends Spark31XdbShims with Spark30Xuntil33XShims {
 
   override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 

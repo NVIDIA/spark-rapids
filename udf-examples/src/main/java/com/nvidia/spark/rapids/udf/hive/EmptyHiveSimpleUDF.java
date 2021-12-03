@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark301db
+package com.nvidia.spark.rapids.udf.hive;
 
-import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.v2._
+import org.apache.hadoop.hive.ql.exec.UDF;
 
-class Spark301dbShims extends Spark30XdbShims with Spark30Xuntil33XShims {
-
-  override def getSparkShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
+/** An empty Hive simple UDF returning the input directly for row-based UDF test only. */
+public class EmptyHiveSimpleUDF extends UDF {
+  public String evaluate(String in) {
+    return in;
+  }
 }

@@ -150,9 +150,11 @@ class RegexParser(pattern: String) {
         case '[' =>
           // treat as a literal character and add to the character class
           characterClass.append(ch)
-        case ']' if pos > start + 1 =>
+        case ']' if (!characterClass.negated && pos > start + 1) ||
+            (characterClass.negated && pos > start + 2) =>
           // "[]" is not a valid character class
           // "[]a]" is a valid character class containing the characters "]" and "a"
+          // "[^]a]" is a valid negated character class containing the characters "]" and "a"
           characterClassComplete = true
         case '^' if pos == start + 1 =>
           // Negates the character class, causing it to match a single character not listed in
@@ -444,7 +446,17 @@ class CudfRegexTranspiler(replace: Boolean) {
           // this is a bit extreme and it would be good to replace with finer-grained
           // rules
           throw new RegexUnsupportedException("regexp_replace on GPU does not support ^ or $")
-
+        case '$' =>
+          RegexSequence(ListBuffer(
+            RegexRepetition(
+              RegexCharacterClass(negated = false,
+                characters = ListBuffer(RegexChar('\r'))),
+              SimpleQuantifier('?')),
+            RegexRepetition(
+              RegexCharacterClass(negated = false,
+                characters = ListBuffer(RegexChar('\n'))),
+              SimpleQuantifier('?')),
+            RegexChar('$')))
         case _ =>
           regex
       }

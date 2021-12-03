@@ -19,8 +19,6 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 import java.time.ZoneId
 
-import scala.collection.mutable
-
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.v2.TypeSigUtil
 
@@ -1163,27 +1161,6 @@ object CreateMapCheck extends ExprChecks {
     val context = exprMeta.context
     if (context != ProjectExprContext) {
       meta.willNotWorkOnGpu(s"this is not supported in the $context context")
-    } else {
-      // if there are more than two key-value pairs then there is the possibility of duplicate keys
-      if (meta.childExprs.length > 2) {
-        // check for duplicate keys if the keys are literal values
-        val keyExprs = meta.childExprs.indices.filter(_ % 2 == 0).map(meta.childExprs)
-        val litKeys = keyExprs.map(e => GpuOverrides.extractLit(e.wrapped.asInstanceOf[Expression]))
-        if (litKeys.forall(_.isDefined)) {
-          val keys = litKeys.map(_.get.value)
-          val uniqueKeys = new mutable.HashSet[Any]()
-          for (key <- keys) {
-            if (!uniqueKeys.add(key)) {
-              meta.willNotWorkOnGpu("CreateMap with duplicate literal keys is not supported")
-            }
-          }
-        } else if (!meta.conf.isCreateMapEnabled) {
-          meta.willNotWorkOnGpu("CreateMap is not enabled by default when there are " +
-            "multiple key-value pairs and where the keys are not literal values because handling " +
-            "of duplicate keys is not compatible with Spark. " +
-            s"Set ${RapidsConf.ENABLE_CREATE_MAP}=true to enable it anyway.")
-        }
-      }
     }
   }
 
@@ -1293,7 +1270,7 @@ class CastChecks extends ExprChecks {
   val calendarChecks: TypeSig = none
   val sparkCalendarSig: TypeSig = CALENDAR + STRING
 
-  val arrayChecks: TypeSig = ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
+  val arrayChecks: TypeSig = STRING + ARRAY.nested(commonCudfTypes + DECIMAL_128_FULL + NULL +
       ARRAY + BINARY + STRUCT + MAP) +
       psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
           "the desired child type")
