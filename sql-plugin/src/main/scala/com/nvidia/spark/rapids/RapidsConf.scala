@@ -1465,7 +1465,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val metricsLevel: String = get(METRICS_LEVEL)
 
-  lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
+  lazy val isSqlEnabled: Boolean = get(SQL_ENABLED) && !get(SQL_EXPLAIN_ONLY_ENABLED)
 
   lazy val isSqlExplainOnlyEnabled: Boolean = get(SQL_EXPLAIN_ONLY_ENABLED)
 

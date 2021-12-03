@@ -3803,10 +3803,12 @@ object GpuOverrides extends Logging {
     override def getChecks: Option[TypeChecks[_]] = None
   }
 
-  // Only run the explain and don't actually convert or run on GPU.
-  // This gets the plan from the dataframe so its after catalyst has run through all the
-  // rules to modify the plan. This means we have to try to undo some of the last rules
-  // to make it close to when the columnar rules would normally run on the plan.
+  /**
+   * Only run the explain and don't actually convert or run on GPU.
+   * This gets the plan from the dataframe so it's after catalyst has run through all the
+   * rules to modify the plan. This means we have to try to undo some of the last rules
+   * to make it close to when the columnar rules would normally run on the plan.
+   */
   def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
     val plan = df.queryExecution.executedPlan
     val conf = new RapidsConf(plan.conf)
@@ -3834,9 +3836,11 @@ object GpuOverrides extends Logging {
     }
   }
 
-  // Use explain mode on an active SQL plan as its processed through catalyst.
-  // This path is the same as being run through the plugin running on hosts with
-  // GPUs.
+  /**
+   * Use explain mode on an active SQL plan as its processed through catalyst.
+   * This path is the same as being run through the plugin running on hosts with
+   * GPUs.
+   */
   private def explainCatalystSQLPlan(updatedPlan: SparkPlan, conf: RapidsConf): Unit = {
     val explainSetting = if (conf.shouldExplain) {
       conf.explain
@@ -3922,7 +3926,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   // gets called once for each query stage (where a query stage is an `Exchange`).
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled && !conf.isSqlExplainOnlyEnabled) {
+    if (conf.isSqlEnabled) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
           val updatedPlan = updateForAdaptivePlan(plan, conf)
