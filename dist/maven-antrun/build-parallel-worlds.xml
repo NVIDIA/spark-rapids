@@ -140,8 +140,9 @@
         <echo level="info">Generated regex to remove aggregator dependencies:
         ${aggregatorDependencyRegex}
         </echo>
-        <copy file="${project.basedir}/pom.xml" tofile="${project.build.directory}/extra-resources/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml"
-              overwrite="true">
+        <copy file="${project.basedir}/pom.xml"
+            tofile="${project.build.directory}/extra-resources/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml"
+            overwrite="true">
             <filterchain>
                 <replaceregex flags="gs" byline="false" replace=""
                               pattern="${aggregatorDependencyRegex}"/>
