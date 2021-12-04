@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2019-2021, NVIDIA CORPORATION. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable
@@ -211,7 +227,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
   test("transform struct data back and forth between Row and Columnar") {
     val structFieldArray = Array(
       StructField("struct_int", IntegerType),
-      StructField("struct_double", DoubleType),
+      StructField("struct_binary", BinaryType),
       StructField("struct_array", DataTypes.createArrayType(DoubleType))
     )
     val schema = StructType(Seq(
@@ -242,7 +258,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
             if (inputStructRow.isNullAt(1)) {
               assert(outputStructRow.isNullAt(1))
             } else {
-              assert(inputStructRow.getDouble(1) == outputStructRow.getDouble(1))
+              assert(inputStructRow.getSeq(1) == outputStructRow.getBinary(1))
             }
             if (inputStructRow.isNullAt(2)) {
               assert(outputStructRow.isNullAt(2))
