@@ -169,7 +169,7 @@ class RegexParser(pattern: String) {
               throw new RegexUnsupportedException(
                 s"unexpected EOF while parsing escaped character", Some(pos))
             case Some(ch) =>
-              // typically an escaped metacharacter ('\\' | '^' | '-' | ']' | '+')
+              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
               // within the character class, but could be any escaped character
               characterClass.appendEscaped(consumeExpected(ch))
           }
@@ -508,23 +508,19 @@ class CudfRegexTranspiler(replace: Boolean) {
           // `[^a\r\n]` => `[^a]`
           // `[^\r\n]`  => `[^\r\n]`
 
-          val allLinefeed = components.forall {
-            case RegexChar(ch) => ch == '\n' || ch == '\r'
-            case RegexEscaped(ch) => ch == 'n' || ch == 'r'
-            case _ => false
-          }
-
-          val newlineCharsInClass = components.flatMap {
+          val linefeedCharsInPattern = components.flatMap {
             case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
             case RegexEscaped(ch) if ch == 'n' => Seq('\n')
             case RegexEscaped(ch) if ch == 'r' => Seq('\r')
             case _ => Seq.empty
-          }.distinct
+          }
 
-          val negatedNewlines = Seq('\r', '\n').diff(newlineCharsInClass)
+          val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
 
-          if (allLinefeed && newlineCharsInClass.length == 2) {
-            // special case for `[^\r\n]`
+          val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
+
+          if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
+            // special case for `[^\r\n]` and `[^\\r\\n]`
             RegexCharacterClass(negated = true, ListBuffer(components: _*))
           } else if (negatedNewlines.isEmpty) {
             RegexCharacterClass(negated = true, ListBuffer(components: _*))
@@ -535,7 +531,6 @@ class CudfRegexTranspiler(replace: Boolean) {
                   characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
                 RegexCharacterClass(negated = true, ListBuffer(components: _*))))
           }
-
         } else {
           RegexCharacterClass(negated, ListBuffer(components: _*))
         }
