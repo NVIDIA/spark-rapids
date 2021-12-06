@@ -481,6 +481,7 @@ The following Apache Spark regular expression functions and expressions are supp
 - `regexp`
 - `regexp_like`
 - `regexp_replace`
+- `regexp_extract`
 
 These operations are disabled by default because of known incompatibilities between the Java regular expression 
 engine that Spark uses and the cuDF regular expression engine on the GPU, and also because the regular expression 
@@ -490,6 +491,7 @@ These operations can be enabled on the GPU with the following configuration sett
 
 - `spark.rapids.sql.expression.RLike=true` (for `RLIKE`, `regexp`, and `regexp_like`)
 - `spark.rapids.sql.expression.RegExpReplace=true` for `regexp_replace`
+- `spark.rapids.sql.expression.RegExpExtract=true` for `regexp_extract`
 
 Even when these expressions are enabled, there are instances where regular expression operations will fall back to 
 CPU when the RAPIDS Accelerator determines that a pattern is either unsupported or would produce incorrect results on the GPU.
@@ -508,8 +510,6 @@ Here are some examples of regular expression patterns that are not supported on 
 
 In addition to these cases that can be detected, there are also known issues that can cause incorrect results:
 
-- `$` does not match the end of a string if the string ends with a line-terminator 
-  ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
 - Character classes for negative matches have different behavior between CPU and GPU for multiline
   strings. The pattern `[^a]` will match line-terminators on CPU but not on GPU.
 

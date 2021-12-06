@@ -3062,6 +3062,18 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GpuRLikeMeta(a, conf, p, r)).disabledByDefault(
       "the implementation is not 100% compatible. " +
         "See the compatibility guide for more information."),
+    expr[RegExpExtract](
+      "RegExpExtract",
+      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("idx", TypeSig.lit(TypeEnum.INT)
+            .withPsNote(TypeEnum.INT, "only a value greater than 0 is supported"),
+            TypeSig.lit(TypeEnum.INT)))),
+      (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r))
+      .disabledByDefault(
+      "the implementation is not 100% compatible. " +
+        "See the compatibility guide for more information."),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,

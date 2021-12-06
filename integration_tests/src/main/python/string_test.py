@@ -538,6 +538,38 @@ def test_regexp_replace_character_set_negated():
                 'regexp_replace(a, "[^\n]", "1")'),
             conf={'spark.rapids.sql.expression.RegExpReplace': 'true'})
 
+def test_regexp_extract():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 1)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 2)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 3)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_multiline():
+    gen = mk_str_gen('[abcd]{2}[\r\n]{0,2}[0-9]{2}[\r\n]{0,2}[abcd]{2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([\r\n]*)", 2)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+def test_regexp_extract_multiline_negated_character_class():
+    gen = mk_str_gen('[abcd]{2}[\r\n]{0,2}[0-9]{2}[\r\n]{0,2}[abcd]{2}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([^a-z]*)([a-d]*)$", 2)'),
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
+@allow_non_gpu('ProjectExec', 'RegExpExtract')
+def test_regexp_extract_idx_0_fallback():
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)$", 0)'),
+            'RegExpExtract',
+            conf={'spark.rapids.sql.expression.RegExpExtract': 'true'})
+
 def test_rlike():
     gen = mk_str_gen('[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
