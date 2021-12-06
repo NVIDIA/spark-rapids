@@ -504,12 +504,14 @@ Here are some examples of regular expression patterns that are not supported on 
 - Empty groups: `()`
 - Regular expressions containing null characters (unless the pattern is a simple literal string)
 - Beginning-of-line and end-of-line anchors (`^` and `$`) are not supported in some contexts, such as when combined 
-- with a choice (`^|a`) or when used anywhere in `regexp_replace` patterns.
+  with a choice (`^|a`) or when used anywhere in `regexp_replace` patterns.
 
-In addition to these cases that can be detected, there is also one known issue that can cause incorrect results:
+In addition to these cases that can be detected, there are also known issues that can cause incorrect results:
 
 - `$` does not match the end of a string if the string ends with a line-terminator 
   ([cuDF issue #9620](https://github.com/rapidsai/cudf/issues/9620))
+- Character classes for negative matches have different behavior between CPU and GPU for multiline
+  strings. The pattern `[^a]` will match line-terminators on CPU but not on GPU.
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
