@@ -58,7 +58,7 @@ New functionality and performance improvements for this release include:
 * Support CPU row-based UDF
 * CreateArray outputs array of struct
 * collect_set outputs array of struct
-* ORC reader and writer support decimal 38 digits(128-bits)
+* ORC reader and writer support for decimal precision up to 38 digits (128-bits)
 * ORC writer supports array, map, and struct
 * Support SampleExec, rlike
 * regexp_replace supports more patterns such as replacing null
