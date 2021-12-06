@@ -52,16 +52,6 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 // 31x nondb shims, used by 311cdh and 31x
 abstract class Spark31XShims extends Spark301util320Shims with Logging {
 
-  override def int96ParquetRebaseRead(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ)
-  override def int96ParquetRebaseWrite(conf: SQLConf): String =
-    conf.getConf(SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE)
-  override def int96ParquetRebaseReadKey: String =
-    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_READ.key
-  override def int96ParquetRebaseWriteKey: String =
-    SQLConf.LEGACY_PARQUET_INT96_REBASE_MODE_IN_WRITE.key
-  override def hasSeparateINT96RebaseConf: Boolean = true
-
   override def getScalaUDFAsExpression(
       function: AnyRef,
       dataType: DataType,
