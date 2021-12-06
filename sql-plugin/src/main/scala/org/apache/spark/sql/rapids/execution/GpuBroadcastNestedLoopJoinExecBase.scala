@@ -439,12 +439,9 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): ColumnarBatch = {
     withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-      withResource(GpuBroadcastHelper.getBroadcastBatch(
-          broadcastRelation, broadcast.schema)) { builtBatch =>
-        GpuColumnVector.incRefCounts(builtBatch)
-        buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
-        builtBatch
-      }
+      val builtBatch = GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, broadcast.schema)
+      buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
+      builtBatch
     }
   }
 
