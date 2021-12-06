@@ -58,8 +58,8 @@ existing logs and do not need a GPU cluster to run the tools.
 
 This allows running queries on the CPU and the plugin will evaluate the queries as if it was
 going to run on the GPU and tell you what would and wouldn't have been run on the GPU.
-There are two ways to run this, one is enabling a configuration flag and the
-other is to modify your existing Spark application code to call a function directly.
+There are two ways to run this, one is running with the plugin set to explain only mode and
+the other is to modify your existing Spark application code to call a function directly.
 
 ### Requirements
 
@@ -67,7 +67,7 @@ other is to modify your existing Spark application code to call a function direc
 - The `rapids-4-spark` and `cudf` [jars](../download.md)
 - Ability to modify the existing Spark application code if using the function call directly
 
-### Using the Configuration Flag
+### Using the Configuration Flag for Explain Only Mode
 
 Starting with version 22.02 of the RAPIDS Accelerator, the plugin can be run in explain only mode.
 This mode allows you to run on a CPU cluster and can help us understand the potential GPU plan and
