@@ -123,5 +123,30 @@
         </concat>
         <exec executable="${project.basedir}/scripts/binary-dedupe.sh" failonerror="true"
             dir="${project.build.directory}"/>
+
+
+        <echo level="info">Generating dependency-reduced-pom.xml</echo>
+        <resources id="aggregatorDependencyRegexWithoutWhitespace">
+            <string>&lt;dependency&gt;</string>
+            <string>&lt;groupId&gt;com.nvidia&lt;/groupId&gt;</string>
+            <string>&lt;artifactId&gt;rapids-4-spark-aggregator_\S+?&lt;/artifactId&gt;</string>
+            <string>&lt;version&gt;\S+?&lt;/version&gt;</string>
+            <string>&lt;classifier&gt;\S+?&lt;/classifier&gt;</string>
+            <string>&lt;scope&gt;\S+?&lt;/scope&gt;</string>
+            <string>&lt;/dependency&gt;</string>
+        </resources>
+        <pathconvert property="aggregatorDependencyRegex" refid="aggregatorDependencyRegexWithoutWhitespace" pathsep="\s+?"/>
+
+        <echo level="info">Generated regex to remove aggregator dependencies:
+        ${aggregatorDependencyRegex}
+        </echo>
+        <copy file="${project.basedir}/pom.xml"
+            tofile="${project.build.directory}/extra-resources/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml"
+            overwrite="true">
+            <filterchain>
+                <replaceregex flags="gs" byline="false" replace=""
+                              pattern="${aggregatorDependencyRegex}"/>
+            </filterchain>
+        </copy>
     </target>
 </project>
