@@ -11,9 +11,9 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.x running in Databricks Runtime 7.3 ML or 8.2 ML with GPU
-    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
-    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 8.2 ML (GPU, Scala 2.12, Spark 3.1.1)
+    * Apache Spark 3.x running in Databricks Runtime 7.3 ML or 9.1 ML with GPU
+    * AWS: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2)
+    * Azure: 7.3 LTS ML (GPU, Scala 2.12, Spark 3.0.1) or 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2)
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
@@ -84,9 +84,9 @@ Update 2. Users wishing to try 21.06.1 or later on Databricks 7.3 LTS ML will ne
 CUDA 11.0 toolkit on the cluster.  This can be done with the [generate-init-script-cuda11.ipynb
 ](../demo/Databricks/generate-init-script-cuda11.ipynb) init script, which installs both the RAPIDS
 Spark plugin and the CUDA 11 toolkit. 
-    - [Databricks 8.2
-    ML](https://docs.databricks.com/release-notes/runtime/8.2ml.html#system-environment) has CUDA 11
-    installed.  Users will need to use 21.06.2 or later on Databricks 8.2 ML. In this case use
+    - [Databricks 9.1 LTS
+    ML](https://docs.databricks.com/release-notes/runtime/9.1ml.html#system-environment) has CUDA 11
+    installed.  Users will need to use 21.12.0 or later on Databricks 9.1 LTS ML. In this case use
     [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) which will install
     the RAPIDS Spark plugin.
 2. Once you are in the notebook, click the “Run All” button.

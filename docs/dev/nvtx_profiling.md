@@ -47,9 +47,9 @@ Here is an example that starts up a worker in standalone mode, profiles it and t
 until the shell exits (using Ctrl+D) while stopping the worker process at the end.
 ```
 nsys profile bash -c " \
-CUDA_VISIBLE_DEVICES=0 ${SPARK_HOME}/sbin/start-slave.sh $master_url & \
+CUDA_VISIBLE_DEVICES=0 ${SPARK_HOME}/sbin/start-worker.sh $master_url & \
 $SPARK_HOME/bin/spark-shell; \
-${SPARK_HOME}/sbin/stop-slave.sh"
+${SPARK_HOME}/sbin/stop-worker.sh"
 
 ```
 If you need to kill the worker process that is being traced, do not use `kill -9`.
