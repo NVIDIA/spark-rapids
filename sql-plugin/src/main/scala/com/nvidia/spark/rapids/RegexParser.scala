@@ -169,11 +169,9 @@ class RegexParser(pattern: String) {
               throw new RegexUnsupportedException(
                 s"unexpected EOF while parsing escaped character", Some(pos))
             case Some(ch) =>
-              ch match {
-                case '\\' | '^' | '-' | ']' | '+' =>
-                  // escaped metacharacter within character class
-                  characterClass.appendEscaped(consumeExpected(ch))
-              }
+              // typically an escaped metacharacter ('\\', '^', '-', ']', '+')
+              // within the character class, but could be any escaped character
+              characterClass.appendEscaped(consumeExpected(ch))
           }
         case '\u0000' =>
           throw new RegexUnsupportedException(
@@ -494,7 +492,48 @@ class CudfRegexTranspiler(replace: Boolean) {
         }
         val components: Seq[RegexCharacterClassComponent] = characters
           .map(x => rewrite(x).asInstanceOf[RegexCharacterClassComponent])
-        RegexCharacterClass(negated, ListBuffer(components: _*))
+
+        if (negated) {
+          // There are differences between cuDF and Java handling of newlines
+          // for negative character matches. The expression `[^a]` will match
+          // `\r` and `\n` in Java but not in cuDF, so we replace `[^a]` with
+          // `(?:[\r\n]|[^a])`. We also have to take into account whether any
+          // newline characters are included in the character range.
+          //
+          // Examples:
+          //
+          // `[^a]`     => `(?:[\r\n]|[^a])`
+          // `[^a\r]`   => `(?:[\n]|[^a])`
+          // `[^a\n]`   => `(?:[\r]|[^a])`
+          // `[^a\r\n]` => `[^a]`
+          // `[^\r\n]`  => `[^\r\n]`
+
+          val linefeedCharsInPattern = components.flatMap {
+            case RegexChar(ch) if ch == '\n' || ch == '\r' => Seq(ch)
+            case RegexEscaped(ch) if ch == 'n' => Seq('\n')
+            case RegexEscaped(ch) if ch == 'r' => Seq('\r')
+            case _ => Seq.empty
+          }
+
+          val onlyLinefeedChars = components.length == linefeedCharsInPattern.length
+
+          val negatedNewlines = Seq('\r', '\n').diff(linefeedCharsInPattern.distinct)
+
+          if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
+            // special case for `[^\r\n]` and `[^\\r\\n]`
+            RegexCharacterClass(negated = true, ListBuffer(components: _*))
+          } else if (negatedNewlines.isEmpty) {
+            RegexCharacterClass(negated = true, ListBuffer(components: _*))
+          } else {
+            RegexGroup(capture = false,
+              RegexChoice(
+                RegexCharacterClass(negated = false,
+                  characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
+                RegexCharacterClass(negated = true, ListBuffer(components: _*))))
+          }
+        } else {
+          RegexCharacterClass(negated, ListBuffer(components: _*))
+        }
 
       case RegexSequence(parts) =>
         if (parts.isEmpty) {
