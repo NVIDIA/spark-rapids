@@ -62,9 +62,3 @@ You can also refer to the official Apache Spark documentation.
 If you plan to convert existing Spark workload from CPU to GPU, please refer to this
 [Spark workload qualification](./getting-started-workload-qualification.md) to check if your Spark Applications are good
 fit for the RAPIDS Accelerator for Apache Spark.
-
-## Spark workload qualification
-
-If you plan to convert existing Spark workload from CPU to GPU, please refer to this
-[Spark workload qualification](./getting-started-workload-qualification.md) to check if your Spark Applications are good
-fit for the RAPIDS Accelerator for Apache Spark.
