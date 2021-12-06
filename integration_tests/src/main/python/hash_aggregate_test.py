@@ -311,8 +311,8 @@ def test_hash_reduction_decimal_overflow_sum(precision):
         lambda spark: spark.range(count)\
                 .selectExpr("CAST('{}' as Decimal({}, 0)) as a".format(constant, precision))\
                 .selectExpr("SUM(a)"),
-        # This is set to 128m becuase of a number of other bugs that compond to having us
-        # run out of memory in some setups. These should not happen in production, becasue
+        # This is set to 128m because of a number of other bugs that compound to having us
+        # run out of memory in some setups. These should not happen in production, because
         # we really are just doing a really bad job at multiplying to get this result so
         # some optimizations are conspiring against us.
         conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
