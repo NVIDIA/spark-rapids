@@ -41,8 +41,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPar
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec.MAX_BROADCAST_TABLE_BYTES
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
-import org.apache.spark.sql.execution.joins._
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, EmptyHashedRelation}
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
@@ -327,11 +326,11 @@ abstract class GpuBroadcastExchangeExecBase(
                   val transformed = mode.transform(Array.empty)
 
                   // We make sure that the transformation is indeed an EmptyHashedRelation or an
-                  // empty array of rows, and in those cases only do we short cirtcuit our
+                  // empty array of rows, and in those cases only do we short circuit our
                   // broadcast. The reason for this is to be protective, since an
                   // EmptyHashedRelation or Array.empty are not the only results of a transform
                   // call, depending on BroadcastMode specifics. At this time other results are
-                  // not expectd, but we default to the unoptimized path.
+                  // not expected, but we default to the unoptimized path.
                   transformed match {
                     case EmptyHashedRelation => transformed
                     case arr: Array[InternalRow] if arr.isEmpty => transformed
