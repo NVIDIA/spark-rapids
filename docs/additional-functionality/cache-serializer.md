@@ -31,6 +31,7 @@ nav_order: 2
   the cached objects will still be compressed on the CPU as a part of the caching process.
 
   To use this serializer please run Spark with the following conf.
+
   ```
   spark-shell --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer
   ```

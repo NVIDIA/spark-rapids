@@ -41,7 +41,8 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
 
 4. Cannot spin off multiple executors on a multi-GPU node. 
-   Even though it is possible to set `spark.executor.resource.gpu.amount=N` (where N is the number
+
+	Even though it is possible to set `spark.executor.resource.gpu.amount=N` (where N is the number
     of GPUs per node) in the in Spark Configuration tab, Databricks overrides this to
     `spark.executor.resource.gpu.amount=1`.  This will result in failed executors when starting the
     cluster.
@@ -49,10 +50,10 @@ when using the plugin. Queries may still see significant speedups even with AQE 
 5. Databricks makes changes to the runtime without notification.
 
     Databricks makes changes to existing runtimes, applying patches, without notification.
-   [Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
-   regular integration tests on the Databricks environment to catch these issues and fix them once
-   detected.
-   
+	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
+	regular integration tests on the Databricks environment to catch these issues and fix them once
+	detected.
+	
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to Clusters, then clicking `+ Create Cluster`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:
