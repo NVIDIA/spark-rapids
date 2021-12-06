@@ -47,7 +47,7 @@ object GpuBroadcastHelper {
         builtBatch
       case EmptyHashedRelation =>
         GpuColumnVector.emptyBatch(broadcastSchema)
-      case identity: Array[Any] if identity.length == 0 =>
+      case identity: Array[Any] if identity.isEmpty =>
         // A broadcast nested loop join uses `IdentityBroadcastMode` which when
         // transformed can produce an Array[InternalRow].
         // In this case we handle the scenario where this is an empty result,
