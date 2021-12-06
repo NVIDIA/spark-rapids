@@ -73,12 +73,11 @@ object GpuBroadcastHelper {
    * @return number of rows for a batch received, or 0 if it's an empty relation
    */
   def getBroadcastBatchNumRows(broadcastRelation: Broadcast[Any]): Int = {
-    val broadcastRelationValue = broadcastRelation.value
-    broadcastRelationValue match {
+    broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
         broadcastBatch.batch.numRows()
       case EmptyHashedRelation => 0
-      case identity: Array[Any] if identity.length == 0 => 0
+      case identity: Array[Any] if identity.isEmpty => 0
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
     }
