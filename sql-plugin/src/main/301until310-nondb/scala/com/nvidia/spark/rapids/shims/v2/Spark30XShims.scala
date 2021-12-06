@@ -48,6 +48,16 @@ import org.apache.spark.storage.{BlockId, BlockManagerId}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 abstract class Spark30XShims extends Spark301util320Shims with Logging {
+  override def int96ParquetRebaseRead(conf: SQLConf): String =
+    parquetRebaseRead(conf)
+  override def int96ParquetRebaseWrite(conf: SQLConf): String =
+    parquetRebaseWrite(conf)
+  override def int96ParquetRebaseReadKey: String =
+    parquetRebaseReadKey
+  override def int96ParquetRebaseWriteKey: String =
+    parquetRebaseWriteKey
+  override def hasSeparateINT96RebaseConf: Boolean = false
+
   override def getScalaUDFAsExpression(
       function: AnyRef,
       dataType: DataType,
