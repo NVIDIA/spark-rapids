@@ -53,7 +53,7 @@ need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on 
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Support decimal 38 digits(128-bits)
+* Support decimal precision up to 38 digits (128-bits)
 * Support stddev on double in window context 
 * Support CPU row-based UDF
 * CreateArray outputs array of struct
