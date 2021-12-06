@@ -310,7 +310,12 @@ def test_hash_reduction_decimal_overflow_sum(precision):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.range(count)\
                 .selectExpr("CAST('{}' as Decimal({}, 0)) as a".format(constant, precision))\
-                .selectExpr("SUM(a)"))
+                .selectExpr("SUM(a)"),
+        # This is set to 128m becuase of a number of other bugs that compond to having us
+        # run out of memory in some setups. These should not happen in production, becasue
+        # we really are just doing a really bad job at multiplying to get this result so
+        # some optimizations are conspiring against us.
+        conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen):
