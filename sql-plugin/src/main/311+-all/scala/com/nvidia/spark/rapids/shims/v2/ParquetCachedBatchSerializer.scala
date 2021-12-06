@@ -553,8 +553,6 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
     val rapidsConf = new RapidsConf(conf)
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
       getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
-    val origSelectedAttributesWithUnambiguousNames = 
-      sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
     if (rapidsConf.isSqlEnabled &&
         isSchemaSupportedByCudf(cachedSchemaWithNames)) {
       val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
@@ -567,6 +565,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Arm {
       })
       cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
     } else {
+      val origSelectedAttributesWithUnambiguousNames = 
+        sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter => {
