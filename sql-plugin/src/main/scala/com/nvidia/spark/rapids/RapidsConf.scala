@@ -605,16 +605,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(false)
 
-  val ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE =
-    conf("spark.rapids.sql.allowLimitedNegativeScale.enabled")
-    .doc("When set to true, enables negative scales for Decimal types. This config is added to" +
-        "make sure the user is aware that Rapids supports results compatible with versions of " +
-        "Spark before 3.1.1. There is a bug filed for it at " +
-        "https://issues.apache.org/jira/browse/SPARK-37451")
-
-    .booleanConf
-    .createWithDefault(false)
-
   val ENABLE_CAST_STRING_TO_TIMESTAMP = conf("spark.rapids.sql.castStringToTimestamp.enabled")
     .doc("When set to true, casting from string to timestamp is supported on the GPU. The GPU " +
       "only supports a subset of formats when casting strings to timestamps. Refer to the CAST " +
@@ -1558,9 +1548,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val hasExtendedYearValues: Boolean = get(HAS_EXTENDED_YEAR_VALUES)
 
   lazy val isCastStringToFloatEnabled: Boolean = get(ENABLE_CAST_STRING_TO_FLOAT)
-
-  lazy val isLimitedNegativeDecimalScaleEnabled: Boolean =
-    get(ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE)
 
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 

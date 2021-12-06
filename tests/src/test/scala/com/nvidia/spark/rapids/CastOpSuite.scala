@@ -1003,7 +1003,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     try {
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
-        .set(RapidsConf.ENABLE_LIMITED_NEGATIVE_DECIMAL_SCALE.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)
